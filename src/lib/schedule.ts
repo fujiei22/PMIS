@@ -41,7 +41,11 @@ export function cascade(
 
       let target = cur
       if (mx !== null && sh[t.id] === undefined) target = cur + mx
-      const floor = Math.max(...inc.map((d) => dayIndex(by[d.from].start)))
+      let floor = -Infinity
+      for (const d of inc) {
+        const src = by[d.from]
+        if (src) floor = Math.max(floor, dayIndex(src.start))
+      }
       if (target < floor) target = floor
 
       if (target !== cur) {
@@ -110,7 +114,8 @@ export function applyTaskPatch(
 
   let floor = -Infinity
   for (const d of deps) {
-    if (d.to === id && by[d.from]) floor = Math.max(floor, dayIndex(by[d.from].start))
+    const src = by[d.from]
+    if (d.to === id && src) floor = Math.max(floor, dayIndex(src.start))
   }
   if (Number.isFinite(floor) && dayIndex(t.start) < floor) {
     const dur = dayIndex(t.end) - dayIndex(t.start)

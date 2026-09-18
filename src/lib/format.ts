@@ -6,7 +6,7 @@ import type { ISODate } from '@/types/models'
 export function fmtDate(iso: ISODate | ''): string {
   if (!iso) return EMPTY_LABEL.pickDate
   const p = iso.split('-')
-  return p[0] + '/' + pad2(p[1]) + '/' + pad2(p[2])
+  return (p[0] ?? '') + '/' + pad2(p[1]) + '/' + pad2(p[2])
 }
 
 /** 甘特條與卡片上的短日期 'MM/DD'。legacy `shortDate` :2691 */
@@ -47,7 +47,7 @@ export const EMPTY_LABEL = {
 } as const
 
 /** 個位數補成兩位；legacy 的 pad 內嵌在 fmtDate / shortDate 裡。 */
-function pad2(v: string): string {
-  const s = String(Number(v))
+function pad2(v: string | undefined): string {
+  const s = String(Number(v ?? 0))
   return s.length < 2 ? '0' + s : s
 }

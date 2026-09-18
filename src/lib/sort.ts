@@ -41,7 +41,7 @@ export function sortValue(
     const t = o as Task
     if (key === 'start') return dayIndex(t.start)
     if (key === 'days') return lengthOf(t)
-    if (key === 'priority') return PRIORITY_ORDER[t.priority]
+    if (key === 'priority') return PRIORITY_ORDER[t.priority] ?? 0
     if (key === 'issue') return ctx.openIssueCount(t.id)
     if (key === 'created') return createdIndex(t)
     if (key === 'name') return t.name
@@ -110,7 +110,7 @@ export function bumpSort(sorts: SortKey[], k: string): SortKey[] {
   const out = sorts.slice()
   const i = out.findIndex((x) => x.k === k)
   if (i < 0) out.push({ k, dir: ['start', 'due', 'created'].includes(k) ? 'asc' : 'desc' })
-  else out[i] = { k, dir: out[i].dir === 'asc' ? 'desc' : 'asc' }
+  else out[i] = { k, dir: out[i]?.dir === 'asc' ? 'desc' : 'asc' }
   return out
 }
 
