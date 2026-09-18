@@ -43,7 +43,7 @@ describe('filterStore', () => {
     const done = tasks.tasks.filter((t) => t.status === 'done')
     expect(f.matchedIds.size).toBe(done.length)
     expect(done.length).toBeGreaterThan(0)
-    expect(f.matchedIds.has(done[0].id)).toBe(true)
+    expect(f.matchedIds.has(done[0]!.id)).toBe(true)
     f.statuses = []
     expect(f.matchedIds.size).toBe(30)
   })

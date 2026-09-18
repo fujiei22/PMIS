@@ -43,9 +43,9 @@ describe('cascade', () => {
   it('cascade 把下游推到不早於上游 start，並保工期、不改入參', () => {
     const tasks = [t('a', '2026-09-01', '2026-09-05'), t('b', '2026-09-03', '2026-09-06')]
     const out = cascade(tasks, [d('a', 'b')], { a: 4 })
-    expect(out[1].start).toBe('2026-09-07')
-    expect(out[1].end).toBe('2026-09-10')
-    expect(tasks[1].start).toBe('2026-09-03')
+    expect(out[1]!.start).toBe('2026-09-07')
+    expect(out[1]!.end).toBe('2026-09-10')
+    expect(tasks[1]!.start).toBe('2026-09-03')
   })
 
   it('cascade 空陣列回空', () => expect(cascade([], [], {})).toEqual([]))
@@ -53,8 +53,8 @@ describe('cascade', () => {
   it('cascade 把早於上游 start 的下游拉到 floor', () => {
     const tasks = [t('a', '2026-09-10', '2026-09-12'), t('b', '2026-09-01', '2026-09-03')]
     const out = cascade(tasks, [d('a', 'b')])
-    expect(out[1].start).toBe('2026-09-10')
-    expect(out[1].end).toBe('2026-09-12')
+    expect(out[1]!.start).toBe('2026-09-10')
+    expect(out[1]!.end).toBe('2026-09-12')
   })
 
   it('cascade 沿相依鏈一路傳遞', () => {
@@ -64,13 +64,13 @@ describe('cascade', () => {
       t('c', '2026-09-09', '2026-09-10'),
     ]
     const out = cascade(tasks, [d('a', 'b'), d('b', 'c')], { a: 3 })
-    expect(out[1].start).toBe('2026-09-09')
-    expect(out[2].start).toBe('2026-09-12')
+    expect(out[1]!.start).toBe('2026-09-09')
+    expect(out[2]!.start).toBe('2026-09-12')
   })
 
   it('cascade 不動沒有前置的任務', () => {
     const tasks = [t('a', '2026-09-01', '2026-09-05')]
-    expect(cascade(tasks, [], { a: 5 })[0].start).toBe('2026-09-01')
+    expect(cascade(tasks, [], { a: 5 })[0]!.start).toBe('2026-09-01')
   })
 })
 
@@ -99,7 +99,7 @@ describe('applyTaskPatch', () => {
   it('applyTaskPatch 已填過的 done 不被覆蓋', () => {
     const tasks = [{ ...t('a', '2026-09-01', '2026-09-05'), done: '2026-09-03' }]
     const out = applyTaskPatch(tasks, [], 'a', { status: 'done' }, '2026-09-18')
-    expect(out[0].done).toBe('2026-09-03')
+    expect(out[0]!.done).toBe('2026-09-03')
   })
 
   it('applyTaskPatch: start 早於前置 start 時整段平移保工期', () => {

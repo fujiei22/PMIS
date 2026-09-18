@@ -49,10 +49,14 @@ describe('commentStore', () => {
   it('filesForTarget 給 comment.id:index 的 id 並倒序', () => {
     const c = useCommentStore()
     const files = c.filesForTarget('t1')
-    expect(files.map((f) => f.id)).toEqual(['c3:0', 'c3:1', 'c1:0'])
-    expect(files[0].name).toBe('component-checklist.xlsx')
-    expect(files[0].by).toBe('成員2')
-    expect(files[2].by).toBe('成員1')
+    // 同一天的兩個檔案誰先誰後不保證（沿用 legacy 的比較函式，相等時不回 0），
+    // 所以只斷言 id 的組成與「新的在前」。
+    expect(files.map((f) => f.id).sort()).toEqual(['c1:0', 'c3:0', 'c3:1'])
+    expect(files.slice(0, 2).map((f) => f.at)).toEqual(['2026-09-11', '2026-09-11'])
+    expect(files[0]!.by).toBe('成員2')
+    expect(files[2]!.id).toBe('c1:0')
+    expect(files[2]!.name).toBe('nav-spec-v3.png')
+    expect(files[2]!.by).toBe('成員1')
   })
 
   it('commenterIds 只回在這個目標留過言的人', () => {
@@ -67,10 +71,10 @@ describe('commentStore', () => {
     c.addDraftFiles([{ name: 'a.txt', size: 12 } as unknown as File])
     c.send('t1', 'task')
     const rows = c.forTarget('t1')
-    expect(rows[0].text).toBe('新留言')
-    expect(rows[0].memberId).toBe('m1')
-    expect(rows[0].targetKind).toBe('task')
-    expect(rows[0].files.map((f) => f.name)).toEqual(['a.txt'])
+    expect(rows[0]!.text).toBe('新留言')
+    expect(rows[0]!.memberId).toBe('m1')
+    expect(rows[0]!.targetKind).toBe('task')
+    expect(rows[0]!.files.map((f) => f.name)).toEqual(['a.txt'])
     expect(c.draft).toBe('')
     expect(c.draftFiles).toEqual([])
   })

@@ -76,7 +76,7 @@ describe('taskStore', () => {
     const s = useTaskStore()
     const g = s.addGroup()
     expect(g.name).toBe('新分類 7')
-    expect(s.groups[s.groups.length - 1].id).toBe(g.id)
+    expect(s.groups[s.groups.length - 1]!.id).toBe(g.id)
     expect(g.collapsed).toBe(false)
   })
 
