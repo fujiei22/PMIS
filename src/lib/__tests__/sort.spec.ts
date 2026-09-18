@@ -108,7 +108,8 @@ describe('applySort', () => {
   })
 
   it('字串鍵用 localeCompare 比較且不改入參', () => {
-    const list = [issue({ id: 'i1', creatorId: 'm2' }), issue({ id: 'i2', creatorId: 'm1' })]
+    // zh-Hant 預設依筆畫排：乙（1 畫）在 甲（5 畫）之前
+    const list = [issue({ id: 'i1', creatorId: 'm1' }), issue({ id: 'i2', creatorId: 'm2' })]
     const out = applySort(list, [{ k: 'creator', dir: 'asc' }], 'issue', ctx)
     expect(out.map((i) => i.id)).toEqual(['i2', 'i1'])
     expect(list.map((i) => i.id)).toEqual(['i1', 'i2'])
