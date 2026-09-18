@@ -11,8 +11,9 @@ export default defineConfigWithVueTs(
     files: ['**/*.{vue,ts,mts,tsx}'],
   },
 
-  // legacy/ 是唯讀的行為與設計基準，不參與 lint。
-  globalIgnores(['**/dist/**', '**/dist-ssr/**', '**/coverage/**', 'legacy/**']),
+  // legacy/ 是唯讀的行為與設計基準，不參與 lint；
+  // .claude/ 底下是平行施工用的 git worktree，不是本專案的原始碼。
+  globalIgnores(['**/dist/**', '**/dist-ssr/**', '**/coverage/**', 'legacy/**', '**/.claude/**']),
 
   ...pluginVue.configs['flat/essential'],
   vueTsConfigs.recommended,

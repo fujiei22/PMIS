@@ -48,3 +48,6 @@ docs/incidents/
 
 # ESLint cache
 .eslintcache
+
+# Agent worktrees / local agent state
+.claude/
