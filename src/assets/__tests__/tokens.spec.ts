@@ -16,12 +16,29 @@ describe('tokens.css', () => {
     expect(css).not.toMatch(/--m[1-7]:/)
 
     // 契約 F 與 spec §設計方向 要補的 token
-    for (const t of ['--bg-late', '--bg-weekend', '--bg-today', '--t-bar', '--fs-6', '--r-2', '--r-999'])
+    for (const t of [
+      '--bg-late',
+      '--bg-weekend',
+      '--bg-today',
+      '--t-bar',
+      '--fs-6',
+      '--r-2',
+      '--r-999',
+    ])
       expect(css).toContain(t + ':')
   })
 
   it('補齊程式有用到但原本沒定義的字級與圓角', () => {
-    for (const t of ['--fs-7', '--fs-7-5', '--fs-8-5', '--fs-9', '--fs-10', '--fs-10-2', '--fs-14', '--fs-19'])
+    for (const t of [
+      '--fs-7',
+      '--fs-7-5',
+      '--fs-8-5',
+      '--fs-9',
+      '--fs-10',
+      '--fs-10-2',
+      '--fs-14',
+      '--fs-19',
+    ])
       expect(css).toContain(t + ':')
     for (const t of ['--r-2', '--r-3', '--r-4', '--r-6', '--r-999']) expect(css).toContain(t + ':')
   })
