@@ -1,0 +1,219 @@
+/* ============================================================
+   Project Dashboard — Design Tokens
+
+   來源：legacy/design-system.html 的 <style id="tokens">（值實測自原型，
+   請勿四捨五入到 4/8px 格線）。抽出時依 spec §設計方向 做了四項調整，
+   逐項標在下面的註解裡。新增設計值一律先加進這裡再引用。
+   ============================================================ */
+:root {
+  /* surfaces */
+  --bg-page: #eef2f6;
+  --surface-1: #ffffff;
+  --surface-2: #f8fafc;
+  --surface-3: #f1f5f9;
+  --surface-group: #eef2f7;
+
+  /* borders */
+  --border-1: #e2e8f0;
+  --border-hair: #f1f5f9;
+  --border-control: #cbd5e1;
+
+  /* text */
+  --text-1: #0f172a;
+  --text-2: #334155;
+  --text-3: #475569;
+  --text-muted: #64748b;
+  --text-placeholder: #94a3b8;
+  --glyph-disabled: #cbd5e1;
+
+  /* accent */
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-tint-1: #eff6ff;
+  --accent-tint-2: #dbeafe;
+  --accent-tint-3: #bfdbfe;
+  --accent-ring: rgba(37, 99, 235, 0.35);
+
+  /* semantic */
+  --danger: #dc2626;
+  --danger-text: #b91c1c;
+  --danger-bg: #fef2f2;
+  --danger-bd: #fecaca;
+  --success: #10b981;
+  --success-text: #047857;
+  --success-bg: #ecfdf5;
+  --success-bd: #a7f3d0;
+  --success-track: #dcfce7;
+  --today: #ef4444;
+
+  /* 甘特底色（契約 F；原型寫在行內 style） */
+  --bg-late: #fff5f5;
+  --bg-weekend: #e6ebf2;
+  --bg-weekend-head: #dfe6ee;
+  --bg-today: rgba(239, 68, 68, 0.07);
+
+  /* task status (text / bar / dot) — 對應 constants/dashboard.ts 的 TASK_STATUS */
+  --st-todo: #64748b;
+  --st-todo-bar: #64748b;
+  --st-todo-dot: #94a3b8;
+  --st-doing: #2563eb;
+  --st-doing-bar: #2563eb;
+  --st-doing-dot: #3b82f6;
+  --st-done: #059669;
+  --st-done-bar: #047857;
+  --st-done-dot: #10b981;
+  --st-delayed: #dc2626;
+  --st-delayed-bar: #dc2626;
+  --st-delayed-dot: #ef4444;
+  --st-paused: #b45309;
+  --st-paused-bar: #b45309;
+  --st-paused-dot: #f59e0b;
+
+  /* task priority — 對應 PRIORITY */
+  --pr-high: #dc2626;
+  --pr-mid: #d97706;
+  --pr-low: #0891b2;
+
+  /* issue class (fill / text-on-white) — 對應 ISSUE_LEVEL */
+  --cls-a: #b91c1c;
+  --cls-a-text: #b91c1c;
+  --cls-b: #dc2626;
+  --cls-b-text: #dc2626;
+  --cls-c: #d97706;
+  --cls-c-text: #b45309;
+  --cls-d: #0891b2;
+  --cls-d-text: #0e7490;
+
+  /* issue status (bg / fg / border) — 對應 ISSUE_STATUS
+     spec §設計方向：文字色以原型程式值為準（open #64748b、doing #2563eb、closed #059669）；
+     原本的 blocked 一組改名為 paused，值取程式（#fffbeb / #b45309 / #fde68a）。 */
+  --ist-open-bg: #f1f5f9;
+  --ist-open-fg: #64748b;
+  --ist-open-bd: #e2e8f0;
+  --ist-doing-bg: #eff6ff;
+  --ist-doing-fg: #2563eb;
+  --ist-doing-bd: #bfdbfe;
+  --ist-paused-bg: #fffbeb;
+  --ist-paused-fg: #b45309;
+  --ist-paused-bd: #fde68a;
+  --ist-closed-bg: #ecfdf5;
+  --ist-closed-fg: #059669;
+  --ist-closed-bd: #a7f3d0;
+
+  /* spec §設計方向：成員色由成員資料提供，不建 --m1 … --m7 token。 */
+
+  /* 其他色 */
+  --focus-soft: #93c5fd; /* 留言框 focus 邊框 */
+  --drag-ghost: #0f172a; /* 拖曳時跟著游標的影子 */
+  --backdrop: rgba(15, 23, 42, 0.45);
+  --backdrop-modal: rgba(15, 23, 42, 0.55);
+  --backdrop-lightbox: rgba(15, 23, 42, 0.82);
+
+  /* typography */
+  --font-sans: 'Noto Sans TC', 'Helvetica Neue', Helvetica, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --fs-hero: 30px;
+  --fs-modal: 21px;
+  --fs-dialog: 17.2px;
+  --fs-panel: 15.2px;
+  --fs-month: 14.2px;
+  --fs-record: 13.7px;
+  --fs-control: 13.2px;
+  --fs-select: 12.7px;
+  --fs-meta: 12.5px;
+  --fs-date: 12px;
+  --fs-pill: 11.5px;
+  --fs-caption: 11px;
+  --fs-micro: 10.5px;
+  --fs-weekday: 9.5px;
+  --fs-caret: 8px;
+  /* 原型有用、design-system.html 未定義的字級（spec §設計方向）。
+     命名為 --fs-<px>，小數點寫成 -；--fs-6 為 6.5px，沿用契約 F 的名稱。 */
+  --fs-6: 6.5px;
+  --fs-7: 7px;
+  --fs-7-5: 7.5px;
+  --fs-8-5: 8.5px;
+  --fs-9: 9px;
+  --fs-10: 10px;
+  --fs-10-2: 10.2px;
+  --fs-14: 14px;
+  --fs-19: 19px;
+  --lh-tight: 1.22;
+  --lh-body: 1.4;
+  --lh-loose: 1.65;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-bold: 700;
+  --tracking-overline: 0.07em;
+
+  /* spacing */
+  --sp-1: 3px;
+  --sp-2: 4px;
+  --sp-3: 6px;
+  --sp-4: 8px;
+  --sp-5: 10px;
+  --sp-6: 12px;
+  --sp-7: 14px;
+  --sp-8: 16px;
+  --sp-9: 18px;
+  --sp-10: 20px;
+  --sp-12: 24px;
+  --pad-card: 14px 16px;
+  --pad-panel-head: 12px 16px;
+  --pad-row: 9px 16px;
+  --pad-kanban-card: 9px;
+  --pad-pill: 3px 10px;
+  --gap-boards: 14px;
+  --gap-table: 6px;
+  --gantt-row: 34px;
+  --gantt-head: 54px;
+  --gantt-left: 366px;
+  --day-min: 14px;
+  --day-max: 32px;
+  --kpi-hero-lh: 38px;
+  --modal-w: min(1280px, 96vw);
+  --modal-h: min(880px, 93vh);
+  --modal-left-pane: 392px;
+
+  /* radius */
+  --r-badge: 5px;
+  --r-control: 7px;
+  --r-input: 8px;
+  --r-card-sm: 9px;
+  --r-card: 10px;
+  --r-panel: 12px;
+  --r-day: 14px;
+  --r-modal: 16px;
+  --r-pill: 20px;
+  /* 原型有用、design-system.html 未定義的圓角（spec §設計方向） */
+  --r-2: 2px;
+  --r-3: 3px;
+  --r-4: 4px;
+  --r-6: 6px;
+  --r-999: 999px;
+
+  /* shadow / ring */
+  --shadow-menu: 0 14px 32px rgba(15, 23, 42, 0.16);
+  --shadow-popover: 0 18px 40px rgba(15, 23, 42, 0.18);
+  --shadow-modal: 0 34px 80px rgba(15, 23, 42, 0.34);
+  --shadow-lift: 0 10px 22px rgba(15, 23, 42, 0.18);
+  --shadow-card-hover: 0 4px 14px rgba(15, 23, 42, 0.1);
+  --shadow-left-col: 2px 0 6px rgba(15, 23, 42, 0.06);
+  --shadow-bar: 0 1px 2px rgba(15, 23, 42, 0.18);
+  --ring-focus: 0 0 0 3px rgba(37, 99, 235, 0.35);
+  --ring-node: 0 0 0 2px rgba(15, 23, 42, 0.12);
+  --hover-dim: brightness(0.94);
+
+  /* motion */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --t-fast: 0.16s;
+  --t-base: 0.18s;
+  --t-layout: 0.24s;
+  --t-panel: 0.26s;
+  --t-pop: 0.14s;
+  --t-modal: 0.17s;
+  --t-menu: 0.13s;
+  --t-hover: 0.22s;
+  --t-bar: 0.2s;
+  --t-progress: 0.35s;
+}
