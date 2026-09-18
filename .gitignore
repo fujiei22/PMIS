@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+*.local
+
+# Test output
+coverage/
+test-results/
+playwright-report/
+playwright/.cache/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment variables (keep example files)
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.sw?
+
+# Task-process docs (specs, plans, reviews, snapshots) stay local.
+# Only shared development docs (e.g. docs/reference/) are tracked.
+docs/work/
+docs/archive/
+docs/paused/
+docs/snapshots/
+docs/retros/
+docs/incidents/
