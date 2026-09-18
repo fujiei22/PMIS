@@ -1,0 +1,14 @@
+// Playwright 測試在 Node.js 環境執行；獨立一個 project 讓 `npm run type-check` 一併檢查。
+{
+  "extends": "@tsconfig/node24/tsconfig.json",
+  "include": ["./**/*"],
+  "compilerOptions": {
+    // Playwright 自己轉譯測試檔，沿用 bundler 解析（import 不必帶副檔名）。
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "composite": true,
+    "noEmit": true,
+    "tsBuildInfoFile": "../node_modules/.tmp/tsconfig.e2e.tsbuildinfo"
+  }
+}
