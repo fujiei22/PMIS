@@ -1,0 +1,243 @@
+/* ============================================================
+   全域樣式與 keyframes
+
+   來源：legacy/Dashboard.html <helmet> 裡的 <style>。
+   顏色、字體、圓角換成 tokens.css 的變數；捲軸寬度、滑桿尺寸這類
+   原型實測出來的幾何值照抄，沒有對應 token。
+   ============================================================ */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-page);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  color: var(--text-1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+/* ---------- 捲軸 ---------- */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-control);
+  border-radius: var(--r-input);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  transition: background 0.15s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-placeholder);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: var(--text-muted);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+* {
+  scrollbar-color: var(--border-control) transparent;
+}
+
+/* ---------- 表單元件 ---------- */
+
+input,
+select,
+button {
+  font-family: inherit;
+}
+
+/* 工期輸入框：藏掉上下箭頭，改用旁邊的 ± 按鈕 */
+input[type='number'][data-dur] {
+  -webkit-appearance: none;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+input[type='number'][data-dur]::-webkit-inner-spin-button,
+input[type='number'][data-dur]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+  margin: 0;
+}
+
+/* 甘特縮放滑桿：軌道透明，由外層畫漸層 */
+input[type='range'][data-zoom] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: var(--r-2);
+  margin: 0;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type='range'][data-zoom]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--r-2);
+  background: transparent;
+}
+
+input[type='range'][data-zoom]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--surface-1);
+  border: 2px solid var(--accent);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.22);
+  cursor: grab;
+  transition:
+    transform var(--t-fast) ease,
+    box-shadow var(--t-fast) ease;
+}
+
+input[type='range'][data-zoom]:hover::-webkit-slider-thumb {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15);
+}
+
+input[type='range'][data-zoom]:active::-webkit-slider-thumb {
+  cursor: grabbing;
+  transform: scale(1.05);
+  box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.22);
+}
+
+input[type='range'][data-zoom]::-moz-range-track {
+  height: 4px;
+  border-radius: var(--r-2);
+  background: transparent;
+}
+
+input[type='range'][data-zoom]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface-1);
+  border: 2px solid var(--accent);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.22);
+  cursor: grab;
+}
+
+/* 可點的東西不要被選取；輸入框例外。
+   原型是用 [style*="cursor: pointer"] 這類選擇器湊出來的，新頁沒有行內 cursor，
+   所以只留 button / role=button；拖曳期間的防選取由拖曳 composable 直接改 body 樣式。 */
+button,
+[role='button'] {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+textarea,
+select {
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
+/* ---------- keyframes ---------- */
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes popOut {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.975);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes paneIn {
+  from {
+    opacity: 0;
+    transform: translateX(22px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes paneBack {
+  from {
+    opacity: 0;
+    transform: translateX(-22px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pulseRing {
+  0% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(37, 99, 235, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+  }
+}
