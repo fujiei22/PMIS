@@ -51,3 +51,6 @@ docs/incidents/
 
 # Agent worktrees / local agent state
 .claude/
+
+# S3 對照截圖（本機產物，不進版控）
+e2e/screenshots/

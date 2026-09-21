@@ -7,8 +7,9 @@ test.beforeEach(async ({ page }) => {
 
 test('首頁可開且有標題', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
-  await expect(page.getByTestId('task-count')).toHaveText('30')
+  await expect(page.getByRole('heading', { name: 'My Project' })).toBeVisible()
+  // S3 起頂部列與看板頭各有一份任務計數，取第一個
+  await expect(page.getByTestId('task-count').first()).toHaveText('共 30 個任務')
 })
 
 test('legacy 頁可離線載入', async ({ page }) => {
