@@ -2,14 +2,11 @@
 // 頂部列的日期篩選日曆（大於 / 小於 / 介於三種模式共用）。
 // legacy 對照：模板 :249-277、calCells :3249-3276。
 import { computed } from 'vue'
-import { dayIndex, isoFromIndex, shiftMonth } from '@/lib/date'
+import { monthGrid, WEEK_LABELS, type CalendarCell } from '@/lib/calendar'
+import { dayIndex, shiftMonth } from '@/lib/date'
 import { fmtDate } from '@/lib/format'
 import { useFilterStore } from '@/stores/filter'
 import { useUiStore } from '@/stores/ui'
-
-/** 日曆固定畫 6 × 7 格。legacy :3250 */
-const CELL_COUNT = 42
-const WEEK = ['日', '一', '二', '三', '四', '五', '六']
 
 const ui = useUiStore()
 const filter = useFilterStore()
@@ -20,46 +17,31 @@ const showD2 = computed(() => filter.dateMode === 'between')
 const anchor = computed(() => filter.calendarMonth || (filter.d1 || ui.todayIso).slice(0, 7))
 const title = computed(() => `${Number(anchor.value.slice(0, 4))}年${Number(anchor.value.slice(5, 7))}月`)
 
-/** 網格第一格 = 該月 1 號往前補到週日。legacy :3245-3246 */
-const gridStart = computed(() => {
-  const y = Number(anchor.value.slice(0, 4))
-  const m = Number(anchor.value.slice(5, 7))
-  const first = Math.floor(Date.UTC(y, m - 1, 1) / 86_400_000)
-  return first - new Date(first * 86_400_000).getUTCDay()
-})
-
-interface Cell {
-  iso: string
-  label: number
+/** 42 格由 `monthGrid` 產（契約 D），這裡只疊端點 / 區間 / 今天的顯示狀態。 */
+type Cell = CalendarCell & {
   /** 不是本月：字色轉淡。 */
   dim: boolean
   /** 是 d1 或 d2 的端點。 */
   end: boolean
   /** 介於模式的區間內（不含端點）。 */
   inRange: boolean
+  /** 端點的樣式蓋過今天，所以今天要先排除端點。legacy :3273 */
   today: boolean
 }
 
 const cells = computed<Cell[]>(() => {
-  const m = Number(anchor.value.slice(5, 7))
   const a = filter.d1 && filter.d2 ? Math.min(dayIndex(filter.d1), dayIndex(filter.d2)) : null
   const b = filter.d1 && filter.d2 ? Math.max(dayIndex(filter.d1), dayIndex(filter.d2)) : null
-  const out: Cell[] = []
-  for (let k = 0; k < CELL_COUNT; k++) {
-    const idx = gridStart.value + k
-    const iso = isoFromIndex(idx)
-    const dt = new Date(idx * 86_400_000)
-    const end = iso === filter.d1 || iso === filter.d2
-    out.push({
-      iso,
-      label: dt.getUTCDate(),
-      dim: dt.getUTCMonth() + 1 !== m,
+  return monthGrid(anchor.value, ui.todayIdx).map((c) => {
+    const end = c.iso === filter.d1 || c.iso === filter.d2
+    return {
+      ...c,
+      dim: !c.inMonth,
       end,
-      inRange: filter.dateMode === 'between' && a != null && idx > a && idx < b!,
-      today: iso === ui.todayIso && !end,
-    })
-  }
-  return out
+      inRange: filter.dateMode === 'between' && a != null && c.idx > a && c.idx < b!,
+      today: c.isToday && !end,
+    }
+  })
 })
 
 function shift(n: number): void {
@@ -123,7 +105,7 @@ function pick(iso: string): void {
       <div class="cal-arrow" role="button" @click="shift(1)">›</div>
     </div>
     <div class="cal-grid">
-      <div v-for="w in WEEK" :key="w" class="cal-weekday">{{ w }}</div>
+      <div v-for="w in WEEK_LABELS" :key="w" class="cal-weekday">{{ w }}</div>
     </div>
     <div class="cal-grid">
       <div

@@ -3,6 +3,7 @@
 // legacy 對照：模板 :1098-1159，cCalCells :3356-3376、cDate / cMem :3833-3870。
 import { computed, ref } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
+import { monthGrid, WEEK_LABELS, type CalendarCell } from '@/lib/calendar'
 import { dayIndex, shiftMonth } from '@/lib/date'
 import { fmtDate } from '@/lib/format'
 import { useCommentStore } from '@/stores/comment'
@@ -14,10 +15,6 @@ const props = defineProps<{ targetId: string }>()
 const ui = useUiStore()
 const comment = useCommentStore()
 const memberStore = useMemberStore()
-
-/** 日曆固定畫 6 × 7 格。legacy :3362 */
-const CELL_COUNT = 42
-const WEEK = ['日', '一', '二', '三', '四', '五', '六']
 
 const commentCount = computed(() => comment.forTarget(props.targetId).length)
 const fileCount = computed(() => comment.filesForTarget(props.targetId).length)
@@ -51,40 +48,20 @@ function toggleDateDropdown(): void {
   ui.toggleDropdown('cdate')
 }
 
-interface Cell {
-  key: number
-  label: number
-  iso: string
-  inRange: boolean
-  today: boolean
-  picked: boolean
-}
+/** 42 格由 `monthGrid` 產（契約 D）；這個日曆只疊「區間內」與「端點」。 */
+type Cell = CalendarCell & { inRange: boolean; picked: boolean }
 
 const cells = computed<Cell[]>(() => {
   const month = calMonth.value || ui.todayIso.slice(0, 7)
-  const y = Number(month.slice(0, 4))
-  const m = Number(month.slice(5, 7)) - 1
-  const first = Math.floor(Date.UTC(y, m, 1) / 86_400_000)
-  const gs = first - new Date(Date.UTC(y, m, 1)).getUTCDay()
   const a = comment.dateFrom ? dayIndex(comment.dateFrom) : null
   const b = comment.dateTo ? dayIndex(comment.dateTo) : null
   const lo = a !== null && b !== null ? Math.min(a, b) : null
   const hi = a !== null && b !== null ? Math.max(a, b) : null
-  const out: Cell[] = []
-  for (let k = 0; k < CELL_COUNT; k++) {
-    const idx = gs + k
-    const dt = new Date(idx * 86_400_000)
-    const iso = dt.toISOString().slice(0, 10)
-    out.push({
-      key: k,
-      label: dt.getUTCDate(),
-      iso,
-      inRange: lo !== null && hi !== null && idx > lo && idx < hi,
-      today: idx === ui.todayIdx,
-      picked: idx === a || idx === b,
-    })
-  }
-  return out
+  return monthGrid(month, ui.todayIdx).map((c) => ({
+    ...c,
+    inRange: lo !== null && hi !== null && c.idx > lo && c.idx < hi,
+    picked: c.idx === a || c.idx === b,
+  }))
 })
 
 /** 點一天：交替填起始 / 結束。legacy :3371 */
@@ -174,14 +151,14 @@ function toggleMember(id: string): void {
           <div class="cal-arrow" role="button" @click="shiftCal(1)">›</div>
         </div>
         <div class="cal-grid">
-          <div v-for="w in WEEK" :key="w" class="cal-weekday">{{ w }}</div>
+          <div v-for="w in WEEK_LABELS" :key="w" class="cal-weekday">{{ w }}</div>
         </div>
         <div class="cal-grid">
           <div
             v-for="c in cells"
-            :key="c.key"
+            :key="c.idx"
             class="cal-cell"
-            :class="{ range: c.inRange, today: c.today, picked: c.picked }"
+            :class="{ range: c.inRange, today: c.isToday, picked: c.picked }"
             role="button"
             @click="pickDay(c)"
           >

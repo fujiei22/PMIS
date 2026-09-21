@@ -14,6 +14,7 @@ import KanbanPanel from '@/components/kanban/KanbanPanel.vue'
 import TopBar from '@/components/layout/TopBar.vue'
 import SummaryCards from '@/components/summary/SummaryCards.vue'
 import { useClickOutside } from '@/composables/useClickOutside'
+import { useConfirmProps } from '@/composables/useConfirmProps'
 import { useNow } from '@/composables/useNow'
 import { useStickyOffsets } from '@/composables/useStickyOffsets'
 import { useProjectSync } from '@/stores/_sync'
@@ -30,6 +31,10 @@ const sync = useProjectSync()
 useStickyOffsets()
 useClickOutside()
 useNow()
+
+// 刪除確認的文案與動作（契約 H）；ConfirmDialog 本身只是外殼。
+// v-bind 一次帶進 props 與 onNext / onConfirm / onCancel 三個 emit listener。
+const confirmView = useConfirmProps()
 
 onMounted(() => {
   sync.start()
@@ -65,7 +70,7 @@ onBeforeUnmount(() => sync.stop())
     <OptionMenu />
     <DatePicker />
     <DependencyEditor />
-    <ConfirmDialog />
+    <ConfirmDialog v-if="confirmView" v-bind="confirmView" />
     <ImageLightbox />
   </div>
 </template>
