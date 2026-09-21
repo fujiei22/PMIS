@@ -225,18 +225,32 @@ export const useTaskStore = defineStore('task', () => {
     return g
   }
 
-  async function renameGroup(id: string, name: string): Promise<void> {
+  /** 只改本地的分類名（逐鍵編輯的每一鍵走這條）。legacy `onEdit` :2799 */
+  function renameGroupLocal(id: string, name: string): void {
     const g = groupById(id)
-    if (!g || g.name === name) return
-    g.name = name
+    if (g) g.name = name
+  }
+
+  /**
+   * 只把分類的變更送出去（本地已經改好了）；逐鍵編輯 debounce 到期時走這條。
+   * 它不看本地有沒有變——`useEditDraft` 已經逐鍵 apply 過了。
+   */
+  async function commitGroupPatch(id: string, patch: Partial<Group>): Promise<void> {
     await runOptimistic<Group>({
       tracker: groupTracker,
       ids: [id],
       label: '更新分類',
       apply: () => {},
-      call: () => api.updateGroup(id, { name }),
+      call: () => api.updateGroup(id, cloneEntity(patch)),
       reconcile: reconcileGroup,
     })
+  }
+
+  async function renameGroup(id: string, name: string): Promise<void> {
+    const g = groupById(id)
+    if (!g || g.name === name) return
+    renameGroupLocal(id, name)
+    await commitGroupPatch(id, { name })
   }
 
   /**
@@ -423,6 +437,21 @@ export const useTaskStore = defineStore('task', () => {
       label: '更新任務',
       apply: () => {},
       call: () => (single ? api.updateTask(id, cloneEntity(patch)) : api.updateTasks(payload)),
+      reconcile: reconcileTask,
+    })
+  }
+
+  /**
+   * 只把一筆任務的變更送出去（本地已經改好了）；逐鍵編輯 debounce 到期時走這條。
+   * 只給不牽動排程的欄位用（名稱 / 優先度…）——會 cascade 的欄位請走 `updateTask`。
+   */
+  async function commitTaskPatch(id: string, patch: Partial<Task>): Promise<void> {
+    await runOptimistic<Task>({
+      tracker: taskTracker,
+      ids: [id],
+      label: '更新任務',
+      apply: () => {},
+      call: () => api.updateTask(id, cloneEntity(patch)),
       reconcile: reconcileTask,
     })
   }
@@ -720,6 +749,8 @@ export const useTaskStore = defineStore('task', () => {
     rowIndexOf,
     addGroup,
     renameGroup,
+    renameGroupLocal,
+    commitGroupPatch,
     removeGroup,
     toggleGroup,
     setAllCollapsed,
@@ -729,6 +760,7 @@ export const useTaskStore = defineStore('task', () => {
     reconcileGroupsFromServer,
     addTask,
     updateTask,
+    commitTaskPatch,
     applyLocalPatch,
     collectDirtyTasks,
     commitTasks,

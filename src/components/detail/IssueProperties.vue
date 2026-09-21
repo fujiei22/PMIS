@@ -4,6 +4,7 @@
 // legacy 對照：模板 :1009-1092，issueDetail :3281-3346。
 import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
+import { useEditDraft, type EditDraft } from '@/composables/useEditDraft'
 import { useMenus } from '@/composables/useMenus'
 import { DELAYED, ISSUE_ITEM, ISSUE_LEVEL, ISSUE_STATUS } from '@/constants/dashboard'
 import { EMPTY_LABEL, fmtDate } from '@/lib/format'
@@ -47,13 +48,33 @@ const donePill = computed(() =>
 )
 const createdLabel = computed(() => fmtDate(props.issue.created))
 
-/** 表單欄位逐鍵寫回（沿用 legacy React onChange 的即時行為 :3334）。 */
-function set(patch: Partial<Issue>): void {
-  issueStore.updateIssue(props.issue.id, patch)
+/** 這一欄的純文字欄位（沿用 legacy React onChange 的即時行為 :3334）。 */
+const TEXT_FIELDS = ['pcb', 'bios', 'os', 'ptype', 'desc', 'solution', 'solvedBios'] as const
+type TextField = (typeof TEXT_FIELDS)[number]
+
+/**
+ * 每個欄位一份草稿：本地即時、api debounce 300ms、離開欄位 flush（契約 B-2）。
+ * 逐鍵打 api 在接上真後端之後會變成每打一個字一個請求。
+ */
+const drafts = Object.fromEntries(
+  TEXT_FIELDS.map((field) => [
+    field,
+    useEditDraft({
+      get: () => props.issue[field],
+      applyLocal: (v) => {
+        issueStore.applyLocalPatch(props.issue.id, { [field]: v } as Partial<Issue>)
+      },
+      commit: (v) => issueStore.commitIssuePatch(props.issue.id, { [field]: v } as Partial<Issue>),
+    }),
+  ]),
+) as Record<TextField, EditDraft>
+
+function onField(field: TextField, e: Event): void {
+  drafts[field].onInput((e.target as HTMLInputElement | HTMLTextAreaElement).value)
 }
 
-function onField(field: keyof Issue, e: Event): void {
-  set({ [field]: (e.target as HTMLInputElement | HTMLTextAreaElement).value } as Partial<Issue>)
+function flushField(field: TextField): void {
+  void drafts[field].flush()
 }
 
 /**
@@ -71,7 +92,11 @@ function removeIssue(): void {
     <!-- 等級 -->
     <div class="row">
       <div class="label"><span class="glyph">⚑</span><span>等級 Class</span></div>
-      <div class="pill pill-plain" role="button" @click.stop="openOptionMenu($event, issue.id, 'ipri')">
+      <div
+        class="pill pill-plain"
+        role="button"
+        @click.stop="openOptionMenu($event, issue.id, 'ipri')"
+      >
         <span class="level-dot" :style="{ background: cls.color }"></span>
         <span class="pill-text bold" :style="{ color: cls.text }">{{ cls.label }}</span>
         <span class="pill-caret">▼</span>
@@ -86,7 +111,8 @@ function removeIssue(): void {
         role="button"
         @click.stop="openOptionMenu($event, issue.id, 'iitem')"
       >
-        <span class="pill-text">{{ itemLabel }}</span><span class="pill-caret">▼</span>
+        <span class="pill-text">{{ itemLabel }}</span
+        ><span class="pill-caret">▼</span>
       </div>
     </div>
 
@@ -99,7 +125,8 @@ function removeIssue(): void {
         role="button"
         @click.stop="openOptionMenu($event, issue.id, 'itask')"
       >
-        <span class="pill-text">{{ taskName }}</span><span class="pill-caret">▼</span>
+        <span class="pill-text">{{ taskName }}</span
+        ><span class="pill-caret">▼</span>
       </div>
     </div>
 
@@ -112,7 +139,8 @@ function removeIssue(): void {
         @click.stop="openOptionMenu($event, issue.id, 'icreator')"
       >
         <Avatar :member="creator" :size="18" />
-        <span class="pill-text">{{ creatorName }}</span><span class="pill-caret">▼</span>
+        <span class="pill-text">{{ creatorName }}</span
+        ><span class="pill-caret">▼</span>
       </div>
     </div>
 
@@ -132,7 +160,8 @@ function removeIssue(): void {
           :ring="1.5"
           :overlap="7"
         />
-        <span class="pill-text owner-name">{{ ownerPill }}</span><span class="pill-caret">▼</span>
+        <span class="pill-text owner-name">{{ ownerPill }}</span
+        ><span class="pill-caret">▼</span>
       </div>
     </div>
 
@@ -144,7 +173,8 @@ function removeIssue(): void {
         role="button"
         @click.stop="openIssueDatePicker($event, issue.id, 'due', issue.due)"
       >
-        <span class="pill-text">{{ duePill }}</span><span class="pill-caret">▼</span>
+        <span class="pill-text">{{ duePill }}</span
+        ><span class="pill-caret">▼</span>
       </div>
     </div>
 
@@ -156,7 +186,8 @@ function removeIssue(): void {
         role="button"
         @click.stop="openIssueDatePicker($event, issue.id, 'done', issue.done)"
       >
-        <span class="pill-text">{{ donePill }}</span><span class="pill-caret">▼</span>
+        <span class="pill-text">{{ donePill }}</span
+        ><span class="pill-caret">▼</span>
       </div>
     </div>
 
@@ -179,7 +210,8 @@ function removeIssue(): void {
         @click.stop="openOptionMenu($event, issue.id, 'istatus')"
       >
         <span class="status-dot" :style="{ background: ist.fg }"></span>
-        <span class="pill-text">{{ ist.label }}</span><span class="pill-caret on-tint">▼</span>
+        <span class="pill-text">{{ ist.label }}</span
+        ><span class="pill-caret on-tint">▼</span>
       </div>
       <div v-if="late" class="late-chip">
         <span class="late-dot"></span><span>{{ DELAYED.label }}</span>
@@ -192,7 +224,13 @@ function removeIssue(): void {
       <div class="env-grid">
         <label class="field">
           <span class="field-label">PCB</span>
-          <input :value="issue.pcb" placeholder="A0" @click.stop @input="onField('pcb', $event)" />
+          <input
+            :value="issue.pcb"
+            placeholder="A0"
+            @click.stop
+            @input="onField('pcb', $event)"
+            @blur="flushField('pcb')"
+          />
         </label>
         <label class="field">
           <span class="field-label">BIOS + EC Ver.</span>
@@ -201,6 +239,7 @@ function removeIssue(): void {
             placeholder="06+0.03"
             @click.stop
             @input="onField('bios', $event)"
+            @blur="flushField('bios')"
           />
         </label>
         <label class="field">
@@ -210,6 +249,7 @@ function removeIssue(): void {
             placeholder="Win11 24H2"
             @click.stop
             @input="onField('os', $event)"
+            @blur="flushField('os')"
           />
         </label>
         <label class="field">
@@ -219,6 +259,7 @@ function removeIssue(): void {
             placeholder="I/O Function"
             @click.stop
             @input="onField('ptype', $event)"
+            @blur="flushField('ptype')"
           />
         </label>
       </div>
@@ -233,6 +274,7 @@ function removeIssue(): void {
           placeholder="重現步驟、環境條件與實際現象…"
           @click.stop
           @input="onField('desc', $event)"
+          @blur="flushField('desc')"
         ></textarea>
       </label>
       <label class="field">
@@ -242,6 +284,7 @@ function removeIssue(): void {
           placeholder="處理方式、對策與驗證結果…"
           @click.stop
           @input="onField('solution', $event)"
+          @blur="flushField('solution')"
         ></textarea>
       </label>
       <label class="field">
@@ -251,6 +294,7 @@ function removeIssue(): void {
           placeholder="例如 06+0.05"
           @click.stop
           @input="onField('solvedBios', $event)"
+          @blur="flushField('solvedBios')"
         />
       </label>
     </div>

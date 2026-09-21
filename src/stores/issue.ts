@@ -144,18 +144,26 @@ export const useIssueStore = defineStore('issue', () => {
     return next
   }
 
-  /** 改 Issue 欄位；進 closed 補完成日、離開 closed 清掉，然後送給後端。 */
-  async function updateIssue(id: string, patch: Partial<Issue>): Promise<void> {
-    const sent = applyLocalPatch(id, patch)
-    if (!sent) return
+  /**
+   * 只把變更送出去（本地已經改好了）；逐鍵編輯 debounce 到期時走這條。
+   * 它不看本地有沒有變——`useEditDraft` 已經逐鍵 apply 過了。
+   */
+  async function commitIssuePatch(id: string, patch: Partial<Issue>): Promise<void> {
     await runOptimistic<Issue>({
       tracker,
       ids: [id],
       label: '更新 Issue',
       apply: () => {},
-      call: () => api.updateIssue(id, cloneEntity(sent)),
+      call: () => api.updateIssue(id, cloneEntity(patch)),
       reconcile,
     })
+  }
+
+  /** 改 Issue 欄位；進 closed 補完成日、離開 closed 清掉，然後送給後端。 */
+  async function updateIssue(id: string, patch: Partial<Issue>): Promise<void> {
+    const sent = applyLocalPatch(id, patch)
+    if (!sent) return
+    await commitIssuePatch(id, sent)
   }
 
   /** 刪一筆 Issue（連它的留言），順手清掉指向它的選取與詳細視窗。legacy `iConfirmDelete` :4076 */
@@ -221,6 +229,7 @@ export const useIssueStore = defineStore('issue', () => {
     addIssue,
     applyLocalPatch,
     updateIssue,
+    commitIssuePatch,
     removeIssue,
     applyEvent,
   }

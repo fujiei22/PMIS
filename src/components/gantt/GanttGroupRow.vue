@@ -2,6 +2,7 @@
 // 甘特左欄的分類列：把手、收合箭頭、分類名、工期天數、刪除鈕。
 // legacy 對照：模板 :429-440，groupRows :2762-2813。
 import { computed, nextTick, ref, watch } from 'vue'
+import { useEditDraft } from '@/composables/useEditDraft'
 import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { dayIndex } from '@/lib/date'
 import { useFilterStore } from '@/stores/filter'
@@ -38,9 +39,7 @@ const collapsed = computed(() => ui.collapsedGroups.has(props.group.id))
 const lifted = computed(() => ui.drag?.kind === 'greorder' && ui.drag.id === props.group.id)
 const dimmed = computed(() => ui.drag?.kind === 'greorder' && ui.drag.id !== props.group.id)
 /** 任務重排時經過這個分類 → 底色提示。legacy :2805 */
-const dropOver = computed(
-  () => ui.drag?.kind === 'reorder' && ui.drag.over?.id === props.group.id,
-)
+const dropOver = computed(() => ui.drag?.kind === 'reorder' && ui.drag.over?.id === props.group.id)
 
 function onSelect(): void {
   selection.toggleGroup(props.group.id)
@@ -70,19 +69,32 @@ function startEdit(e: MouseEvent): void {
   ui.editing = { kind: 'g', id: props.group.id }
 }
 
-/** 每一鍵就寫進 store，legacy 的 onChange 也是逐鍵觸發（:2799）。 */
+/**
+ * 每一鍵就寫進 store，legacy 的 onChange 也是逐鍵觸發（:2799）；
+ * api 由 `useEditDraft` 做 300ms debounce，離開編輯時 flush（契約 B-2）。
+ */
+const nameDraft = useEditDraft({
+  get: () => props.group.name,
+  applyLocal: (v) => taskStore.renameGroupLocal(props.group.id, v),
+  commit: (v) => taskStore.commitGroupPatch(props.group.id, { name: v }),
+})
+
 function onRename(e: Event): void {
-  taskStore.renameGroup(props.group.id, (e.target as HTMLInputElement).value)
+  nameDraft.onInput((e.target as HTMLInputElement).value)
 }
 
-/** Enter / Esc / blur 都只結束編輯，不還原（legacy :2795-2798）。 */
+/** Enter / Esc / blur 都只結束編輯，不還原（legacy :2795-2798）；離開前先送出草稿。 */
 function endEdit(): void {
+  void nameDraft.flush()
   if (editing.value) ui.editing = null
 }
 
 function onEditKey(e: KeyboardEvent): void {
   if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-  if (e.key === 'Escape') ui.editing = null
+  if (e.key === 'Escape') {
+    void nameDraft.flush()
+    ui.editing = null
+  }
 }
 
 /** 刪除分類走兩步確認。legacy `onDelete` :2809 */

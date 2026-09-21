@@ -16,7 +16,11 @@ const props = defineProps<{
   paneClass: string
 }>()
 
-const emit = defineEmits<{ 'update:name': [string] }>()
+const emit = defineEmits<{
+  'update:name': [string]
+  /** 離開編輯（Enter / Esc / blur）：呼叫端把 `useEditDraft` 的草稿 flush 出去（契約 B-2）。 */
+  flush: []
+}>()
 
 const ui = useUiStore()
 
@@ -48,6 +52,7 @@ function startEdit(): void {
 }
 
 function endEdit(): void {
+  emit('flush')
   if (ui.editing?.kind === 'dt') ui.editing = null
 }
 
@@ -56,9 +61,13 @@ function onKey(e: KeyboardEvent): void {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     ;(e.target as HTMLTextAreaElement).blur()
+    emit('flush')
     ui.editing = null
   }
-  if (e.key === 'Escape') ui.editing = null
+  if (e.key === 'Escape') {
+    emit('flush')
+    ui.editing = null
+  }
 }
 </script>
 
