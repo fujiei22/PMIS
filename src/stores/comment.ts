@@ -103,7 +103,8 @@ export const useCommentStore = defineStore('comment', () => {
       text: draft.value.trim(),
       files: draftFiles.value.map((f) => ({ name: f.name, size: f.size, at: day, url: f.url ?? '' })),
     })
-    resetDraft()
+    // 不走 resetDraft：blob url 已經轉給這則留言，revoke 掉縮圖就壞了
+    clearDraft()
   }
 
   /**
@@ -121,9 +122,19 @@ export const useCommentStore = defineStore('comment', () => {
     if (picked.length) draftFiles.value.push(...picked)
   }
 
-  /** 移掉草稿裡第 i 個附件。 */
+  /**
+   * 釋放附件的 blob url。
+   * review m1：`addDraftFiles` 對圖片建 `URL.createObjectURL`，不 revoke 就一路佔著記憶體。
+   * 已經送出的留言不走這裡——列表還要靠那個 url 顯示縮圖。
+   */
+  function revoke(files: Attachment[]): void {
+    for (const f of files) if (f.url) URL.revokeObjectURL(f.url)
+  }
+
+  /** 移掉草稿裡第 i 個附件，順手釋放它的 blob url。 */
   function removeDraft(i: number): void {
-    draftFiles.value.splice(i, 1)
+    const [gone] = draftFiles.value.splice(i, 1)
+    if (gone) revoke([gone])
   }
 
   /** 刪掉一則留言。legacy `onDelete` :3878 */
@@ -131,10 +142,19 @@ export const useCommentStore = defineStore('comment', () => {
     comments.value = comments.value.filter((c) => c.id !== commentId)
   }
 
-  /** 清草稿；開詳情時呼叫，避免上一個任務打到一半的字跟過去。 */
-  function resetDraft(): void {
+  /** 只清欄位，不動 blob url（送出留言時用：url 的所有權交給那則留言了）。 */
+  function clearDraft(): void {
     draft.value = ''
     draftFiles.value = []
+  }
+
+  /**
+   * 清草稿；開詳情時呼叫，避免上一個任務打到一半的字跟過去。
+   * review m1：沒送出的附件連同它的 blob url 一起丟掉。
+   */
+  function resetDraft(): void {
+    revoke(draftFiles.value)
+    clearDraft()
   }
 
   return {

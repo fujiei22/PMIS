@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useCommentStore } from '@/stores/comment'
 import { useTaskStore } from '@/stores/task'
@@ -121,6 +121,68 @@ describe('commentStore', () => {
     const left = c.forTarget('t1').map((x) => x.text)
     expect(left).toContain('第二則')
     expect(left).not.toContain('第一則')
+  })
+
+  // review m1：貼圖建的 blob url 一直沒 revoke，換任務 / 移掉附件都在漏記憶體。
+  describe('blob url 釋放', () => {
+    let created: string[]
+    let revoked: string[]
+
+    beforeEach(() => {
+      created = []
+      revoked = []
+      let n = 0
+      vi.spyOn(URL, 'createObjectURL').mockImplementation(() => {
+        const u = 'blob:mock/' + ++n
+        created.push(u)
+        return u
+      })
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation((u: string) => {
+        revoked.push(u)
+      })
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    /** 造一個會被當成圖片的 File 替身。 */
+    const img = (name: string) => ({ name, size: 10, type: 'image/png' }) as unknown as File
+
+    it('removeDraft 釋放被移掉那個附件的 url', () => {
+      const c = useCommentStore()
+      c.addDraftFiles([img('a.png'), img('b.png')])
+      expect(created).toHaveLength(2)
+
+      c.removeDraft(0)
+      expect(revoked).toEqual([created[0]])
+      expect(c.draftFiles.map((f) => f.name)).toEqual(['b.png'])
+    })
+
+    it('resetDraft 釋放草稿裡所有附件的 url', () => {
+      const c = useCommentStore()
+      c.addDraftFiles([img('a.png'), img('b.png')])
+      c.resetDraft()
+      expect(revoked.sort()).toEqual([...created].sort())
+      expect(c.draftFiles).toEqual([])
+    })
+
+    it('沒有 url 的附件不會呼叫 revokeObjectURL', () => {
+      const c = useCommentStore()
+      c.addDraftFiles([{ name: 'a.txt', size: 1 } as unknown as File])
+      c.removeDraft(0)
+      c.resetDraft()
+      expect(revoked).toEqual([])
+    })
+
+    it('送出留言後不 revoke，留言列表還要用那個 url 顯示縮圖', () => {
+      const c = useCommentStore()
+      c.addDraftFiles([img('a.png')])
+      c.draft = '帶圖'
+      c.send('t1', 'task')
+      expect(revoked).toEqual([])
+      expect(c.forTarget('t1')[0]!.files[0]!.url).toBe(created[0])
+    })
   })
 
   // review M1：legacy :2186-2188 用 getFullYear/getMonth/getDate，日期與時分必須同一個本地時鐘。
