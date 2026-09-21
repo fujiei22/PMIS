@@ -21,16 +21,19 @@ PMIS 前端使用的技術與使用慣例。新加入的開發者先讀這份。
 
 ## 常用指令
 
-> 專案程式碼尚未建立（目前仍是 `Dashboard.html` 原型），下表依 Vue 官方範本的預設指令；建立專案後依實際 `package.json` 更新。
+下表對應 `package.json` 的 `scripts`。
 
-| 指令 | 用途 |
-|---|---|
-| `npm run dev` | 啟動本機開發伺服器，存檔即時更新 |
-| `npm run build` | 型別檢查（`vue-tsc`）+ 打包（`vite build`），輸出到 `dist/`；任一失敗即中斷 |
-| `npm run preview` | 在本機預覽打包結果 |
-| `npm run lint` | ESLint 檢查並自動修正 |
-| `npm run test:unit` | Vitest 單元測試 |
-| `npm run test:e2e` | Playwright E2E 測試 |
+| 指令 | 實際執行 | 用途 |
+|---|---|---|
+| `npm run dev` | `vite` | 啟動本機開發伺服器（預設 <http://localhost:5174>，可用 `PLAYWRIGHT_PORT` 改），存檔即時更新 |
+| `npm run build` | `run-p type-check build-only` | 型別檢查 + 打包並行跑，輸出到 `dist/`；任一失敗即中斷 |
+| `npm run build-only` | `vite build` | 只打包，不做型別檢查 |
+| `npm run type-check` | `vue-tsc --build` | 只做型別檢查（含 `e2e/` 這個 project） |
+| `npm run preview` | `vite preview` | 在本機預覽打包結果 |
+| `npm run lint` | `eslint . --fix --cache` | ESLint 檢查並自動修正 |
+| `npm run format` | `prettier --write src/` | 用 Prettier 格式化 `src/` |
+| `npm run test:unit` | `vitest` | Vitest 單元測試（watch 模式；一次跑完用 `npm run test:unit -- --run`） |
+| `npm run test:e2e` | `playwright test` | Playwright E2E 測試（自己起一份 dev server） |
 
 注意：`npm run dev` 只轉換、不做型別檢查（Vite 只刪掉型別），型別錯誤靠編輯器提示；提交前至少跑一次 `npm run build`。
 
