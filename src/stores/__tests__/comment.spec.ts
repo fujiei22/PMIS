@@ -104,6 +104,25 @@ describe('commentStore', () => {
     expect(c.forTarget('t1').map((x) => x.id)).toEqual(['c3', 'c1'])
   })
 
+  // review M5：id 用 'c' + Date.now() 時，固定時鐘下兩則留言同 id，刪一則會連帶刪掉另一則。
+  it('固定時鐘下連送兩則留言，id 不同且只刪得掉其中一則', () => {
+    const c = useCommentStore()
+    c.draft = '第一則'
+    c.send('t1', 'task')
+    c.draft = '第二則'
+    c.send('t1', 'task')
+
+    const rows = c.forTarget('t1')
+    const ids = rows.map((x) => x.id)
+    expect(new Set(ids).size).toBe(ids.length)
+
+    const first = rows.find((x) => x.text === '第一則')!
+    c.remove(first.id)
+    const left = c.forTarget('t1').map((x) => x.text)
+    expect(left).toContain('第二則')
+    expect(left).not.toContain('第一則')
+  })
+
   // review M1：legacy :2186-2188 用 getFullYear/getMonth/getDate，日期與時分必須同一個本地時鐘。
   describe('固定在 Asia/Taipei（UTC+8）的留言時間戳', () => {
     const origin = process.env.TZ
