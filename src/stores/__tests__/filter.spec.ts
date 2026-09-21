@@ -2,16 +2,16 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_ISSUE_SORT, DEFAULT_TASK_SORT } from '@/lib/sort'
 import { sampleProject } from '@/mocks/sampleProject'
+import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
 import { useTaskStore } from '@/stores/task'
-import { useUiStore } from '@/stores/ui'
 
 const NOW = Date.parse('2026-09-18T10:00:00Z')
 
 describe('filterStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    useUiStore().now = NOW
+    useClockStore().now = NOW
     useTaskStore().load(structuredClone(sampleProject))
   })
 

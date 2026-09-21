@@ -4,6 +4,7 @@ import { api, mockApi } from '@/api'
 import { ApiError } from '@/api/types'
 import { dayIndex, isoFromIndex } from '@/lib/date'
 import { sampleProject } from '@/mocks/sampleProject'
+import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useIssueStore } from '@/stores/issue'
 import { useSelectionStore } from '@/stores/selection'
@@ -20,7 +21,7 @@ describe('taskStore', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
     mockApi.reset(structuredClone(sampleProject))
-    useUiStore().now = NOW
+    useClockStore().now = NOW
     vi.spyOn(console, 'error').mockImplementation(() => {})
     await useTaskStore().load()
   })

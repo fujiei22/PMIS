@@ -13,7 +13,7 @@ const NOW = Date.parse('2026-09-18T10:00:00Z')
 describe('uiStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    useUiStore().now = NOW
+    useClockStore().now = NOW
     useTaskStore().load(structuredClone(sampleProject))
   })
 
@@ -45,10 +45,11 @@ describe('uiStore', () => {
     expect(ui.memberDrag).toBeNull()
   })
 
-  it('todayIdx / todayIso 由 now 算出來', () => {
-    const ui = useUiStore()
-    expect(ui.todayIdx).toBe(dayIndex('2026-09-18'))
-    expect(ui.todayIso).toBe('2026-09-18')
+  // 時鐘在 clock store（契約 C / E），ui 不再轉接——見 clock.spec
+  it('clock 的 todayIdx / todayIso 由 now 算出來', () => {
+    const clock = useClockStore()
+    expect(clock.todayIdx).toBe(dayIndex('2026-09-18'))
+    expect(clock.todayIso).toBe('2026-09-18')
   })
 
   it('setDayWidth 夾在 14-32 並吸附到 0.25', () => {
@@ -153,7 +154,7 @@ describe('uiStore', () => {
     beforeEach(() => {
       // 這一段驗的是「還沒載入」的狀態，外層 beforeEach 已經載完了，換一個乾淨的 pinia
       setActivePinia(createPinia())
-      useUiStore().now = NOW
+      useClockStore().now = NOW
       vi.spyOn(console, 'error').mockImplementation(() => {})
     })
 

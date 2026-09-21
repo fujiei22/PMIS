@@ -6,12 +6,14 @@ import Avatar from '@/components/common/Avatar.vue'
 import { monthGrid, WEEK_LABELS, type CalendarCell } from '@/lib/calendar'
 import { dayIndex, shiftMonth } from '@/lib/date'
 import { fmtDate } from '@/lib/format'
+import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useMemberStore } from '@/stores/member'
 import { useUiStore } from '@/stores/ui'
 
 const props = defineProps<{ targetId: string }>()
 
+const clock = useClockStore()
 const ui = useUiStore()
 const comment = useCommentStore()
 const memberStore = useMemberStore()
@@ -37,13 +39,13 @@ const dateLabel = computed(() =>
 )
 
 const calTitle = computed(() => {
-  const m = calMonth.value || ui.todayIso.slice(0, 7)
+  const m = calMonth.value || clock.todayIso.slice(0, 7)
   return `${Number(m.slice(0, 4))}年${Number(m.slice(5, 7))}月`
 })
 
 /** 開日期下拉時把月份定在已選起始日（沒選就今天）並回到填 d1。legacy `toggleCDateDD` :3834 */
 function toggleDateDropdown(): void {
-  calMonth.value = calMonth.value || (comment.dateFrom || ui.todayIso).slice(0, 7)
+  calMonth.value = calMonth.value || (comment.dateFrom || clock.todayIso).slice(0, 7)
   calTarget.value = 'd1'
   ui.toggleDropdown('cdate')
 }
@@ -52,12 +54,12 @@ function toggleDateDropdown(): void {
 type Cell = CalendarCell & { inRange: boolean; picked: boolean }
 
 const cells = computed<Cell[]>(() => {
-  const month = calMonth.value || ui.todayIso.slice(0, 7)
+  const month = calMonth.value || clock.todayIso.slice(0, 7)
   const a = comment.dateFrom ? dayIndex(comment.dateFrom) : null
   const b = comment.dateTo ? dayIndex(comment.dateTo) : null
   const lo = a !== null && b !== null ? Math.min(a, b) : null
   const hi = a !== null && b !== null ? Math.max(a, b) : null
-  return monthGrid(month, ui.todayIdx).map((c) => ({
+  return monthGrid(month, clock.todayIdx).map((c) => ({
     ...c,
     inRange: lo !== null && hi !== null && c.idx > lo && c.idx < hi,
     picked: c.idx === a || c.idx === b,
@@ -77,7 +79,7 @@ function pickDay(c: Cell): void {
 }
 
 function shiftCal(n: number): void {
-  calMonth.value = shiftMonth(calMonth.value || ui.todayIso.slice(0, 7), n)
+  calMonth.value = shiftMonth(calMonth.value || clock.todayIso.slice(0, 7), n)
 }
 
 /** 「全部時間」：清掉兩端並關下拉。legacy `cCalClear` :3854 */
@@ -146,7 +148,7 @@ function toggleMember(id: string): void {
         </div>
         <div class="cal-bar">
           <div class="cal-title">{{ calTitle }}</div>
-          <div class="cal-nav" role="button" @click="calMonth = ui.todayIso.slice(0, 7)">今天</div>
+          <div class="cal-nav" role="button" @click="calMonth = clock.todayIso.slice(0, 7)">今天</div>
           <div class="cal-arrow" role="button" @click="shiftCal(-1)">‹</div>
           <div class="cal-arrow" role="button" @click="shiftCal(1)">›</div>
         </div>

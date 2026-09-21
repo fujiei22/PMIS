@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { useMenus } from '@/composables/useMenus'
 import { anchorCalendar, anchorOptionMenu } from '@/lib/anchor'
 import { sampleProject } from '@/mocks/sampleProject'
+import { useClockStore } from '@/stores/clock'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 
@@ -84,7 +85,7 @@ describe('useMenus', () => {
       id: 'i1',
       field: 'due',
       kind: 'issue',
-      month: ui.todayIso.slice(0, 7),
+      month: useClockStore().todayIso.slice(0, 7),
       ...anchorCalendar(rect, VP, 'issue'),
     })
 

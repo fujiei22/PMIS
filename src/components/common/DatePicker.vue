@@ -5,6 +5,7 @@ import { computed } from 'vue'
 import { monthGrid, WEEK_LABELS, type CalendarCell } from '@/lib/calendar'
 import { dayIndex, isoFromIndex, lengthOf, shiftMonth } from '@/lib/date'
 import { fmtDate } from '@/lib/format'
+import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -12,6 +13,7 @@ import { useUiStore } from '@/stores/ui'
 /** 工期輸入框的上限。legacy `dCalSetDays` :4003 */
 const MAX_DAYS = 3650
 
+const clock = useClockStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
@@ -40,7 +42,7 @@ const dCells = computed<Cell[]>(() => {
   if (!cal || !t) return []
   const sIdx = dayIndex(t.start)
   const eIdx = dayIndex(t.end)
-  return monthGrid(cal.month, ui.todayIdx).map((c) => ({
+  return monthGrid(cal.month, clock.todayIdx).map((c) => ({
     ...c,
     dim: !c.inMonth,
     inRange: c.idx > sIdx && c.idx < eIdx,
@@ -55,7 +57,7 @@ function dShift(n: number): void {
 
 function dToday(): void {
   const cal = ui.taskDatePicker
-  if (cal) cal.month = ui.todayIso.slice(0, 7)
+  if (cal) cal.month = clock.todayIso.slice(0, 7)
 }
 
 /**
@@ -105,7 +107,7 @@ const iCells = computed<Cell[]>(() => {
   const cal = iCal.value
   if (!cal || !iExists.value) return []
   const cur = iValue.value ? dayIndex(iValue.value) : null
-  return monthGrid(cal.month, ui.todayIdx).map((c) => ({
+  return monthGrid(cal.month, clock.todayIdx).map((c) => ({
     ...c,
     dim: !c.inMonth,
     inRange: false,
@@ -120,7 +122,7 @@ function iShift(n: number): void {
 
 function iToday(): void {
   const cal = ui.issueDatePicker
-  if (cal) cal.month = ui.todayIso.slice(0, 7)
+  if (cal) cal.month = clock.todayIso.slice(0, 7)
 }
 
 /** 寫值；任務模式走 setTaskDoneDirect（不牽動排程，legacy iCalSet :3491）。 */

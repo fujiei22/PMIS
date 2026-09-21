@@ -1,6 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { sampleProject } from '@/mocks/sampleProject'
+import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
@@ -11,7 +12,7 @@ const NOW = Date.parse('2026-09-18T10:00:00Z')
 describe('selectionStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    useUiStore().now = NOW
+    useClockStore().now = NOW
     useTaskStore().load(structuredClone(sampleProject))
   })
 
