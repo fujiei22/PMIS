@@ -26,7 +26,7 @@ PMIS 前端使用的技術與使用慣例。新加入的開發者先讀這份。
 | 指令 | 實際執行 | 用途 |
 |---|---|---|
 | `npm run dev` | `vite` | 啟動本機開發伺服器（預設 <http://localhost:5174>，可用 `PLAYWRIGHT_PORT` 改），存檔即時更新 |
-| `npm run build` | `run-p type-check build-only` | 型別檢查 + 打包並行跑，輸出到 `dist/`；任一失敗即中斷 |
+| `npm run build` | `run-p type-check "build-only {@}" --` | 型別檢查 + 打包並行跑，輸出到 `dist/`；任一失敗即中斷（多出來的參數轉給 `build-only`） |
 | `npm run build-only` | `vite build` | 只打包，不做型別檢查 |
 | `npm run type-check` | `vue-tsc --build` | 只做型別檢查（含 `e2e/` 這個 project） |
 | `npm run preview` | `vite preview` | 在本機預覽打包結果 |
@@ -53,8 +53,20 @@ PMIS 前端使用的技術與使用慣例。新加入的開發者先讀這份。
 - 多個元件共用的資料放 Pinia store；只有單一元件用到的狀態（下拉的 hover 列、卡片 hover）留在元件內部。
 - store 裡的欄位分兩類，寫法不同（review M8）：
   - **UI 狀態欄位**（`ui` / `filter` / `comment` 的浮層開關、選取中的分頁、篩選條件、草稿文字…）：元件可以直接寫，例如 `ui.editing = { kind: 't', id }`、`filter.issueMode = 'has'`。這類欄位只描述畫面狀態，沒有連動規則。
-  - **資料欄位**（`tasks` / `issues` / `deps` / `groups` / `comments`）：一律透過 action 改，例如 `taskStore.updateTask()`、`commentStore.send()`。它們背後有 cascade、懸空 id 清理、排序等連動，繞過 action 就會漏做。
-- 呼叫後端 API 寫在 store 的 action（或 store 使用的 API 模組）裡。
+  - **資料欄位**（`tasks` / `issues` / `deps` / `groups` / `comments`）：一律透過 action 改，例如 `taskStore.updateTask()`、`commentStore.send()`。它們背後有 cascade、api 呼叫與失敗還原、懸空 id 清理等連動，繞過 action 就會漏做。
+
+#### store 分三層
+依賴只能由上往下：**時鐘層** `clock`（`now` / `todayIdx` / `todayIso`，誰都能讀）→ **資料層** `task` / `issue` / `comment` / `member`（專案資料的唯一擁有者）→ **派生層** `rows` / `filter` / `selection` / `ui`（算畫面要的東西，可讀所有層）。
+
+資料層不知道派生層存在：新增的預設值由 `composables/useTaskActions.ts` 算好傳進去，懸空 id 由 `selection` / `ui` 各自的 `watch(flush: 'sync')` 清，錯誤條靠 `_optimistic.setErrorSink()` 注入。白名單由 `src/stores/__tests__/imports.spec.ts` 讀原始碼守著。
+
+#### api 層
+資料進出只走 `src/api/`：`types.ts` 的 `ProjectApi` 是介面（含 `subscribe` 事件），`mock/` 是記憶體實作，`index.ts` 依 `VITE_API` 挑一個。**store 與元件一律 `import { api } from '@/api'`**，不直接碰 `@/api/mock`，更不碰 `@/mocks/*`。
+
+#### 乐觀更新
+寫入一律「先改本地、再打 api、失敗還原」，共用機制在 `src/stores/_optimistic.ts`（`createTracker` / `runOptimistic`，以 id 為單位記最後已知的 server 狀態與 in-flight 計數）。拖曳每個 tick 只改本地、放開才送一次；逐鍵編輯用 `composables/useEditDraft.ts` 做 300ms debounce。事件訂閱只有 `stores/_sync.ts` 一處，啟動與錯誤 sink 注入在 `composables/useProjectBoot.ts`。
+
+細節與後端契約（端點表、錯誤碼表、事件規則、adapter 職責）見 [README 的「怎麼接後端」](../../README.md#怎麼接後端)。
 
 ### 路由
 - 每個頁面一個路由；Dashboard 掛在 `/`。
