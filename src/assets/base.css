@@ -166,6 +166,20 @@ select {
   user-select: auto;
 }
 
+/* 危險 / 重試按鈕的共用樣式（review M11）。
+   值同 ConfirmDialog 的 .btn-next；ConfirmDialog 自己的 .btn-danger 是 scoped
+   （選擇器多一個 data-v 屬性、優先度較高），不受這條影響。 */
+.btn-danger {
+  padding: var(--sp-4) var(--sp-7);
+  font-size: var(--fs-month);
+  border-radius: var(--r-input);
+  cursor: pointer;
+  border: 1px solid var(--danger-bd);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-weight: var(--fw-medium);
+}
+
 /* ---------- keyframes ---------- */
 
 @keyframes popIn {
