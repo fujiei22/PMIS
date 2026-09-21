@@ -5,10 +5,12 @@ import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import { useDelayedUnmount } from '@/composables/useDelayedUnmount'
 import { useMenus } from '@/composables/useMenus'
+import { useTaskActions } from '@/composables/useTaskActions'
 import { DELAYED, ISSUE_LEVEL, ISSUE_STATUS, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
 import { lengthOf } from '@/lib/date'
 import { EMPTY_LABEL, fmtDate } from '@/lib/format'
 import { isLate, isLateIssue } from '@/lib/schedule'
+import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useSelectionStore } from '@/stores/selection'
@@ -18,6 +20,8 @@ import type { Task } from '@/types/models'
 
 const props = defineProps<{ task: Task }>()
 
+const actions = useTaskActions()
+const clock = useClockStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
@@ -25,7 +29,7 @@ const memberStore = useMemberStore()
 const selection = useSelectionStore()
 const { openOptionMenu, openTaskDatePicker, openIssueDatePicker } = useMenus()
 
-const late = computed(() => isLate(props.task, ui.todayIdx))
+const late = computed(() => isLate(props.task, clock.todayIdx))
 const st = computed(() => TASK_STATUS[props.task.status])
 const pr = computed(() => PRIORITY[props.task.priority])
 
@@ -84,7 +88,7 @@ function openIssue(issueId: string): void {
 
 /** ＋ 開立 Issue。legacy `onAddIssue` :3109 */
 function addIssue(): void {
-  issueStore.addIssue(props.task.id)
+  actions.addIssueForTask(props.task.id)
 }
 
 /** 刪任務走兩步確認；刪完 removeTask 會清 ui.detail 讓視窗正常關閉。legacy `onAskDelete` :3099 */
@@ -231,7 +235,7 @@ function askDelete(): void {
         <span class="issue-level" :style="{ background: ISSUE_LEVEL[i.level].color }">
           {{ i.level }}
         </span>
-        <span v-if="isLateIssue(i, ui.todayIdx)" class="issue-late">{{ DELAYED.label }}</span>
+        <span v-if="isLateIssue(i, clock.todayIdx)" class="issue-late">{{ DELAYED.label }}</span>
         <span
           class="issue-status"
           :style="{

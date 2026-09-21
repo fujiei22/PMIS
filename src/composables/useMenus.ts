@@ -1,4 +1,5 @@
 import { anchorCalendar, anchorOptionMenu, viewport } from '@/lib/anchor'
+import { useClockStore } from '@/stores/clock'
 import { useMemberStore } from '@/stores/member'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore, type OptionMenuKind } from '@/stores/ui'
@@ -24,6 +25,7 @@ export interface Menus {
  * 定位公式在 lib/anchor.ts；這裡只負責量 rect、湊 store 需要的欄位。
  */
 export function useMenus(): Menus {
+  const clock = useClockStore()
   const ui = useUiStore()
   const taskStore = useTaskStore()
   const memberStore = useMemberStore()
@@ -85,7 +87,7 @@ export function useMenus(): Menus {
       field,
       kind,
       // 沒填過就從今天所在的月份開始。legacy :2667
-      month: (iso || ui.todayIso).slice(0, 7),
+      month: (iso || clock.todayIso).slice(0, 7),
       ...anchorCalendar(rectOf(e), viewport(), 'issue'),
     }
   }

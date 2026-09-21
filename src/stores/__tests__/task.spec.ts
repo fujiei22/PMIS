@@ -2,8 +2,10 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, mockApi } from '@/api'
 import { ApiError } from '@/api/types'
+import { useProjectBoot } from '@/composables/useProjectBoot'
 import { dayIndex, isoFromIndex } from '@/lib/date'
 import { sampleProject } from '@/mocks/sampleProject'
+import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useIssueStore } from '@/stores/issue'
 import { useSelectionStore } from '@/stores/selection'
@@ -20,9 +22,10 @@ describe('taskStore', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
     mockApi.reset(structuredClone(sampleProject))
-    useUiStore().now = NOW
+    useClockStore().now = NOW
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    await useTaskStore().load()
+    // boot 負責 loadState 與 error sink，也把派生層的清理 watch 掛好（契約 E）
+    await useProjectBoot().reload()
   })
 
   afterEach(() => {
@@ -32,7 +35,7 @@ describe('taskStore', () => {
   it('load 直接採用 api 的資料、不跑 cascade（spec 目標 5）', () => {
     const s = useTaskStore()
     expect(s.tasks).toHaveLength(30)
-    expect(s.visibleRows).toHaveLength(36)
+    expect(s.groups).toHaveLength(6)
     expect(useUiStore().loadState).toBe('ready')
     // 日期逐筆等於 mocks 原值——載入不該改動任何一天
     for (const t of sampleProject.tasks) {
@@ -47,25 +50,18 @@ describe('taskStore', () => {
     }
   })
 
-  it('load 失敗時進 error 狀態，重試會成功', async () => {
+  // 載入失敗 / 重試的狀態機在啟動層（契約 E），見 useProjectBoot.spec
+  it('load 失敗時 reject，本地資料不動', async () => {
     const s = useTaskStore()
-    const ui = useUiStore()
     mockApi.failNext('loadProject')
-    s.tasks = []
-    await s.load()
-    expect(ui.loadState).toBe('error')
-    expect(ui.loadError).toBeTruthy()
-
-    await s.load()
-    expect(ui.loadState).toBe('ready')
-    expect(ui.loadError).toBeNull()
+    await expect(s.load()).rejects.toThrow()
     expect(s.tasks).toHaveLength(30)
   })
 
   it('load 後保留已收合的分類（收合是畫面狀態，不隨資料重載）', async () => {
     const s = useTaskStore()
     const ui = useUiStore()
-    s.toggleGroup('g1')
+    ui.toggleGroup('g1')
     await s.load()
     expect(ui.collapsedGroups.has('g1')).toBe(true)
   })
@@ -77,11 +73,10 @@ describe('taskStore', () => {
     expect(s.taskById('nope')).toBeUndefined()
   })
 
-  it('range 與 rowIndexOf 反映目前可見列', () => {
+  // visibleRows / rowIndexOf 已搬到派生層的 rows store（契約 E），見 rows.spec
+  it('range 涵蓋所有任務', () => {
     const s = useTaskStore()
     expect(s.range.b - s.range.a).toBeGreaterThan(0)
-    expect(s.rowIndexOf.t1).toBe(1)
-    expect(Object.keys(s.rowIndexOf)).toHaveLength(30)
   })
 
   it('addDep 拒絕循環回 false、成功回 true 並 cascade', async () => {
@@ -120,21 +115,20 @@ describe('taskStore', () => {
     expect(useUiStore().collapsedGroups.has(g.id)).toBe(false)
   })
 
-  it('renameGroup / toggleGroup / setAllCollapsed / moveGroup', async () => {
+  // 收合的 action 在 ui（契約 E：資料層不再轉呼叫派生層）
+  it('renameGroup / moveGroup 與 ui 的收合互不影響', async () => {
     const s = useTaskStore()
     const ui = useUiStore()
     await s.renameGroup('g1', '前端')
     expect(s.groupById('g1')!.name).toBe('前端')
-    s.toggleGroup('g1')
+    ui.toggleGroup('g1')
     // review C5：收合狀態在 ui，不在 Group 上
     expect(ui.collapsedGroups.has('g1')).toBe(true)
-    expect(s.visibleRows).toHaveLength(36 - 6)
-    s.toggleGroup('g1')
+    ui.toggleGroup('g1')
     expect(ui.collapsedGroups.has('g1')).toBe(false)
-    s.setAllCollapsed(true)
+    ui.setAllCollapsed(s.groups.map((g) => g.id))
     expect(ui.collapsedGroups.size).toBe(s.groups.length)
-    expect(s.visibleRows).toHaveLength(6)
-    s.setAllCollapsed(false)
+    ui.setAllCollapsed([])
     expect(ui.collapsedGroups.size).toBe(0)
     await s.moveGroup('g1', 1)
     expect(s.groups.map((g) => g.id).slice(0, 2)).toEqual(['g2', 'g1'])
@@ -145,7 +139,7 @@ describe('taskStore', () => {
   // review C5：改名走的是 groups 陣列，收合狀態在 ui，兩者互不影響
   it('收合中的分類改名不會被展開', async () => {
     const s = useTaskStore()
-    s.toggleGroup('g1')
+    useUiStore().toggleGroup('g1')
     await s.renameGroup('g1', '改過的名字')
     expect(useUiStore().collapsedGroups.has('g1')).toBe(true)
     expect(s.groupById('g1')!.name).toBe('改過的名字')
@@ -187,27 +181,35 @@ describe('taskStore', () => {
     expect(s.tasks.map((t) => t.id)).toEqual(order)
   })
 
-  it('addTask 用今天起算五天並選取新任務', () => {
+  // 預設值與建立後的選取在 useTaskActions（契約 E），見 useTaskActions.spec
+  it('addTask 照參數建立，不自己算預設值也不動選取', () => {
     const s = useTaskStore()
     const sel = useSelectionStore()
-    sel.groupId = 'g3'
-    const t = s.addTask()!
+    const t = s.addTask({
+      groupId: 'g3',
+      assigneeIds: ['m2'],
+      start: '2026-10-01',
+      end: '2026-10-05',
+    })!
     expect(t.id).toMatch(UUID)
     expect(t.groupId).toBe('g3')
-    expect(t.start).toBe('2026-09-18')
-    expect(t.end).toBe('2026-09-22')
+    expect(t.assigneeIds).toEqual(['m2'])
+    expect(t.start).toBe('2026-10-01')
+    expect(t.end).toBe('2026-10-05')
+    expect(t.created).toBe('2026-09-18')
     expect(t.status).toBe('todo')
     expect(t.priority).toBe('mid')
-    expect(sel.taskId).toBe(t.id)
+    expect(s.tasks[s.tasks.length - 1]!.id).toBe(t.id)
+    expect(sel.taskId).toBeNull()
   })
 
-  it('addTask 無分類時改新增分類', () => {
+  it('addTask 的分類不存在時回 null', () => {
     const s = useTaskStore()
-    s.groups = []
-    s.tasks = []
-    expect(s.addTask()).toBeNull()
-    expect(s.groups).toHaveLength(1)
-    expect(s.tasks).toHaveLength(0)
+    const before = s.tasks.length
+    expect(
+      s.addTask({ groupId: 'nope', assigneeIds: [], start: '2026-10-01', end: '2026-10-05' }),
+    ).toBeNull()
+    expect(s.tasks).toHaveLength(before)
   })
 
   it('updateTask 走 applyTaskPatch：改狀態填 done、移動連動下游', async () => {
@@ -369,7 +371,12 @@ describe('taskStore', () => {
     it('新增任務失敗 → 本地那筆被收回', async () => {
       const s = useTaskStore()
       mockApi.failNext('createTask', new ApiError('conflict', '重複的 id', 409))
-      const t = s.addTask()!
+      const t = s.addTask({
+        groupId: 'g1',
+        assigneeIds: [],
+        start: '2026-09-18',
+        end: '2026-09-22',
+      })!
       await vi.waitFor(() => expect(s.taskById(t.id)).toBeUndefined())
       expect(useUiStore().errors[0]!.label).toBe('新增任務')
       expect(useUiStore().errors[0]!.code).toBe('conflict')

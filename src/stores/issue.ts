@@ -12,11 +12,7 @@ import {
 } from '@/stores/_optimistic'
 import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
-import { useMemberStore } from '@/stores/member'
-import { useSelectionStore } from '@/stores/selection'
-import { useTaskStore } from '@/stores/task'
-import { useUiStore } from '@/stores/ui'
-import type { Issue } from '@/types/models'
+import type { Issue, Task } from '@/types/models'
 
 /** Issue 清單與它的增刪改。Issue 一定掛在某個任務底下。 */
 export const useIssueStore = defineStore('issue', () => {
@@ -89,19 +85,20 @@ export const useIssueStore = defineStore('issue', () => {
 
   /**
    * 在任務底下開一筆 Issue。legacy `onAddIssue` :3109。
-   * 建立者取任務第一位負責人，沒有負責人就掛在目前登入者身上；期限預設跟任務結束日同一天。
+   *
+   * 任務與建立者由呼叫端給（`useTaskActions().addIssueForTask`）——
+   * 「沒有負責人就掛目前登入者」要讀 member store，留在呼叫端一起算（契約 E）。
+   * 期限預設跟任務結束日同一天。
    */
-  function addIssue(taskId: string): Issue | null {
-    const task = useTaskStore().taskById(taskId)
-    if (!task) return null
+  function addIssue(task: Task, creatorId: string): Issue {
     const issue: Issue = {
       id: newId(),
-      taskId,
+      taskId: task.id,
       created: useClockStore().todayIso,
       title: '新 Issue（點擊可改名）',
       item: 'F',
       level: 'C',
-      creatorId: task.assigneeIds[0] ?? useMemberStore().currentUserId,
+      creatorId,
       ownerIds: task.assigneeIds.slice(0, 1),
       status: 'open',
       due: task.end,
@@ -166,7 +163,10 @@ export const useIssueStore = defineStore('issue', () => {
     await commitIssuePatch(id, sent)
   }
 
-  /** 刪一筆 Issue（連它的留言），順手清掉指向它的選取與詳細視窗。legacy `iConfirmDelete` :4076 */
+  /**
+   * 刪一筆 Issue（連它的留言）。legacy `iConfirmDelete` :4076。
+   * 指到它的選取 / 詳細視窗 / 確認框由派生層的 watch 自己清（契約 E）。
+   */
   async function removeIssue(id: string): Promise<void> {
     if (!byId(id)) return
     const comments = useCommentStore()
@@ -175,13 +175,6 @@ export const useIssueStore = defineStore('issue', () => {
 
     issues.value = issues.value.filter((x) => x.id !== id)
     comments.dropLocal(goneComments)
-
-    const sel = useSelectionStore()
-    if (sel.issueId === id) sel.issueId = null
-    const ui = useUiStore()
-    if (ui.detail && ui.detail.kind === 'issue' && ui.detail.id === id) ui.closeDetail()
-    if (ui.confirm && ui.confirm.kind === 'issue' && ui.confirm.id === id) ui.confirm = null
-    delete ui.expandedIssues[id]
 
     let ok = false
     await runOptimistic<Issue>({

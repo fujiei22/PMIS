@@ -7,9 +7,9 @@ import {
   DEFAULT_TASK_SORT,
   type SortKey,
 } from '@/lib/sort'
+import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'
-import { useUiStore } from '@/stores/ui'
 import type { ISODate, IssueLevel, IssueStatus, Priority, Task, TaskStatus } from '@/types/models'
 
 /**
@@ -62,8 +62,8 @@ export const useFilterStore = defineStore('filter', () => {
   const matchedIds = computed<Set<string>>(() => {
     const tasks = useTaskStore()
     const issues = useIssueStore()
-    const ui = useUiStore()
-    const ctx = { openIssueCount: issues.openCount, todayIdx: ui.todayIdx }
+    const clock = useClockStore()
+    const ctx = { openIssueCount: issues.openCount, todayIdx: clock.todayIdx }
     const out = new Set<string>()
     for (const t of tasks.tasks) if (matchTaskOf(t, filter.value, ctx)) out.add(t.id)
     return out
@@ -95,7 +95,10 @@ export const useFilterStore = defineStore('filter', () => {
     () => anyTaskFilter.value || issueLevels.value.length > 0 || issueStatuses.value.length > 0,
   )
 
-  /** 全部篩選回初始值；排序與「只顯示篩選結果」不動。legacy `clearFilter` :3794 */
+  /**
+   * 全部篩選回初始值；排序與「只顯示篩選結果」不動。legacy `clearFilter` :3794。
+   * 只動篩選條件——關掉日曆是畫面的事，由呼叫端做（契約 E）。
+   */
   function clear(): void {
     memberIds.value = []
     statuses.value = []
@@ -108,7 +111,6 @@ export const useFilterStore = defineStore('filter', () => {
     issueLevels.value = []
     issueStatuses.value = []
     calendarMonth.value = null
-    useUiStore().filterCalendarOpen = false
   }
 
   /** 點一次任務排序鍵：沒有就加、有就翻方向。legacy `bumpSort('kSort')` :2104 */

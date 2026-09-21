@@ -53,17 +53,11 @@ describe('clockStore', () => {
     clock.stop()
   })
 
-  // R3 清掉前的相容匯出：ui.now / todayIdx / todayIso 轉接到 clock
-  it('ui 的同名欄位讀寫的是 clock', () => {
-    const ui = useUiStore()
-    const clock = useClockStore()
-    ui.now = NOW
-    expect(clock.now).toBe(NOW)
-    expect(ui.todayIdx).toBe(clock.todayIdx)
-    expect(ui.todayIso).toBe('2026-09-18')
-
-    clock.now = Date.parse('2026-09-20T10:00:00Z')
-    expect(ui.now).toBe(clock.now)
-    expect(ui.todayIso).toBe('2026-09-20')
+  // R3：ui 的 now / todayIdx / todayIso 轉接欄位已經拿掉（契約 C / E）
+  it('ui 不再轉接時鐘欄位', () => {
+    const ui = useUiStore() as unknown as Record<string, unknown>
+    expect(ui.now).toBeUndefined()
+    expect(ui.todayIdx).toBeUndefined()
+    expect(ui.todayIso).toBeUndefined()
   })
 })

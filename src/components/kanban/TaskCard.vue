@@ -9,6 +9,7 @@ import { DELAYED, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
 import { dayIndex, isoFromIndex, lengthOf } from '@/lib/date'
 import { EMPTY_LABEL, fmtDate, stripYear } from '@/lib/format'
 import { isLate } from '@/lib/schedule'
+import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useSelectionStore } from '@/stores/selection'
@@ -18,6 +19,7 @@ import type { Task } from '@/types/models'
 
 const props = defineProps<{ task: Task }>()
 
+const clock = useClockStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
@@ -25,7 +27,7 @@ const memberStore = useMemberStore()
 const selection = useSelectionStore()
 const { openOptionMenu, openTaskDatePicker, openIssueDatePicker } = useMenus()
 
-const late = computed(() => isLate(props.task, ui.todayIdx))
+const late = computed(() => isLate(props.task, clock.todayIdx))
 const status = computed(() => (late.value ? 'delayed' : props.task.status))
 const st = computed(() => TASK_STATUS[props.task.status])
 const pr = computed(() => PRIORITY[props.task.priority])

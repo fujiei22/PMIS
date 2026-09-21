@@ -47,7 +47,7 @@ function onSelect(): void {
 
 function onCaret(e: MouseEvent): void {
   e.stopPropagation()
-  taskStore.toggleGroup(props.group.id)
+  ui.toggleGroup(props.group.id)
 }
 
 /** 雙擊分類名進就地編輯。legacy `onEdit` :2793 */

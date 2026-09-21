@@ -1,7 +1,9 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, mockApi } from '@/api'
+import { useProjectBoot } from '@/composables/useProjectBoot'
 import { sampleProject } from '@/mocks/sampleProject'
+import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useIssueStore } from '@/stores/issue'
 import { useSelectionStore } from '@/stores/selection'
@@ -17,9 +19,10 @@ describe('issueStore', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
     mockApi.reset(structuredClone(sampleProject))
-    useUiStore().now = NOW
+    useClockStore().now = NOW
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    await useTaskStore().load()
+    // boot 負責 error sink，也把派生層的清理 watch 掛好（契約 E）
+    await useProjectBoot().reload()
   })
 
   afterEach(() => {
@@ -47,10 +50,11 @@ describe('issueStore', () => {
     expect(s.openCount('t1')).toBe(0)
   })
 
-  it('addIssue 依任務帶入預設值', () => {
+  // 建立者的推導與「任務不存在」在 useTaskActions（契約 E），見 useTaskActions.spec
+  it('addIssue 依傳進來的任務帶入預設值', () => {
     const s = useIssueStore()
     const task = useTaskStore().taskById('t3')!
-    const i = s.addIssue('t3')!
+    const i = s.addIssue(task, task.assigneeIds[0]!)
     expect(i.id).toMatch(UUID)
     expect(i.taskId).toBe('t3')
     expect(i.title).toBe('新 Issue（點擊可改名）')
@@ -61,17 +65,6 @@ describe('issueStore', () => {
     expect(i.ownerIds).toEqual(task.assigneeIds.slice(0, 1))
     expect(i.due).toBe(task.end)
     expect(i.created).toBe('2026-09-18')
-  })
-
-  it('addIssue 在任務沒有負責人時用 currentUserId', () => {
-    const s = useIssueStore()
-    const tasks = useTaskStore()
-    tasks.taskById('t3')!.assigneeIds = []
-    expect(s.addIssue('t3')!.creatorId).toBe('m1')
-  })
-
-  it('addIssue 任務不存在時回 null', () => {
-    expect(useIssueStore().addIssue('nope')).toBeNull()
   })
 
   it('updateIssue: status→closed 填 done、離開 closed 清 done', async () => {
@@ -125,7 +118,8 @@ describe('issueStore', () => {
     it('addIssue 失敗 → 本地那筆被收回', async () => {
       const s = useIssueStore()
       mockApi.failNext('createIssue')
-      const i = s.addIssue('t3')!
+      const task = useTaskStore().taskById('t3')!
+      const i = s.addIssue(task, 'm1')
       await vi.waitFor(() => expect(s.byId(i.id)).toBeUndefined())
       expect(useUiStore().errors[0]!.label).toBe('新增 Issue')
     })

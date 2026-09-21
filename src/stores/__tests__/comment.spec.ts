@@ -1,9 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, mockApi } from '@/api'
+import { useProjectBoot } from '@/composables/useProjectBoot'
 import { sampleProject } from '@/mocks/sampleProject'
+import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
-import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 
 const NOW = Date.parse('2026-09-18T10:00:00Z')
@@ -12,9 +13,10 @@ describe('commentStore', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
     mockApi.reset(structuredClone(sampleProject))
-    useUiStore().now = NOW
+    useClockStore().now = NOW
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    await useTaskStore().load()
+    // boot 負責 error sink，也把派生層的清理 watch 掛好（契約 E）
+    await useProjectBoot().reload()
   })
 
   afterEach(() => {
@@ -205,7 +207,7 @@ describe('commentStore', () => {
     it('UTC+8 早上 07:00 送出的留言標成當天，不是前一天', () => {
       // 2026-09-19T07:00+08:00 === 2026-09-18T23:00Z
       const c = useCommentStore()
-      useUiStore().now = Date.parse('2026-09-18T23:00:00Z')
+      useClockStore().now = Date.parse('2026-09-18T23:00:00Z')
       c.draft = '早上留言'
       c.addDraftFiles([{ name: 'a.txt', size: 1 } as unknown as File])
       c.send('t1', 'task')
@@ -217,7 +219,7 @@ describe('commentStore', () => {
     it('UTC+8 深夜 23:30 送出的留言標成當天，不是隔天', () => {
       // 2026-09-19T23:30+08:00 === 2026-09-19T15:30Z
       const c = useCommentStore()
-      useUiStore().now = Date.parse('2026-09-19T15:30:00Z')
+      useClockStore().now = Date.parse('2026-09-19T15:30:00Z')
       c.draft = '深夜留言'
       c.addDraftFiles([{ name: 'b.txt', size: 1 } as unknown as File])
       c.send('t1', 'task')

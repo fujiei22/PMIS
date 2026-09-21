@@ -9,15 +9,15 @@ import { useMenus } from '@/composables/useMenus'
 import { DELAYED, ISSUE_ITEM, ISSUE_LEVEL, ISSUE_STATUS } from '@/constants/dashboard'
 import { EMPTY_LABEL, fmtDate } from '@/lib/format'
 import { isLateIssue } from '@/lib/schedule'
+import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useTaskStore } from '@/stores/task'
-import { useUiStore } from '@/stores/ui'
 import type { Issue } from '@/types/models'
 
 const props = defineProps<{ issue: Issue }>()
 
-const ui = useUiStore()
+const clock = useClockStore()
 const issueStore = useIssueStore()
 const taskStore = useTaskStore()
 const memberStore = useMemberStore()
@@ -25,7 +25,7 @@ const { openOptionMenu, openIssueDatePicker } = useMenus()
 
 const cls = computed(() => ISSUE_LEVEL[props.issue.level])
 const ist = computed(() => ISSUE_STATUS[props.issue.status])
-const late = computed(() => isLateIssue(props.issue, ui.todayIdx))
+const late = computed(() => isLateIssue(props.issue, clock.todayIdx))
 
 const itemLabel = computed(() => ISSUE_ITEM[props.issue.item ?? 'O'].label)
 const taskName = computed(() => taskStore.taskById(props.issue.taskId)?.name ?? '（未指定）')

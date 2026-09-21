@@ -119,11 +119,14 @@ describe('useConfirmProps 文案', () => {
     })
   })
 
-  it('找不到實體時名稱留空（不會炸）', () => {
+  // R3 契約 E：指向不存在實體的 confirm 由 ui 的清理 watch 同步關掉，
+  // 對話框不會停在一筆查不到名字的資料上（也不會炸）。
+  it('找不到實體時 confirm 直接被清掉', () => {
     const { ui } = stores()
     const view = useConfirmProps()
     ui.confirm = { kind: 'task', id: '沒這個', step: 1 }
-    expect(view.value?.body).toBe('將刪除任務「」，同時移除其 0 筆 Issue 與所有串接關係。')
+    expect(ui.confirm).toBeNull()
+    expect(view.value).toBeNull()
   })
 })
 

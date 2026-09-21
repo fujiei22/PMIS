@@ -6,13 +6,17 @@ import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayFraction, dayIndex, lengthOf } from '@/lib/date'
 import { isLate } from '@/lib/schedule'
+import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
 import { useIssueStore } from '@/stores/issue'
+import { useRowsStore } from '@/stores/rows'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 
+const clock = useClockStore()
 const ui = useUiStore()
+const rowsStore = useRowsStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 const filter = useFilterStore()
@@ -47,8 +51,8 @@ interface Bar {
 const bars = computed<Bar[]>(() => {
   const rangeA = taskStore.range.a
   const dw = ui.dayWidth
-  const rows = taskStore.visibleRows
-  const rowIndex = taskStore.rowIndexOf
+  const rows = rowsStore.visibleRows
+  const rowIndex = rowsStore.rowIndexOf
   const drag = ui.drag
   const collapsed = ui.collapsedGroups
   const linking = drag?.kind === 'link'
@@ -103,7 +107,7 @@ const bars = computed<Bar[]>(() => {
       out.push({
         id: t.id,
         summary: false,
-        status: isLate(t, ui.todayIdx) ? 'delayed' : t.status,
+        status: isLate(t, clock.todayIdx) ? 'delayed' : t.status,
         left,
         top: i * ROW_HEIGHT + 6,
         w,
@@ -131,12 +135,12 @@ const bars = computed<Bar[]>(() => {
 
 /** 今天線的位置：整數日 + 當天已經過掉的工作時間比例。legacy :3519 */
 const todayLeft = computed(
-  () => (ui.todayIdx - taskStore.range.a + dayFraction(new Date(ui.now))) * ui.dayWidth,
+  () => (clock.todayIdx - taskStore.range.a + dayFraction(new Date(clock.now))) * ui.dayWidth,
 )
 
 function onBarClick(bar: Bar): void {
   // 摘要條點了就展開該分類（legacy :2900）
-  if (bar.summary) taskStore.toggleGroup(bar.id.slice(4))
+  if (bar.summary) ui.toggleGroup(bar.id.slice(4))
   else selection.toggleTask(bar.id)
 }
 

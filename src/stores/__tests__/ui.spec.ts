@@ -5,6 +5,8 @@ import { dayIndex } from '@/lib/date'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
+import { useIssueStore } from '@/stores/issue'
+import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 
@@ -13,7 +15,10 @@ const NOW = Date.parse('2026-09-18T10:00:00Z')
 describe('uiStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    useUiStore().now = NOW
+    useClockStore().now = NOW
+    // 清理 watch 掛在 store 的 setup 裡，資料進來前就要先建立（契約 E、review DX 8）
+    useSelectionStore()
+    useUiStore()
     useTaskStore().load(structuredClone(sampleProject))
   })
 
@@ -45,10 +50,11 @@ describe('uiStore', () => {
     expect(ui.memberDrag).toBeNull()
   })
 
-  it('todayIdx / todayIso 由 now 算出來', () => {
-    const ui = useUiStore()
-    expect(ui.todayIdx).toBe(dayIndex('2026-09-18'))
-    expect(ui.todayIso).toBe('2026-09-18')
+  // 時鐘在 clock store（契約 C / E），ui 不再轉接——見 clock.spec
+  it('clock 的 todayIdx / todayIso 由 now 算出來', () => {
+    const clock = useClockStore()
+    expect(clock.todayIdx).toBe(dayIndex('2026-09-18'))
+    expect(clock.todayIso).toBe('2026-09-18')
   })
 
   it('setDayWidth 夾在 14-32 並吸附到 0.25', () => {
@@ -148,12 +154,70 @@ describe('uiStore', () => {
     expect(ui.detail).toBeNull()
   })
 
+  // ── 懸空 id 清理（契約 E）──────────────────────────────────────────────────
+  // 資料層不再回頭清 ui：改由這裡 watch 實體在不在，flush:'sync' 保證同一個 tick 清完。
+  describe('懸空 id 由 watch 清掉', () => {
+    it('Issue 被刪 → detail / confirm / expandedIssues 一起清', () => {
+      const ui = useUiStore()
+      ui.openDetail('i1', 'issue')
+      ui.confirm = { kind: 'issue', id: 'i1', step: 1 }
+      ui.expandedIssues.i1 = true
+      useIssueStore().applyEvent({ type: 'issue.deleted', payload: { id: 'i1' } })
+      expect(ui.detail).toBeNull()
+      expect(ui.confirm).toBeNull()
+      expect(ui.expandedIssues.i1).toBeUndefined()
+    })
+
+    it('任務被刪 → detail / depEditFor / pickerFor / confirm 一起清', () => {
+      const ui = useUiStore()
+      ui.openDetail('t3', 'task')
+      ui.depEditFor = 't3'
+      ui.pickerFor = 't3'
+      ui.confirm = { kind: 'task', id: 't3', step: 2 }
+      useTaskStore().applyEvent({ type: 'task.deleted', payload: { id: 't3' } })
+      expect(ui.detail).toBeNull()
+      expect(ui.depEditFor).toBeNull()
+      expect(ui.pickerFor).toBeNull()
+      expect(ui.confirm).toBeNull()
+    })
+
+    it('來源任務被刪 → detail.from 清掉，Issue 詳情本身還開著', () => {
+      const ui = useUiStore()
+      ui.openDetail('i1', 'issue', 't3')
+      useTaskStore().applyEvent({ type: 'task.deleted', payload: { id: 't3' } })
+      expect(ui.detail).toEqual({ id: 'i1', kind: 'issue', from: null })
+    })
+
+    it('分類被刪 → 指向它的 confirm 清掉', () => {
+      const ui = useUiStore()
+      ui.confirm = { kind: 'group', id: 'g6', step: 1 }
+      useTaskStore().applyEvent({ type: 'group.deleted', payload: { id: 'g6' } })
+      expect(ui.confirm).toBeNull()
+    })
+
+    it('相依被刪 → 指向它的 confirm 清掉', () => {
+      const ui = useUiStore()
+      ui.confirm = { kind: 'dep', id: 'd1', step: 1 }
+      useTaskStore().applyEvent({ type: 'dep.deleted', payload: { id: 'd1' } })
+      expect(ui.confirm).toBeNull()
+    })
+
+    it('還在的 id 不會被動到', () => {
+      const ui = useUiStore()
+      ui.openDetail('t3', 'task')
+      ui.pickerFor = 't3'
+      useTaskStore().applyEvent({ type: 'task.deleted', payload: { id: 't9' } })
+      expect(ui.detail).toEqual({ id: 't3', kind: 'task', from: null })
+      expect(ui.pickerFor).toBe('t3')
+    })
+  })
+
   // ── 載入狀態與錯誤條（契約 C）────────────────────────────────────────────
   describe('loadState / errors', () => {
     beforeEach(() => {
       // 這一段驗的是「還沒載入」的狀態，外層 beforeEach 已經載完了，換一個乾淨的 pinia
       setActivePinia(createPinia())
-      useUiStore().now = NOW
+      useClockStore().now = NOW
       vi.spyOn(console, 'error').mockImplementation(() => {})
     })
 

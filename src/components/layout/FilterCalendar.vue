@@ -5,16 +5,18 @@ import { computed } from 'vue'
 import { monthGrid, WEEK_LABELS, type CalendarCell } from '@/lib/calendar'
 import { dayIndex, shiftMonth } from '@/lib/date'
 import { fmtDate } from '@/lib/format'
+import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
 import { useUiStore } from '@/stores/ui'
 
+const clock = useClockStore()
 const ui = useUiStore()
 const filter = useFilterStore()
 
 const showD2 = computed(() => filter.dateMode === 'between')
 
 /** 目前顯示的月份：使用者翻過就用 calendarMonth，否則跟著 d1，再不然是今天。legacy :3242 */
-const anchor = computed(() => filter.calendarMonth || (filter.d1 || ui.todayIso).slice(0, 7))
+const anchor = computed(() => filter.calendarMonth || (filter.d1 || clock.todayIso).slice(0, 7))
 const title = computed(() => `${Number(anchor.value.slice(0, 4))}年${Number(anchor.value.slice(5, 7))}月`)
 
 /** 42 格由 `monthGrid` 產（契約 D），這裡只疊端點 / 區間 / 今天的顯示狀態。 */
@@ -32,7 +34,7 @@ type Cell = CalendarCell & {
 const cells = computed<Cell[]>(() => {
   const a = filter.d1 && filter.d2 ? Math.min(dayIndex(filter.d1), dayIndex(filter.d2)) : null
   const b = filter.d1 && filter.d2 ? Math.max(dayIndex(filter.d1), dayIndex(filter.d2)) : null
-  return monthGrid(anchor.value, ui.todayIdx).map((c) => {
+  return monthGrid(anchor.value, clock.todayIdx).map((c) => {
     const end = c.iso === filter.d1 || c.iso === filter.d2
     return {
       ...c,
@@ -49,7 +51,7 @@ function shift(n: number): void {
 }
 
 function goToday(): void {
-  filter.calendarMonth = ui.todayIso.slice(0, 7)
+  filter.calendarMonth = clock.todayIso.slice(0, 7)
 }
 
 function aim(target: 'd1' | 'd2'): void {

@@ -1,7 +1,9 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { sampleProject } from '@/mocks/sampleProject'
+import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
+import { useIssueStore } from '@/stores/issue'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -11,7 +13,10 @@ const NOW = Date.parse('2026-09-18T10:00:00Z')
 describe('selectionStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    useUiStore().now = NOW
+    useClockStore().now = NOW
+    // 清理 watch 掛在 store 的 setup 裡，資料進來前就要先建立（契約 E、review DX 8）
+    useSelectionStore()
+    useUiStore()
     useTaskStore().load(structuredClone(sampleProject))
   })
 
@@ -105,6 +110,42 @@ describe('selectionStore', () => {
     expect(sel.softFilterActive).toBe(false)
     expect(sel.softHighlight).toEqual({})
     expect(sel.hasSelection).toBe(false)
+  })
+
+  // ── 懸空 id 清理（契約 E）──────────────────────────────────────────────────
+  // 資料層不再回頭清 selection：改由這裡 watch 實體在不在，flush:'sync' 保證
+  // 同一個 tick 內就清完（畫面永遠不會停在不存在的東西上）。
+  describe('懸空 id 由 watch 清掉', () => {
+    it('任務被刪（事件）→ 同步清 taskId', () => {
+      const sel = useSelectionStore()
+      const tasks = useTaskStore()
+      sel.selectTask('t3')
+      tasks.applyEvent({ type: 'task.deleted', payload: { id: 't3' } })
+      expect(sel.taskId).toBeNull()
+    })
+
+    it('Issue 被刪（事件）→ 同步清 issueId，任務還在就留著 taskId', () => {
+      const sel = useSelectionStore()
+      sel.selectIssue('i1')
+      expect(sel.taskId).toBe('t3')
+      useIssueStore().applyEvent({ type: 'issue.deleted', payload: { id: 'i1' } })
+      expect(sel.issueId).toBeNull()
+      expect(sel.taskId).toBe('t3')
+    })
+
+    it('分類被刪（事件）→ 同步清 groupId', () => {
+      const sel = useSelectionStore()
+      sel.toggleGroup('g6')
+      useTaskStore().applyEvent({ type: 'group.deleted', payload: { id: 'g6' } })
+      expect(sel.groupId).toBeNull()
+    })
+
+    it('還在的 id 不會被動到', () => {
+      const sel = useSelectionStore()
+      sel.selectTask('t3')
+      useTaskStore().applyEvent({ type: 'task.deleted', payload: { id: 't9' } })
+      expect(sel.taskId).toBe('t3')
+    })
   })
 
   it('clear 清三個 id 與 ui.editing / ui.pickerFor', () => {

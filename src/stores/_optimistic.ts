@@ -1,5 +1,3 @@
-import { useUiStore } from '@/stores/ui'
-
 /**
  * 乐觀更新的共用機制（契約 B）。
  *
@@ -25,6 +23,30 @@ export interface Tracker<T extends { id: string }> {
 
 export function createTracker<T extends { id: string }>(): Tracker<T> {
   return { server: new Map(), inflight: new Map(), failed: new Set() }
+}
+
+/** 失敗提示的出口（實作是 `ui.pushError`）。 */
+export type ErrorSink = (e: { label: string; error: unknown }) => void
+
+/**
+ * 沒註冊 sink 時的退路：至少留下 console，不讓錯誤消失。
+ * `ui.pushError` 自己也會 console.error，所以這裡只在沒人接手時才印。
+ */
+function fallbackSink(e: { label: string; error: unknown }): void {
+  console.error('[api]', e.label, e.error)
+}
+
+let errorSink: ErrorSink = fallbackSink
+
+/**
+ * 註冊「api 失敗要送去哪」。
+ *
+ * 資料層不認識 ui（契約 E），所以錯誤不是 import 進來的，是注入的：
+ * 啟動時 `useProjectBoot()` 把 `ui.pushError` 掛上來。傳 null 還原成只印 console
+ * （測試收尾用）。
+ */
+export function setErrorSink(fn: ErrorSink | null): void {
+  errorSink = fn ?? fallbackSink
 }
 
 /**
@@ -90,7 +112,7 @@ export interface OptimisticOp<T extends { id: string }> {
 
 /**
  * 跑一次乐觀更新：先改本地，再打 api，失敗就把牽動到的 id 放回 server 狀態。
- * 回傳的 promise 永遠 resolve（錯誤已經進 `ui.errors` 與 console）。
+ * 回傳的 promise 永遠 resolve（錯誤已經送進 error sink 與 console）。
  */
 export async function runOptimistic<T extends { id: string }>(op: OptimisticOp<T>): Promise<void> {
   const { tracker, ids, label, apply, call, reconcile } = op
@@ -104,7 +126,7 @@ export async function runOptimistic<T extends { id: string }>(op: OptimisticOp<T
     }
   } catch (error) {
     for (const id of ids) tracker.failed.add(id)
-    useUiStore().pushError({ label, error })
+    errorSink({ label, error })
   } finally {
     for (const id of ids) {
       bump(tracker, id, -1)

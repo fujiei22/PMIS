@@ -1,9 +1,14 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useFilterStore } from '@/stores/filter'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+
+/** 懸空旗標的位元：1=任務、2=Issue、4=分類。 */
+const GONE_TASK = 1
+const GONE_ISSUE = 2
+const GONE_GROUP = 4
 
 /**
  * 三面板共用的選取狀態。
@@ -107,6 +112,32 @@ export const useSelectionStore = defineStore('selection', () => {
     ui.editing = null
     ui.pickerFor = null
   }
+
+  /**
+   * 懸空 id 清理（契約 E）。
+   *
+   * 資料層刪掉實體後不會回頭通知派生層——不管刪除是本地發起、乐觀還原，
+   * 還是別的 client 推來的事件，都由這條 watch 統一收尾。
+   * `flush: 'sync'` 是必要的：畫面不能有任何一個 tick 停在不存在的 id 上
+   * （review M7）。getter 回一個位元遮罩，只有「懸空與否」變了才進 callback。
+   */
+  watch(
+    () => {
+      const tasks = useTaskStore()
+      const issues = useIssueStore()
+      return (
+        (taskId.value && !tasks.taskById(taskId.value) ? GONE_TASK : 0) |
+        (issueId.value && !issues.byId(issueId.value) ? GONE_ISSUE : 0) |
+        (groupId.value && !tasks.groupById(groupId.value) ? GONE_GROUP : 0)
+      )
+    },
+    (gone) => {
+      if (gone & GONE_TASK) taskId.value = null
+      if (gone & GONE_ISSUE) issueId.value = null
+      if (gone & GONE_GROUP) groupId.value = null
+    },
+    { flush: 'sync' },
+  )
 
   return {
     taskId,

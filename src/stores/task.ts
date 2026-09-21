@@ -2,8 +2,6 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { api } from '@/api'
 import type { ProjectEvent } from '@/api/types'
-import { API_ERROR_TEXT, apiErrorCode } from '@/constants/dashboard'
-import { isoFromIndex } from '@/lib/date'
 import { newId } from '@/lib/id'
 import {
   applyTaskPatch,
@@ -22,11 +20,8 @@ import {
 } from '@/stores/_optimistic'
 import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
-import { useFilterStore } from '@/stores/filter'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
-import { useSelectionStore } from '@/stores/selection'
-import { useUiStore } from '@/stores/ui'
 import type { Dependency, DropTarget, Group, ISODate, ProjectData, Task } from '@/types/models'
 
 /**
@@ -70,28 +65,19 @@ export const useTaskStore = defineStore('task', () => {
   /**
    * 載入整包專案資料並分給各 store。
    *
-   * 不帶參數 = 走 `api.loadProject()` 並更新 `ui.loadState`；
-   * 帶 `data` = 直接採用（`project.reloaded` 事件走這條）。
-   * **不跑 cascade**：後端資料為準（spec 目標 5、已定案決策）。
+   * 不帶參數 = 走 `api.loadProject()`；帶 `data` = 直接採用
+   * （`project.reloaded` 事件走這條）。**不跑 cascade**：後端資料為準
+   * （spec 目標 5、已定案決策）。
+   *
+   * 失敗就 **reject**：`loadState` / `loadError` 是畫面狀態，由啟動層
+   * `useProjectBoot().reload()` 接（契約 E）。
    */
   async function load(data?: ProjectData): Promise<void> {
-    const ui = useUiStore()
     if (data) {
       applyProject(data)
-      ui.loadState = 'ready'
-      ui.loadError = null
       return
     }
-    ui.loadState = 'loading'
-    ui.loadError = null
-    try {
-      applyProject(await api.loadProject())
-      ui.loadState = 'ready'
-    } catch (error) {
-      console.error('[api]', '載入專案', error)
-      ui.loadError = API_ERROR_TEXT[apiErrorCode(error)]
-      ui.loadState = 'error'
-    }
+    applyProject(await api.loadProject())
   }
 
   /** 把一份 ProjectData 灌進各個 store，並重置三個 tracker。 */
@@ -181,33 +167,6 @@ export const useTaskStore = defineStore('task', () => {
   /** 甘特圖的時間範圍。legacy `range()` :1995 */
   const range = computed(() => projectRange(tasks.value, useClockStore().todayIdx))
 
-  /**
-   * 甘特左欄實際會畫出來的列：每個分類一列，未收合時接上通過篩選的任務。
-   * legacy `visible()` :2260
-   */
-  const visibleRows = computed<{ kind: 'g' | 't'; id: string }[]>(() => {
-    const filter = useFilterStore()
-    const collapsed = useUiStore().collapsedGroups
-    const out: { kind: 'g' | 't'; id: string }[] = []
-    for (const g of groups.value) {
-      out.push({ kind: 'g', id: g.id })
-      if (collapsed.has(g.id)) continue
-      for (const t of tasks.value) {
-        if (t.groupId === g.id && filter.passTask(t)) out.push({ kind: 't', id: t.id })
-      }
-    }
-    return out
-  })
-
-  /** 任務 id → 它在 visibleRows 的索引，甘特條算 top 用。legacy `rowOf` :2711 */
-  const rowIndexOf = computed<Record<string, number>>(() => {
-    const out: Record<string, number> = {}
-    visibleRows.value.forEach((v, i) => {
-      if (v.kind === 't') out[v.id] = i
-    })
-    return out
-  })
-
   // ── 分類 ─────────────────────────────────────────────────────────────────
 
   /** 新增分類，接在最後。legacy `addGroup` :1849 */
@@ -255,7 +214,7 @@ export const useTaskStore = defineStore('task', () => {
 
   /**
    * 刪分類，連底下的任務、那些任務的 Issue / 相依 / 留言一起刪。legacy `grpDelete` :4013。
-   * 刪完把指到已刪 id 的選取清掉，免得畫面停在不存在的東西上（R3 才搬去派生層）。
+   * 指到已刪 id 的選取 / 浮層由派生層的 watch 自己清（契約 E）。
    */
   async function removeGroup(id: string): Promise<void> {
     const issues = useIssueStore()
@@ -283,13 +242,6 @@ export const useTaskStore = defineStore('task', () => {
     issues.dropLocal(goneIssues)
     comments.dropLocal(goneComments)
 
-    const sel = useSelectionStore()
-    if (sel.taskId && goneTasks.has(sel.taskId)) sel.taskId = null
-    if (sel.groupId === id) sel.groupId = null
-    if (sel.issueId && !issues.byId(sel.issueId)) sel.issueId = null
-    const ui = useUiStore()
-    if (ui.detail && (goneTasks.has(ui.detail.id) || ui.detail.id === id)) ui.closeDetail()
-
     let ok = false
     await runOptimistic<Group>({
       tracker: groupTracker,
@@ -311,16 +263,6 @@ export const useTaskStore = defineStore('task', () => {
         comments.restoreLocal(snapshot.comments)
       },
     })
-  }
-
-  /** 收合 / 展開一個分類；狀態在 ui（review C5）。legacy `onCaret` :2800 */
-  function toggleGroup(id: string): void {
-    useUiStore().toggleGroup(id)
-  }
-
-  /** 全部收合 / 全部展開。legacy `toggleAllGroups` :4110 */
-  function setAllCollapsed(v: boolean): void {
-    useUiStore().setAllCollapsed(v)
   }
 
   /** 分類與相鄰的那個對調（只改本地）；已在頭尾就不動，回傳有沒有真的動。legacy `moveGroup` :1835 */
@@ -373,31 +315,31 @@ export const useTaskStore = defineStore('task', () => {
 
   /**
    * 新增任務。legacy `addTask` :4128。
-   * 一個分類都沒有時 legacy 改成新增分類（回 null）；
-   * 分類取選取的分類 → 選取任務所在的分類 → 第一個分類，日期今天起五天，負責人沿用成員篩選。
+   *
+   * 預設值（分類、負責人、起訖）由呼叫端算好傳進來——那些要讀 selection /
+   * filter，是派生層的事（契約 E），資料層只負責建立與送出。
+   * 建立後的選取同樣在 `useTaskActions()`。分類不存在時回 null。
    */
-  function addTask(): Task | null {
-    if (!groups.value.length) {
-      addGroup()
-      return null
-    }
-    const sel = useSelectionStore()
-    const base = useClockStore().todayIdx
+  function addTask(opts: {
+    groupId: string
+    assigneeIds: string[]
+    start: ISODate
+    end: ISODate
+  }): Task | null {
+    if (!groupById(opts.groupId)) return null
     const t: Task = {
       id: newId(),
-      groupId:
-        sel.groupId ?? (sel.taskId ? taskById(sel.taskId)?.groupId : null) ?? groups.value[0]!.id,
+      groupId: opts.groupId,
       name: '新任務',
-      created: isoFromIndex(base),
-      start: isoFromIndex(base),
-      end: isoFromIndex(base + 4),
+      created: useClockStore().todayIso,
+      start: opts.start,
+      end: opts.end,
       status: 'todo',
       done: '',
       priority: 'mid',
-      assigneeIds: useFilterStore().memberIds.slice(),
+      assigneeIds: opts.assigneeIds.slice(),
     }
     tasks.value.push(t)
-    sel.selectTask(t.id)
     void runOptimistic<Task>({
       tracker: taskTracker,
       ids: [t.id],
@@ -524,7 +466,8 @@ export const useTaskStore = defineStore('task', () => {
 
   /**
    * 刪任務，連它的 Issue、相依與留言一起刪。legacy `confirmDelete` :4092。
-   * 也清掉 ui.detail（§不重現的原頁面 bug 1：legacy 刪完視窗會卡住不關 :1761）。
+   * `ui.detail` 由 ui 自己的 watch 關掉（§不重現的原頁面 bug 1：
+   * legacy 刪完視窗會卡住不關 :1761）。
    */
   async function removeTask(id: string): Promise<void> {
     const issues = useIssueStore()
@@ -545,14 +488,6 @@ export const useTaskStore = defineStore('task', () => {
     deps.value = deps.value.filter((d) => d.from !== id && d.to !== id)
     issues.dropLocal(goneIssues)
     comments.dropLocal(goneComments)
-
-    const sel = useSelectionStore()
-    if (sel.taskId === id) sel.taskId = null
-    if (sel.issueId && !issues.byId(sel.issueId)) sel.issueId = null
-    const ui = useUiStore()
-    if (ui.detail && (ui.detail.id === id || ui.detail.from === id)) ui.closeDetail()
-    if (ui.depEditFor === id) ui.depEditFor = null
-    if (ui.pickerFor === id) ui.pickerFor = null
 
     let ok = false
     await runOptimistic<Task>({
@@ -753,15 +688,11 @@ export const useTaskStore = defineStore('task', () => {
     load,
     applyEvent,
     range,
-    visibleRows,
-    rowIndexOf,
     addGroup,
     renameGroup,
     renameGroupLocal,
     commitGroupPatch,
     removeGroup,
-    toggleGroup,
-    setAllCollapsed,
     moveGroup,
     moveGroupLocal,
     commitGroupOrder,

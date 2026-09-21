@@ -4,6 +4,7 @@
 import { computed } from 'vue'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex } from '@/lib/date'
+import { useRowsStore } from '@/stores/rows'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -15,6 +16,7 @@ const LANE_STEP = 7
 defineProps<{ chartWidth: number; chartHeight: number }>()
 
 const ui = useUiStore()
+const rowsStore = useRowsStore()
 const taskStore = useTaskStore()
 const selection = useSelectionStore()
 
@@ -32,7 +34,7 @@ interface DepPath {
 const paths = computed<DepPath[]>(() => {
   const rangeA = taskStore.range.a
   const dw = ui.dayWidth
-  const rowIndex = taskStore.rowIndexOf
+  const rowIndex = rowsStore.rowIndexOf
   const out: DepPath[] = []
 
   taskStore.deps.forEach((d, k) => {

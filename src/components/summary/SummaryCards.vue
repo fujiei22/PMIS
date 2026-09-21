@@ -5,12 +5,12 @@ import { computed } from 'vue'
 import { DELAYED, ISSUE_LEVEL, ISSUE_STATUS, TASK_STATUS } from '@/constants/dashboard'
 import { dayIndex, isoFromIndex } from '@/lib/date'
 import { isLate, isLateIssue } from '@/lib/schedule'
+import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'
-import { useUiStore } from '@/stores/ui'
 import type { IssueLevel, IssueStatus, TaskStatus } from '@/types/models'
 
-const ui = useUiStore()
+const clock = useClockStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 
@@ -27,7 +27,7 @@ const rangeLabel = computed(
 // ── 卡 2：整體進度（實際 = 已完成數；理論 = end 已過今天的數）legacy :3604-3620 ──
 const doneTasks = computed(() => tasks.value.filter((t) => t.status === 'done').length)
 const planDone = computed(
-  () => tasks.value.filter((t) => dayIndex(t.end) <= ui.todayIdx).length,
+  () => tasks.value.filter((t) => dayIndex(t.end) <= clock.todayIdx).length,
 )
 const actualPct = computed(() => (total.value ? Math.round((doneTasks.value / total.value) * 100) : 0))
 const planPct = computed(() => (total.value ? Math.round((planDone.value / total.value) * 100) : 0))
@@ -60,7 +60,7 @@ const statusRows = computed(() =>
     }
   }),
 )
-const delayedCount = computed(() => tasks.value.filter((t) => isLate(t, ui.todayIdx)).length)
+const delayedCount = computed(() => tasks.value.filter((t) => isLate(t, clock.todayIdx)).length)
 
 // ── 卡 4：Issue 統計 ──────────────────────────────────────────────────────
 const levelRows = computed(() =>
@@ -80,7 +80,7 @@ const issueStatusRows = computed(() =>
     count: issues.value.filter((x) => x.status === k).length,
   })),
 )
-const delayedIssues = computed(() => issues.value.filter((i) => isLateIssue(i, ui.todayIdx)).length)
+const delayedIssues = computed(() => issues.value.filter((i) => isLateIssue(i, clock.todayIdx)).length)
 </script>
 
 <template>

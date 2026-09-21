@@ -12,6 +12,7 @@ import { DELAYED, ISSUE_ITEM, ISSUE_LEVEL, ISSUE_STATUS } from '@/constants/dash
 import { initialOf } from '@/lib/color'
 import { EMPTY_LABEL, fmtDate } from '@/lib/format'
 import { isLateIssue } from '@/lib/schedule'
+import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useSelectionStore } from '@/stores/selection'
@@ -26,6 +27,7 @@ const EXPAND_HOLD_MS = 320
 
 const props = defineProps<{ issue: Issue }>()
 
+const clock = useClockStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
@@ -33,7 +35,7 @@ const memberStore = useMemberStore()
 const selection = useSelectionStore()
 const { openOptionMenu, openIssueDatePicker } = useMenus()
 
-const overdue = computed(() => isLateIssue(props.issue, ui.todayIdx))
+const overdue = computed(() => isLateIssue(props.issue, clock.todayIdx))
 const st = computed(() => ISSUE_STATUS[props.issue.status])
 const cl = computed(() => ISSUE_LEVEL[props.issue.level] ?? ISSUE_LEVEL.C)
 const status = computed(() => (overdue.value ? 'delayed' : props.issue.status))

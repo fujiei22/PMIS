@@ -12,9 +12,12 @@ import { useFocusRequest } from '@/composables/useFocusScroll'
 import { useGanttScroll } from '@/composables/useGanttScroll'
 import { usePointerDrag } from '@/composables/usePointerDrag'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
+import { useTaskActions } from '@/composables/useTaskActions'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex } from '@/lib/date'
+import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
+import { useRowsStore } from '@/stores/rows'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -26,7 +29,10 @@ const DAY_MS = 86_400_000
 const MIN_CHART_H = 120
 const WEEKDAY = ['日', '一', '二', '三', '四', '五', '六']
 
+const clock = useClockStore()
 const ui = useUiStore()
+const actions = useTaskActions()
+const rowsStore = useRowsStore()
 const taskStore = useTaskStore()
 const filter = useFilterStore()
 const selection = useSelectionStore()
@@ -51,7 +57,7 @@ useFocusRequest((req) => {
   scrollTo(Math.max(0, left - sc.clientWidth / 3), true)
 })
 
-const rows = computed(() => taskStore.visibleRows)
+const rows = computed(() => rowsStore.visibleRows)
 
 /** 左欄要畫的列，先把 id 解成實體，template 就不必用非空斷言。 */
 interface LeftRow {
@@ -89,7 +95,7 @@ const days = computed<RulerDay[]>(() => {
       dd: String(d.getUTCDate()).padStart(2, '0'),
       wd: WEEKDAY[wd]!,
       weekend: wd === 0 || wd === 6,
-      today: idx === ui.todayIdx,
+      today: idx === clock.todayIdx,
     })
   }
   return out
@@ -125,6 +131,14 @@ const zoomPct = computed(() => Math.round((ui.dayWidth / 32) * 100))
 /** 滑桿軌道左半段的填色比例。legacy `zoomFill` :3581 */
 const zoomFill = computed(() => Math.round(((ui.dayWidth - 14) / 18) * 100))
 const allCollapsed = computed(() => taskStore.groups.every((g) => ui.collapsedGroups.has(g.id)))
+
+/**
+ * 全部收合 / 全部展開。legacy `toggleAllGroups` :4110。
+ * 分類清單在資料層，收合狀態在 ui——由這裡把 id 交給 ui（契約 E）。
+ */
+function toggleAllGroups(): void {
+  ui.setAllCollapsed(allCollapsed.value ? [] : taskStore.groups.map((g) => g.id))
+}
 </script>
 
 <template>
@@ -159,12 +173,12 @@ const allCollapsed = computed(() => taskStore.groups.every((g) => ui.collapsedGr
         任務 / 分類
         <span class="spacer"></span>
         <span class="head-actions">
-          <button class="mini" @click="taskStore.setAllCollapsed(!allCollapsed)">
+          <button class="mini" @click="toggleAllGroups()">
             <!-- 只有文字、不加箭頭符號（legacy `allGroupsCaret` :4106） -->
             {{ allCollapsed ? '全部展開' : '全部收合' }}
           </button>
           <button class="mini" @click="taskStore.addGroup()">＋ 分類</button>
-          <button class="mini" @click="taskStore.addTask()">＋ 任務</button>
+          <button class="mini" @click="actions.addTaskWithDefaults()">＋ 任務</button>
         </span>
       </div>
       <div ref="rulerEl" class="gantt-ruler">
