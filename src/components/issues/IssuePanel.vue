@@ -8,7 +8,7 @@ import SortMenu from '@/components/common/SortMenu.vue'
 import IssueCard from '@/components/issues/IssueCard.vue'
 import IssuePanelHeader from '@/components/issues/IssuePanelHeader.vue'
 import { scrollIntoContainer, useFocusRequest } from '@/composables/useFocusScroll'
-import { ISSUE_ITEM, ISSUE_LEVEL, ISSUE_STATUS, TASK_STATUS } from '@/constants/dashboard'
+import { ISSUE_ITEM, ISSUE_LEVEL, ISSUE_STATUS } from '@/constants/dashboard'
 import { isLateIssue } from '@/lib/schedule'
 import { applySort } from '@/lib/sort'
 import { useFilterStore } from '@/stores/filter'
@@ -19,8 +19,6 @@ import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 import type { Issue, IssueItem, IssueLevel, IssueStatus } from '@/types/models'
 
-/** Issue 狀態的小圓點沿用任務狀態的 dot。legacy :3563 */
-const ISSUE_DOT = { open: 'todo', doing: 'doing', paused: 'paused', closed: 'done' } as const
 const GROUP_LABEL = { status: '處理狀態', level: '等級', item: '分類' } as const
 
 const ui = useUiStore()
@@ -70,7 +68,8 @@ const columns = computed<Column[]>(() => {
       ? (['open', 'doing', 'paused', 'closed'] as IssueStatus[]).map((k) => ({
           k,
           label: ISSUE_STATUS[k].label,
-          color: TASK_STATUS[ISSUE_DOT[k]].dot,
+          // 圓點色在 constants 的 ISSUE_STATUS.dot（legacy :3563；review m2）
+          color: ISSUE_STATUS[k].dot,
           of: (i) => i.status,
         }))
       : by === 'level'

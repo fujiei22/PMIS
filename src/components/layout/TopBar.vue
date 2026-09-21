@@ -72,12 +72,11 @@ const levelOptions = computed<FilterOption[]>(() =>
     checked: filter.issueLevels.includes(k),
   })),
 )
-/** Issue 狀態的小圓點沿用任務狀態的 dot（legacy :3750 的對應表）。 */
-const ISSUE_DOT = { open: 'todo', doing: 'doing', paused: 'paused', closed: 'done' } as const
 const issueStatusOptions = computed<FilterOption[]>(() =>
   (['open', 'doing', 'paused', 'closed', 'delayed'] as const).map((k) => {
     const st = k === 'delayed' ? DELAYED : ISSUE_STATUS[k]
-    const dot = k === 'delayed' ? DELAYED.dot : TASK_STATUS[ISSUE_DOT[k]].dot
+    // 圓點色在 constants 的 ISSUE_STATUS.dot（legacy :3750；review m2）
+    const dot = k === 'delayed' ? DELAYED.dot : ISSUE_STATUS[k].dot
     return { key: k, label: st.label, dot, checked: filter.issueStatuses.includes(k) }
   }),
 )

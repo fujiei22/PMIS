@@ -71,13 +71,23 @@ export const ISSUE_ITEM = {
   O: { label: 'Other', zh: '其他' },
 } as const satisfies Record<IssueItem, { label: string; zh: string }>
 
-/** Issue 處理狀態。legacy `IST` :1726 */
+/**
+ * Issue 處理狀態。legacy `IST` :1726。
+ *
+ * review m2：`dot`（狀態小圓點的顏色）原本在 SummaryCards / IssuePanel / TopBar /
+ * TaskProperties 各自抄一份 `{open:'todo',doing:'doing',paused:'paused',closed:'done'}`
+ * 再去查 `TASK_STATUS[...].dot`（legacy :3563 / :3632 / :3750）。值攤平放這裡，四處改讀常數。
+ */
 export const ISSUE_STATUS = {
-  open: { label: '待處理', bg: '#f1f5f9', fg: '#64748b', bd: '#e2e8f0' }, // --ist-open-*
-  doing: { label: '處理中', bg: '#eff6ff', fg: '#2563eb', bd: '#bfdbfe' }, // --ist-doing-*
-  paused: { label: '暫停中', bg: '#fffbeb', fg: '#b45309', bd: '#fde68a' }, // --ist-paused-*
-  closed: { label: '已解決', bg: '#ecfdf5', fg: '#059669', bd: '#a7f3d0' }, // --ist-closed-*
-} as const satisfies Record<IssueStatus, { label: string; bg: string; fg: string; bd: string }>
+  // dot 取自 TASK_STATUS.todo / doing / paused / done 的 dot（legacy ST :1707）
+  open: { label: '待處理', bg: '#f1f5f9', fg: '#64748b', bd: '#e2e8f0', dot: '#94a3b8' }, // --ist-open-*
+  doing: { label: '處理中', bg: '#eff6ff', fg: '#2563eb', bd: '#bfdbfe', dot: '#3b82f6' }, // --ist-doing-*
+  paused: { label: '暫停中', bg: '#fffbeb', fg: '#b45309', bd: '#fde68a', dot: '#f59e0b' }, // --ist-paused-*
+  closed: { label: '已解決', bg: '#ecfdf5', fg: '#059669', bd: '#a7f3d0', dot: '#10b981' }, // --ist-closed-*
+} as const satisfies Record<
+  IssueStatus,
+  { label: string; bg: string; fg: string; bd: string; dot: string }
+>
 
 /** 任務看板可排序的欄位。legacy `KSORT` :2043 */
 export const TASK_SORT_KEYS = [
