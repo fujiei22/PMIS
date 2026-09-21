@@ -161,7 +161,15 @@ export const useTaskStore = defineStore('task', () => {
 
   /** 改任務欄位並連動下游。legacy `setTask` :2294 */
   function updateTask(id: string, patch: Partial<Task>): void {
-    tasks.value = applyTaskPatch(tasks.value, deps.value, id, patch, useUiStore().todayIso)
+    // changed 是「真的變動的那幾筆」，R2 會拿它送 api.updateTasks；R1 只要新陣列
+    const { tasks: next } = applyTaskPatch(
+      tasks.value,
+      deps.value,
+      id,
+      patch,
+      useUiStore().todayIso,
+    )
+    tasks.value = next
   }
 
   /**
