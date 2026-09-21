@@ -1,18 +1,19 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { resetIdSeq } from '@/lib/id'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useIssueStore } from '@/stores/issue'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 
+/** 新實體的 id 是 UUID v4（spec 目標 4），只能斷言格式。 */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+
 const NOW = Date.parse('2026-09-18T10:00:00Z')
 
 describe('issueStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    resetIdSeq()
     useUiStore().now = NOW
     useTaskStore().load(structuredClone(sampleProject))
   })
@@ -33,7 +34,7 @@ describe('issueStore', () => {
     const s = useIssueStore()
     const task = useTaskStore().taskById('t3')!
     const i = s.addIssue('t3')!
-    expect(i.id).toBe('i101')
+    expect(i.id).toMatch(UUID)
     expect(i.taskId).toBe('t3')
     expect(i.title).toBe('新 Issue（點擊可改名）')
     expect(i.item).toBe('F')

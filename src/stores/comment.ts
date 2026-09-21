@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { dayIndex } from '@/lib/date'
-import { nextId } from '@/lib/id'
+import { newId } from '@/lib/id'
 import { useMemberStore } from '@/stores/member'
 import { useUiStore } from '@/stores/ui'
 import type { Attachment, Comment } from '@/types/models'
@@ -95,7 +95,7 @@ export const useCommentStore = defineStore('comment', () => {
     const day = localDay(now)
     const at = day + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes())
     comments.value.push({
-      id: nextId('c'),
+      id: newId(),
       targetId,
       targetKind,
       memberId: useMemberStore().currentUserId,

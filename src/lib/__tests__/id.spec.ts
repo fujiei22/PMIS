@@ -1,30 +1,34 @@
-import { beforeEach, describe, it, expect } from 'vitest'
-import { nextId, resetIdSeq } from '@/lib/id'
+import { afterEach, describe, expect, it } from 'vitest'
+import { newId } from '@/lib/id'
 
-describe('nextId', () => {
-  beforeEach(() => {
-    resetIdSeq()
+/** UUID v4：第 13 個 hex 固定 4、第 17 個是 8/9/a/b。 */
+const V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+
+/** 暫時把 crypto.randomUUID 換掉（不能直接指派，jsdom 的 Crypto 是唯讀屬性）。 */
+function stubRandomUUID(value: Crypto['randomUUID'] | undefined): void {
+  Object.defineProperty(globalThis.crypto, 'randomUUID', { value, configurable: true, writable: true })
+}
+
+const original = globalThis.crypto.randomUUID
+
+describe('newId', () => {
+  afterEach(() => {
+    stubRandomUUID(original)
   })
 
-  it('nextId 遞增且帶前綴', () => {
-    expect(nextId('t')).toBe('t101')
-    expect(nextId('g')).toBe('g102')
-    expect(nextId('i')).toBe('i103')
-    expect(nextId('d')).toBe('d104')
-  })
-
-  // review M5：原本留言用 'c' + Date.now()，固定時鐘下連兩則會同 id。
-  it('留言 id 也走流水號，同一毫秒連發兩則不會撞號', () => {
-    const a = nextId('c')
-    const b = nextId('c')
-    expect(a).toBe('c101')
-    expect(b).toBe('c102')
+  it('newId 回 UUID v4 格式，連兩次不同', () => {
+    const a = newId()
+    const b = newId()
+    expect(a).toMatch(V4)
+    expect(b).toMatch(V4)
     expect(a).not.toBe(b)
   })
 
-  it('留言序號與其他資料共用同一條流水號', () => {
-    expect(nextId('c')).toBe('c101')
-    expect(nextId('t')).toBe('t102')
-    expect(nextId('c')).toBe('c103')
+  // review M9：舊瀏覽器 / 非 secure context 沒有 randomUUID，退回 getRandomValues 自己組。
+  it('crypto.randomUUID 不存在時退回 getRandomValues，仍是合法 v4', () => {
+    stubRandomUUID(undefined)
+    const ids = new Set(Array.from({ length: 50 }, () => newId()))
+    expect(ids.size).toBe(50)
+    for (const id of ids) expect(id).toMatch(V4)
   })
 })

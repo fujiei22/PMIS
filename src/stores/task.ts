@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { isoFromIndex } from '@/lib/date'
-import { nextId } from '@/lib/id'
+import { newId } from '@/lib/id'
 import { applyTaskPatch, cascade, projectRange, reachable } from '@/lib/schedule'
 import { useCommentStore } from '@/stores/comment'
 import { useFilterStore } from '@/stores/filter'
@@ -78,7 +78,7 @@ export const useTaskStore = defineStore('task', () => {
 
   /** 新增分類，接在最後。legacy `addGroup` :1849 */
   function addGroup(): Group {
-    const g: Group = { id: nextId('g'), name: '新分類 ' + (groups.value.length + 1), collapsed: false }
+    const g: Group = { id: newId(), name: '新分類 ' + (groups.value.length + 1), collapsed: false }
     groups.value.push(g)
     return g
   }
@@ -142,7 +142,7 @@ export const useTaskStore = defineStore('task', () => {
     const sel = useSelectionStore()
     const base = useUiStore().todayIdx
     const t: Task = {
-      id: nextId('t'),
+      id: newId(),
       groupId:
         sel.groupId ?? (sel.taskId ? taskById(sel.taskId)?.groupId : null) ?? groups.value[0]!.id,
       name: '新任務',
@@ -246,7 +246,7 @@ export const useTaskStore = defineStore('task', () => {
     if (!from || !to || from === to) return false
     if (deps.value.some((d) => d.from === from && d.to === to)) return false
     if (reachable(to, from, deps.value)) return false
-    deps.value = deps.value.concat([{ id: nextId('d'), from, to }])
+    deps.value = deps.value.concat([{ id: newId(), from, to }])
     tasks.value = cascade(tasks.value, deps.value, {})
     return true
   }
