@@ -1,7 +1,6 @@
 <script setup lang="ts">
 // Dashboard 主畫面：載資料、組頂部列 + 摘要卡 + 三個面板，並掛全域的點擊外部與時鐘。
-import { onMounted } from 'vue'
-import { api } from '@/api'
+import { onBeforeUnmount, onMounted } from 'vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import DatePicker from '@/components/common/DatePicker.vue'
 import OptionMenu from '@/components/common/OptionMenu.vue'
@@ -16,19 +15,25 @@ import SummaryCards from '@/components/summary/SummaryCards.vue'
 import { useClickOutside } from '@/composables/useClickOutside'
 import { useNow } from '@/composables/useNow'
 import { useStickyOffsets } from '@/composables/useStickyOffsets'
+import { useProjectSync } from '@/stores/_sync'
 import { useTaskStore } from '@/stores/task'
 
-// 資料只從這裡進來一次：api → taskStore.load() 再分給其他 store。
+// 資料只從這裡進來一次：taskStore.load() 打 api 再分給其他 store。
 const taskStore = useTaskStore()
+// 後端事件也只在這裡訂閱一次（契約 B、review M6）
+const sync = useProjectSync()
 
 // sticky 量測要在最上層建立，子元件用 inject 取用
 useStickyOffsets()
 useClickOutside()
 useNow()
 
-onMounted(async () => {
-  taskStore.load(await api.loadProject())
+onMounted(() => {
+  sync.start()
+  void taskStore.load()
 })
+
+onBeforeUnmount(() => sync.stop())
 </script>
 
 <template>
