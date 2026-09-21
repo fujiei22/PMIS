@@ -1,18 +1,17 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted } from 'vue'
 import { loadProject } from '@/api/project'
-import type { Task } from '@/types/models'
+import { useTaskStore } from '@/stores/task'
 
-// S1 只驗資料能載進來；S2 起改由 taskStore 持有。
-const tasks = ref<Task[]>([])
+// 資料只從這裡進來一次：api → taskStore.load() 再分給其他 store。
+const taskStore = useTaskStore()
 
 onMounted(async () => {
-  const data = await loadProject()
-  tasks.value = data.tasks
+  taskStore.load(await loadProject())
 })
 </script>
 
 <template>
   <h1>Dashboard</h1>
-  <span data-testid="task-count">{{ tasks.length }}</span>
+  <span data-testid="task-count">{{ taskStore.tasks.length }}</span>
 </template>
