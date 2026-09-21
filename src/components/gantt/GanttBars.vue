@@ -2,6 +2,7 @@
 // 甘特圖右側的條：一般任務條、收合分類的摘要條、Issue 徽章、連線圓點、今天線。
 // legacy 對照：模板 :502-522，bars :2887-2958。
 import { computed } from 'vue'
+import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayFraction, dayIndex, lengthOf } from '@/lib/date'
 import { isLate } from '@/lib/schedule'
@@ -16,6 +17,7 @@ const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 const filter = useFilterStore()
 const selection = useSelectionStore()
+const drag = usePointerDragContext()
 
 interface Bar {
   id: string
@@ -136,6 +138,29 @@ function onBarClick(bar: Bar): void {
   if (bar.summary) taskStore.toggleGroup(bar.id.slice(4))
   else selection.toggleTask(bar.id)
 }
+
+/**
+ * 條本體按下去開始移動——但只有選取中的條可以拖。
+ * 沒選取就不 stopPropagation，讓事件落到畫布去平移（legacy `onMove` :2951）。
+ */
+function onBarDown(e: PointerEvent, bar: Bar): void {
+  if (bar.summary || !bar.selected) return
+  drag.startBar(e, bar.id, 'move')
+}
+
+/** 成員拖到條上 → 指派給這個任務。legacy `onDrop` :2958 */
+function onBarDrop(e: DragEvent, bar: Bar): void {
+  e.preventDefault()
+  e.stopPropagation()
+  if (bar.summary) return
+  const raw = e.dataTransfer?.getData('text/plain') ?? ''
+  // 只接成員；卡片拖曳（`task:` 前綴）落在條上不做事（legacy :2958）
+  if (!raw || raw.startsWith('task:')) return
+  taskStore.assign(
+    bar.id,
+    raw.split(',').filter(Boolean),
+  )
+}
 </script>
 
 <template>
@@ -155,15 +180,28 @@ function onBarClick(bar: Bar): void {
       :style="{ left: `${b.left}px`, top: `${b.top}px`, width: `${b.w}px` }"
       role="button"
       @click.stop="onBarClick(b)"
-      @pointerenter="!ui.drag && (ui.hoverTaskId = b.id)"
-      @pointerleave="ui.hoverTaskId === b.id && (ui.hoverTaskId = null)"
+      @pointerdown="onBarDown($event, b)"
+      @pointerenter="drag.setHover(b.id)"
+      @pointerleave="drag.clearHover(b.id)"
+      @dragover.prevent
+      @drop="onBarDrop($event, b)"
     >
-      <div v-if="!b.summary" class="handle handle-l" :class="{ live: b.selected }"></div>
+      <div
+        v-if="!b.summary"
+        class="handle handle-l"
+        :class="{ live: b.selected }"
+        @pointerdown="drag.startBar($event, b.id, 'resL')"
+      ></div>
       <div v-if="b.issueOpen" class="issue-badge"><span>!</span><span>{{ b.issueOpen }}</span></div>
       <div v-if="!b.summary" class="bar-label" :class="{ 'has-badge': b.issueOpen }">
         {{ b.label }}
       </div>
-      <div v-if="!b.summary" class="handle handle-r" :class="{ live: b.selected }"></div>
+      <div
+        v-if="!b.summary"
+        class="handle handle-r"
+        :class="{ live: b.selected }"
+        @pointerdown="drag.startBar($event, b.id, 'resR')"
+      ></div>
     </div>
     <template v-if="!b.summary">
       <div
@@ -171,6 +209,9 @@ function onBarClick(bar: Bar): void {
         :class="{ shown: b.showL }"
         :data-linkfor="b.id"
         :style="{ left: `${b.zoneL}px`, top: `${b.zoneY}px` }"
+        @pointerdown="drag.startLink($event, b.id, 'L')"
+        @pointerenter="drag.setHover(b.id)"
+        @pointerleave="drag.clearHover(b.id)"
       >
         <div class="dot" :class="{ near: b.near }"></div>
       </div>
@@ -179,6 +220,9 @@ function onBarClick(bar: Bar): void {
         :class="{ shown: b.showR }"
         :data-linkfor="b.id"
         :style="{ left: `${b.zoneR}px`, top: `${b.zoneY}px` }"
+        @pointerdown="drag.startLink($event, b.id, 'R')"
+        @pointerenter="drag.setHover(b.id)"
+        @pointerleave="drag.clearHover(b.id)"
       >
         <div class="dot" :class="{ near: b.near }"></div>
       </div>
