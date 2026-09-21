@@ -71,6 +71,7 @@ test('未選取的條拖曳無效', async ({ page }) => {
   const app = new DashboardPage(page)
   await app.goto()
   await app.waitForGanttSettle()
+  await expect(app.bar('t3')).toHaveAttribute('title', /點擊以選取後才能拖曳/)
 
   const box = (await app.bar('t3').boundingBox())!
   const y = box.y + box.height / 2
@@ -79,8 +80,8 @@ test('未選取的條拖曳無效', async ({ page }) => {
   await page.mouse.move(box.x + 20 + DAY_W * 3, y, { steps: 6 })
   await page.mouse.up()
 
+  // 日期沒動；按住未選取的條只是平移畫布（放開時的 click 才把它選起來，同 legacy）
   await expect(app.row('t3')).toContainText('2026/09/08 → 2026/09/16')
-  await expect(app.bar('t3')).toHaveAttribute('title', /點擊以選取後才能拖曳/)
 })
 
 test('從右側圓點拖到另一任務建立相依；反向循環被拒', async ({ page }) => {
@@ -153,7 +154,8 @@ test('卡片拖到別欄不改狀態', async ({ page }) => {
   await html5Drag(page, '[data-card="t3"]', '[data-col="done"]')
 
   await expect(app.column('doing').locator('[data-card="t3"]')).toHaveCount(1)
-  await expect(app.card('t3')).toHaveAttribute('data-status', 'doing')
+  await expect(app.column('done').locator('[data-card="t3"]')).toHaveCount(0)
+  await expect(app.card('t3').locator('.st')).toContainText('執行中')
 })
 
 test('卡片拖到甘特分類列改分類', async ({ page }) => {
