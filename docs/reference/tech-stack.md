@@ -50,8 +50,10 @@ PMIS 前端使用的技術與使用慣例。新加入的開發者先讀這份。
 - 需要新的設計值時，先加進全域變數，再引用。
 
 ### 狀態管理
-- 多個元件共用的資料放 Pinia store；只有單一元件用到的狀態（下拉選單開關、日曆顯示月份）留在元件內部。
-- 修改 store 資料一律透過 store 的 action，不在元件裡直接改。
+- 多個元件共用的資料放 Pinia store；只有單一元件用到的狀態（下拉的 hover 列、卡片 hover）留在元件內部。
+- store 裡的欄位分兩類，寫法不同（review M8）：
+  - **UI 狀態欄位**（`ui` / `filter` / `comment` 的浮層開關、選取中的分頁、篩選條件、草稿文字…）：元件可以直接寫，例如 `ui.editing = { kind: 't', id }`、`filter.issueMode = 'has'`。這類欄位只描述畫面狀態，沒有連動規則。
+  - **資料欄位**（`tasks` / `issues` / `deps` / `groups` / `comments`）：一律透過 action 改，例如 `taskStore.updateTask()`、`commentStore.send()`。它們背後有 cascade、懸空 id 清理、排序等連動，繞過 action 就會漏做。
 - 呼叫後端 API 寫在 store 的 action（或 store 使用的 API 模組）裡。
 
 ### 路由

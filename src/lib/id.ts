@@ -8,11 +8,13 @@ export type IdPrefix = 'g' | 't' | 'i' | 'd' | 'c'
 let seq = 100
 
 /**
- * 產生一個新 id。
- * 留言用時間戳（legacy 同樣做法），因為留言會樂觀插入、不跟其他資料共用號碼。
+ * 產生一個新 id；所有種類共用同一條流水號。
+ *
+ * review M5：留言原本跟 legacy :2196 一樣用 `'c' + Date.now()`，
+ * 但固定時鐘（單元測試與 e2e 的 `page.clock`）下同一毫秒連送兩則會拿到同一個 id，
+ * v-for 的 key 撞號、刪一則會連帶刪掉另一則。改成流水號，起點 100 也避開 mocks 的 c1…c5。
  */
 export function nextId(prefix: IdPrefix): string {
-  if (prefix === 'c') return 'c' + Date.now()
   return prefix + ++seq
 }
 

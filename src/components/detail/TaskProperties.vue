@@ -75,14 +75,6 @@ const succLabel = computed(() => {
 // ── Issue 清單（legacy issueRows :3039）──────────────────────────────────────
 const issues = computed(() => issueStore.byTask(props.task.id))
 
-/** Issue 列上的小圓點沿用任務狀態的顏色對照。legacy :3042 */
-const ISSUE_DOT: Record<string, string> = {
-  open: TASK_STATUS.todo.dot,
-  doing: TASK_STATUS.doing.dot,
-  paused: TASK_STATUS.paused.dot,
-  closed: TASK_STATUS.done.dot,
-}
-
 /** 點 Issue 列：推進堆疊（帶 from 讓返回鈕出現）。legacy :3046 */
 function openIssue(issueId: string): void {
   ui.openDetail(issueId, 'issue', props.task.id)
@@ -233,7 +225,8 @@ function askDelete(): void {
         title="開啟 Issue 詳細資料"
         @click.stop="openIssue(i.id)"
       >
-        <span class="issue-dot" :style="{ background: ISSUE_DOT[i.status] }"></span>
+        <!-- 圓點色在 constants 的 ISSUE_STATUS.dot（legacy :3042；review m2） -->
+        <span class="issue-dot" :style="{ background: ISSUE_STATUS[i.status].dot }"></span>
         <span class="issue-title" :title="i.title">{{ i.title }}</span>
         <span class="issue-level" :style="{ background: ISSUE_LEVEL[i.level].color }">
           {{ i.level }}

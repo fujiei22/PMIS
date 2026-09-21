@@ -137,4 +137,39 @@ describe('filterStore', () => {
     f.bumpTaskSort('days')
     expect(DEFAULT_TASK_SORT).toEqual([{ k: 'start', dir: 'asc' }])
   })
+
+  // review m4：字樣原本在 GanttPanel 與 KanbanPanel 各抄一份，還各自重跑一次 matchTask。
+  describe('taskCountLabel', () => {
+    it('沒篩選時是「共 N 個任務」', () => {
+      const f = useFilterStore()
+      const tasks = useTaskStore()
+      expect(f.taskCountLabel).toBe(`共 ${tasks.tasks.length} 個任務`)
+    })
+
+    it('有篩選時是「已篩選 N/M 個任務」，數字取自 matchedIds', () => {
+      const f = useFilterStore()
+      const tasks = useTaskStore()
+      f.statuses = ['done']
+      expect(f.matchedIds.size).toBeLessThan(tasks.tasks.length)
+      expect(f.taskCountLabel).toBe(`已篩選 ${f.matchedIds.size}/${tasks.tasks.length} 個任務`)
+    })
+
+    it('篩選條件改動後字樣跟著變', () => {
+      const f = useFilterStore()
+      const tasks = useTaskStore()
+      f.statuses = ['done']
+      const filtered = f.taskCountLabel
+      f.clear()
+      expect(f.taskCountLabel).not.toBe(filtered)
+      expect(f.taskCountLabel).toBe(`共 ${tasks.tasks.length} 個任務`)
+    })
+
+    it('不受「只顯示篩選結果」開關影響（legacy :3532 也只看 matchTask）', () => {
+      const f = useFilterStore()
+      f.statuses = ['done']
+      const on = f.taskCountLabel
+      f.onlyFiltered = false
+      expect(f.taskCountLabel).toBe(on)
+    })
+  })
 })

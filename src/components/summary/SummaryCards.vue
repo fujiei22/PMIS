@@ -71,13 +71,12 @@ const levelRows = computed(() =>
     count: issues.value.filter((x) => x.level === k).length,
   })),
 )
-/** Issue 狀態的小圓點沿用任務狀態的 dot（legacy :3632）。 */
-const ISSUE_DOT = { open: 'todo', doing: 'doing', paused: 'paused', closed: 'done' } as const
 const issueStatusRows = computed(() =>
   (['open', 'doing', 'paused', 'closed'] as IssueStatus[]).map((k) => ({
     k,
     label: ISSUE_STATUS[k].label,
-    color: TASK_STATUS[ISSUE_DOT[k]].dot,
+    // 圓點色在 constants 的 ISSUE_STATUS.dot（legacy :3632；review m2）
+    color: ISSUE_STATUS[k].dot,
     count: issues.value.filter((x) => x.status === k).length,
   })),
 )

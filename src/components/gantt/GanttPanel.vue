@@ -121,15 +121,6 @@ const stripes = computed(() =>
   })),
 )
 
-/** 「共 N 個任務」／「已篩選 N/M 個任務」。legacy `taskCountLabel` :3532 */
-const taskCountLabel = computed(() => {
-  const all = taskStore.tasks
-  const matched = all.filter((t) => filter.matchTask(t)).length
-  return matched === all.length
-    ? `共 ${all.length} 個任務`
-    : `已篩選 ${matched}/${all.length} 個任務`
-})
-
 const zoomPct = computed(() => Math.round((ui.dayWidth / 32) * 100))
 /** 滑桿軌道左半段的填色比例。legacy `zoomFill` :3581 */
 const zoomFill = computed(() => Math.round(((ui.dayWidth - 14) / 18) * 100))
@@ -140,7 +131,8 @@ const allCollapsed = computed(() => taskStore.groups.every((g) => g.collapsed))
   <PanelShell panel="gantt">
     <template #head>
       <h2 class="panel-title">專案時程</h2>
-      <div class="panel-count" data-testid="task-count">{{ taskCountLabel }}</div>
+      <!-- 計數字樣在 filterStore，與看板共用一份（legacy :3532；review m4） -->
+      <div class="panel-count" data-testid="task-count">{{ filter.taskCountLabel }}</div>
       <div class="spacer"></div>
       <div class="zoom">
         <input

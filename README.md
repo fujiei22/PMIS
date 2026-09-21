@@ -116,25 +116,47 @@ COMPARE_DUMP=node_modules/.tmp/cmp npm run test:e2e -- e2e/compare.spec.ts
 | 例子 | `dayIndex()`、`cascade()`、`matchTask()`、`applySort()`、`fmtDate()` | `useTaskStore()`、`useFilterStore()`、`useUiStore()` |
 | 測試 | Vitest，直接呼叫、不需要 Pinia | Vitest + `setActivePinia(createPinia())` |
 
-規則：**演算法寫在 `lib/`，store 只負責存狀態並把 `lib/` 的結果接起來。** 元件不直接改 store 的 `ref`，一律透過 action。只有單一元件用得到的狀態（下拉的 hover 列、卡片 hover）留在元件內。
+規則：**演算法寫在 `lib/`，store 只負責存狀態並把 `lib/` 的結果接起來。** 只有單一元件用得到的狀態（下拉的 hover 列、卡片 hover）留在元件內。
+
+store 的欄位分兩類，寫法不同：
+
+| | 誰可以寫 | 例子 |
+|---|---|---|
+| **UI 狀態欄位**：`ui` / `filter` / `comment` 裡描述畫面狀態的 `ref` | 元件可以直接寫 | `ui.editing = { kind: 't', id }`、`filter.issueMode = 'has'`、`comment.tab = 'files'` |
+| **資料欄位**：`tasks` / `issues` / `deps` / `groups` / `comments` | 只經 action | `taskStore.updateTask()`、`issueStore.update()`、`commentStore.send()` |
+
+分界在「有沒有連動」：資料欄位背後有 cascade 排程、刪除時的懸空 id 清理、選取連動，繞過 action 直接改陣列就會漏做這些；UI 狀態欄位沒有這層規則，走 action 只是多包一層。
 
 ## DOM 鉤子
 
 畫面上這些屬性是給測試與 CSS 用的契約，改元件時要一起維護。標「legacy 也有」的可以用在新舊對照測試裡。
 
-| 屬性 | 掛在 | 值 | legacy 也有 |
-|---|---|---|---|
-| `data-rowtask` | 甘特左欄任務列 | taskId | ✓ |
-| `data-rowgroup` | 甘特左欄分類列 | groupId | ✓ |
-| `data-taskid` | 甘特條（收合分類的摘要條為 `sum-<groupId>`） | taskId | ✓ |
-| `data-linkfor` | 甘特條兩側的連線圓點 | taskId | ✓ |
-| `data-card` | 看板任務卡 | taskId | ✓（legacy 值固定為 `1`，對照時只比存在性） |
-| `data-issuerow` | Issue 卡 | issueId | ✓ |
-| `data-col` | 看板欄內容區 | 狀態 key | ✓ |
-| `data-dd` | 所有下拉的觸發器與面板 | `1` | ✓ |
-| `data-zoom` | 甘特縮放滑桿 | `1` | ✓ |
-| `data-selected` | 甘特任務列 / 任務卡 / Issue 卡 | `true` / `false` | ✗ |
-| `data-rel` | 任務卡 | `up` / `down` / `group` / 空 | ✗ |
-| `data-status` | 甘特條 / 任務卡 / Issue 卡 | 狀態 key，或 `delayed` | ✗ |
-| `data-panel` | 面板外殼 | `gantt` / `kanban` / `issues` | ✗ |
-| `data-testid` | 摘要卡 `summary-duration` / `summary-progress` / `summary-tasks` / `summary-issues`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count` | 固定字串 | ✗ |
+**「執行期使用」欄不是空話**：標了的屬性是程式碼本身的依賴——`usePointerDrag`、`useClickOutside`、`KanbanPanel`、`IssuePanel`、`TopBar` 會用 `document.querySelector` / `Element.closest` 去找它們。拔掉或改名會直接弄壞拖曳、自動捲動與點外面關浮層，不是只有測試變紅（review M9）。
+
+| 屬性 | 掛在 | 值 | legacy 也有 | 執行期使用 |
+|---|---|---|---|---|
+| `data-rowtask` | 甘特左欄任務列 | taskId | ✓ | `usePointerDrag`（列重排量測、分類整塊範圍）、`useClickOutside` |
+| `data-rowgroup` | 甘特左欄分類列 | groupId | ✓ | `usePointerDrag`（分類重排的 `blockRect`）、`useClickOutside` |
+| `data-taskid` | 甘特條（收合分類的摘要條為 `sum-<groupId>`） | taskId | ✓ | `usePointerDrag`（放開時判斷相依落在哪條）、`useClickOutside` |
+| `data-linkfor` | 甘特條兩側的連線圓點 | taskId | ✓ | `usePointerDrag`（放開時的第二順位命中目標） |
+| `data-card` | 看板任務卡 | taskId | ✓（legacy 值固定為 `1`，對照時只比存在性） | `KanbanPanel`（選取後捲到卡片）、`useClickOutside` |
+| `data-issuerow` | Issue 卡 | issueId | ✓ | `IssuePanel`（選取後捲到 Issue 列）、`useClickOutside` |
+| `data-col` | 看板欄內容區 | 狀態 key | ✓ | `KanbanPanel`（`closest` 找卡片所在欄當捲動容器） |
+| `data-dd` | 所有下拉的觸發器與面板 | `1` | ✓ | `useClickOutside`（點在它之外才關浮層） |
+| `data-zoom` | 甘特縮放滑桿 | `1` | ✓ | — |
+| `data-selected` | 甘特任務列 / 任務卡 / Issue 卡 | `true` / `false` | ✗ | — |
+| `data-rel` | 任務卡 | `up` / `down` / `group` / 空 | ✗ | — |
+| `data-status` | 甘特條 / 任務卡 / Issue 卡 | 狀態 key，或 `delayed` | ✗ | — |
+| `data-panel` | 面板外殼 | `gantt` / `kanban` / `issues` | ✗ | `TopBar`（頂部導覽捲到該面板） |
+| `data-testid` | 摘要卡 `summary-duration` / `summary-progress` / `summary-tasks` / `summary-issues`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count` | 固定字串 | ✗ | — |
+
+契約 E 原本只把這些當測試鉤子，實作後它們同時是執行期依賴；要改成 template ref 是「接後端前重構」的項目，在那之前這張表就是唯一的依據。
+
+## 接後端注意
+
+現在整份資料來自 `src/mocks/sampleProject.ts`，改接真實後端前，這幾點要一起處理：
+
+- **api 層目前只抽了 read**。`src/api/project.ts` 只有載入整包專案；27 個寫入 action 直接改 store 的陣列，沒有經過 api 層。要接後端就得先讓寫入路徑統一走 api，否則得在每個 action 裡各接一次。
+- **載入沒有錯誤處理**。`DashboardView` 的載入失敗時畫面只會停在空狀態，沒有重試也沒有提示；接後端要補 loading / error 狀態。
+- **留言附件目前只做前端預覽**。`addDraftFiles` 直接 `URL.createObjectURL`，沒有任何檢查。接真實上傳時要補檔案大小上限、MIME 型別與副檔名白名單（三者都要，只擋副檔名擋不住偽裝的檔案），伺服器端再驗一次。
+- **部署時要加 CSP**。目前沒有 Content-Security-Policy；上線前在伺服器或 CDN 層補上，至少限制 `script-src` / `style-src` / `img-src`（`blob:` 要放行，附件預覽用得到）。

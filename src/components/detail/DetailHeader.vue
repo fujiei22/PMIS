@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 詳細視窗的標題列：堆疊返回鈕、可雙擊編輯的標題、關閉 ✕。
 // legacy 對照：模板 :865-881，titleEdit / titleKey :3796-3803。
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { visualLen } from '@/lib/format'
 import { useUiStore } from '@/stores/ui'
 
@@ -25,6 +25,23 @@ const editing = computed(() => ui.editing?.kind === 'dt' && ui.editing.id === pr
 
 /** 標題 textarea 要幾行：以視覺寬度 30 為一行估。legacy `nameRows` :3038 */
 const rows = computed(() => Math.max(1, Math.ceil(visualLen(props.name) / 30)))
+
+const inputEl = ref<HTMLTextAreaElement | null>(null)
+
+/**
+ * 進編輯就把焦點與游標放進 textarea，做法跟 GanttTaskRow 的就地編輯一致。
+ *
+ * review M4：原本靠 HTML `autofocus`，那個屬性每份文件只生效一次，
+ * 第二次雙擊標題就不會聚焦（`ref="input"` 也沒人接、是死碼）。
+ */
+watch(editing, async (on) => {
+  if (!on) return
+  await nextTick()
+  const el = inputEl.value
+  if (!el) return
+  el.focus()
+  el.setSelectionRange(el.value.length, el.value.length)
+})
 
 function startEdit(): void {
   ui.editing = { kind: 'dt', id: props.editId }
@@ -62,11 +79,10 @@ function onKey(e: KeyboardEvent): void {
       <div v-if="!editing" class="detail-title" @dblclick="startEdit()">{{ name }}</div>
       <textarea
         v-else
-        ref="input"
+        ref="inputEl"
         class="detail-title-input"
         :value="name"
         :rows="rows"
-        autofocus
         @input="emit('update:name', ($event.target as HTMLTextAreaElement).value)"
         @blur="endEdit()"
         @keydown="onKey"

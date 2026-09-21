@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useCommentStore } from '@/stores/comment'
 import { useTaskStore } from '@/stores/task'
@@ -102,5 +102,121 @@ describe('commentStore', () => {
     const c = useCommentStore()
     c.remove('c2')
     expect(c.forTarget('t1').map((x) => x.id)).toEqual(['c3', 'c1'])
+  })
+
+  // review M5：id 用 'c' + Date.now() 時，固定時鐘下兩則留言同 id，刪一則會連帶刪掉另一則。
+  it('固定時鐘下連送兩則留言，id 不同且只刪得掉其中一則', () => {
+    const c = useCommentStore()
+    c.draft = '第一則'
+    c.send('t1', 'task')
+    c.draft = '第二則'
+    c.send('t1', 'task')
+
+    const rows = c.forTarget('t1')
+    const ids = rows.map((x) => x.id)
+    expect(new Set(ids).size).toBe(ids.length)
+
+    const first = rows.find((x) => x.text === '第一則')!
+    c.remove(first.id)
+    const left = c.forTarget('t1').map((x) => x.text)
+    expect(left).toContain('第二則')
+    expect(left).not.toContain('第一則')
+  })
+
+  // review m1：貼圖建的 blob url 一直沒 revoke，換任務 / 移掉附件都在漏記憶體。
+  describe('blob url 釋放', () => {
+    let created: string[]
+    let revoked: string[]
+
+    beforeEach(() => {
+      created = []
+      revoked = []
+      let n = 0
+      vi.spyOn(URL, 'createObjectURL').mockImplementation(() => {
+        const u = 'blob:mock/' + ++n
+        created.push(u)
+        return u
+      })
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation((u: string) => {
+        revoked.push(u)
+      })
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    /** 造一個會被當成圖片的 File 替身。 */
+    const img = (name: string) => ({ name, size: 10, type: 'image/png' }) as unknown as File
+
+    it('removeDraft 釋放被移掉那個附件的 url', () => {
+      const c = useCommentStore()
+      c.addDraftFiles([img('a.png'), img('b.png')])
+      expect(created).toHaveLength(2)
+
+      c.removeDraft(0)
+      expect(revoked).toEqual([created[0]])
+      expect(c.draftFiles.map((f) => f.name)).toEqual(['b.png'])
+    })
+
+    it('resetDraft 釋放草稿裡所有附件的 url', () => {
+      const c = useCommentStore()
+      c.addDraftFiles([img('a.png'), img('b.png')])
+      c.resetDraft()
+      expect(revoked.sort()).toEqual([...created].sort())
+      expect(c.draftFiles).toEqual([])
+    })
+
+    it('沒有 url 的附件不會呼叫 revokeObjectURL', () => {
+      const c = useCommentStore()
+      c.addDraftFiles([{ name: 'a.txt', size: 1 } as unknown as File])
+      c.removeDraft(0)
+      c.resetDraft()
+      expect(revoked).toEqual([])
+    })
+
+    it('送出留言後不 revoke，留言列表還要用那個 url 顯示縮圖', () => {
+      const c = useCommentStore()
+      c.addDraftFiles([img('a.png')])
+      c.draft = '帶圖'
+      c.send('t1', 'task')
+      expect(revoked).toEqual([])
+      expect(c.forTarget('t1')[0]!.files[0]!.url).toBe(created[0])
+    })
+  })
+
+  // review M1：legacy :2186-2188 用 getFullYear/getMonth/getDate，日期與時分必須同一個本地時鐘。
+  describe('固定在 Asia/Taipei（UTC+8）的留言時間戳', () => {
+    const origin = process.env.TZ
+    beforeAll(() => {
+      process.env.TZ = 'Asia/Taipei'
+    })
+    afterAll(() => {
+      process.env.TZ = origin
+    })
+
+    it('UTC+8 早上 07:00 送出的留言標成當天，不是前一天', () => {
+      // 2026-09-19T07:00+08:00 === 2026-09-18T23:00Z
+      const c = useCommentStore()
+      useUiStore().now = Date.parse('2026-09-18T23:00:00Z')
+      c.draft = '早上留言'
+      c.addDraftFiles([{ name: 'a.txt', size: 1 } as unknown as File])
+      c.send('t1', 'task')
+      const row = c.forTarget('t1')[0]!
+      expect(row.at).toBe('2026-09-19T07:00')
+      expect(row.files[0]!.at).toBe('2026-09-19')
+    })
+
+    it('UTC+8 深夜 23:30 送出的留言標成當天，不是隔天', () => {
+      // 2026-09-19T23:30+08:00 === 2026-09-19T15:30Z
+      const c = useCommentStore()
+      useUiStore().now = Date.parse('2026-09-19T15:30:00Z')
+      c.draft = '深夜留言'
+      c.addDraftFiles([{ name: 'b.txt', size: 1 } as unknown as File])
+      c.send('t1', 'task')
+      const row = c.forTarget('t1')[0]!
+      expect(row.at).toBe('2026-09-19T23:30')
+      expect(row.files[0]!.at).toBe('2026-09-19')
+    })
   })
 })

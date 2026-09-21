@@ -1,0 +1,140 @@
+import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { defineComponent, h, ref } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { usePointerDrag, type PointerDrag } from '@/composables/usePointerDrag'
+import { sampleProject } from '@/mocks/sampleProject'
+import { useSelectionStore } from '@/stores/selection'
+import { useTaskStore } from '@/stores/task'
+import { useUiStore } from '@/stores/ui'
+
+/** jsdom 沒有 PointerEvent 建構子，拖曳只用到 button / clientX / clientY，用 MouseEvent 代打。 */
+function pointer(type: string, x = 0, y = 0): MouseEvent {
+  return new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y })
+}
+
+/** 掛一個最小宿主元件，把 usePointerDrag 的 API 撈出來。 */
+function mountDrag(): { api: PointerDrag; unmount: () => void } {
+  let api!: PointerDrag
+  const Host = defineComponent({
+    setup() {
+      const gantt = ref<HTMLElement | null>(null)
+      const chart = ref<HTMLElement | null>(null)
+      const vscroll = ref<HTMLElement | null>(null)
+      api = usePointerDrag({ gantt, chart, vscroll })
+      return () => h('div')
+    },
+  })
+  const wrapper = mount(Host, { attachTo: document.body })
+  return { api, unmount: () => wrapper.unmount() }
+}
+
+describe('usePointerDrag 的中止事件（review M3）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    useTaskStore().load(structuredClone(sampleProject))
+    // jsdom 沒有實作 elementFromPoint；onUp 會退回 ui.nearTaskId
+    if (!document.elementFromPoint) {
+      ;(document as Document & { elementFromPoint: () => Element | null }).elementFromPoint = () =>
+        null
+    }
+  })
+
+  afterEach(() => {
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+  })
+
+  it('pointerup 拉線會建相依（對照組）', () => {
+    const ui = useUiStore()
+    const tasks = useTaskStore()
+    const { api, unmount } = mountDrag()
+    const before = tasks.deps.length
+
+    api.startLink(pointer('pointerdown') as unknown as PointerEvent, 't1', 'R')
+    expect(ui.drag).not.toBeNull()
+    ui.nearTaskId = 't3'
+    document.dispatchEvent(pointer('pointerup'))
+
+    expect(ui.drag).toBeNull()
+    expect(tasks.deps.length).toBe(before + 1)
+    unmount()
+  })
+
+  it('pointercancel 清掉拖曳狀態但不建相依', () => {
+    const ui = useUiStore()
+    const tasks = useTaskStore()
+    const { api, unmount } = mountDrag()
+    const before = tasks.deps.length
+
+    api.startLink(pointer('pointerdown') as unknown as PointerEvent, 't1', 'R')
+    ui.nearTaskId = 't3'
+    expect(ui.drag).not.toBeNull()
+    expect(ui.linkLine).not.toBeNull()
+    expect(document.body.style.userSelect).toBe('none')
+
+    document.dispatchEvent(pointer('pointercancel'))
+
+    expect(ui.drag).toBeNull()
+    expect(ui.linkLine).toBeNull()
+    expect(ui.nearTaskId).toBeNull()
+    expect(document.body.style.userSelect).toBe('')
+    expect(tasks.deps.length).toBe(before)
+    unmount()
+  })
+
+  it('lostpointercapture 同樣中止拖曳', () => {
+    const ui = useUiStore()
+    const tasks = useTaskStore()
+    const { api, unmount } = mountDrag()
+    const before = tasks.deps.length
+
+    api.startLink(pointer('pointerdown') as unknown as PointerEvent, 't1', 'R')
+    ui.nearTaskId = 't3'
+    document.dispatchEvent(pointer('lostpointercapture'))
+
+    expect(ui.drag).toBeNull()
+    expect(ui.linkLine).toBeNull()
+    expect(ui.nearTaskId).toBeNull()
+    expect(tasks.deps.length).toBe(before)
+    unmount()
+  })
+
+  it('平移被中止：還原 cursor、停自動捲動、不當成點空白處清選取', () => {
+    const ui = useUiStore()
+    const selection = useSelectionStore()
+    const cancelRaf = vi.spyOn(globalThis, 'cancelAnimationFrame')
+    const { api, unmount } = mountDrag()
+    selection.selectTask('t1')
+
+    api.startPan(pointer('pointerdown', 100, 100) as unknown as PointerEvent)
+    expect(ui.drag?.kind).toBe('pan')
+    expect(document.body.style.cursor).toBe('grabbing')
+
+    document.dispatchEvent(pointer('pointercancel', 100, 100))
+
+    expect(ui.drag).toBeNull()
+    expect(document.body.style.cursor).toBe('')
+    expect(document.body.style.userSelect).toBe('')
+    expect(cancelRaf).toHaveBeenCalled()
+    // 中止不是「放開」，不走 legacy :2584 的點擊判定
+    expect(selection.taskId).toBe('t1')
+    cancelRaf.mockRestore()
+    unmount()
+  })
+
+  it('中止後條的移動不再跟著指標跑', () => {
+    const ui = useUiStore()
+    const tasks = useTaskStore()
+    const { api, unmount } = mountDrag()
+    const start0 = tasks.taskById('t1')!.start
+
+    api.startBar(pointer('pointerdown', 0, 0) as unknown as PointerEvent, 't1', 'move')
+    document.dispatchEvent(pointer('pointercancel', 0, 0))
+    document.dispatchEvent(pointer('pointermove', 500, 0))
+
+    expect(ui.drag).toBeNull()
+    expect(tasks.taskById('t1')!.start).toBe(start0)
+    unmount()
+  })
+})

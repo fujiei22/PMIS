@@ -14,6 +14,7 @@ import { useFilterStore } from '@/stores/filter'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useTaskStore } from '@/stores/task'
+import { useUiStore } from '@/stores/ui'
 import type { TaskStatus } from '@/types/models'
 
 /** 看板欄的順序，逐字取自 legacy :2989。 */
@@ -23,11 +24,14 @@ const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 const memberStore = useMemberStore()
 const filter = useFilterStore()
+const ui = useUiStore()
 
 const sortCtx = computed(() => ({
   taskById: taskStore.taskById,
   memberById: memberStore.byId,
   openIssueCount: issueStore.openCount,
+  // created 沒填時的後備值；lib 不自己讀時鐘（review m5）
+  todayIdx: ui.todayIdx,
 }))
 
 const columns = computed(() =>
@@ -41,15 +45,6 @@ const columns = computed(() =>
     return { k, label: TASK_STATUS[k].label, color: TASK_STATUS[k].dot, tasks: list }
   }),
 )
-
-/** 與甘特面板同一份計數字樣。legacy `taskCountLabel` :3532 */
-const taskCountLabel = computed(() => {
-  const all = taskStore.tasks
-  const matched = all.filter((t) => filter.matchTask(t)).length
-  return matched === all.length
-    ? `共 ${all.length} 個任務`
-    : `已篩選 ${matched}/${all.length} 個任務`
-})
 
 /**
  * 選到任務時把它的卡片捲進所在欄位。legacy `focus()` :2404-2411。
@@ -66,7 +61,8 @@ useFocusRequest((req) => {
   <PanelShell panel="kanban">
     <template #head>
       <h2 class="panel-title">任務看板</h2>
-      <div class="panel-count" data-testid="task-count">{{ taskCountLabel }}</div>
+      <!-- 計數字樣在 filterStore，與甘特共用一份（legacy :3532；review m4） -->
+      <div class="panel-count" data-testid="task-count">{{ filter.taskCountLabel }}</div>
       <div class="sorts">
         <SortChips kind="task" />
         <SortMenu kind="task" />

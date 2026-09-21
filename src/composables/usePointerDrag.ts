@@ -326,13 +326,34 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     dragTick()
   }
 
-  /** 放開：連線要結算成相依，平移要判斷是不是「只是點一下空白處」。legacy `onUp`（:2571） */
-  function onUp(e: PointerEvent): void {
+  /** 結束一段拖曳：共同的收尾（清狀態、停自動捲動、還原 body 樣式與預覽線）。 */
+  function finish(): DragState | null {
     const d = ui.drag
-    if (!d) return
+    if (!d) return null
     ui.drag = null
     auto.stop()
     document.body.style.userSelect = ''
+    if (d.kind === 'pan') document.body.style.cursor = ''
+    return d
+  }
+
+  /**
+   * 拖曳被瀏覽器接管而中止（觸控被捲動搶走、手寫筆離開、指標捕捉被收回）。
+   *
+   * review M3：legacy :2571 只聽 pointerup，觸控 / 手寫筆一被接管就再也收不到放開事件，
+   * `ui.drag` 卡住、body 的 userSelect / cursor 回不來。這裡收尾但**不結算**——
+   * 不建相依、也不把平移當成「點一下空白處」而清掉選取。
+   */
+  function onCancel(): void {
+    if (!finish()) return
+    ui.linkLine = null
+    ui.nearTaskId = null
+  }
+
+  /** 放開：連線要結算成相依，平移要判斷是不是「只是點一下空白處」。legacy `onUp`（:2571） */
+  function onUp(e: PointerEvent): void {
+    const d = finish()
+    if (!d) return
 
     if (d.kind === 'link') {
       // 命中條或圓點都算，都沒中就用最後壓到的那一列（legacy :2574-2576）
@@ -349,7 +370,6 @@ export function usePointerDrag(els: DragElements): PointerDrag {
         taskStore.addDep(from, target)
       }
     } else if (d.kind === 'pan') {
-      document.body.style.cursor = ''
       if (d.moved < PAN_CLICK_PX) selection.clear()
     }
   }
@@ -357,11 +377,15 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   onMounted(() => {
     document.addEventListener('pointermove', onMove)
     document.addEventListener('pointerup', onUp)
+    document.addEventListener('pointercancel', onCancel)
+    document.addEventListener('lostpointercapture', onCancel)
   })
 
   onBeforeUnmount(() => {
     document.removeEventListener('pointermove', onMove)
     document.removeEventListener('pointerup', onUp)
+    document.removeEventListener('pointercancel', onCancel)
+    document.removeEventListener('lostpointercapture', onCancel)
     clearTimeout(hoverTimer)
     auto.stop()
     document.body.style.userSelect = ''
