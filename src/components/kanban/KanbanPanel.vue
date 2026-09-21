@@ -8,6 +8,7 @@ import SortMenu from '@/components/common/SortMenu.vue'
 import KanbanHeader from '@/components/kanban/KanbanHeader.vue'
 import TaskCard from '@/components/kanban/TaskCard.vue'
 import { useFocusRequest, scrollIntoContainer } from '@/composables/useFocusScroll'
+import { useTaskActions } from '@/composables/useTaskActions'
 import { TASK_STATUS } from '@/constants/dashboard'
 import { applySort } from '@/lib/sort'
 import { useClockStore } from '@/stores/clock'
@@ -20,6 +21,7 @@ import type { TaskStatus } from '@/types/models'
 /** 看板欄的順序，逐字取自 legacy :2989。 */
 const COLUMNS: TaskStatus[] = ['todo', 'doing', 'paused', 'done']
 
+const actions = useTaskActions()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 const memberStore = useMemberStore()
@@ -69,7 +71,7 @@ useFocusRequest((req) => {
       </div>
       <div class="spacer"></div>
       <button class="mini" @click="taskStore.addGroup()">＋ 新增分類</button>
-      <button class="mini" @click="taskStore.addTask()">＋ 新增任務</button>
+      <button class="mini" @click="actions.addTaskWithDefaults()">＋ 新增任務</button>
     </template>
 
     <div class="board">

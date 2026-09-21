@@ -8,6 +8,7 @@ import SortMenu from '@/components/common/SortMenu.vue'
 import IssueCard from '@/components/issues/IssueCard.vue'
 import IssuePanelHeader from '@/components/issues/IssuePanelHeader.vue'
 import { scrollIntoContainer, useFocusRequest } from '@/composables/useFocusScroll'
+import { useTaskActions } from '@/composables/useTaskActions'
 import { ISSUE_ITEM, ISSUE_LEVEL, ISSUE_STATUS } from '@/constants/dashboard'
 import { isLateIssue } from '@/lib/schedule'
 import { applySort } from '@/lib/sort'
@@ -22,6 +23,7 @@ import type { Issue, IssueItem, IssueLevel, IssueStatus } from '@/types/models'
 
 const GROUP_LABEL = { status: '處理狀態', level: '等級', item: '分類' } as const
 
+const actions = useTaskActions()
 const clock = useClockStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
@@ -123,7 +125,7 @@ function addIssueTop(): void {
   const task = (selection.taskId ? taskStore.taskById(selection.taskId) : null) ?? taskStore.tasks[0]
   if (!task) return
   // addIssue 在任務不存在時回 null（S2 契約），這裡一併擋掉
-  if (!issueStore.addIssue(task.id)) return
+  if (!actions.addIssueForTask(task.id)) return
   ui.panelOff.issues = false
 }
 

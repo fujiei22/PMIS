@@ -12,6 +12,7 @@ import { useFocusRequest } from '@/composables/useFocusScroll'
 import { useGanttScroll } from '@/composables/useGanttScroll'
 import { usePointerDrag } from '@/composables/usePointerDrag'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
+import { useTaskActions } from '@/composables/useTaskActions'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex } from '@/lib/date'
 import { useClockStore } from '@/stores/clock'
@@ -30,6 +31,7 @@ const WEEKDAY = ['日', '一', '二', '三', '四', '五', '六']
 
 const clock = useClockStore()
 const ui = useUiStore()
+const actions = useTaskActions()
 const rowsStore = useRowsStore()
 const taskStore = useTaskStore()
 const filter = useFilterStore()
@@ -168,7 +170,7 @@ const allCollapsed = computed(() => taskStore.groups.every((g) => ui.collapsedGr
             {{ allCollapsed ? '全部展開' : '全部收合' }}
           </button>
           <button class="mini" @click="taskStore.addGroup()">＋ 分類</button>
-          <button class="mini" @click="taskStore.addTask()">＋ 任務</button>
+          <button class="mini" @click="actions.addTaskWithDefaults()">＋ 任務</button>
         </span>
       </div>
       <div ref="rulerEl" class="gantt-ruler">

@@ -185,27 +185,35 @@ describe('taskStore', () => {
     expect(s.tasks.map((t) => t.id)).toEqual(order)
   })
 
-  it('addTask 用今天起算五天並選取新任務', () => {
+  // 預設值與建立後的選取在 useTaskActions（契約 E），見 useTaskActions.spec
+  it('addTask 照參數建立，不自己算預設值也不動選取', () => {
     const s = useTaskStore()
     const sel = useSelectionStore()
-    sel.groupId = 'g3'
-    const t = s.addTask()!
+    const t = s.addTask({
+      groupId: 'g3',
+      assigneeIds: ['m2'],
+      start: '2026-10-01',
+      end: '2026-10-05',
+    })!
     expect(t.id).toMatch(UUID)
     expect(t.groupId).toBe('g3')
-    expect(t.start).toBe('2026-09-18')
-    expect(t.end).toBe('2026-09-22')
+    expect(t.assigneeIds).toEqual(['m2'])
+    expect(t.start).toBe('2026-10-01')
+    expect(t.end).toBe('2026-10-05')
+    expect(t.created).toBe('2026-09-18')
     expect(t.status).toBe('todo')
     expect(t.priority).toBe('mid')
-    expect(sel.taskId).toBe(t.id)
+    expect(s.tasks[s.tasks.length - 1]!.id).toBe(t.id)
+    expect(sel.taskId).toBeNull()
   })
 
-  it('addTask 無分類時改新增分類', () => {
+  it('addTask 的分類不存在時回 null', () => {
     const s = useTaskStore()
-    s.groups = []
-    s.tasks = []
-    expect(s.addTask()).toBeNull()
-    expect(s.groups).toHaveLength(1)
-    expect(s.tasks).toHaveLength(0)
+    const before = s.tasks.length
+    expect(
+      s.addTask({ groupId: 'nope', assigneeIds: [], start: '2026-10-01', end: '2026-10-05' }),
+    ).toBeNull()
+    expect(s.tasks).toHaveLength(before)
   })
 
   it('updateTask 走 applyTaskPatch：改狀態填 done、移動連動下游', async () => {
@@ -367,7 +375,12 @@ describe('taskStore', () => {
     it('新增任務失敗 → 本地那筆被收回', async () => {
       const s = useTaskStore()
       mockApi.failNext('createTask', new ApiError('conflict', '重複的 id', 409))
-      const t = s.addTask()!
+      const t = s.addTask({
+        groupId: 'g1',
+        assigneeIds: [],
+        start: '2026-09-18',
+        end: '2026-09-22',
+      })!
       await vi.waitFor(() => expect(s.taskById(t.id)).toBeUndefined())
       expect(useUiStore().errors[0]!.label).toBe('新增任務')
       expect(useUiStore().errors[0]!.code).toBe('conflict')

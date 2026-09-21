@@ -5,6 +5,7 @@ import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import { useDelayedUnmount } from '@/composables/useDelayedUnmount'
 import { useMenus } from '@/composables/useMenus'
+import { useTaskActions } from '@/composables/useTaskActions'
 import { DELAYED, ISSUE_LEVEL, ISSUE_STATUS, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
 import { lengthOf } from '@/lib/date'
 import { EMPTY_LABEL, fmtDate } from '@/lib/format'
@@ -19,6 +20,7 @@ import type { Task } from '@/types/models'
 
 const props = defineProps<{ task: Task }>()
 
+const actions = useTaskActions()
 const clock = useClockStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
@@ -86,7 +88,7 @@ function openIssue(issueId: string): void {
 
 /** ＋ 開立 Issue。legacy `onAddIssue` :3109 */
 function addIssue(): void {
-  issueStore.addIssue(props.task.id)
+  actions.addIssueForTask(props.task.id)
 }
 
 /** 刪任務走兩步確認；刪完 removeTask 會清 ui.detail 讓視窗正常關閉。legacy `onAskDelete` :3099 */

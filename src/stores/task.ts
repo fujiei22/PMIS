@@ -3,7 +3,6 @@ import { computed, ref } from 'vue'
 import { api } from '@/api'
 import type { ProjectEvent } from '@/api/types'
 import { API_ERROR_TEXT, apiErrorCode } from '@/constants/dashboard'
-import { isoFromIndex } from '@/lib/date'
 import { newId } from '@/lib/id'
 import {
   applyTaskPatch,
@@ -22,7 +21,6 @@ import {
 } from '@/stores/_optimistic'
 import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
-import { useFilterStore } from '@/stores/filter'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useSelectionStore } from '@/stores/selection'
@@ -346,31 +344,31 @@ export const useTaskStore = defineStore('task', () => {
 
   /**
    * 新增任務。legacy `addTask` :4128。
-   * 一個分類都沒有時 legacy 改成新增分類（回 null）；
-   * 分類取選取的分類 → 選取任務所在的分類 → 第一個分類，日期今天起五天，負責人沿用成員篩選。
+   *
+   * 預設值（分類、負責人、起訖）由呼叫端算好傳進來——那些要讀 selection /
+   * filter，是派生層的事（契約 E），資料層只負責建立與送出。
+   * 建立後的選取同樣在 `useTaskActions()`。分類不存在時回 null。
    */
-  function addTask(): Task | null {
-    if (!groups.value.length) {
-      addGroup()
-      return null
-    }
-    const sel = useSelectionStore()
-    const base = useClockStore().todayIdx
+  function addTask(opts: {
+    groupId: string
+    assigneeIds: string[]
+    start: ISODate
+    end: ISODate
+  }): Task | null {
+    if (!groupById(opts.groupId)) return null
     const t: Task = {
       id: newId(),
-      groupId:
-        sel.groupId ?? (sel.taskId ? taskById(sel.taskId)?.groupId : null) ?? groups.value[0]!.id,
+      groupId: opts.groupId,
       name: '新任務',
-      created: isoFromIndex(base),
-      start: isoFromIndex(base),
-      end: isoFromIndex(base + 4),
+      created: useClockStore().todayIso,
+      start: opts.start,
+      end: opts.end,
       status: 'todo',
       done: '',
       priority: 'mid',
-      assigneeIds: useFilterStore().memberIds.slice(),
+      assigneeIds: opts.assigneeIds.slice(),
     }
     tasks.value.push(t)
-    sel.selectTask(t.id)
     void runOptimistic<Task>({
       tracker: taskTracker,
       ids: [t.id],
