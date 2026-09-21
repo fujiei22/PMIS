@@ -14,6 +14,7 @@ import { useFilterStore } from '@/stores/filter'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useTaskStore } from '@/stores/task'
+import { useUiStore } from '@/stores/ui'
 import type { TaskStatus } from '@/types/models'
 
 /** 看板欄的順序，逐字取自 legacy :2989。 */
@@ -23,11 +24,14 @@ const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 const memberStore = useMemberStore()
 const filter = useFilterStore()
+const ui = useUiStore()
 
 const sortCtx = computed(() => ({
   taskById: taskStore.taskById,
   memberById: memberStore.byId,
   openIssueCount: issueStore.openCount,
+  // created 沒填時的後備值；lib 不自己讀時鐘（review m5）
+  todayIdx: ui.todayIdx,
 }))
 
 const columns = computed(() =>

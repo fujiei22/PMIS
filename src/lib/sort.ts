@@ -1,4 +1,4 @@
-import { dayIndex, lengthOf, todayIndex } from '@/lib/date'
+import { dayIndex, lengthOf } from '@/lib/date'
 import type { Issue, Member, Task } from '@/types/models'
 
 /** 一個排序鍵；多鍵排序就是一組 SortKey，依序比到分出高下為止。 */
@@ -12,6 +12,12 @@ export interface SortCtx {
   taskById: (id: string) => Task | undefined
   memberById: (id: string) => Member | undefined
   openIssueCount: (taskId: string) => number
+  /**
+   * 今天的日索引，`created` 沒填時的後備值。
+   * review m5：原本在 `createdIndex` 裡直接 `todayIndex(Date.now())`，
+   * 是 lib 純函式唯一會讀系統時鐘的地方；改由呼叫端從 `ui.todayIdx` 傳進來。
+   */
+  todayIdx: number
 }
 
 /** 優先度 / 等級 / 分類的比較權重，值大的排前面（desc 時）。legacy `sortVal` 內的 PO / CO / IO :2060 */
@@ -21,9 +27,9 @@ const ITEM_ORDER: Record<string, number> = { C: 4, R: 3, F: 2, O: 1 }
 const ISSUE_STATUS_ORDER = ['open', 'doing', 'paused', 'closed']
 
 /** 建立日期；沒填就退而求其次拿 start / due，都沒有才用今天。legacy `createdOf` :2275 */
-function createdIndex(o: Task | Issue): number {
+function createdIndex(o: Task | Issue, todayIdx: number): number {
   const iso = o.created || (o as Task).start || (o as Issue).due || ''
-  return iso ? dayIndex(iso) : todayIndex(Date.now())
+  return iso ? dayIndex(iso) : todayIdx
 }
 
 /**
@@ -43,7 +49,7 @@ export function sortValue(
     if (key === 'days') return lengthOf(t)
     if (key === 'priority') return PRIORITY_ORDER[t.priority] ?? 0
     if (key === 'issue') return ctx.openIssueCount(t.id)
-    if (key === 'created') return createdIndex(t)
+    if (key === 'created') return createdIndex(t, ctx.todayIdx)
     if (key === 'name') return t.name
     return 0
   }
@@ -57,7 +63,7 @@ export function sortValue(
     const t = ctx.taskById(i.taskId)
     return t ? dayIndex(t.start) : 0
   }
-  if (key === 'created') return createdIndex(i)
+  if (key === 'created') return createdIndex(i, ctx.todayIdx)
   if (key === 'creator') return ctx.memberById(i.creatorId)?.name ?? ''
   return 0
 }

@@ -48,10 +48,12 @@ const members: Member[] = [
   { id: 'm2', name: '乙', role: '', color: '#000' },
 ]
 const tasks = [task({ id: 't1', start: '2026-09-01' }), task({ id: 't2', start: '2026-09-09' })]
+const TODAY_IDX = dayIndex('2026-09-18')
 const ctx: SortCtx = {
   taskById: (id) => tasks.find((t) => t.id === id),
   memberById: (id) => members.find((m) => m.id === id),
   openIssueCount: (id) => (id === 't1' ? 3 : 0),
+  todayIdx: TODAY_IDX,
 }
 
 describe('sortValue', () => {
@@ -141,5 +143,31 @@ describe('bumpSort', () => {
   it('預設排序是時程 asc 與期限 asc', () => {
     expect(DEFAULT_TASK_SORT).toEqual([{ k: 'start', dir: 'asc' }])
     expect(DEFAULT_ISSUE_SORT).toEqual([{ k: 'due', dir: 'asc' }])
+  })
+})
+
+// review m5：createdIndex 的後備值原本直接呼叫 Date.now()，是 lib 純函式唯一的破口。
+describe('created 的後備值由 SortCtx.todayIdx 決定', () => {
+  it('created / start 都沒填的任務用 ctx.todayIdx', () => {
+    const t = task({ id: 'x', created: '', start: '' })
+    expect(sortValue('task', 'created', t, ctx)).toBe(TODAY_IDX)
+  })
+
+  it('created / due 都沒填的 Issue 用 ctx.todayIdx', () => {
+    const i = issue({ id: 'x', created: '', due: '' })
+    expect(sortValue('issue', 'created', i, ctx)).toBe(TODAY_IDX)
+  })
+
+  it('換一個 todayIdx 就換一個值，不看系統時鐘', () => {
+    const other = dayIndex('2030-01-01')
+    const t = task({ id: 'x', created: '', start: '' })
+    expect(sortValue('task', 'created', t, { ...ctx, todayIdx: other })).toBe(other)
+  })
+
+  it('有填 created 時不受 todayIdx 影響', () => {
+    const t = task({ id: 'x', created: '2026-09-01' })
+    expect(sortValue('task', 'created', t, { ...ctx, todayIdx: dayIndex('2030-01-01') })).toBe(
+      dayIndex('2026-09-01'),
+    )
   })
 })

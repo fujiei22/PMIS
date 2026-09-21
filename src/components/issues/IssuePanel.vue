@@ -32,6 +32,8 @@ const sortCtx = computed(() => ({
   taskById: taskStore.taskById,
   memberById: memberStore.byId,
   openIssueCount: issueStore.openCount,
+  // created 沒填時的後備值；lib 不自己讀時鐘（review m5）
+  todayIdx: ui.todayIdx,
 }))
 
 /**
