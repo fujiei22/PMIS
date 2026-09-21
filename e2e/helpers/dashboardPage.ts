@@ -105,6 +105,17 @@ export class DashboardPage {
     return locator.evaluate((el) => el.scrollLeft)
   }
 
+  /**
+   * 尺規與 chart 的捲動位置差。
+   * 兩個值要在同一次 evaluate 裡讀，不然捲動動畫跑到一半會量出假的落差。
+   */
+  scrollSyncDelta(): Promise<number> {
+    return this.ganttScroller.evaluate((sc) => {
+      const ruler = sc.ownerDocument.querySelector('.gantt-ruler')
+      return Math.abs(sc.scrollLeft - (ruler?.scrollLeft ?? 0))
+    })
+  }
+
   /** 元素外框高度，四捨五入到整數 px（拿來跟 sticky top 比對）。 */
   heightOf(locator: Locator): Promise<number> {
     return locator.evaluate((el) => Math.round(el.getBoundingClientRect().height))

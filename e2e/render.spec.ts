@@ -74,8 +74,7 @@ test('收合分類顯示摘要條、面板收合、縮放、今天按鈕', async
   await expect.poll(() => app.scrollLeftOf(app.ganttScroller)).toBe(0)
   await app.todayButton.click()
   await expect.poll(() => app.scrollLeftOf(app.ganttScroller), { timeout: 5000 }).toBeGreaterThan(0)
-  const x = await app.scrollLeftOf(app.ganttScroller)
-  expect(Math.abs((await app.scrollLeftOf(app.ganttRuler)) - x)).toBeLessThanOrEqual(1)
+  await expect.poll(() => app.scrollSyncDelta(), { timeout: 5000 }).toBeLessThanOrEqual(1)
 })
 
 test('sticky 標題偏移依量測值', async ({ page }) => {
