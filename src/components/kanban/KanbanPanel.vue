@@ -42,15 +42,6 @@ const columns = computed(() =>
   }),
 )
 
-/** 與甘特面板同一份計數字樣。legacy `taskCountLabel` :3532 */
-const taskCountLabel = computed(() => {
-  const all = taskStore.tasks
-  const matched = all.filter((t) => filter.matchTask(t)).length
-  return matched === all.length
-    ? `共 ${all.length} 個任務`
-    : `已篩選 ${matched}/${all.length} 個任務`
-})
-
 /**
  * 選到任務時把它的卡片捲進所在欄位。legacy `focus()` :2404-2411。
  * 來源是卡片本身（src='card'）就不捲——使用者已經看得到它了。
@@ -66,7 +57,8 @@ useFocusRequest((req) => {
   <PanelShell panel="kanban">
     <template #head>
       <h2 class="panel-title">任務看板</h2>
-      <div class="panel-count" data-testid="task-count">{{ taskCountLabel }}</div>
+      <!-- 計數字樣在 filterStore，與甘特共用一份（legacy :3532；review m4） -->
+      <div class="panel-count" data-testid="task-count">{{ filter.taskCountLabel }}</div>
       <div class="sorts">
         <SortChips kind="task" />
         <SortMenu kind="task" />

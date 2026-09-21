@@ -69,6 +69,16 @@ export const useFilterStore = defineStore('filter', () => {
     return out
   })
 
+  /**
+   * 甘特與看板面板頭上的「共 N 個任務」／「已篩選 N/M 個任務」。legacy `taskCountLabel` :3532。
+   * review m4：兩個面板各抄一份、各自再跑一次 `matchTask`；這裡直接吃 `matchedIds.size`。
+   */
+  const taskCountLabel = computed(() => {
+    const total = useTaskStore().tasks.length
+    const matched = matchedIds.value.size
+    return matched === total ? `共 ${total} 個任務` : `已篩選 ${matched}/${total} 個任務`
+  })
+
   /** 任務符不符合篩選（Issue 面板與計數用，不受「只顯示篩選結果」影響）。legacy :3113 / :3527 */
   function matchTask(t: Task): boolean {
     return matchedIds.value.has(t.id)
@@ -147,6 +157,7 @@ export const useFilterStore = defineStore('filter', () => {
     calendarMonth,
     filter,
     matchedIds,
+    taskCountLabel,
     matchTask,
     passTask,
     anyTaskFilter,
