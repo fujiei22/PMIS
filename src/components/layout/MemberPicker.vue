@@ -3,6 +3,7 @@
 // legacy 對照：模板 :72-112、memberRows :2736-2760。
 import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
+import { initialOf } from '@/lib/color'
 import { useFilterStore } from '@/stores/filter'
 import { useMemberStore } from '@/stores/member'
 import { useUiStore } from '@/stores/ui'
@@ -60,6 +61,56 @@ function toggle(id: string): void {
     ? selected.value.filter((x) => x !== id)
     : [...selected.value, id]
 }
+
+/**
+ * 臨時做一顆「頭像 + 說明」的深色膠囊當拖曳縮圖。legacy `dragGhost`（:1856）。
+ * 瀏覽器會在 dragstart 當下把它畫成點陣圖，所以下一個 tick 就能從 DOM 移掉。
+ * 這是動態產生的浮動元素、不進版面，值取自 legacy 的行內樣式。
+ */
+function buildDragGhost(e: DragEvent, ids: string[]): void {
+  const box = document.createElement('div')
+  box.style.cssText =
+    'position:fixed;top:-2000px;left:-2000px;display:flex;align-items:center;' +
+    'padding:6px 14px 6px 8px;background:var(--drag-ghost);color:#fff;border-radius:var(--r-6);' +
+    'font-family:var(--font-sans);font-size:var(--fs-control);font-weight:500'
+  for (const id of ids.slice(0, 3)) {
+    const m = memberStore.byId(id)
+    if (!m) continue
+    const a = document.createElement('div')
+    a.textContent = initialOf(m)
+    a.style.cssText =
+      'width:22px;height:22px;border-radius:50%;background:' +
+      m.color +
+      ';color:#fff;display:flex;align-items:center;justify-content:center;' +
+      'font-size:var(--fs-meta);font-weight:700;border:2px solid var(--drag-ghost);margin-right:-9px'
+    box.appendChild(a)
+  }
+  const label = document.createElement('span')
+  const first = memberStore.byId(ids[0] ?? '')
+  label.textContent = ids.length > 1 ? `指派 ${ids.length} 位成員` : (first?.name ?? '')
+  label.style.cssText = 'margin-left:16px;white-space:nowrap'
+  box.appendChild(label)
+  document.body.appendChild(box)
+  try {
+    e.dataTransfer?.setDragImage(box, 26, 18)
+  } catch {
+    // 某些環境不支援自訂拖曳縮圖，用預設的就好
+  }
+  setTimeout(() => box.remove(), 0)
+}
+
+/** 勾了人就整組拖，沒勾就只拖這一位。legacy `onDragStart`（:2752） */
+function onDragStart(e: DragEvent, id: string): void {
+  const ids = selected.value.includes(id) && selected.value.length ? [...selected.value] : [id]
+  e.dataTransfer?.setData('text/plain', ids.join(','))
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy'
+  buildDragGhost(e, ids)
+  ui.memberDrag = { from: id, ids }
+}
+
+function onDragEnd(): void {
+  ui.memberDrag = null
+}
 </script>
 
 <template>
@@ -93,6 +144,8 @@ function toggle(id: string): void {
           draggable="true"
           role="button"
           @click="toggle(m.id)"
+          @dragstart="onDragStart($event, m.id)"
+          @dragend="onDragEnd"
         >
           <Avatar :member="m" :size="28" />
           <div class="mp-info">
