@@ -133,7 +133,7 @@ function remove(): void {
   width: 100%;
   max-width: 380px;
   background: var(--surface-1);
-  border-radius: var(--r-modal);
+  border-radius: var(--r-dialog);
   padding: var(--sp-10);
   box-shadow: var(--shadow-modal);
   animation: popIn var(--t-fast) ease-out;
@@ -151,7 +151,7 @@ function remove(): void {
 
 .confirm-body {
   font-size: var(--fs-month);
-  line-height: var(--lh-loose);
+  line-height: var(--lh-dialog);
   color: var(--text-3);
 }
 

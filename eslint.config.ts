@@ -21,6 +21,11 @@ export default defineConfigWithVueTs(
   {
     ...pluginPlaywright.configs['flat/recommended'],
     files: ['e2e/**/*.{test,spec}.{js,ts,jsx,tsx}'],
+    rules: {
+      ...pluginPlaywright.configs['flat/recommended'].rules,
+      // 新舊對照的斷言都在 e2e/helpers/compare.ts 的 compareScenario 裡。
+      'playwright/expect-expect': ['warn', { assertFunctionNames: ['expect', 'compareScenario'] }],
+    },
   },
 
   {

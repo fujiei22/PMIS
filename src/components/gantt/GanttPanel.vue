@@ -117,8 +117,7 @@ const stripes = computed(() =>
     top: i * ROW_HEIGHT,
     group: v.kind === 'g',
     selected: v.kind === 't' && selection.taskId === v.id,
-    related:
-      v.kind === 't' && (!!selection.related[v.id] || !!selection.softHighlight[v.id]),
+    related: v.kind === 't' && (!!selection.related[v.id] || !!selection.softHighlight[v.id]),
   })),
 )
 
@@ -169,7 +168,8 @@ const allCollapsed = computed(() => taskStore.groups.every((g) => g.collapsed))
         <span class="spacer"></span>
         <span class="head-actions">
           <button class="mini" @click="taskStore.setAllCollapsed(!allCollapsed)">
-            {{ allCollapsed ? '▶ 全部展開' : '▼ 全部收合' }}
+            <!-- 只有文字、不加箭頭符號（legacy `allGroupsCaret` :4106） -->
+            {{ allCollapsed ? '全部展開' : '全部收合' }}
           </button>
           <button class="mini" @click="taskStore.addGroup()">＋ 分類</button>
           <button class="mini" @click="taskStore.addTask()">＋ 任務</button>
