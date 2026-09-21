@@ -1,12 +1,14 @@
 <script setup lang="ts">
 // 甘特左欄的任務列：把手、狀態點、任務名、起訖日期 + 工期、hover 才出現的快捷鈕。
 // legacy 對照：模板 :442-466，groupRows[].tasks :2814-2877。
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import { useMenus } from '@/composables/useMenus'
 import { DELAYED, TASK_STATUS } from '@/constants/dashboard'
-import { lengthOf } from '@/lib/date'
+import { dayIndex, isoFromIndex, lengthOf } from '@/lib/date'
 import { fmtDate, stripYear } from '@/lib/format'
 import { isLate } from '@/lib/schedule'
 import { useSelectionStore } from '@/stores/selection'
+import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 import type { Task } from '@/types/models'
 
@@ -14,6 +16,8 @@ const props = defineProps<{ task: Task }>()
 
 const ui = useUiStore()
 const selection = useSelectionStore()
+const taskStore = useTaskStore()
+const { openTaskDatePicker } = useMenus()
 
 const late = computed(() => isLate(props.task, ui.todayIdx))
 /** 延遲蓋掉原本的狀態，供 CSS 變數與測試使用（契約 E）。 */
@@ -47,6 +51,60 @@ const calOpen = computed(() => ui.taskDatePicker?.id === props.task.id)
 function onSelect(): void {
   selection.toggleTask(props.task.id)
 }
+
+/** 雙擊任務名進就地編輯。legacy `onEdit` :2876 */
+const editing = computed(() => ui.editing?.kind === 't' && ui.editing.id === props.task.id)
+const inputEl = ref<HTMLInputElement | null>(null)
+
+watch(editing, async (on) => {
+  if (!on) return
+  await nextTick()
+  const el = inputEl.value
+  if (!el) return
+  el.focus()
+  el.setSelectionRange(el.value.length, el.value.length)
+})
+
+function startEdit(e: MouseEvent): void {
+  e.stopPropagation()
+  ui.editing = { kind: 't', id: props.task.id }
+}
+
+/** 每一鍵就寫進 store（legacy onChange 逐鍵觸發，:2882）。 */
+function onRename(e: Event): void {
+  taskStore.updateTask(props.task.id, { name: (e.target as HTMLInputElement).value })
+}
+
+/** Enter / Esc / blur 只結束編輯，不還原（legacy :2878-2881）。 */
+function endEdit(): void {
+  if (editing.value) ui.editing = null
+}
+
+function onEditKey(e: KeyboardEvent): void {
+  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+  if (e.key === 'Escape') ui.editing = null
+}
+
+/** 工期加一天。legacy `onDaysUp` :2846 */
+function daysUp(): void {
+  taskStore.updateTask(props.task.id, { end: isoFromIndex(dayIndex(props.task.end) + 1) })
+}
+
+/** 工期減一天；至少留一天。legacy `onDaysDown` :2847 */
+function daysDown(): void {
+  if (dayIndex(props.task.end) <= dayIndex(props.task.start)) return
+  taskStore.updateTask(props.task.id, { end: isoFromIndex(dayIndex(props.task.end) - 1) })
+}
+
+/** 開相依編輯器（本體 S6 做，這裡只設 store）。legacy `onOpenDeps` :2873 */
+function openDeps(): void {
+  ui.depEditFor = props.task.id
+}
+
+/** 刪除任務走兩步確認。legacy `onAskDelete` :2891 */
+function askDelete(): void {
+  ui.confirm = { kind: 'task', id: props.task.id, step: 1 }
+}
 </script>
 
 <template>
@@ -64,19 +122,36 @@ function onSelect(): void {
   >
     <div class="grip" :class="{ grabbing: lifted }" @click.stop>⠿</div>
     <div class="st-dot" :style="{ background: statusDot }"></div>
-    <div class="name" :title="task.name">{{ task.name }}</div>
+    <div v-if="!editing" class="name" :title="task.name" @dblclick="startEdit">{{ task.name }}</div>
+    <input
+      v-else
+      ref="inputEl"
+      class="name-input"
+      :value="task.name"
+      @click.stop
+      @input="onRename"
+      @blur="endEdit"
+      @keydown="onEditKey"
+    />
     <div class="date" :class="{ open: calOpen }">
-      <div class="date-range" :title="rangeTitle">
+      <div
+        class="date-range"
+        :title="rangeTitle"
+        role="button"
+        @click.stop="openTaskDatePicker($event, task.id)"
+      >
         <span class="date-text" :class="{ late }">{{ rangeText }}</span>
       </div>
       <span class="date-sep"></span>
-      <div class="date-days" title="工期（天）"><span class="days-num">{{ days }}</span></div>
+      <div class="date-days" title="工期（天）" @click.stop>
+        <span class="days-num">{{ days }}</span>
+      </div>
     </div>
     <div class="actions" :class="{ shown: hovered }" @click.stop>
-      <span class="act act-step" title="工期加一天">▲</span>
-      <span class="act act-step" title="工期減一天">▼</span>
-      <span class="act act-dep" title="相依設定">⇄</span>
-      <span class="act act-del" title="刪除任務">✕</span>
+      <span class="act act-step" role="button" title="工期加一天" @click="daysUp()">▲</span>
+      <span class="act act-step" role="button" title="工期減一天" @click="daysDown()">▼</span>
+      <span class="act act-dep" role="button" title="相依設定" @click="openDeps()">⇄</span>
+      <span class="act act-del" role="button" title="刪除任務" @click="askDelete()">✕</span>
     </div>
   </div>
 </template>
@@ -165,6 +240,23 @@ function onSelect(): void {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.name-input {
+  font-size: var(--fs-record);
+  color: var(--text-1);
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border-control);
+  background: var(--surface-1);
+  border-radius: var(--r-badge);
+  padding: var(--r-2) var(--sp-2);
+}
+
+/* 表單 focus 與 legacy 一致（spec §設計方向 表單慣例） */
+.name-input:focus {
+  border-color: var(--accent);
+  outline: none;
 }
 
 .date {

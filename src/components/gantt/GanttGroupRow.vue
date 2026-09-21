@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 甘特左欄的分類列：把手、收合箭頭、分類名、工期天數、刪除鈕。
 // legacy 對照：模板 :429-440，groupRows :2762-2813。
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { dayIndex } from '@/lib/date'
 import { useFilterStore } from '@/stores/filter'
 import { useSelectionStore } from '@/stores/selection'
@@ -46,6 +46,46 @@ function onCaret(e: MouseEvent): void {
   e.stopPropagation()
   taskStore.toggleGroup(props.group.id)
 }
+
+/** 雙擊分類名進就地編輯。legacy `onEdit` :2793 */
+const editing = computed(() => ui.editing?.kind === 'g' && ui.editing.id === props.group.id)
+const inputEl = ref<HTMLInputElement | null>(null)
+
+watch(editing, async (on) => {
+  if (!on) return
+  await nextTick()
+  const el = inputEl.value
+  if (!el) return
+  el.focus()
+  // 游標放最後，接著打字是附加而不是覆蓋（legacy autoFocus 的行為）
+  el.setSelectionRange(el.value.length, el.value.length)
+})
+
+function startEdit(e: MouseEvent): void {
+  e.stopPropagation()
+  ui.editing = { kind: 'g', id: props.group.id }
+}
+
+/** 每一鍵就寫進 store，legacy 的 onChange 也是逐鍵觸發（:2799）。 */
+function onRename(e: Event): void {
+  taskStore.renameGroup(props.group.id, (e.target as HTMLInputElement).value)
+}
+
+/** Enter / Esc / blur 都只結束編輯，不還原（legacy :2795-2798）。 */
+function endEdit(): void {
+  if (editing.value) ui.editing = null
+}
+
+function onEditKey(e: KeyboardEvent): void {
+  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+  if (e.key === 'Escape') ui.editing = null
+}
+
+/** 刪除分類走兩步確認。legacy `onDelete` :2809 */
+function askDelete(e: MouseEvent): void {
+  e.stopPropagation()
+  ui.confirm = { kind: 'group', id: props.group.id, step: 1 }
+}
 </script>
 
 <template>
@@ -58,9 +98,21 @@ function onCaret(e: MouseEvent): void {
   >
     <div class="grip" :class="{ grabbing: lifted }" @click.stop>⠿</div>
     <div class="caret" role="button" @click="onCaret">{{ group.collapsed ? '▶' : '▼' }}</div>
-    <div class="name" :title="group.name">{{ group.name }}</div>
+    <div v-if="!editing" class="name" :title="group.name" @dblclick="startEdit">
+      {{ group.name }}
+    </div>
+    <input
+      v-else
+      ref="inputEl"
+      class="name-input"
+      :value="group.name"
+      @click.stop
+      @input="onRename"
+      @blur="endEdit"
+      @keydown="onEditKey"
+    />
     <div class="span">{{ span }}d</div>
-    <div class="del">✕</div>
+    <div class="del" role="button" title="刪除分類" @click="askDelete">✕</div>
   </div>
 </template>
 
@@ -138,6 +190,24 @@ function onCaret(e: MouseEvent): void {
   color: var(--accent);
 }
 
+.name-input {
+  font-size: var(--fs-record);
+  font-weight: var(--fw-bold);
+  color: var(--text-2);
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border-control);
+  background: var(--surface-1);
+  border-radius: var(--r-badge);
+  padding: var(--r-2) var(--sp-2);
+}
+
+/* 表單 focus 與 legacy 一致（spec §設計方向 表單慣例） */
+.name-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
 .span {
   font-size: var(--fs-meta);
   color: var(--text-muted);
@@ -148,5 +218,10 @@ function onCaret(e: MouseEvent): void {
   font-size: var(--fs-meta);
   color: var(--glyph-disabled);
   padding: 0 var(--r-2);
+  cursor: pointer;
+}
+
+.del:hover {
+  color: var(--danger);
 }
 </style>
