@@ -15,6 +15,7 @@ import TopBar from '@/components/layout/TopBar.vue'
 import SummaryCards from '@/components/summary/SummaryCards.vue'
 import { useClickOutside } from '@/composables/useClickOutside'
 import { useConfirmProps } from '@/composables/useConfirmProps'
+import { provideDomRegistry } from '@/composables/useDomRegistry'
 import { useNow } from '@/composables/useNow'
 import { useProjectBoot } from '@/composables/useProjectBoot'
 import { useStickyOffsets } from '@/composables/useStickyOffsets'
@@ -27,6 +28,9 @@ const boot = useProjectBoot()
 
 // sticky 量測要在最上層建立，子元件用 inject 取用
 useStickyOffsets()
+// DOM 登錄表也在最上層（契約 F）：面板 / 列 / 條 / 卡片各自登錄，
+// 拖曳與捲動對位改查這張表，不再用 DOM 選擇器
+provideDomRegistry()
 useClickOutside()
 useNow()
 

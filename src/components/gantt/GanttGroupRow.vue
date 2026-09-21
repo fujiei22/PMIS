@@ -2,6 +2,7 @@
 // 甘特左欄的分類列：把手、收合箭頭、分類名、工期天數、刪除鈕。
 // legacy 對照：模板 :429-440，groupRows :2762-2813。
 import { computed, nextTick, ref, watch } from 'vue'
+import { useDomRegistry, registerEl } from '@/composables/useDomRegistry'
 import { useEditDraft } from '@/composables/useEditDraft'
 import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { dayIndex } from '@/lib/date'
@@ -18,6 +19,7 @@ const taskStore = useTaskStore()
 const filter = useFilterStore()
 const selection = useSelectionStore()
 const drag = usePointerDragContext()
+const registry = useDomRegistry()
 
 /** 這個分類底下、通過篩選的任務。legacy :2763 */
 const tasks = computed(() =>
@@ -117,6 +119,7 @@ function onDrop(e: DragEvent): void {
   <div
     class="grow-row"
     :class="{ selected, lifted, dimmed, 'drop-over': dropOver }"
+    :ref="registerEl(registry.groups, group.id)"
     :data-rowgroup="group.id"
     role="button"
     @click="onSelect"
