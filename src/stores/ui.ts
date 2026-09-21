@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { isoFromIndex, todayIndex } from '@/lib/date'
 import { useCommentStore } from '@/stores/comment'
 import { useSelectionStore } from '@/stores/selection'
+import { useTaskStore } from '@/stores/task'
 
 /** 拖曳 / 放置的落點：分類（可分上下半）或某個任務。 */
 export type DropTarget =
@@ -81,6 +82,28 @@ export const useUiStore = defineStore('ui', () => {
   const zooming = ref(false)
   /** 三個面板的收合狀態。legacy `panelOff` :1579 */
   const panelOff = ref({ gantt: false, kanban: false, issues: false })
+
+  /**
+   * 收合中的分類 id。review C5：這是純畫面狀態，不是專案資料——
+   * 放在 `Group.collapsed` 的話，改名的 response 或別人送來的 group.updated 事件
+   * 會把收合中的分類彈開（契約 A：Group 沒有 collapsed）。
+   */
+  const collapsedGroups = ref<Set<string>>(new Set())
+
+  /** 收合 / 展開一個分類。legacy `onCaret` :2800 */
+  function toggleGroup(id: string): void {
+    if (collapsedGroups.value.has(id)) collapsedGroups.value.delete(id)
+    else collapsedGroups.value.add(id)
+  }
+
+  /**
+   * 全部收合 / 全部展開。legacy `toggleAllGroups` :4110。
+   * 分類清單在 taskStore；ui 是派生層、可以讀資料層（契約 E），
+   * 只是 R1 的 taskStore 還反向 import ui，這條 import 到 R3 分層完才會變單向。
+   */
+  function setAllCollapsed(v: boolean): void {
+    collapsedGroups.value = v ? new Set(useTaskStore().groups.map((g) => g.id)) : new Set()
+  }
 
   const openDropdown = ref<DropdownKey | null>(null)
   const memberPickerOpen = ref(false)
@@ -233,6 +256,9 @@ export const useUiStore = defineStore('ui', () => {
     setDayWidth,
     zooming,
     panelOff,
+    collapsedGroups,
+    toggleGroup,
+    setAllCollapsed,
     openDropdown,
     memberPickerOpen,
     filterCalendarOpen,

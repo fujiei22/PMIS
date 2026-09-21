@@ -8,12 +8,12 @@ import type { Comment, Dependency, Group, Issue, Member, ProjectData, Task } fro
  */
 
 const groups: Group[] = [
-  { id: 'g1', name: '前端開發', collapsed: false },
-  { id: 'g2', name: '後端開發', collapsed: false },
-  { id: 'g3', name: '資料與整合', collapsed: false },
-  { id: 'g4', name: '測試與品質', collapsed: false },
-  { id: 'g5', name: '上線與維運', collapsed: false },
-  { id: 'g6', name: '專案管理', collapsed: false },
+  { id: 'g1', name: '前端開發' },
+  { id: 'g2', name: '後端開發' },
+  { id: 'g3', name: '資料與整合' },
+  { id: 'g4', name: '測試與品質' },
+  { id: 'g5', name: '上線與維運' },
+  { id: 'g6', name: '專案管理' },
 ]
 
 const members: Member[] = [

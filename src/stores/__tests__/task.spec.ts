@@ -78,25 +78,37 @@ describe('taskStore', () => {
     const g = s.addGroup()
     expect(g.name).toBe('新分類 7')
     expect(s.groups[s.groups.length - 1]!.id).toBe(g.id)
-    expect(g.collapsed).toBe(false)
+    expect(useUiStore().collapsedGroups.has(g.id)).toBe(false)
   })
 
   it('renameGroup / toggleGroup / setAllCollapsed / moveGroup', () => {
     const s = useTaskStore()
+    const ui = useUiStore()
     s.renameGroup('g1', '前端')
     expect(s.groupById('g1')!.name).toBe('前端')
     s.toggleGroup('g1')
-    expect(s.groupById('g1')!.collapsed).toBe(true)
+    // review C5：收合狀態在 ui，不在 Group 上
+    expect(ui.collapsedGroups.has('g1')).toBe(true)
     expect(s.visibleRows).toHaveLength(36 - 6)
+    s.toggleGroup('g1')
+    expect(ui.collapsedGroups.has('g1')).toBe(false)
     s.setAllCollapsed(true)
-    expect(s.groups.every((g) => g.collapsed)).toBe(true)
+    expect(ui.collapsedGroups.size).toBe(s.groups.length)
     expect(s.visibleRows).toHaveLength(6)
     s.setAllCollapsed(false)
-    expect(s.groups.every((g) => !g.collapsed)).toBe(true)
+    expect(ui.collapsedGroups.size).toBe(0)
     s.moveGroup('g1', 1)
     expect(s.groups.map((g) => g.id).slice(0, 2)).toEqual(['g2', 'g1'])
     s.moveGroup('g2', -1)
     expect(s.groups.map((g) => g.id).slice(0, 2)).toEqual(['g2', 'g1'])
+  })
+
+  // review C5：改名走的是 groups 陣列，收合狀態在 ui，兩者互不影響
+  it('收合中的分類改名不會被展開', () => {
+    const s = useTaskStore()
+    s.toggleGroup('g1')
+    s.renameGroup('g1', '改過的名字')
+    expect(useUiStore().collapsedGroups.has('g1')).toBe(true)
   })
 
   it('removeGroup 連任務、issue、deps 一起刪並清 selection', () => {

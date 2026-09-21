@@ -56,10 +56,11 @@ export const useTaskStore = defineStore('task', () => {
    */
   const visibleRows = computed<{ kind: 'g' | 't'; id: string }[]>(() => {
     const filter = useFilterStore()
+    const collapsed = useUiStore().collapsedGroups
     const out: { kind: 'g' | 't'; id: string }[] = []
     for (const g of groups.value) {
       out.push({ kind: 'g', id: g.id })
-      if (g.collapsed) continue
+      if (collapsed.has(g.id)) continue
       for (const t of tasks.value) {
         if (t.groupId === g.id && filter.passTask(t)) out.push({ kind: 't', id: t.id })
       }
@@ -78,7 +79,7 @@ export const useTaskStore = defineStore('task', () => {
 
   /** 新增分類，接在最後。legacy `addGroup` :1849 */
   function addGroup(): Group {
-    const g: Group = { id: newId(), name: '新分類 ' + (groups.value.length + 1), collapsed: false }
+    const g: Group = { id: newId(), name: '新分類 ' + (groups.value.length + 1) }
     groups.value.push(g)
     return g
   }
@@ -107,15 +108,14 @@ export const useTaskStore = defineStore('task', () => {
     if (ui.detail && (gone.has(ui.detail.id) || ui.detail.id === id)) ui.closeDetail()
   }
 
-  /** 收合 / 展開一個分類。legacy `onCaret` :2800 */
+  /** 收合 / 展開一個分類；狀態在 ui（review C5）。legacy `onCaret` :2800 */
   function toggleGroup(id: string): void {
-    const g = groupById(id)
-    if (g) g.collapsed = !g.collapsed
+    useUiStore().toggleGroup(id)
   }
 
   /** 全部收合 / 全部展開。legacy `toggleAllGroups` :4110 */
   function setAllCollapsed(v: boolean): void {
-    for (const g of groups.value) g.collapsed = v
+    useUiStore().setAllCollapsed(v)
   }
 
   /** 分類與相鄰的那個對調；已在頭尾就不動。legacy `moveGroup` :1835 */

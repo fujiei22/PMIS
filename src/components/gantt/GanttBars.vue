@@ -50,6 +50,7 @@ const bars = computed<Bar[]>(() => {
   const rows = taskStore.visibleRows
   const rowIndex = taskStore.rowIndexOf
   const drag = ui.drag
+  const collapsed = ui.collapsedGroups
   const linking = drag?.kind === 'link'
   const out: Bar[] = []
 
@@ -57,7 +58,7 @@ const bars = computed<Bar[]>(() => {
     const gt = taskStore.tasks.filter((t) => t.groupId === g.id && filter.passTask(t))
 
     // 收合且底下有任務 → 畫一條涵蓋整個分類的摘要條（legacy :2891-2903）
-    if (g.collapsed && gt.length) {
+    if (collapsed.has(g.id) && gt.length) {
       const gi = rows.findIndex((v) => v.kind === 'g' && v.id === g.id)
       const a = Math.min(...gt.map((t) => dayIndex(t.start)))
       const b = Math.max(...gt.map((t) => dayIndex(t.end)))
@@ -84,7 +85,7 @@ const bars = computed<Bar[]>(() => {
       })
       continue
     }
-    if (g.collapsed) continue
+    if (collapsed.has(g.id)) continue
 
     for (const t of gt) {
       const i = rowIndex[t.id]

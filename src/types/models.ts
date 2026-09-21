@@ -12,11 +12,10 @@ export type IssueLevel = 'A' | 'B' | 'C' | 'D'
 export type IssueItem = 'C' | 'R' | 'F' | 'O'
 export type IssueStatus = 'open' | 'doing' | 'paused' | 'closed'
 
-/** 甘特圖左欄的任務分類 */
+/** 甘特圖左欄的任務分類；收合與否是畫面狀態，放在 `useUiStore().collapsedGroups`（契約 A） */
 export interface Group {
   id: string
   name: string
-  collapsed: boolean
 }
 
 export interface Member {
