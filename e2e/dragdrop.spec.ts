@@ -12,12 +12,14 @@ import { DashboardPage, html5Drag, stepDrag } from './helpers/dashboardPage'
 
 /** 一天的預設寬度，與 `uiStore.dayWidth` 初始值一致。 */
 const DAY_W = 32
+/** 測試一律把甘特捲到這個位置，t3-t6 的條才都落在可視範圍內。 */
+const SCROLL_X = 480
 
 /** 從某個甘特條的右側圓點拖到另一個任務的條上，放開即嘗試建立相依。 */
 async function dragLink(page: Page, app: DashboardPage, from: string, to: string): Promise<void> {
   // 圓點只在「已選取 + 滑鼠在條上」時才吃事件（legacy :2942-2948）
   await app.row(from).locator('.name').click()
-  await app.waitForGanttSettle()
+  await app.freezeGanttScroll(SCROLL_X)
   const src = (await app.bar(from).boundingBox())!
   await page.mouse.move(src.x + src.width / 2, src.y + src.height / 2)
 
@@ -36,8 +38,8 @@ test('先選取再拖曳甘特條往右 3 天，下游任務跟著移', async ({
   const app = new DashboardPage(page)
   await app.goto()
   await app.row('t3').locator('.name').click()
-  // 選取會觸發 focus 捲動，等它停下來再量條的位置
-  await app.waitForGanttSettle()
+  // 選取會觸發 focus 捲動，先把捲動位置釘死再量條的位置
+  await app.freezeGanttScroll(SCROLL_X)
 
   const box = (await app.bar('t3').boundingBox())!
   const y = box.y + box.height / 2
@@ -55,7 +57,7 @@ test('拖右側把手只改結束日，不動開始日', async ({ page }) => {
   const app = new DashboardPage(page)
   await app.goto()
   await app.row('t3').locator('.name').click()
-  await app.waitForGanttSettle()
+  await app.freezeGanttScroll(SCROLL_X)
 
   const box = (await app.bar('t3').boundingBox())!
   const y = box.y + box.height / 2
@@ -70,7 +72,7 @@ test('拖右側把手只改結束日，不動開始日', async ({ page }) => {
 test('未選取的條拖曳無效', async ({ page }) => {
   const app = new DashboardPage(page)
   await app.goto()
-  await app.waitForGanttSettle()
+  await app.freezeGanttScroll(SCROLL_X)
   await expect(app.bar('t3')).toHaveAttribute('title', /點擊以選取後才能拖曳/)
 
   const box = (await app.bar('t3').boundingBox())!
@@ -87,10 +89,9 @@ test('未選取的條拖曳無效', async ({ page }) => {
 test('從右側圓點拖到另一任務建立相依；反向循環被拒', async ({ page }) => {
   const app = new DashboardPage(page)
   await app.goto()
-  await app.waitForGanttSettle()
   await expect(app.depLines).toHaveCount(27)
 
-  await dragLink(page, app, 't3', 't6')
+  await dragLink(page, app, 't3', 't5')
   await expect(app.depLines).toHaveCount(28)
   // 放開後預覽線要收掉
   await expect(app.linkPreview).toHaveCount(0)
@@ -103,7 +104,6 @@ test('從右側圓點拖到另一任務建立相依；反向循環被拒', async
 test('列拖曳重排到另一分類', async ({ page }) => {
   const app = new DashboardPage(page)
   await app.goto()
-  await app.waitForGanttSettle()
   expect((await app.rowOrder()).slice(5, 9)).toEqual(['t5', 't6', 'G:g2', 't7'])
 
   const gb = (await app.row('t6').locator('.grip').boundingBox())!
@@ -121,7 +121,6 @@ test('分類拖曳交換順序', async ({ page }) => {
   await app.goto()
   await page.getByRole('button', { name: '▼ 全部收合' }).click()
   await expect(app.row('t1')).toHaveCount(0)
-  await app.waitForGanttSettle()
   expect((await app.rowOrder()).slice(0, 2)).toEqual(['G:g1', 'G:g2'])
 
   const gb = (await app.groupRow('g1').locator('.grip').boundingBox())!

@@ -216,18 +216,22 @@ export class DashboardPage {
   }
 
   /**
-   * 等甘特水平捲動停下來。
-   * 初次載入的 jumpToday 與選取任務後的 focus 捲動都是補間動畫，
-   * 量 boundingBox 之前不等它停，拖曳的起點就會落在錯的位置。
+   * 把甘特水平捲動固定在 `x`，並確認它真的停在那裡。
+   *
+   * 初次載入的 jumpToday 與選取任務後的 focus 捲動都是 rAF 補間；
+   * 只是「等值不再變」並不可靠——機器忙的時候兩次取樣之間可能一幀都沒跑。
+   * 所以改成主動寫入再回頭確認：動畫還在跑就會把值改掉，於是再寫一次。
+   * 條的螢幕座標因此完全可預期，拖曳的位移才等於天數 × dayWidth。
    */
-  async waitForGanttSettle(): Promise<void> {
-    let last = Number.NaN
+  async freezeGanttScroll(x: number): Promise<void> {
     for (let i = 0; i < 40; i++) {
-      const cur = await this.scrollLeftOf(this.ganttScroller)
-      if (cur === last) return
-      last = cur
-      await this.page.waitForTimeout(80)
+      await this.ganttScroller.evaluate((el, v) => {
+        el.scrollLeft = v
+      }, x)
+      await this.page.waitForTimeout(150)
+      if (Math.abs((await this.scrollLeftOf(this.ganttScroller)) - x) < 1) return
     }
+    throw new Error('甘特水平捲動一直停不下來')
   }
 }
 
