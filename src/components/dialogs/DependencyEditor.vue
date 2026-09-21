@@ -138,7 +138,7 @@ function close(): void {
   width: 100%;
   max-width: 460px;
   background: var(--surface-1);
-  border-radius: var(--sp-7);
+  border-radius: var(--r-dialog);
   padding: var(--sp-10);
   box-shadow: var(--shadow-dialog);
   max-height: 80vh;

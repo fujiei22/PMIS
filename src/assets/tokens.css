@@ -144,6 +144,8 @@
   --lh-tight: 1.22;
   --lh-body: 1.4;
   --lh-loose: 1.65;
+  /* 兩步刪除確認對話框的內文（legacy :1518 等 6 處 line-height:1.7） */
+  --lh-dialog: 1.7;
   --fw-regular: 400;
   --fw-medium: 500;
   --fw-bold: 700;
@@ -187,6 +189,8 @@
   --r-panel: 12px;
   --r-day: 14px;
   --r-modal: 16px;
+  /* 兩步刪除確認與相依編輯器的對話框（legacy :1387 / :1414 border-radius:14px） */
+  --r-dialog: 14px;
   --r-pill: 20px;
   /* 原型有用、design-system.html 未定義的圓角（spec §設計方向） */
   --r-2: 2px;
