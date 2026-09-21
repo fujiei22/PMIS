@@ -108,8 +108,22 @@ export function useGanttScroll(
       if (scroller.value) ro.observe(scroller.value)
     }
     window.addEventListener('resize', measure)
-    initialTimer = setTimeout(() => jumpToday(false), INITIAL_JUMP_MS)
   })
+
+  // 資料是 onMounted 之後非同步載進來的，等第一批任務到齊才捲到今天（legacy 的資料是同步的，:1926）
+  let jumped = false
+  const stopInitialJump = watch(
+    () => taskStore.tasks.length,
+    (n) => {
+      if (jumped || !n) return
+      jumped = true
+      initialTimer = setTimeout(() => {
+        jumpToday(false)
+        stopInitialJump()
+      }, INITIAL_JUMP_MS)
+    },
+    { immediate: true },
+  )
 
   // 面板重新展開時 scroller 會換一顆 DOM，要重新量與重新監看
   watch(scroller, (el) => {

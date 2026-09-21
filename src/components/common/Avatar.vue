@@ -51,7 +51,8 @@ const style = computed(() => ({
   background: var(--av-color);
   color: var(--surface-1);
   border: var(--av-ring) solid var(--surface-1);
-  box-sizing: content-box;
+  /* 一般頭像連白框一起算進直徑（legacy :76 吃全域 border-box） */
+  box-sizing: border-box;
   overflow: hidden;
 }
 
@@ -73,8 +74,9 @@ const style = computed(() => ({
   padding-left: var(--sp-1);
 }
 
-/* legacy 是用 max-width 從 20px 撐到 160px 做展開（:623） */
+/* legacy 是用 max-width 從 20px 撐到 160px 做展開（:623），且那裡是 content-box */
 .expandable {
+  box-sizing: content-box;
   max-width: var(--av-size);
   transition:
     max-width var(--t-layout) var(--ease),
