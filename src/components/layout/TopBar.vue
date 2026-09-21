@@ -116,6 +116,16 @@ function openCalendar(target: 'd1' | 'd2'): void {
 
 const showD1 = computed(() => filter.dateMode !== 'off')
 const showD2 = computed(() => filter.dateMode === 'between')
+
+/**
+ * 清除篩選：日期模式關掉後日曆也要收起來。
+ * `filter.clear()` 只動篩選條件，浮層是畫面狀態，由這裡關（契約 E）。legacy :3794
+ */
+function clearFilters(): void {
+  if (!filter.anyFilter) return
+  filter.clear()
+  ui.filterCalendarOpen = false
+}
 </script>
 
 <template>
@@ -217,7 +227,7 @@ const showD2 = computed(() => filter.dateMode === 'between')
           :class="{ on: filter.anyFilter }"
           data-testid="filter-clear"
           role="button"
-          @click="filter.anyFilter && filter.clear()"
+          @click="clearFilters()"
         >
           <span class="clear-x">✕</span><span>清除篩選</span>
         </div>
