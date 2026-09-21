@@ -96,6 +96,59 @@ export class DashboardPage {
     return this.page.locator('[data-zoom]')
   }
 
+  /**
+   * 頂部列第 n 個篩選 pill（0 起算）。
+   * 順序同 TopBar：狀態、優先度、分類、Issue 有無、Issue 等級、Issue 狀態、日期模式。
+   */
+  topFilter(index: number): Locator {
+    return this.page.locator('.top-bar .dd').nth(index)
+  }
+
+  /** 頂部列的「只顯示篩選結果」開關。 */
+  get onlyFiltered(): Locator {
+    return this.page.getByTestId('only-filtered')
+  }
+
+  /** 頂部列的「清除篩選」。 */
+  get filterClear(): Locator {
+    return this.page.getByTestId('filter-clear')
+  }
+
+  /** 面板頭上的排序 chip（看板 / Issue 看板各一排）。 */
+  sortChips(key: 'kanban' | 'issues'): Locator {
+    return this.panelHead(key).locator('.sort-chip')
+  }
+
+  /** 排序選單的觸發鈕。 */
+  sortTrigger(key: 'kanban' | 'issues'): Locator {
+    return this.panelHead(key).locator('.sort-trigger')
+  }
+
+  /** 展開後的排序選單面板。 */
+  sortMenu(key: 'kanban' | 'issues'): Locator {
+    return this.panelHead(key).locator('.sort-menu')
+  }
+
+  /** 狀態 / 優先度 / 分類 / Issue 欄位的浮動選項選單（全域只會有一個）。 */
+  get optionMenu(): Locator {
+    return this.page.locator('.opt-menu')
+  }
+
+  /** 甘特列與看板卡片上「時程」開的日期選擇器。 */
+  get taskDatePicker(): Locator {
+    return this.page.locator('.task-date-picker')
+  }
+
+  /** Issue 期限 / 解決日期與任務完成日期開的日期選擇器。 */
+  get issueDatePicker(): Locator {
+    return this.page.locator('.issue-date-picker')
+  }
+
+  /** 兩步刪除確認對話框。 */
+  get confirmDialog(): Locator {
+    return this.page.locator('.confirm-dialog')
+  }
+
   get todayButton(): Locator {
     return this.page.getByRole('button', { name: '今天' })
   }
