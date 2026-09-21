@@ -34,7 +34,12 @@ const style = computed(() => ({
 </script>
 
 <template>
-  <span class="avatar" :class="{ expandable }" :style="style" :title="expandable ? undefined : name">
+  <span
+    class="avatar"
+    :class="{ expandable }"
+    :style="style"
+    :title="expandable ? undefined : name"
+  >
     <span class="glyph">{{ initial }}</span>
     <span v-if="expandable" class="name">{{ name }}</span>
   </span>
@@ -65,6 +70,19 @@ const style = computed(() => ({
   justify-content: center;
   font-size: var(--fs-pill);
   font-weight: var(--fw-bold);
+}
+
+/* 不展開的頭像：整顆連白框就是 --av-size 寬（legacy :76 / :1017 是
+   `width:20px;height:20px;border:2px solid #fff` 吃全域 border-box）。
+   少了這一條，白框會加在 --av-size 外面，直徑多出 2×ring。 */
+.avatar:not(.expandable) {
+  width: var(--av-size);
+}
+
+.avatar:not(.expandable) .glyph {
+  width: 100%;
+  height: 100%;
+  flex: 1 1 auto;
 }
 
 .name {
