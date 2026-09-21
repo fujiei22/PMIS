@@ -20,10 +20,15 @@ watch(headEl, (el) => sticky.observe(props.panel, el), { immediate: true })
 
 /** 面板外殼登錄進 `panels`，頂部列的捷徑靠它捲動（契約 F）。 */
 function registerPanel(el: ElRef): void {
-  if (el instanceof HTMLElement) registry.panels.set(props.panel, el)
-  else if (registry.panels.get(props.panel)?.isConnected === false) {
-    registry.panels.delete(props.panel)
+  if (el instanceof HTMLElement) {
+    registry.panels.set(props.panel, el)
+    return
   }
+  queueMicrotask(() => {
+    if (registry.panels.get(props.panel)?.isConnected === false) {
+      registry.panels.delete(props.panel)
+    }
+  })
 }
 
 const open = computed(() => !ui.panelOff[props.panel])

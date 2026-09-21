@@ -91,10 +91,13 @@ export function registerEl(map: Map<string, HTMLElement>, id: string): (el: ElRe
       map.set(id, el)
       return
     }
-    // 解除登錄：只在表裡那顆真的離開文件時才刪。
-    // 同一個 id 的元素被重新掛載（例如卡片換欄）時，新的 set 可能先於舊的 null 進來。
-    const cur = map.get(id)
-    if (cur && !cur.isConnected) map.delete(id)
+    // 解除登錄要等這一輪 patch 做完再看：同一個 id 的元素被重新掛載時
+    // （例如看板卡片從 done 拖回 todo），新的 set 會早於舊的 null 進來，
+    // 當下就刪會把還活著的那顆刪掉。patch 完只有真的離開文件的才刪。
+    queueMicrotask(() => {
+      const cur = map.get(id)
+      if (cur && !cur.isConnected) map.delete(id)
+    })
   }
   byId.set(id, fn)
   return fn

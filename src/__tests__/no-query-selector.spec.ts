@@ -32,6 +32,11 @@ function collect(dir: string, out: string[] = []): string[] {
   return out
 }
 
+/** Windows 的反斜線轉成 `/`，白名單與失敗訊息才有一致的寫法。 */
+function posix(file: string): string {
+  return relative(SRC, file).split('\\').join('/')
+}
+
 describe('src 不留執行期 DOM 選擇器（契約 F）', () => {
   const files = collect(SRC)
 
@@ -41,9 +46,9 @@ describe('src 不留執行期 DOM 選擇器（契約 F）', () => {
 
   it.each(BANNED)('沒有任何檔案使用 %s', (token) => {
     const hits = files
-      .filter((f) => !ALLOWLIST.includes(relative(SRC, f).replaceAll('\\', '/')))
+      .filter((f) => !ALLOWLIST.includes(posix(f)))
       .filter((f) => readFileSync(f, 'utf8').includes(token))
-      .map((f) => relative(SRC, f).replaceAll('\\', '/'))
+      .map(posix)
     expect(hits).toEqual([])
   })
 })
