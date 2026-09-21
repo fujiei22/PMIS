@@ -2,6 +2,9 @@
 // Dashboard 主畫面：載資料、組頂部列 + 摘要卡 + 三個面板，並掛全域的點擊外部與時鐘。
 import { onMounted } from 'vue'
 import { loadProject } from '@/api/project'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import DatePicker from '@/components/common/DatePicker.vue'
+import OptionMenu from '@/components/common/OptionMenu.vue'
 import GanttPanel from '@/components/gantt/GanttPanel.vue'
 import IssuePanel from '@/components/issues/IssuePanel.vue'
 import KanbanPanel from '@/components/kanban/KanbanPanel.vue'
@@ -36,6 +39,11 @@ onMounted(async () => {
         <IssuePanel />
       </div>
     </main>
+
+    <!-- 全域浮層：選項選單、日期選擇器、刪除確認（詳細視窗與相依編輯器在 S6） -->
+    <OptionMenu />
+    <DatePicker />
+    <ConfirmDialog />
   </div>
 </template>
 
