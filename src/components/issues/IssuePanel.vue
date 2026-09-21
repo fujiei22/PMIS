@@ -3,14 +3,18 @@
 // legacy 對照：模板 :644-853，issueList :3119-3239，iColumns :3562-3573。
 import { computed } from 'vue'
 import PanelShell from '@/components/common/PanelShell.vue'
+import SortChips from '@/components/common/SortChips.vue'
+import SortMenu from '@/components/common/SortMenu.vue'
 import IssueCard from '@/components/issues/IssueCard.vue'
 import IssuePanelHeader from '@/components/issues/IssuePanelHeader.vue'
+import { scrollIntoContainer, useFocusRequest } from '@/composables/useFocusScroll'
 import { ISSUE_ITEM, ISSUE_LEVEL, ISSUE_STATUS, TASK_STATUS } from '@/constants/dashboard'
 import { isLateIssue } from '@/lib/schedule'
 import { applySort } from '@/lib/sort'
 import { useFilterStore } from '@/stores/filter'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
+import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 import type { Issue, IssueItem, IssueLevel, IssueStatus } from '@/types/models'
@@ -24,6 +28,7 @@ const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 const memberStore = useMemberStore()
 const filter = useFilterStore()
+const selection = useSelectionStore()
 
 const sortCtx = computed(() => ({
   taskById: taskStore.taskById,
@@ -106,6 +111,26 @@ function pickGroupBy(k: 'status' | 'level' | 'item'): void {
   filter.issueGroupBy = k
   ui.openDropdown = null
 }
+
+/**
+ * 面板頭的「＋ 新增 Issue」：掛在選取的任務底下，沒選就掛第一個任務，
+ * 並把 Issue 面板展開。legacy `addIssueTop` :3765。
+ */
+function addIssueTop(): void {
+  const task = (selection.taskId ? taskStore.taskById(selection.taskId) : null) ?? taskStore.tasks[0]
+  if (!task) return
+  // addIssue 在任務不存在時回 null（S2 契約），這裡一併擋掉
+  if (!issueStore.addIssue(task.id)) return
+  ui.panelOff.issues = false
+}
+
+/** 選到任務時把它的第一筆 Issue 捲進畫面。legacy `focus()` :2412-2417 */
+useFocusRequest((req) => {
+  const first = issueStore.issues.find((i) => i.taskId === req.taskId)
+  if (!first) return
+  const row = document.querySelector(`[data-issuerow="${first.id}"]`)
+  scrollIntoContainer(row, row?.parentElement, 8)
+})
 </script>
 
 <template>
@@ -138,13 +163,11 @@ function pickGroupBy(k: 'status' | 'level' | 'item'): void {
             </div>
           </div>
         </div>
-        <!-- 排序 chip 與排序選單是 S4 的範圍，這裡只放觸發鈕 -->
-        <div class="dashed-trigger" data-dd="1" role="button" @click="ui.toggleDropdown('isort')">
-          <span class="tool-icon">⇅</span><span>排序</span>
-        </div>
+        <SortChips kind="issue" />
+        <SortMenu kind="issue" />
       </div>
       <div class="spacer"></div>
-      <button class="mini">＋ 新增 Issue</button>
+      <button class="mini" @click="addIssueTop()">＋ 新增 Issue</button>
     </template>
 
     <div class="board" :style="{ gridTemplateColumns: gridCols }">

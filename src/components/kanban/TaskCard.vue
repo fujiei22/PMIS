@@ -4,8 +4,9 @@
 import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import Pill from '@/components/common/Pill.vue'
+import { useMenus } from '@/composables/useMenus'
 import { DELAYED, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
-import { lengthOf } from '@/lib/date'
+import { dayIndex, isoFromIndex, lengthOf } from '@/lib/date'
 import { EMPTY_LABEL, fmtDate, stripYear } from '@/lib/format'
 import { isLate } from '@/lib/schedule'
 import { useIssueStore } from '@/stores/issue'
@@ -22,6 +23,7 @@ const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 const memberStore = useMemberStore()
 const selection = useSelectionStore()
+const { openOptionMenu, openTaskDatePicker, openIssueDatePicker } = useMenus()
 
 const late = computed(() => isLate(props.task, ui.todayIdx))
 const status = computed(() => (late.value ? 'delayed' : props.task.status))
@@ -55,6 +57,28 @@ const issueBadge = computed(() => ({
   mark: openIssues.value ? '!' : '✓',
   count: openIssues.value || issues.value.length,
 }))
+
+/** 工期加一天。legacy `onDaysUp` :3081 */
+function daysUp(): void {
+  taskStore.updateTask(props.task.id, { end: isoFromIndex(dayIndex(props.task.end) + 1) })
+}
+
+/** 工期減一天；至少留一天。legacy `onDaysDown` :3082 */
+function daysDown(): void {
+  if (dayIndex(props.task.end) <= dayIndex(props.task.start)) return
+  taskStore.updateTask(props.task.id, { end: isoFromIndex(dayIndex(props.task.end) - 1) })
+}
+
+/** 刪除任務走兩步確認。legacy `onAskDelete` :3100 */
+function askDelete(): void {
+  ui.confirm = { kind: 'task', id: props.task.id, step: 1 }
+}
+
+/** ⤢ 開 / 關任務詳情（視窗本體由 S6 做）。legacy `onToggleExpand` :3064 */
+function toggleDetail(): void {
+  if (ui.detail?.kind === 'task' && ui.detail.id === props.task.id) ui.closeDetail()
+  else ui.openDetail(props.task.id, 'task')
+}
 </script>
 
 <template>
@@ -69,7 +93,7 @@ const issueBadge = computed(() => ({
     role="button"
     @click.stop="selection.toggleTask(task.id, 'card')"
   >
-    <div class="del" role="button" @click.stop>✕</div>
+    <div class="del" role="button" title="刪除任務" @click.stop="askDelete()">✕</div>
     <div class="group" :title="groupName">{{ groupName }}</div>
 
     <div class="title-row">
@@ -85,7 +109,7 @@ const issueBadge = computed(() => ({
           background: `color-mix(in srgb, ${st.bar} 12%, transparent)`,
         }"
         role="button"
-        @click.stop
+        @click.stop="openOptionMenu($event, task.id, 'status')"
       >
         <span class="st-dot" :style="{ background: st.bar }"></span>
         <span>{{ st.label }}</span>
@@ -98,20 +122,30 @@ const issueBadge = computed(() => ({
 
     <div class="dates">
       <span class="range-pill">
-        <span class="range-main" :title="rangeFull">
+        <span
+          class="range-main"
+          :title="rangeFull"
+          role="button"
+          @click.stop="openTaskDatePicker($event, task.id)"
+        >
           <span class="range-label">時程</span>
           <span class="range-value" :class="{ late }">{{ rangeShort }}</span>
         </span>
         <span class="range-sep"></span>
-        <span class="range-days" title="工期（天）">
+        <span class="range-days" title="工期（天）" @click.stop>
           <span class="days-num">{{ days }}</span>
           <span class="days-step">
-            <span class="step" title="加一天">▲</span>
-            <span class="step" title="減一天">▼</span>
+            <span class="step" role="button" title="加一天" @click.stop="daysUp()">▲</span>
+            <span class="step" role="button" title="減一天" @click.stop="daysDown()">▼</span>
           </span>
         </span>
       </span>
-      <Pill label="完成日期" caret clickable>
+      <Pill
+        label="完成日期"
+        caret
+        clickable
+        @click.stop="openIssueDatePicker($event, task.id, 'done', task.done, 'task')"
+      >
         <span :class="task.done ? 'done-on' : 'done-off'">{{ doneLabel }}</span>
       </Pill>
     </div>
@@ -133,7 +167,7 @@ const issueBadge = computed(() => ({
       <div v-if="issues.length" class="issue-badge" :class="{ open: issueBadge.open }">
         <span>{{ issueBadge.mark }}</span><span>{{ issueBadge.count }}</span>
       </div>
-      <div class="caret" role="button" @click.stop>⤢</div>
+      <div class="caret" role="button" title="開啟詳細" @click.stop="toggleDetail()">⤢</div>
     </div>
   </div>
 </template>
