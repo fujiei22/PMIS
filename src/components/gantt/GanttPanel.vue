@@ -14,6 +14,7 @@ import { usePointerDrag } from '@/composables/usePointerDrag'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex } from '@/lib/date'
+import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
@@ -26,6 +27,7 @@ const DAY_MS = 86_400_000
 const MIN_CHART_H = 120
 const WEEKDAY = ['日', '一', '二', '三', '四', '五', '六']
 
+const clock = useClockStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
 const filter = useFilterStore()
@@ -89,7 +91,7 @@ const days = computed<RulerDay[]>(() => {
       dd: String(d.getUTCDate()).padStart(2, '0'),
       wd: WEEKDAY[wd]!,
       weekend: wd === 0 || wd === 6,
-      today: idx === ui.todayIdx,
+      today: idx === clock.todayIdx,
     })
   }
   return out

@@ -9,6 +9,7 @@ import { DELAYED, ISSUE_LEVEL, ISSUE_STATUS, PRIORITY, TASK_STATUS } from '@/con
 import { lengthOf } from '@/lib/date'
 import { EMPTY_LABEL, fmtDate } from '@/lib/format'
 import { isLate, isLateIssue } from '@/lib/schedule'
+import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useSelectionStore } from '@/stores/selection'
@@ -18,6 +19,7 @@ import type { Task } from '@/types/models'
 
 const props = defineProps<{ task: Task }>()
 
+const clock = useClockStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
@@ -25,7 +27,7 @@ const memberStore = useMemberStore()
 const selection = useSelectionStore()
 const { openOptionMenu, openTaskDatePicker, openIssueDatePicker } = useMenus()
 
-const late = computed(() => isLate(props.task, ui.todayIdx))
+const late = computed(() => isLate(props.task, clock.todayIdx))
 const st = computed(() => TASK_STATUS[props.task.status])
 const pr = computed(() => PRIORITY[props.task.priority])
 
@@ -231,7 +233,7 @@ function askDelete(): void {
         <span class="issue-level" :style="{ background: ISSUE_LEVEL[i.level].color }">
           {{ i.level }}
         </span>
-        <span v-if="isLateIssue(i, ui.todayIdx)" class="issue-late">{{ DELAYED.label }}</span>
+        <span v-if="isLateIssue(i, clock.todayIdx)" class="issue-late">{{ DELAYED.label }}</span>
         <span
           class="issue-status"
           :style="{

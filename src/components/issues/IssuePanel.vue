@@ -11,6 +11,7 @@ import { scrollIntoContainer, useFocusRequest } from '@/composables/useFocusScro
 import { ISSUE_ITEM, ISSUE_LEVEL, ISSUE_STATUS } from '@/constants/dashboard'
 import { isLateIssue } from '@/lib/schedule'
 import { applySort } from '@/lib/sort'
+import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
@@ -21,6 +22,7 @@ import type { Issue, IssueItem, IssueLevel, IssueStatus } from '@/types/models'
 
 const GROUP_LABEL = { status: '處理狀態', level: '等級', item: '分類' } as const
 
+const clock = useClockStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
@@ -33,7 +35,7 @@ const sortCtx = computed(() => ({
   memberById: memberStore.byId,
   openIssueCount: issueStore.openCount,
   // created 沒填時的後備值；lib 不自己讀時鐘（review m5）
-  todayIdx: ui.todayIdx,
+  todayIdx: clock.todayIdx,
 }))
 
 /**
@@ -50,7 +52,7 @@ const visibleIssues = computed<Issue[]>(() => {
     list = list.filter(
       (i) =>
         filter.issueStatuses.includes(i.status) ||
-        (filter.issueStatuses.includes('delayed') && isLateIssue(i, ui.todayIdx)),
+        (filter.issueStatuses.includes('delayed') && isLateIssue(i, clock.todayIdx)),
     )
   }
   return applySort(list, filter.issueSort, 'issue', sortCtx.value)

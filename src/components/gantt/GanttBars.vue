@@ -6,12 +6,14 @@ import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayFraction, dayIndex, lengthOf } from '@/lib/date'
 import { isLate } from '@/lib/schedule'
+import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
 import { useIssueStore } from '@/stores/issue'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 
+const clock = useClockStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
@@ -103,7 +105,7 @@ const bars = computed<Bar[]>(() => {
       out.push({
         id: t.id,
         summary: false,
-        status: isLate(t, ui.todayIdx) ? 'delayed' : t.status,
+        status: isLate(t, clock.todayIdx) ? 'delayed' : t.status,
         left,
         top: i * ROW_HEIGHT + 6,
         w,
@@ -131,7 +133,7 @@ const bars = computed<Bar[]>(() => {
 
 /** 今天線的位置：整數日 + 當天已經過掉的工作時間比例。legacy :3519 */
 const todayLeft = computed(
-  () => (ui.todayIdx - taskStore.range.a + dayFraction(new Date(ui.now))) * ui.dayWidth,
+  () => (clock.todayIdx - taskStore.range.a + dayFraction(new Date(clock.now))) * ui.dayWidth,
 )
 
 function onBarClick(bar: Bar): void {

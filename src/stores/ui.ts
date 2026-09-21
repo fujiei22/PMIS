@@ -85,8 +85,10 @@ export interface UiError {
  */
 export const useUiStore = defineStore('ui', () => {
   /**
-   * 時鐘搬到 `stores/clock.ts`（契約 C）；這三個是 R3 清掉前的轉接欄位，
-   * 讀寫的都是 clock 的同一份狀態，新程式碼請直接用 `useClockStore()`。
+   * 時鐘搬到 `stores/clock.ts`（契約 C）；這三個是**剩下的**轉接欄位，
+   * 讀寫的都是 clock 的同一份狀態。R3 已把呼叫端改成 `useClockStore()`，
+   * 只剩 R5 正在改寫的三支月曆（DatePicker / ActivityToolbar / FilterCalendar）
+   * 還讀它們——R5 merge 後就能整段刪掉。新程式碼一律用 `useClockStore()`。
    */
   const clock = useClockStore()
   const now = toRef(clock, 'now')

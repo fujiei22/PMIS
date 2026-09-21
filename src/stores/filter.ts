@@ -7,6 +7,7 @@ import {
   DEFAULT_TASK_SORT,
   type SortKey,
 } from '@/lib/sort'
+import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -62,8 +63,8 @@ export const useFilterStore = defineStore('filter', () => {
   const matchedIds = computed<Set<string>>(() => {
     const tasks = useTaskStore()
     const issues = useIssueStore()
-    const ui = useUiStore()
-    const ctx = { openIssueCount: issues.openCount, todayIdx: ui.todayIdx }
+    const clock = useClockStore()
+    const ctx = { openIssueCount: issues.openCount, todayIdx: clock.todayIdx }
     const out = new Set<string>()
     for (const t of tasks.tasks) if (matchTaskOf(t, filter.value, ctx)) out.add(t.id)
     return out

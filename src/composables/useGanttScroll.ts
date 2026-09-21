@@ -1,5 +1,6 @@
 import { onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { dayFraction } from '@/lib/date'
+import { useClockStore } from '@/stores/clock'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 
@@ -33,6 +34,7 @@ export function useGanttScroll(
   scroller: Ref<HTMLElement | null>,
   ruler: Ref<HTMLElement | null>,
 ): GanttScroll {
+  const clock = useClockStore()
   const ui = useUiStore()
   const taskStore = useTaskStore()
 
@@ -86,7 +88,7 @@ export function useGanttScroll(
     const sc = scroller.value
     if (!sc) return
     const { a } = taskStore.range
-    const offset = ui.todayIdx - a + dayFraction(new Date(ui.now))
+    const offset = clock.todayIdx - a + dayFraction(new Date(clock.now))
     scrollTo(offset * ui.dayWidth - sc.clientWidth / 2, animated)
   }
 
