@@ -248,3 +248,65 @@ test('選取任務後甘特捲到 bar 附近', async ({ page }) => {
     )
     .toBe(true)
 })
+
+// ── R2：乐觀更新失敗與載入錯誤（只有 mock api 才注入得了失敗）────────────────
+
+test('api 失敗時改名還原並顯示錯誤條', async ({ page }) => {
+  const app = new DashboardPage(page)
+  await app.goto()
+  // 接上真後端之後沒有 __mockApi，這條就跳過（review M8）
+  // eslint-disable-next-line playwright/no-skipped-test -- 條件式跳過，不是暫時關掉的測試
+  test.skip(!(await page.evaluate(() => !!window.__mockApi)))
+
+  await page.evaluate(() => window.__mockApi!.failNext('updateTask'))
+
+  await app.row('t3').locator('.name').dblclick()
+  const input = app.row('t3').locator('input')
+  await expect(input).toBeVisible()
+  await input.pressSequentially('X')
+  // 逐鍵是本地即時的，畫面先變
+  await expect(app.card('t3').locator('.title')).toHaveText('前端框架建置X')
+
+  // 離開編輯 → flush → api 失敗 → 還原成 server 值 + 錯誤條
+  await input.press('Enter')
+  const bar = page.locator('[data-errorbar]')
+  await expect(bar).toHaveAttribute('role', 'alert')
+  await expect(bar).toContainText('更新任務')
+  await expect(app.row('t3').locator('.name')).toHaveText('前端框架建置')
+  await expect(app.card('t3').locator('.title')).toHaveText('前端框架建置')
+
+  // ✕ 關掉錯誤條
+  await bar.locator('.error-x').first().click()
+  await expect(bar).toHaveCount(0)
+})
+
+test('載入失敗顯示重試，按下後載入成功', async ({ page }) => {
+  // `window.__mockApi` 是 api 模組載入時才掛上去的，趕不及在 goto 之前注入失敗；
+  // 改成先攔截那次賦值：setter 一被呼叫就把 loadProject 設成失敗一次。
+  await page.addInitScript(() => {
+    Object.defineProperty(window, '__mockApi', {
+      configurable: true,
+      set(value: Window['__mockApi']) {
+        delete window.__mockApi
+        window.__mockApi = value
+        value?.failNext('loadProject')
+      },
+      get() {
+        return undefined
+      },
+    })
+  })
+
+  await page.goto('/')
+  // eslint-disable-next-line playwright/no-skipped-test -- 條件式跳過，不是暫時關掉的測試
+  test.skip(!(await page.evaluate(() => !!window.__mockApi)))
+
+  const retry = page.getByRole('button', { name: '重試' })
+  await expect(retry).toBeVisible()
+  await expect(page.locator('[data-load-error]')).toHaveText('連線失敗')
+  await expect(page.locator('[data-rowtask]')).toHaveCount(0)
+
+  await retry.click()
+  await expect(page.locator('[data-rowtask]')).toHaveCount(30)
+  await expect(page.locator('[data-loadstate]')).toHaveCount(0)
+})
