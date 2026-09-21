@@ -9,6 +9,12 @@ import type { Attachment, Comment } from '@/types/models'
 /** 詳細視窗裡的檔案列，比 Attachment 多一個穩定的 id 與作者名。 */
 export type CommentFile = Attachment & { id: string; by: string }
 
+/** Date → 本地 'YYYY-MM-DD'。legacy :2187 同樣用 getFullYear/getMonth/getDate。 */
+function localDay(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+}
+
 /**
  * 留言與附件。
  * 篩選條件（日期 / 成員）、頁籤、檢視模式沿用 legacy：跨次開啟保留；
@@ -74,13 +80,19 @@ export const useCommentStore = defineStore('comment', () => {
     return out
   }
 
-  /** 送出留言；作者是目前登入者，草稿全空就不送。legacy `sendComment` :2188 */
+  /**
+   * 送出留言；作者是目前登入者，草稿全空就不送。legacy `sendComment` :2188。
+   *
+   * review M1：日期與時分要出自同一個本地時鐘（legacy :2186-2188 用
+   * getFullYear/getMonth/getDate）。這裡直接從 `ui.now` 取本地欄位，不繞 `ui.todayIso`，
+   * 免得日索引換算方式改動時又出現「本地時分配 UTC 日期」的組合。
+   */
   function send(targetId: string, targetKind: 'task' | 'issue'): void {
     if (!draft.value.trim() && !draftFiles.value.length) return
     const ui = useUiStore()
     const now = new Date(ui.now)
     const pad = (n: number) => String(n).padStart(2, '0')
-    const day = ui.todayIso
+    const day = localDay(now)
     const at = day + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes())
     comments.value.push({
       id: nextId('c'),
@@ -94,13 +106,16 @@ export const useCommentStore = defineStore('comment', () => {
     resetDraft()
   }
 
-  /** 把使用者選的 / 貼上的檔案加進草稿；圖片才建 blob url。legacy `addDraftFiles` :2206 */
+  /**
+   * 把使用者選的 / 貼上的檔案加進草稿；圖片才建 blob url。legacy `addDraftFiles` :2206。
+   * review M1：附件日期同樣取本地日（送出時 `send` 會再蓋一次同一天的值）。
+   */
   function addDraftFiles(files: FileList | File[]): void {
     const ui = useUiStore()
     const picked = Array.from(files ?? []).map((f) => ({
       name: f.name || '貼上的圖片-' + Date.now() + '.png',
       size: f.size,
-      at: ui.todayIso,
+      at: localDay(new Date(ui.now)),
       url: (f.type || '').startsWith('image') ? URL.createObjectURL(f) : '',
     }))
     if (picked.length) draftFiles.value.push(...picked)

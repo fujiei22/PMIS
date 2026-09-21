@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useCommentStore } from '@/stores/comment'
 import { useTaskStore } from '@/stores/task'
@@ -102,5 +102,40 @@ describe('commentStore', () => {
     const c = useCommentStore()
     c.remove('c2')
     expect(c.forTarget('t1').map((x) => x.id)).toEqual(['c3', 'c1'])
+  })
+
+  // review M1：legacy :2186-2188 用 getFullYear/getMonth/getDate，日期與時分必須同一個本地時鐘。
+  describe('固定在 Asia/Taipei（UTC+8）的留言時間戳', () => {
+    const origin = process.env.TZ
+    beforeAll(() => {
+      process.env.TZ = 'Asia/Taipei'
+    })
+    afterAll(() => {
+      process.env.TZ = origin
+    })
+
+    it('UTC+8 早上 07:00 送出的留言標成當天，不是前一天', () => {
+      // 2026-09-19T07:00+08:00 === 2026-09-18T23:00Z
+      const c = useCommentStore()
+      useUiStore().now = Date.parse('2026-09-18T23:00:00Z')
+      c.draft = '早上留言'
+      c.addDraftFiles([{ name: 'a.txt', size: 1 } as unknown as File])
+      c.send('t1', 'task')
+      const row = c.forTarget('t1')[0]!
+      expect(row.at).toBe('2026-09-19T07:00')
+      expect(row.files[0]!.at).toBe('2026-09-19')
+    })
+
+    it('UTC+8 深夜 23:30 送出的留言標成當天，不是隔天', () => {
+      // 2026-09-19T23:30+08:00 === 2026-09-19T15:30Z
+      const c = useCommentStore()
+      useUiStore().now = Date.parse('2026-09-19T15:30:00Z')
+      c.draft = '深夜留言'
+      c.addDraftFiles([{ name: 'b.txt', size: 1 } as unknown as File])
+      c.send('t1', 'task')
+      const row = c.forTarget('t1')[0]!
+      expect(row.at).toBe('2026-09-19T23:30')
+      expect(row.files[0]!.at).toBe('2026-09-19')
+    })
   })
 })
