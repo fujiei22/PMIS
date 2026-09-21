@@ -5,6 +5,9 @@ import { loadProject } from '@/api/project'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import DatePicker from '@/components/common/DatePicker.vue'
 import OptionMenu from '@/components/common/OptionMenu.vue'
+import DetailModal from '@/components/detail/DetailModal.vue'
+import ImageLightbox from '@/components/detail/ImageLightbox.vue'
+import DependencyEditor from '@/components/dialogs/DependencyEditor.vue'
 import GanttPanel from '@/components/gantt/GanttPanel.vue'
 import IssuePanel from '@/components/issues/IssuePanel.vue'
 import KanbanPanel from '@/components/kanban/KanbanPanel.vue'
@@ -40,10 +43,13 @@ onMounted(async () => {
       </div>
     </main>
 
-    <!-- 全域浮層：選項選單、日期選擇器、刪除確認（詳細視窗與相依編輯器在 S6） -->
+    <!-- 全域浮層；由下往上疊：詳細視窗 170/180 → 選單與對話框 190/200 → Lightbox 300 -->
+    <DetailModal />
     <OptionMenu />
     <DatePicker />
+    <DependencyEditor />
     <ConfirmDialog />
+    <ImageLightbox />
   </div>
 </template>
 
