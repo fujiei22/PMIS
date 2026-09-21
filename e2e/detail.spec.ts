@@ -111,7 +111,8 @@ test('檔案頁籤全選後下載按鈕啟用；切換 tab 後關閉再開仍在
 test('相依編輯器新增前置任務後甘特出現連線；循環候選不在選單', async ({ page }) => {
   const app = new DashboardPage(page)
   await app.goto()
-  const depCount = await page.locator('.dep-layer path.dep').count()
+  const depLines = page.locator('.dep-layer polyline.dep')
+  await expect(depLines).toHaveCount(27)
 
   await openTaskDetail(page, 't3')
   await modal(page).locator('.dep-edit-link').click()
@@ -131,7 +132,7 @@ test('相依編輯器新增前置任務後甘特出現連線；循環候選不�
   await editor.locator('.dep-done').click()
   await expect(editor).toHaveCount(0)
   await modal(page).locator('.detail-close').click()
-  await expect(page.locator('.dep-layer path.dep')).toHaveCount(depCount + 1)
+  await expect(depLines).toHaveCount(28)
 })
 
 test('從詳情刪任務後視窗正常關閉、body 可捲動', async ({ page }) => {
