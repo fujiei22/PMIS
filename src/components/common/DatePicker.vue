@@ -2,15 +2,13 @@
 // 兩個浮動日期選擇器：任務的起訖日期（含工期輸入）與 Issue / 任務的單一日期。
 // legacy 對照：模板 :1325-1390，dCalCells :3452-3486、iCalCells :3488-3509。
 import { computed } from 'vue'
+import { monthGrid, WEEK_LABELS, type CalendarCell } from '@/lib/calendar'
 import { dayIndex, isoFromIndex, lengthOf, shiftMonth } from '@/lib/date'
 import { fmtDate } from '@/lib/format'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 
-/** 日曆固定畫 6 × 7 格。legacy :3461 */
-const CELL_COUNT = 42
-const WEEK = ['日', '一', '二', '三', '四', '五', '六']
 /** 工期輸入框的上限。legacy `dCalSetDays` :4003 */
 const MAX_DAYS = 3650
 
@@ -18,26 +16,14 @@ const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 
-interface Cell {
-  key: number
-  label: number
+/** 42 格由 `monthGrid` 產（契約 D），這裡只疊上這個選擇器自己的展示狀態。 */
+type Cell = CalendarCell & {
   /** 不是本月：字色轉淡。 */
   dim: boolean
   /** 起訖之間（不含端點）。 */
   inRange: boolean
-  today: boolean
   /** 端點 / 目前選到的日期。 */
   picked: boolean
-  iso: string
-  idx: number
-}
-
-/** 某個月份的 42 格網格起點（該月 1 號往前補到週日）。legacy :3457-3459 */
-function gridStart(month: string): number {
-  const y = Number(month.slice(0, 4))
-  const m = Number(month.slice(5, 7)) - 1
-  const first = Math.floor(Date.UTC(y, m, 1) / 86_400_000)
-  return first - new Date(Date.UTC(y, m, 1)).getUTCDay()
 }
 
 function monthTitle(month: string): string {
@@ -52,26 +38,14 @@ const dCells = computed<Cell[]>(() => {
   const cal = dCal.value
   const t = dTask.value
   if (!cal || !t) return []
-  const month = Number(cal.month.slice(5, 7)) - 1
-  const gs = gridStart(cal.month)
   const sIdx = dayIndex(t.start)
   const eIdx = dayIndex(t.end)
-  const out: Cell[] = []
-  for (let k = 0; k < CELL_COUNT; k++) {
-    const idx = gs + k
-    const dt = new Date(idx * 86_400_000)
-    out.push({
-      key: k,
-      idx,
-      iso: isoFromIndex(idx),
-      label: dt.getUTCDate(),
-      dim: dt.getUTCMonth() !== month,
-      inRange: idx > sIdx && idx < eIdx,
-      today: idx === ui.todayIdx,
-      picked: idx === sIdx || idx === eIdx,
-    })
-  }
-  return out
+  return monthGrid(cal.month, ui.todayIdx).map((c) => ({
+    ...c,
+    dim: !c.inMonth,
+    inRange: c.idx > sIdx && c.idx < eIdx,
+    picked: c.idx === sIdx || c.idx === eIdx,
+  }))
 })
 
 function dShift(n: number): void {
@@ -130,25 +104,13 @@ const iExists = computed(
 const iCells = computed<Cell[]>(() => {
   const cal = iCal.value
   if (!cal || !iExists.value) return []
-  const month = Number(cal.month.slice(5, 7)) - 1
-  const gs = gridStart(cal.month)
   const cur = iValue.value ? dayIndex(iValue.value) : null
-  const out: Cell[] = []
-  for (let k = 0; k < CELL_COUNT; k++) {
-    const idx = gs + k
-    const dt = new Date(idx * 86_400_000)
-    out.push({
-      key: k,
-      idx,
-      iso: isoFromIndex(idx),
-      label: dt.getUTCDate(),
-      dim: dt.getUTCMonth() !== month,
-      inRange: false,
-      today: idx === ui.todayIdx,
-      picked: cur !== null && idx === cur,
-    })
-  }
-  return out
+  return monthGrid(cal.month, ui.todayIdx).map((c) => ({
+    ...c,
+    dim: !c.inMonth,
+    inRange: false,
+    picked: cur !== null && c.idx === cur,
+  }))
 })
 
 function iShift(n: number): void {
@@ -219,14 +181,14 @@ function iSet(iso: string): void {
         <div class="cal-arrow" role="button" @click="dShift(1)">›</div>
       </div>
       <div class="cal-grid">
-        <div v-for="w in WEEK" :key="w" class="cal-weekday">{{ w }}</div>
+        <div v-for="w in WEEK_LABELS" :key="w" class="cal-weekday">{{ w }}</div>
       </div>
       <div class="cal-grid">
         <div
           v-for="c in dCells"
-          :key="c.key"
+          :key="c.idx"
           class="cal-cell"
-          :class="{ dim: c.dim, range: c.inRange, today: c.today, picked: c.picked }"
+          :class="{ dim: c.dim, range: c.inRange, today: c.isToday, picked: c.picked }"
           role="button"
           @click="dPick(c)"
         >
@@ -254,14 +216,14 @@ function iSet(iso: string): void {
         <div class="cal-arrow" role="button" @click="iShift(1)">›</div>
       </div>
       <div class="cal-grid">
-        <div v-for="w in WEEK" :key="w" class="cal-weekday">{{ w }}</div>
+        <div v-for="w in WEEK_LABELS" :key="w" class="cal-weekday">{{ w }}</div>
       </div>
       <div class="cal-grid">
         <div
           v-for="c in iCells"
-          :key="c.key"
+          :key="c.idx"
           class="cal-cell"
-          :class="{ dim: c.dim, today: c.today, picked: c.picked }"
+          :class="{ dim: c.dim, today: c.isToday, picked: c.picked }"
           role="button"
           @click="iSet(c.iso)"
         >
