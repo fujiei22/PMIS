@@ -7,6 +7,7 @@ import SortChips from '@/components/common/SortChips.vue'
 import SortMenu from '@/components/common/SortMenu.vue'
 import IssueCard from '@/components/issues/IssueCard.vue'
 import IssuePanelHeader from '@/components/issues/IssuePanelHeader.vue'
+import { useDomRegistry } from '@/composables/useDomRegistry'
 import { scrollIntoContainer, useFocusRequest } from '@/composables/useFocusScroll'
 import { useTaskActions } from '@/composables/useTaskActions'
 import { ISSUE_ITEM, ISSUE_LEVEL, ISSUE_STATUS } from '@/constants/dashboard'
@@ -31,6 +32,7 @@ const issueStore = useIssueStore()
 const memberStore = useMemberStore()
 const filter = useFilterStore()
 const selection = useSelectionStore()
+const registry = useDomRegistry()
 
 const sortCtx = computed(() => ({
   taskById: taskStore.taskById,
@@ -133,7 +135,8 @@ function addIssueTop(): void {
 useFocusRequest((req) => {
   const first = issueStore.issues.find((i) => i.taskId === req.taskId)
   if (!first) return
-  const row = document.querySelector(`[data-issuerow="${first.id}"]`)
+  // Issue 卡由 IssueCard 自己登錄（契約 F）
+  const row = registry.issueRows.get(first.id)
   scrollIntoContainer(row, row?.parentElement, 8)
 })
 </script>

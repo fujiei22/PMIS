@@ -1,5 +1,6 @@
 import { inject, onBeforeUnmount, onMounted, provide, type InjectionKey, type Ref } from 'vue'
 import { useAutoScroll } from '@/composables/useAutoScroll'
+import { useDomRegistry } from '@/composables/useDomRegistry'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex, isoFromIndex } from '@/lib/date'
 import { useRowsStore } from '@/stores/rows'
@@ -76,6 +77,8 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   const rowsStore = useRowsStore()
   const taskStore = useTaskStore()
   const selection = useSelectionStore()
+  /** 列 / 分類 / 條 / 圓點的元素都由元件自己登錄（契約 F），這裡只查表。 */
+  const registry = useDomRegistry()
 
   /** 最後一次指標座標；不需要響應式，每次 tick 直接讀。legacy `_ptr`（:2432） */
   let ptr: { x: number; y: number } | null = null
@@ -92,13 +95,13 @@ export function usePointerDrag(els: DragElements): PointerDrag {
 
   /** 一個分類連同它底下的列在畫面上佔的範圍。legacy `blockRect`（:1821） */
   function blockRect(gid: string): { top: number; bottom: number; height: number } | null {
-    const head = document.querySelector(`[data-rowgroup="${gid}"]`)
+    const head = registry.groups.get(gid)
     if (!head) return null
     const hr = head.getBoundingClientRect()
     let bottom = hr.bottom
     for (const t of taskStore.tasks) {
       if (t.groupId !== gid) continue
-      const el = document.querySelector(`[data-rowtask="${t.id}"]`)
+      const el = registry.rows.get(t.id)
       if (el) bottom = Math.max(bottom, el.getBoundingClientRect().bottom)
     }
     return { top: hr.top, bottom, height: bottom - hr.top }
@@ -178,7 +181,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     d: Extract<DragState, { kind: 'reorder' }>,
     p: { x: number; y: number },
   ): void {
-    const self = document.querySelector(`[data-rowtask="${d.id}"]`)
+    const self = registry.rows.get(d.id)
     if (!self) return
     const y = p.y
     const selfR = self.getBoundingClientRect()
@@ -384,6 +387,26 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     }
   }
 
+  /** 座標落在元素的矩形內。 */
+  function inRect(el: HTMLElement, x: number, y: number): boolean {
+    const r = el.getBoundingClientRect()
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom
+  }
+
+  /**
+   * 放開連線時終點壓在哪個任務上。
+   *
+   * legacy 是用座標取最上層元素再 `closest('[data-taskid]') ?? closest('[data-linkfor]')`
+   * （:2574-2576）；契約 F 改成對登錄表裡的條與圓點做矩形命中，順序維持「先條後圓點」。
+   */
+  function hitTaskAt(x: number, y: number): string | null {
+    for (const [id, el] of registry.bars) if (inRect(el, x, y)) return id
+    for (const [id, dots] of registry.linkDots) {
+      if (inRect(dots.L, x, y) || inRect(dots.R, x, y)) return id
+    }
+    return null
+  }
+
   /** 放開：連線要結算成相依，平移要判斷是不是「只是點一下空白處」。legacy `onUp`（:2571） */
   function onUp(e: PointerEvent): void {
     const d = finish()
@@ -392,10 +415,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
 
     if (d.kind === 'link') {
       // 命中條或圓點都算，都沒中就用最後壓到的那一列（legacy :2574-2576）
-      const el = document.elementFromPoint(e.clientX, e.clientY)
-      const hit = el?.closest('[data-taskid]') ?? el?.closest('[data-linkfor]') ?? null
-      const to =
-        hit?.getAttribute('data-taskid') ?? hit?.getAttribute('data-linkfor') ?? ui.nearTaskId
+      const to = hitTaskAt(e.clientX, e.clientY) ?? ui.nearTaskId
       ui.linkLine = null
       ui.nearTaskId = null
       if (to && to !== d.id) {

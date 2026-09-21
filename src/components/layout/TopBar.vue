@@ -7,6 +7,7 @@ import FilterCalendar from '@/components/layout/FilterCalendar.vue'
 import FilterDropdown, { type FilterOption } from '@/components/layout/FilterDropdown.vue'
 import MemberPicker from '@/components/layout/MemberPicker.vue'
 import { DELAYED, ISSUE_LEVEL, ISSUE_STATUS, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
+import { useDomRegistry } from '@/composables/useDomRegistry'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
 import { fmtDate } from '@/lib/format'
 import { useFilterStore } from '@/stores/filter'
@@ -18,6 +19,7 @@ const ui = useUiStore()
 const filter = useFilterStore()
 const taskStore = useTaskStore()
 const sticky = useStickyOffsetsContext()
+const registry = useDomRegistry()
 
 const rootEl = ref<HTMLElement | null>(null)
 watch(rootEl, (el) => sticky.observe('top', el), { immediate: true })
@@ -29,8 +31,9 @@ const boardLinks = [
   { key: 'issues', label: 'Issue', icon: '◉' },
 ] as const
 
-function jumpPanel(key: string): void {
-  document.querySelector(`[data-panel="${key}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+/** 面板元素由 `PanelShell` 登錄進 `panels`（契約 F），不再用 `data-panel` 反查。 */
+function jumpPanel(key: 'gantt' | 'kanban' | 'issues'): void {
+  registry.panels.get(key)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 /** 多選欄位的共用切換。 */

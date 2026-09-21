@@ -7,6 +7,7 @@ import SortChips from '@/components/common/SortChips.vue'
 import SortMenu from '@/components/common/SortMenu.vue'
 import KanbanHeader from '@/components/kanban/KanbanHeader.vue'
 import TaskCard from '@/components/kanban/TaskCard.vue'
+import { useDomRegistry, registerEl } from '@/composables/useDomRegistry'
 import { useFocusRequest, scrollIntoContainer } from '@/composables/useFocusScroll'
 import { useTaskActions } from '@/composables/useTaskActions'
 import { TASK_STATUS } from '@/constants/dashboard'
@@ -27,6 +28,7 @@ const issueStore = useIssueStore()
 const memberStore = useMemberStore()
 const filter = useFilterStore()
 const clock = useClockStore()
+const registry = useDomRegistry()
 
 const sortCtx = computed(() => ({
   taskById: taskStore.taskById,
@@ -54,8 +56,9 @@ const columns = computed(() =>
  */
 useFocusRequest((req) => {
   if (req.src === 'card') return
-  const card = document.querySelector(`[data-card="${req.taskId}"]`)
-  scrollIntoContainer(card, card?.closest('[data-col]'), 10)
+  // 卡片與欄位都在登錄表裡（契約 F）；卡片一定在自己狀態那一欄
+  const status = taskStore.taskById(req.taskId)?.status
+  scrollIntoContainer(registry.cards.get(req.taskId), status && registry.cols.get(status), 10)
 })
 </script>
 
@@ -78,7 +81,13 @@ useFocusRequest((req) => {
       <div v-for="c in columns" :key="c.k" class="col">
         <KanbanHeader :label="c.label" :color="c.color" :count="c.tasks.length" />
         <!-- 欄位只吃掉預設行為、不改狀態：legacy 的看板欄 onDrop 就只有 preventDefault（:2994） -->
-        <div class="col-body" :data-col="c.k" @dragover.prevent @drop.prevent>
+        <div
+          :ref="registerEl(registry.cols, c.k)"
+          class="col-body"
+          :data-col="c.k"
+          @dragover.prevent
+          @drop.prevent
+        >
           <TaskCard v-for="t in c.tasks" :key="t.id" :task="t" />
         </div>
       </div>

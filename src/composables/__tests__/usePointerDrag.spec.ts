@@ -3,6 +3,11 @@ import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, mockApi } from '@/api'
+import {
+  provideDomRegistry,
+  registerEl,
+  type DomRegistry,
+} from '@/composables/useDomRegistry'
 import { usePointerDrag, type PointerDrag } from '@/composables/usePointerDrag'
 import { dayIndex, isoFromIndex } from '@/lib/date'
 import { sampleProject } from '@/mocks/sampleProject'
@@ -15,10 +20,16 @@ function pointer(type: string, x = 0, y = 0): MouseEvent {
   return new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y })
 }
 
-/** 掛一個最小宿主元件，把 usePointerDrag 的 API 撈出來。 */
-function mountDrag(): { api: PointerDrag; unmount: () => void } {
+/**
+ * 掛一個最小宿主元件，把 usePointerDrag 的 API 撈出來。
+ *
+ * 登錄表由外層 provide（正式碼是 DashboardView）、拖曳在內層 inject（GanttPanel），
+ * 因為 Vue 的 `inject` 看的是父層的 provides，同一顆元件 provide 完自己 inject 不到。
+ */
+function mountDrag(): { api: PointerDrag; registry: DomRegistry; unmount: () => void } {
   let api!: PointerDrag
-  const Host = defineComponent({
+  let registry!: DomRegistry
+  const Inner = defineComponent({
     setup() {
       const gantt = ref<HTMLElement | null>(null)
       const chart = ref<HTMLElement | null>(null)
@@ -27,8 +38,22 @@ function mountDrag(): { api: PointerDrag; unmount: () => void } {
       return () => h('div')
     },
   })
+  const Host = defineComponent({
+    setup() {
+      registry = provideDomRegistry()
+      return () => h(Inner)
+    },
+  })
   const wrapper = mount(Host, { attachTo: document.body })
-  return { api, unmount: () => wrapper.unmount() }
+  return { api, registry, unmount: () => wrapper.unmount() }
+}
+
+/** 造一顆只有矩形的假元素；一律不進 document，確保命中只能來自登錄表。 */
+function elAt(rect: { top: number; bottom: number; left?: number; right?: number }): HTMLElement {
+  const el = document.createElement('div')
+  el.getBoundingClientRect = () =>
+    ({ left: rect.left ?? 0, right: rect.right ?? 100, top: rect.top, bottom: rect.bottom }) as DOMRect
+  return el
 }
 
 describe('usePointerDrag 的中止事件（review M3）', () => {
@@ -163,6 +188,101 @@ describe('usePointerDrag 的中止事件（review M3）', () => {
     expect(tasks.taskById('t1')!.start).toBe(before)
     expect(many).not.toHaveBeenCalled()
     many.mockRestore()
+    unmount()
+  })
+
+  it('列重排：落點來自 registry 的 rows 查表（不再 querySelector）', () => {
+    const tasks = useTaskStore()
+    const { api: drag, registry, unmount } = mountDrag()
+    const move = vi.spyOn(tasks, 'moveTaskToLocal')
+
+    // 只登錄被拖的那一列；元素不在 document 裡，querySelector 找不到
+    registerEl(registry.rows, 't3')(elAt({ top: 0, bottom: 34 }))
+
+    drag.startReorder(pointer('pointerdown', 0, 17) as unknown as PointerEvent, 't3')
+    document.dispatchEvent(pointer('pointermove', 0, 200))
+
+    expect(move).toHaveBeenCalledTimes(1)
+    expect(move.mock.calls[0]![0]).toBe('t3')
+    expect(move.mock.calls[0]![1]).toEqual({ kind: 't', id: 't4' })
+    document.dispatchEvent(pointer('pointerup', 0, 200))
+    move.mockRestore()
+    unmount()
+  })
+
+  it('分類重排：blockRect 由 groups / rows 查表算出', () => {
+    const tasks = useTaskStore()
+    const { api: drag, registry, unmount } = mountDrag()
+    const move = vi.spyOn(tasks, 'moveGroupLocal')
+
+    registerEl(registry.groups, 'g1')(elAt({ top: 0, bottom: 34 }))
+    registerEl(registry.rows, 't1')(elAt({ top: 34, bottom: 68 }))
+    registerEl(registry.groups, 'g2')(elAt({ top: 68, bottom: 102 }))
+    registerEl(registry.rows, 't7')(elAt({ top: 102, bottom: 136 }))
+
+    drag.startGroupReorder(pointer('pointerdown', 0, 17) as unknown as PointerEvent, 'g1')
+    // y 超過自己整塊（bottom 68）也超過下一塊的一半（68 + 34）
+    document.dispatchEvent(pointer('pointermove', 0, 110))
+
+    expect(move).toHaveBeenCalledWith('g1', 1)
+    document.dispatchEvent(pointer('pointerup', 0, 110))
+    move.mockRestore()
+    unmount()
+  })
+
+  it('拉線放開：命中 registry 的 bars 就建相依（不用 elementFromPoint）', () => {
+    const ui = useUiStore()
+    const tasks = useTaskStore()
+    const { api: drag, registry, unmount } = mountDrag()
+    const before = tasks.deps.length
+
+    registerEl(registry.bars, 't3')(elAt({ top: 100, bottom: 122, left: 200, right: 320 }))
+
+    drag.startLink(pointer('pointerdown') as unknown as PointerEvent, 't1', 'R')
+    // 沒有 nearTaskId 可退，命中只能來自登錄表
+    ui.nearTaskId = null
+    document.dispatchEvent(pointer('pointerup', 260, 110))
+
+    expect(tasks.deps.length).toBe(before + 1)
+    expect(tasks.deps[tasks.deps.length - 1]).toMatchObject({ from: 't1', to: 't3' })
+    unmount()
+  })
+
+  it('拉線放開：命中 linkDots 的圓點熱區也算', () => {
+    const ui = useUiStore()
+    const tasks = useTaskStore()
+    const { api: drag, registry, unmount } = mountDrag()
+    const before = tasks.deps.length
+
+    registry.linkDots.set('t5', {
+      L: elAt({ top: 90, bottom: 130, left: 160, right: 192 }),
+      R: elAt({ top: 90, bottom: 130, left: 330, right: 362 }),
+    })
+
+    drag.startLink(pointer('pointerdown') as unknown as PointerEvent, 't1', 'R')
+    ui.nearTaskId = null
+    document.dispatchEvent(pointer('pointerup', 176, 110))
+
+    expect(tasks.deps.length).toBe(before + 1)
+    expect(tasks.deps[tasks.deps.length - 1]).toMatchObject({ from: 't1', to: 't5' })
+    unmount()
+  })
+
+  it('拉線放開：都沒命中就退回最後壓到的那一列', () => {
+    const ui = useUiStore()
+    const tasks = useTaskStore()
+    const { api: drag, registry, unmount } = mountDrag()
+    const before = tasks.deps.length
+
+    registerEl(registry.bars, 't3')(elAt({ top: 100, bottom: 122, left: 200, right: 320 }))
+
+    drag.startLink(pointer('pointerdown') as unknown as PointerEvent, 't1', 'R')
+    ui.nearTaskId = 't4'
+    // 落點在 t3 的條之外
+    document.dispatchEvent(pointer('pointerup', 900, 900))
+
+    expect(tasks.deps.length).toBe(before + 1)
+    expect(tasks.deps[tasks.deps.length - 1]).toMatchObject({ from: 't1', to: 't4' })
     unmount()
   })
 
