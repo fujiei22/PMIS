@@ -2,7 +2,9 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { api, mockApi } from '@/api'
 import { usePointerDrag, type PointerDrag } from '@/composables/usePointerDrag'
+import { dayIndex, isoFromIndex } from '@/lib/date'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
@@ -32,6 +34,7 @@ function mountDrag(): { api: PointerDrag; unmount: () => void } {
 describe('usePointerDrag 的中止事件（review M3）', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    mockApi.reset(structuredClone(sampleProject))
     useTaskStore().load(structuredClone(sampleProject))
     // jsdom 沒有實作 elementFromPoint；onUp 會退回 ui.nearTaskId
     if (!document.elementFromPoint) {
@@ -120,6 +123,46 @@ describe('usePointerDrag 的中止事件（review M3）', () => {
     // 中止不是「放開」，不走 legacy :2584 的點擊判定
     expect(selection.taskId).toBe('t1')
     cancelRaf.mockRestore()
+    unmount()
+  })
+
+  // review C1：拖曳的每個 tick 只改本地，放開才送一次
+  it('條的移動：tick 只改本地，pointerup 才送一次 updateTasks', () => {
+    const tasks = useTaskStore()
+    const one = vi.spyOn(api, 'updateTask')
+    const many = vi.spyOn(api, 'updateTasks')
+    const { api: drag, unmount } = mountDrag()
+    const t1 = tasks.taskById('t1')!
+    const s0 = dayIndex(t1.start)
+
+    drag.startBar(pointer('pointerdown', 0, 0) as unknown as PointerEvent, 't1', 'move')
+    for (const x of [32, 64, 96]) document.dispatchEvent(pointer('pointermove', x, 0))
+    expect(tasks.taskById('t1')!.start).toBe(isoFromIndex(s0 + 3))
+    expect(one).not.toHaveBeenCalled()
+    expect(many).not.toHaveBeenCalled()
+
+    document.dispatchEvent(pointer('pointerup', 96, 0))
+    expect(many).toHaveBeenCalledTimes(1)
+    expect(many.mock.calls[0]![0].some((t) => t.id === 't1')).toBe(true)
+    one.mockRestore()
+    many.mockRestore()
+    unmount()
+  })
+
+  it('條的移動被中止 → 本地放回最後已知的 server 狀態', () => {
+    const tasks = useTaskStore()
+    const many = vi.spyOn(api, 'updateTasks')
+    const { api: drag, unmount } = mountDrag()
+    const before = tasks.taskById('t1')!.start
+
+    drag.startBar(pointer('pointerdown', 0, 0) as unknown as PointerEvent, 't1', 'move')
+    document.dispatchEvent(pointer('pointermove', 96, 0))
+    expect(tasks.taskById('t1')!.start).not.toBe(before)
+
+    document.dispatchEvent(pointer('pointercancel', 96, 0))
+    expect(tasks.taskById('t1')!.start).toBe(before)
+    expect(many).not.toHaveBeenCalled()
+    many.mockRestore()
     unmount()
   })
 

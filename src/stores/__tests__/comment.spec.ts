@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { api, mockApi } from '@/api'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useCommentStore } from '@/stores/comment'
 import { useTaskStore } from '@/stores/task'
@@ -8,10 +9,16 @@ import { useUiStore } from '@/stores/ui'
 const NOW = Date.parse('2026-09-18T10:00:00Z')
 
 describe('commentStore', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
+    mockApi.reset(structuredClone(sampleProject))
     useUiStore().now = NOW
-    useTaskStore().load(structuredClone(sampleProject))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    await useTaskStore().load()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('初始值為契約 D 列的預設', () => {
@@ -217,6 +224,88 @@ describe('commentStore', () => {
       const row = c.forTarget('t1')[0]!
       expect(row.at).toBe('2026-09-19T23:30')
       expect(row.files[0]!.at).toBe('2026-09-19')
+    })
+  })
+
+  // ── 乐觀更新（契約 B / review C2）────────────────────────────────────────
+  describe('經 api 的乐觀更新', () => {
+    /** 造一個會被當成圖片的 File 替身。 */
+    const img = (name: string) => ({ name, size: 10, type: 'image/png' }) as unknown as File
+
+    it('send 走 api.createComment 並把原始 File 一起送出', async () => {
+      const c = useCommentStore()
+      const spy = vi.spyOn(api, 'createComment')
+      const file = { name: 'a.txt', size: 3, type: 'text/plain' } as unknown as File
+      c.addDraftFiles([file])
+      c.draft = '帶檔案'
+      await c.send('t1', 'task')
+
+      expect(spy).toHaveBeenCalledTimes(1)
+      const [comment, files] = spy.mock.calls[0]!
+      expect(comment.text).toBe('帶檔案')
+      expect(files).toEqual([file])
+      expect(comment.files[0]!.id).toBe(`${comment.id}:0`)
+    })
+
+    it('response 換掉 blob url 時 revoke 舊值（review M13）', async () => {
+      const c = useCommentStore()
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock/1')
+      const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+      vi.spyOn(api, 'createComment').mockImplementation(async (comment) => ({
+        ...comment,
+        files: comment.files.map((f) => ({ ...f, url: `https://server/files/${f.id}` })),
+      }))
+
+      c.addDraftFiles([img('a.png')])
+      c.draft = '帶圖'
+      await c.send('t1', 'task')
+
+      const row = c.forTarget('t1')[0]!
+      expect(row.files[0]!.url).toBe(`https://server/files/${row.id}:0`)
+      expect(revoke).toHaveBeenCalledWith('blob:mock/1')
+    })
+
+    it('send 失敗 → 留言被收回並推一筆錯誤', async () => {
+      const c = useCommentStore()
+      mockApi.failNext('createComment')
+      c.draft = '送不出去'
+      await c.send('t1', 'task')
+      expect(c.forTarget('t1').map((x) => x.text)).not.toContain('送不出去')
+      expect(useUiStore().errors[0]!.label).toBe('送出留言')
+    })
+
+    it('remove 走 api.deleteComment，失敗時留言回來', async () => {
+      const c = useCommentStore()
+      const spy = vi.spyOn(api, 'deleteComment')
+      await c.remove('c2')
+      expect(spy).toHaveBeenCalledWith('c2')
+      expect(c.forTarget('t1').map((x) => x.id)).toEqual(['c3', 'c1'])
+
+      mockApi.failNext('deleteComment')
+      await c.remove('c1')
+      expect(c.forTarget('t1').map((x) => x.id)).toEqual(['c3', 'c1'])
+      expect(useUiStore().errors[0]!.label).toBe('刪除留言')
+    })
+  })
+
+  describe('applyEvent', () => {
+    it('comment.created / comment.deleted', () => {
+      const c = useCommentStore()
+      c.applyEvent({
+        type: 'comment.created',
+        payload: {
+          id: 'cX',
+          targetId: 't1',
+          targetKind: 'task',
+          memberId: 'm2',
+          at: '2026-09-18T11:00',
+          text: '別人留的',
+          files: [],
+        },
+      })
+      expect(c.forTarget('t1')[0]!.text).toBe('別人留的')
+      c.applyEvent({ type: 'comment.deleted', payload: { id: 'cX' } })
+      expect(c.forTarget('t1').some((x) => x.id === 'cX')).toBe(false)
     })
   })
 })

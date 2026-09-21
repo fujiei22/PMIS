@@ -2,6 +2,7 @@
 // 頂部固定列：專案名、面板捷徑、成員篩選、七個篩選 pill、日期範圍、清除篩選、只顯示篩選結果。
 // legacy 對照：模板 :56-292、各 pill 的 label / options :3657-3764。
 import { computed, ref, watch } from 'vue'
+import ErrorBar from '@/components/common/ErrorBar.vue'
 import FilterCalendar from '@/components/layout/FilterCalendar.vue'
 import FilterDropdown, { type FilterOption } from '@/components/layout/FilterDropdown.vue'
 import MemberPicker from '@/components/layout/MemberPicker.vue'
@@ -119,153 +120,172 @@ const showD2 = computed(() => filter.dateMode === 'between')
 
 <template>
   <header ref="rootEl" class="top-bar">
-    <div class="burger"><i></i><i></i><i></i></div>
-    <h1 class="project">My Project</h1>
+    <div class="top-row">
+      <div class="burger"><i></i><i></i><i></i></div>
+      <h1 class="project">My Project</h1>
 
-    <nav class="boards">
-      <div
-        v-for="b in boardLinks"
-        :key="b.key"
-        class="board-link"
-        role="button"
-        @click="jumpPanel(b.key)"
-      >
-        <span class="board-icon">{{ b.icon }}</span><span>{{ b.label }}</span>
+      <nav class="boards">
+        <div
+          v-for="b in boardLinks"
+          :key="b.key"
+          class="board-link"
+          role="button"
+          @click="jumpPanel(b.key)"
+        >
+          <span class="board-icon">{{ b.icon }}</span><span>{{ b.label }}</span>
+        </div>
+      </nav>
+
+      <div class="filters">
+        <span class="section">成員</span>
+        <MemberPicker />
+        <span class="grow"></span>
+
+        <span class="divider"></span>
+        <span class="section">任務</span>
+        <FilterDropdown
+          dd-key="status"
+          :label="filter.statuses.length ? `狀態 ${filter.statuses.length}` : '狀態'"
+          :active="filter.statuses.length > 0"
+          :options="statusOptions"
+          @pick="filter.statuses = toggleIn(filter.statuses, $event as TaskStatus | 'delayed')"
+        />
+        <FilterDropdown
+          dd-key="prio"
+          :label="filter.priorities.length ? `優先度 ${filter.priorities.length}` : '優先度'"
+          :active="filter.priorities.length > 0"
+          :options="prioOptions"
+          @pick="filter.priorities = toggleIn(filter.priorities, $event as Priority)"
+        />
+        <FilterDropdown
+          dd-key="group"
+          :label="filter.groupIds.length ? `分類 ${filter.groupIds.length}` : '分類'"
+          :active="filter.groupIds.length > 0"
+          :options="groupOptions"
+          :menu-width="168"
+          :menu-max-height="300"
+          ellipsis
+          @pick="filter.groupIds = toggleIn(filter.groupIds, $event)"
+        />
+        <FilterDropdown
+          dd-key="issue"
+          :label="{ all: 'Issue', has: '有 Issue', none: '無 Issue' }[filter.issueMode]"
+          :active="filter.issueMode !== 'all'"
+          :options="issueModeOptions"
+          @pick="pickIssueMode"
+        />
+
+        <span class="divider"></span>
+        <span class="section">Issue</span>
+        <FilterDropdown
+          dd-key="icls"
+          :label="filter.issueLevels.length ? `等級 ${filter.issueLevels.length}` : '等級'"
+          :active="filter.issueLevels.length > 0"
+          :options="levelOptions"
+          @pick="filter.issueLevels = toggleIn(filter.issueLevels, $event as IssueLevel)"
+        />
+        <FilterDropdown
+          dd-key="ist"
+          :label="filter.issueStatuses.length ? `狀態 ${filter.issueStatuses.length}` : '狀態'"
+          :active="filter.issueStatuses.length > 0"
+          :options="issueStatusOptions"
+          @pick="
+            filter.issueStatuses = toggleIn(filter.issueStatuses, $event as IssueStatus | 'delayed')
+          "
+        />
+
+        <span class="divider"></span>
+        <span class="section">日期</span>
+        <FilterDropdown
+          dd-key="fmode"
+          :label="DATE_MODE_LABEL[filter.dateMode]"
+          :active="filter.dateMode !== 'off'"
+          :options="dateModeOptions"
+          :menu-width="128"
+          @pick="pickDateMode"
+        />
+        <div v-if="showD1" class="date-pill" role="button" @click="openCalendar('d1')">
+          {{ fmtDate(filter.d1) }}
+        </div>
+        <span v-if="showD2" class="tilde">～</span>
+        <div v-if="showD2" class="date-pill" role="button" @click="openCalendar('d2')">
+          {{ fmtDate(filter.d2) }}
+        </div>
+
+        <div
+          class="clear"
+          :class="{ on: filter.anyFilter }"
+          data-testid="filter-clear"
+          role="button"
+          @click="filter.anyFilter && filter.clear()"
+        >
+          <span class="clear-x">✕</span><span>清除篩選</span>
+        </div>
+
+        <FilterCalendar />
       </div>
-    </nav>
 
-    <div class="filters">
-      <span class="section">成員</span>
-      <MemberPicker />
-      <span class="grow"></span>
-
-      <span class="divider"></span>
-      <span class="section">任務</span>
-      <FilterDropdown
-        dd-key="status"
-        :label="filter.statuses.length ? `狀態 ${filter.statuses.length}` : '狀態'"
-        :active="filter.statuses.length > 0"
-        :options="statusOptions"
-        @pick="filter.statuses = toggleIn(filter.statuses, $event as TaskStatus | 'delayed')"
-      />
-      <FilterDropdown
-        dd-key="prio"
-        :label="filter.priorities.length ? `優先度 ${filter.priorities.length}` : '優先度'"
-        :active="filter.priorities.length > 0"
-        :options="prioOptions"
-        @pick="filter.priorities = toggleIn(filter.priorities, $event as Priority)"
-      />
-      <FilterDropdown
-        dd-key="group"
-        :label="filter.groupIds.length ? `分類 ${filter.groupIds.length}` : '分類'"
-        :active="filter.groupIds.length > 0"
-        :options="groupOptions"
-        :menu-width="168"
-        :menu-max-height="300"
-        ellipsis
-        @pick="filter.groupIds = toggleIn(filter.groupIds, $event)"
-      />
-      <FilterDropdown
-        dd-key="issue"
-        :label="{ all: 'Issue', has: '有 Issue', none: '無 Issue' }[filter.issueMode]"
-        :active="filter.issueMode !== 'all'"
-        :options="issueModeOptions"
-        @pick="pickIssueMode"
-      />
-
-      <span class="divider"></span>
-      <span class="section">Issue</span>
-      <FilterDropdown
-        dd-key="icls"
-        :label="filter.issueLevels.length ? `等級 ${filter.issueLevels.length}` : '等級'"
-        :active="filter.issueLevels.length > 0"
-        :options="levelOptions"
-        @pick="filter.issueLevels = toggleIn(filter.issueLevels, $event as IssueLevel)"
-      />
-      <FilterDropdown
-        dd-key="ist"
-        :label="filter.issueStatuses.length ? `狀態 ${filter.issueStatuses.length}` : '狀態'"
-        :active="filter.issueStatuses.length > 0"
-        :options="issueStatusOptions"
-        @pick="
-          filter.issueStatuses = toggleIn(filter.issueStatuses, $event as IssueStatus | 'delayed')
-        "
-      />
-
-      <span class="divider"></span>
-      <span class="section">日期</span>
-      <FilterDropdown
-        dd-key="fmode"
-        :label="DATE_MODE_LABEL[filter.dateMode]"
-        :active="filter.dateMode !== 'off'"
-        :options="dateModeOptions"
-        :menu-width="128"
-        @pick="pickDateMode"
-      />
-      <div v-if="showD1" class="date-pill" role="button" @click="openCalendar('d1')">
-        {{ fmtDate(filter.d1) }}
+      <div class="tail">
+        <div
+          class="only"
+          :class="{ on: filter.onlyFiltered }"
+          data-testid="only-filtered"
+          role="button"
+          @click="filter.onlyFiltered = !filter.onlyFiltered"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" class="eye">
+            <ellipse
+              cx="12"
+              cy="12"
+              rx="9.5"
+              ry="5.6"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+            />
+            <circle cx="12" cy="12" r="2.6" fill="currentColor" />
+            <line
+              v-if="!filter.onlyFiltered"
+              x1="4"
+              y1="20"
+              x2="20"
+              y2="4"
+              stroke="currentColor"
+              stroke-width="1.8"
+            />
+          </svg>
+          <span>只顯示篩選結果</span>
+        </div>
+        <div class="me">我</div>
       </div>
-      <span v-if="showD2" class="tilde">～</span>
-      <div v-if="showD2" class="date-pill" role="button" @click="openCalendar('d2')">
-        {{ fmtDate(filter.d2) }}
-      </div>
-
-      <div
-        class="clear"
-        :class="{ on: filter.anyFilter }"
-        data-testid="filter-clear"
-        role="button"
-        @click="filter.anyFilter && filter.clear()"
-      >
-        <span class="clear-x">✕</span><span>清除篩選</span>
-      </div>
-
-      <FilterCalendar />
     </div>
 
-    <div class="tail">
-      <div
-        class="only"
-        :class="{ on: filter.onlyFiltered }"
-        data-testid="only-filtered"
-        role="button"
-        @click="filter.onlyFiltered = !filter.onlyFiltered"
-      >
-        <svg width="15" height="15" viewBox="0 0 24 24" class="eye">
-          <ellipse cx="12" cy="12" rx="9.5" ry="5.6" fill="none" stroke="currentColor" stroke-width="1.8" />
-          <circle cx="12" cy="12" r="2.6" fill="currentColor" />
-          <line
-            v-if="!filter.onlyFiltered"
-            x1="4"
-            y1="20"
-            x2="20"
-            y2="4"
-            stroke="currentColor"
-            stroke-width="1.8"
-          />
-        </svg>
-        <span>只顯示篩選結果</span>
-      </div>
-      <div class="me">我</div>
-    </div>
+    <!-- 第二列：寫入失敗的提示條。sticky 高度由 useStickyOffsets 自動吸收（review M11） -->
+    <ErrorBar />
   </header>
 </template>
 
 <style scoped>
+/* 兩列：第一列是原本的頂部列，第二列是 ErrorBar（沒有錯誤時不存在，高度完全相同）。 */
 .top-bar {
   display: flex;
-  align-items: center;
-  gap: var(--sp-5);
-  padding: var(--sp-5) var(--sp-10);
+  flex-direction: column;
   background: var(--surface-1);
   border-bottom: 1px solid var(--border-1);
   position: sticky;
   top: 0;
   z-index: 40;
-  flex-wrap: nowrap;
   /* 同 legacy :56，避免 sticky 列在捲動時閃爍 */
   transform: translateZ(0);
   backface-visibility: hidden;
+}
+
+.top-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  padding: var(--sp-5) var(--sp-10);
+  flex-wrap: nowrap;
 }
 
 .burger {

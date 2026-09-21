@@ -1,7 +1,6 @@
 import { createMockApi } from '@/api/mock'
 import type { MockApi, ProjectApi } from '@/api/types'
 import { sampleProject } from '@/mocks/sampleProject'
-import type { ProjectData } from '@/types/models'
 
 /**
  * 資料進出的唯一入口。store 與元件一律 `import { api } from '@/api'`，
@@ -23,10 +22,3 @@ export const api: ProjectApi = mockApi
 
 // e2e 要能注入失敗與延遲；只在 dev build 掛上去，production build 不帶這個把手。
 if (import.meta.env.DEV) window.__mockApi = mockApi
-
-/**
- * @deprecated 舊的 `@/api/project` 相容匯出，R2 把 `DashboardView` 的載入改成走 store 之後移除。
- */
-export async function loadProject(): Promise<ProjectData> {
-  return api.loadProject()
-}

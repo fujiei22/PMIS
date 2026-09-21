@@ -2,6 +2,7 @@
 // 甘特左欄的任務列：把手、狀態點、任務名、起訖日期 + 工期、hover 才出現的快捷鈕。
 // legacy 對照：模板 :442-466，groupRows[].tasks :2814-2877。
 import { computed, nextTick, ref, watch } from 'vue'
+import { useEditDraft } from '@/composables/useEditDraft'
 import { useMenus } from '@/composables/useMenus'
 import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { DELAYED, TASK_STATUS } from '@/constants/dashboard'
@@ -29,7 +30,8 @@ const statusDot = computed(() => (late.value ? DELAYED.bar : TASK_STATUS[props.t
 const selected = computed(() => selection.taskId === props.task.id)
 /** 前置 / 後續；沒有相依但同屬選取分類（或 soft 篩選命中）時算 group。legacy :2908 */
 const rel = computed<'up' | 'down' | 'group' | null>(
-  () => selection.related[props.task.id] ?? (selection.softHighlight[props.task.id] ? 'group' : null),
+  () =>
+    selection.related[props.task.id] ?? (selection.softHighlight[props.task.id] ? 'group' : null),
 )
 /** 有選取且自己不相關 → 淡化。legacy `rowOp` :2820 */
 const dimmed = computed(() => selection.hasSelection && !selected.value && !rel.value)
@@ -72,19 +74,34 @@ function startEdit(e: MouseEvent): void {
   ui.editing = { kind: 't', id: props.task.id }
 }
 
-/** 每一鍵就寫進 store（legacy onChange 逐鍵觸發，:2882）。 */
+/**
+ * 每一鍵就寫進 store（legacy onChange 逐鍵觸發，:2882）；
+ * api 由 `useEditDraft` 做 300ms debounce，離開編輯時 flush（契約 B-2）。
+ */
+const nameDraft = useEditDraft({
+  get: () => props.task.name,
+  applyLocal: (v) => {
+    taskStore.applyLocalPatch(props.task.id, { name: v })
+  },
+  commit: (v) => taskStore.commitTaskPatch(props.task.id, { name: v }),
+})
+
 function onRename(e: Event): void {
-  taskStore.updateTask(props.task.id, { name: (e.target as HTMLInputElement).value })
+  nameDraft.onInput((e.target as HTMLInputElement).value)
 }
 
-/** Enter / Esc / blur 只結束編輯，不還原（legacy :2878-2881）。 */
+/** Enter / Esc / blur 只結束編輯，不還原（legacy :2878-2881）；離開前先把草稿送出去。 */
 function endEdit(): void {
+  void nameDraft.flush()
   if (editing.value) ui.editing = null
 }
 
 function onEditKey(e: KeyboardEvent): void {
   if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-  if (e.key === 'Escape') ui.editing = null
+  if (e.key === 'Escape') {
+    void nameDraft.flush()
+    ui.editing = null
+  }
 }
 
 /** 工期加一天。legacy `onDaysUp` :2846 */

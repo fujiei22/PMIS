@@ -8,6 +8,7 @@ import DetailHeader from '@/components/detail/DetailHeader.vue'
 import FilesTab from '@/components/detail/FilesTab.vue'
 import IssueProperties from '@/components/detail/IssueProperties.vue'
 import TaskProperties from '@/components/detail/TaskProperties.vue'
+import { useEditDraft } from '@/composables/useEditDraft'
 import { useCommentStore } from '@/stores/comment'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'
@@ -50,10 +51,24 @@ const paneClass = computed(() =>
   ui.navAnim === 'in' ? 'pane-in' : ui.navAnim === 'back' ? 'pane-back' : '',
 )
 
-/** 改標題：任務寫 name、Issue 寫 title。legacy `detail.onName` :3094 / :3292 */
+/**
+ * 改標題：任務寫 name、Issue 寫 title。legacy `detail.onName` :3094 / :3292。
+ * 本地逐鍵、api debounce 300ms，離開編輯時由 DetailHeader 的 `flush` 事件送出（契約 B-2）。
+ */
+const titleDraft = useEditDraft({
+  get: () => name.value,
+  applyLocal: (v) => {
+    if (task.value) taskStore.applyLocalPatch(task.value.id, { name: v })
+    else if (issue.value) issueStore.applyLocalPatch(issue.value.id, { title: v })
+  },
+  commit: async (v) => {
+    if (task.value) await taskStore.commitTaskPatch(task.value.id, { name: v })
+    else if (issue.value) await issueStore.commitIssuePatch(issue.value.id, { title: v })
+  },
+})
+
 function rename(v: string): void {
-  if (task.value) taskStore.updateTask(task.value.id, { name: v })
-  else if (issue.value) issueStore.updateIssue(issue.value.id, { title: v })
+  titleDraft.onInput(v)
 }
 
 // ── 鎖 body 捲動（legacy componentDidUpdate :1765-1771）──────────────────────
@@ -83,6 +98,7 @@ onBeforeUnmount(() => {
           :stack-title="stackTitle"
           :pane-class="paneClass"
           @update:name="rename"
+          @flush="titleDraft.flush()"
         />
 
         <div class="detail-body" :class="paneClass">

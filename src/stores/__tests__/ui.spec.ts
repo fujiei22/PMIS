@@ -1,7 +1,9 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '@/api/types'
 import { dayIndex } from '@/lib/date'
 import { sampleProject } from '@/mocks/sampleProject'
+import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -144,5 +146,89 @@ describe('uiStore', () => {
     ui.openDetail('i1', 'issue')
     ui.detailBack()
     expect(ui.detail).toBeNull()
+  })
+
+  // ── 載入狀態與錯誤條（契約 C）────────────────────────────────────────────
+  describe('loadState / errors', () => {
+    beforeEach(() => {
+      // 這一段驗的是「還沒載入」的狀態，外層 beforeEach 已經載完了，換一個乾淨的 pinia
+      setActivePinia(createPinia())
+      useUiStore().now = NOW
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('載入狀態的初始值是 idle', () => {
+      const ui = useUiStore()
+      expect(ui.loadState).toBe('idle')
+      expect(ui.loadError).toBeNull()
+      expect(ui.errors).toEqual([])
+    })
+
+    it('pushError 記下 label / code / message / cause 並 console.error', () => {
+      const ui = useUiStore()
+      const err = new ApiError('not_found', '任務 t99 不存在', 404, 'updateTask')
+      ui.pushError({ label: '更新任務', error: err })
+      expect(ui.errors).toHaveLength(1)
+      expect(ui.errors[0]).toMatchObject({
+        label: '更新任務',
+        code: 'not_found',
+        message: '任務 t99 不存在',
+        cause: err,
+        count: 1,
+      })
+      expect(ui.errors[0]!.at).toBe(useClockStore().now)
+      expect(console.error).toHaveBeenCalledWith('[api]', '更新任務', err)
+    })
+
+    it('非 ApiError 的例外歸成 unknown', () => {
+      const ui = useUiStore()
+      ui.pushError({ label: '更新任務', error: new Error('爆了') })
+      expect(ui.errors[0]!.code).toBe('unknown')
+      expect(ui.errors[0]!.message).toBe('爆了')
+    })
+
+    it('同 label 在 5 秒內合併成一筆並累加 count', () => {
+      const ui = useUiStore()
+      ui.pushError({ label: '更新任務', error: new ApiError('network', 'a') })
+      ui.pushError({ label: '更新任務', error: new ApiError('network', 'b') })
+      expect(ui.errors).toHaveLength(1)
+      expect(ui.errors[0]!.count).toBe(2)
+
+      // 超過 5 秒就是新的一筆
+      useClockStore().now += 6000
+      ui.pushError({ label: '更新任務', error: new ApiError('network', 'c') })
+      expect(ui.errors).toHaveLength(2)
+      expect(ui.errors[0]!.count).toBe(1)
+    })
+
+    it('不同 label 各自一筆、新的排在前面，最多留 5 筆', () => {
+      const ui = useUiStore()
+      for (let i = 1; i <= 7; i++) {
+        ui.pushError({ label: `錯誤 ${i}`, error: new ApiError('network', 'x') })
+      }
+      expect(ui.errors).toHaveLength(5)
+      expect(ui.errors.map((e) => e.label)).toEqual([
+        '錯誤 7',
+        '錯誤 6',
+        '錯誤 5',
+        '錯誤 4',
+        '錯誤 3',
+      ])
+    })
+
+    it('dismissError 只關掉那一筆', () => {
+      const ui = useUiStore()
+      ui.pushError({ label: 'A', error: new ApiError('network', 'x') })
+      ui.pushError({ label: 'B', error: new ApiError('network', 'x') })
+      ui.dismissError(ui.errors[0]!.id)
+      expect(ui.errors.map((e) => e.label)).toEqual(['A'])
+      // 不存在的 id 不影響
+      ui.dismissError('nope')
+      expect(ui.errors).toHaveLength(1)
+    })
   })
 })

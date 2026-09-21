@@ -6,6 +6,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import Pill from '@/components/common/Pill.vue'
 import { useDelayedUnmount } from '@/composables/useDelayedUnmount'
+import { useEditDraft, type EditDraft } from '@/composables/useEditDraft'
 import { useMenus } from '@/composables/useMenus'
 import { DELAYED, ISSUE_ITEM, ISSUE_LEVEL, ISSUE_STATUS } from '@/constants/dashboard'
 import { initialOf } from '@/lib/color'
@@ -49,13 +50,14 @@ const rel = computed(
 )
 const dimmed = computed(() => selection.hasSelection && !on.value && !rel.value)
 
-const taskName = computed(
-  () => taskStore.taskById(props.issue.taskId)?.name ?? '（已刪除任務）',
-)
+const taskName = computed(() => taskStore.taskById(props.issue.taskId)?.name ?? '（已刪除任務）')
 
 const ownerIds = computed(() => props.issue.ownerIds ?? [])
 const owners = computed(() =>
-  ownerIds.value.slice(0, MAX_OWNERS).map((id) => memberStore.byId(id)).filter((m) => !!m),
+  ownerIds.value
+    .slice(0, MAX_OWNERS)
+    .map((id) => memberStore.byId(id))
+    .filter((m) => !!m),
 )
 const moreOwners = computed(() => Math.max(0, ownerIds.value.length - MAX_OWNERS))
 const moreOwnerNames = computed(() =>
@@ -88,19 +90,34 @@ function startEdit(e: MouseEvent): void {
   ui.editing = { kind: 'i', id: props.issue.id }
 }
 
-/** 每一鍵就寫進 store（legacy onChange 逐鍵觸發，:3176）。 */
+/**
+ * 每一鍵就寫進 store（legacy onChange 逐鍵觸發，:3176）；
+ * api 由 `useEditDraft` 做 300ms debounce，離開編輯時 flush（契約 B-2）。
+ */
+const titleDraft = useEditDraft({
+  get: () => props.issue.title,
+  applyLocal: (v) => {
+    issueStore.applyLocalPatch(props.issue.id, { title: v })
+  },
+  commit: (v) => issueStore.commitIssuePatch(props.issue.id, { title: v }),
+})
+
 function onRename(e: Event): void {
-  issueStore.updateIssue(props.issue.id, { title: (e.target as HTMLInputElement).value })
+  titleDraft.onInput((e.target as HTMLInputElement).value)
 }
 
-/** Enter / Esc / blur 只結束編輯，不還原（legacy :3170-3175）。 */
+/** Enter / Esc / blur 只結束編輯，不還原（legacy :3170-3175）；離開前先送出草稿。 */
 function endEdit(): void {
+  void titleDraft.flush()
   if (editing.value) ui.editing = null
 }
 
 function onEditKey(e: KeyboardEvent): void {
   if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-  if (e.key === 'Escape') ui.editing = null
+  if (e.key === 'Escape') {
+    void titleDraft.flush()
+    ui.editing = null
+  }
 }
 
 // ── 展開編輯表單（legacy expIssue :3222-3230）──────────────────────────────
@@ -114,7 +131,10 @@ function toggleExpand(): void {
 const itemLabel = computed(() => (ISSUE_ITEM[props.issue.item] ?? ISSUE_ITEM.O).label)
 const creator = computed(() => memberStore.byId(props.issue.creatorId))
 const ownerAvatars = computed(() =>
-  ownerIds.value.slice(0, 3).map((id) => memberStore.byId(id)).filter((m) => !!m),
+  ownerIds.value
+    .slice(0, 3)
+    .map((id) => memberStore.byId(id))
+    .filter((m) => !!m),
 )
 /** 負責人欄位摘要：沒人 / 一個人顯示名字 / 多人顯示人數。legacy :3155 */
 const ownerPill = computed(() => {
@@ -129,12 +149,32 @@ const donePill = computed(() =>
 )
 
 /** 展開表單裡的純文字欄位。 */
-type TextField = 'ptype' | 'pcb' | 'bios' | 'os' | 'solvedBios' | 'desc' | 'solution'
+const TEXT_FIELDS = ['ptype', 'pcb', 'bios', 'os', 'solvedBios', 'desc', 'solution'] as const
+type TextField = (typeof TEXT_FIELDS)[number]
 
-/** 測試環境 / 描述欄位共用的逐鍵寫入。legacy :3186-3196 */
+/**
+ * 測試環境 / 描述欄位共用的逐鍵寫入。legacy :3186-3196。
+ * 每個欄位一份草稿：本地即時、api debounce 300ms、離開欄位 flush（契約 B-2）。
+ */
+const fieldDrafts = Object.fromEntries(
+  TEXT_FIELDS.map((field) => [
+    field,
+    useEditDraft({
+      get: () => props.issue[field],
+      applyLocal: (v) => {
+        issueStore.applyLocalPatch(props.issue.id, { [field]: v } as Partial<Issue>)
+      },
+      commit: (v) => issueStore.commitIssuePatch(props.issue.id, { [field]: v } as Partial<Issue>),
+    }),
+  ]),
+) as Record<TextField, EditDraft>
+
 function setField(field: TextField, e: Event): void {
-  const value = (e.target as HTMLInputElement | HTMLTextAreaElement).value
-  issueStore.updateIssue(props.issue.id, { [field]: value } as Partial<Issue>)
+  fieldDrafts[field].onInput((e.target as HTMLInputElement | HTMLTextAreaElement).value)
+}
+
+function flushField(field: TextField): void {
+  void fieldDrafts[field].flush()
 }
 
 /** 刪除 Issue 走兩步確認。legacy `onDelete` :3237 */
@@ -358,6 +398,7 @@ function openDetail(): void {
                   :value="issue.ptype"
                   placeholder="I/O Function"
                   @input="setField('ptype', $event)"
+                  @blur="flushField('ptype')"
                 />
               </label>
               <label class="field">
@@ -367,6 +408,7 @@ function openDetail(): void {
                   :value="issue.pcb"
                   placeholder="A0"
                   @input="setField('pcb', $event)"
+                  @blur="flushField('pcb')"
                 />
               </label>
               <label class="field">
@@ -376,6 +418,7 @@ function openDetail(): void {
                   :value="issue.bios"
                   placeholder="06+0.03"
                   @input="setField('bios', $event)"
+                  @blur="flushField('bios')"
                 />
               </label>
               <label class="field">
@@ -385,6 +428,7 @@ function openDetail(): void {
                   :value="issue.os"
                   placeholder="Win11 24H2"
                   @input="setField('os', $event)"
+                  @blur="flushField('os')"
                 />
               </label>
               <label class="field">
@@ -394,6 +438,7 @@ function openDetail(): void {
                   :value="issue.solvedBios"
                   placeholder="解決版本"
                   @input="setField('solvedBios', $event)"
+                  @blur="flushField('solvedBios')"
                 />
               </label>
             </div>
@@ -408,6 +453,7 @@ function openDetail(): void {
                   :value="issue.desc"
                   placeholder="重現步驟、環境條件與實際現象…"
                   @input="setField('desc', $event)"
+                  @blur="flushField('desc')"
                 ></textarea>
               </label>
               <label class="field">
@@ -417,6 +463,7 @@ function openDetail(): void {
                   :value="issue.solution"
                   placeholder="處理方式、對策與驗證結果…"
                   @input="setField('solution', $event)"
+                  @blur="flushField('solution')"
                 ></textarea>
               </label>
             </div>
