@@ -39,6 +39,8 @@ PLAYWRIGHT_PORT=5175 npm run test:e2e                 # 換 port（多個工作�
 
 全部 e2e 的時鐘固定在 `2026-09-18T10:00:00`（`e2e/helpers/clock.ts` 的 `setFixedTime(page)`），否則「已延遲」「今天」這類跟當下時間有關的斷言會隨日期改變。
 
+目前共 50 條 e2e，分在 6 個檔：`smoke`(2) / `render`(3) / `interactions`(11) / `dragdrop`(9) / `detail`(7) / `compare`(18)。其中 `interactions.spec.ts` 有兩條靠 `window.__mockApi` 注入 api 失敗，接上真後端之後會自動跳過（見[怎麼接後端](#怎麼接後端)）。
+
 ## 目錄結構
 
 ```
@@ -47,23 +49,36 @@ public/            原樣複製到 dist/ 的靜態檔
 src/
   api/             資料存取層；接後端時只換這一層
     types.ts       ProjectApi / ProjectEvent / ApiError 契約，檔頭是給後端看的 wire 約定
-    mock/          記憶體實作；可注入延遲與失敗（dev build 掛在 window.__mockApi）
-    index.ts       挑實作的唯一出口（VITE_API 未設或 'mock' 用 mock）
+    mock/          記憶體實作（store.ts + index.ts）；可注入延遲與失敗
+    index.ts       挑實作的唯一出口（VITE_API 未設或 'mock' 用 mock；dev build 掛 window.__mockApi）
   assets/          tokens.css（設計 token）、base.css（全域樣式與 keyframes）
-  components/      元件，依畫面區塊分子目錄
-  composables/     可重用的組合式函式（拖曳、自動捲動、延遲卸載…）
-  constants/       畫面用常數（狀態 / 優先度 / 等級的標籤與顏色）
-  lib/             純函式（日期、排程連動、篩選、排序、格式化…）
+  components/      元件，依畫面區塊分子目錄（common / layout / summary / gantt / kanban / issues / detail / dialogs）
+  composables/     可重用的組合式函式
+    useProjectBoot.ts    啟動層：注入 error sink、載入狀態、訂閱事件
+    useDomRegistry.ts    DOM 登錄表（執行期不再用選擇器找元素）
+    useTaskActions.ts    新增任務 / Issue 的預設值（派生層讀取集中在這）
+    useEditDraft.ts      逐鍵編輯：本地即時 + api debounce
+    useConfirmProps.ts   確認對話框的文案與 onConfirm（ConfirmDialog 純展示）
+    （其餘：usePointerDrag / useGanttScroll / useAutoScroll / useClickOutside /
+      useMenus / useFocusScroll / useNow / useStickyOffsets / useDelayedUnmount）
+  constants/       畫面用常數（狀態 / 優先度 / 等級的標籤與顏色、API_ERROR_TEXT）
+  lib/             純函式（日期、月曆格、排程連動、篩選、排序、格式化、id…）
   mocks/           範例資料
   router/          路由
-  stores/          Pinia store
+  stores/          Pinia store（三層，見下）
+    clock.ts               時鐘層
+    task / issue / comment / member.ts   資料層
+    _optimistic.ts         乐觀更新的共用機制（tracker / runOptimistic / error sink）
+    _sync.ts               api.subscribe 的唯一訂閱點，把事件路由到各資料 store
+    rows / filter / selection / ui.ts    派生層
   types/           資料模型型別
   views/           頁面
+  __tests__/       跨目錄的結構守衛（readme / no-query-selector）
 e2e/               Playwright 測試與 helper
 docs/reference/    長期參考文件
 ```
 
-單元測試放在被測檔案旁的 `__tests__/`（例如 `src/lib/__tests__/date.spec.ts`）。
+單元測試放在被測檔案旁的 `__tests__/`（例如 `src/lib/__tests__/date.spec.ts`）。不屬於任何單一檔案的結構守衛放 `src/__tests__/`：`no-query-selector.spec.ts`（執行期不得用 DOM 選擇器）、`readme.spec.ts`（本檔的端點表與 `ProjectApi` 一致），另有 `src/stores/__tests__/imports.spec.ts`（store 分層白名單）。
 
 ## `legacy/` 是唯讀基準
 
@@ -116,50 +131,175 @@ COMPARE_DUMP=node_modules/.tmp/cmp npm run test:e2e -- e2e/compare.spec.ts
 | | `src/lib/*.ts` | `src/stores/*.ts` |
 |---|---|---|
 | 內容 | 純函式：輸入 → 輸出，不碰 Vue、不碰全域狀態 | 響應式狀態與改動它的 action |
-| 例子 | `dayIndex()`、`cascade()`、`matchTask()`、`applySort()`、`fmtDate()` | `useTaskStore()`、`useFilterStore()`、`useUiStore()` |
+| 例子 | `dayIndex()`、`cascade()`、`matchTask()`、`applySort()`、`monthGrid()`、`newId()` | `useTaskStore()`、`useFilterStore()`、`useUiStore()` |
 | 測試 | Vitest，直接呼叫、不需要 Pinia | Vitest + `setActivePinia(createPinia())` |
 
 規則：**演算法寫在 `lib/`，store 只負責存狀態並把 `lib/` 的結果接起來。** 只有單一元件用得到的狀態（下拉的 hover 列、卡片 hover）留在元件內。
 
-store 的欄位分兩類，寫法不同：
+### store 的三層
+
+store 分三層，依賴**只能由上往下**：
+
+| 層 | 檔 | 職責 | 可以 import 誰 |
+|---|---|---|---|
+| 時鐘層 | `clock.ts` | `now` / `todayIdx` / `todayIso`（60 秒 tick） | 誰都不用 |
+| 資料層 | `task.ts`、`issue.ts`、`comment.ts`、`member.ts`（＋共用的 `_optimistic.ts`、`_sync.ts`） | 專案資料的唯一擁有者；所有寫入都經 `@/api` | `@/api/*`、`@/lib/*`、`@/types/*`、`@/stores/clock`、其他資料 store、`_optimistic` / `_sync` |
+| 派生層 | `rows.ts`、`filter.ts`、`selection.ts`、`ui.ts` | 從資料層算出畫面要的東西（可見列、篩選、選取、浮層 / 錯誤條 / 收合） | 所有層 |
+
+**資料層不知道派生層存在**，所以三件原本會反向依賴的事改成這樣：
+
+- 新增的預設值（分類、負責人、起訖日）由 `composables/useTaskActions.ts` 的 `addTaskWithDefaults()` 算好再傳進 `taskStore.addTask()`；建立後的選取也在那裡做。
+- 刪除後的懸空 id 由 `selection.ts` / `ui.ts` 各自的 `watch(..., { flush: 'sync' })` 清（`selection.taskId` / `issueId` / `groupId`、`ui.detail`（含 `detail.from`）、`confirm`、`depEditFor`、`pickerFor`、`expandedIssues[id]`）。
+- api 失敗的錯誤條不是 import 來的，是**注入**的：`_optimistic.setErrorSink()`，實際接上 `ui.pushError` 的是 `useProjectBoot()`。
+
+白名單由 `src/stores/__tests__/imports.spec.ts` 守著——它直接讀原始碼的 `import` 敘述，資料層引用白名單以外的 `@/` 路徑就紅（`import type` 豁免，因為型別在編譯後就消失；禁 barrel `@/stores`）。派生層之間不做環檢：Pinia 的 `useX()` 是延遲呼叫，`ui ↔ selection` 這種互相引用在執行期沒有問題。
+
+### 誰可以寫哪些欄位
 
 | | 誰可以寫 | 例子 |
 |---|---|---|
 | **UI 狀態欄位**：`ui` / `filter` / `comment` 裡描述畫面狀態的 `ref` | 元件可以直接寫 | `ui.editing = { kind: 't', id }`、`filter.issueMode = 'has'`、`comment.tab = 'files'` |
 | **資料欄位**：`tasks` / `issues` / `deps` / `groups` / `comments` | 只經 action | `taskStore.updateTask()`、`issueStore.update()`、`commentStore.send()` |
 
-分界在「有沒有連動」：資料欄位背後有 cascade 排程、刪除時的懸空 id 清理、選取連動，繞過 action 直接改陣列就會漏做這些；UI 狀態欄位沒有這層規則，走 action 只是多包一層。
+分界在「有沒有連動」：資料欄位背後有 cascade 排程、api 呼叫與失敗還原、刪除時的懸空 id 清理，繞過 action 直接改陣列就會漏做這些；UI 狀態欄位沒有這層規則，走 action 只是多包一層。
 
 ## DOM 鉤子
 
-畫面上這些屬性是給測試與 CSS 用的契約，改元件時要一起維護。標「legacy 也有」的可以用在新舊對照測試裡。
+畫面上這些屬性**只給測試與 CSS 用**，改元件時要一起維護。標「legacy 也有」的可以用在新舊對照測試裡。
 
-**「執行期使用」欄不是空話**：標了的屬性是程式碼本身的依賴——`usePointerDrag`、`useClickOutside`、`KanbanPanel`、`IssuePanel`、`TopBar` 會用 `document.querySelector` / `Element.closest` 去找它們。拔掉或改名會直接弄壞拖曳、自動捲動與點外面關浮層，不是只有測試變紅（review M9）。
+執行期的元素定位不走這裡：需要量測或命中判定的元素由元件自己登錄進 `composables/useDomRegistry.ts` 的登錄表（`rows` / `groups` / `bars` / `linkDots` / `cards` / `cols` / `issueRows` / `panels`），`usePointerDrag`、面板捲動與捷徑都查那張表。`src/__tests__/no-query-selector.spec.ts` 守著這條：`src/**`（不含 `__tests__`）不得出現 `querySelector` / `querySelectorAll` / `getElementById` / `elementFromPoint`。
 
-| 屬性 | 掛在 | 值 | legacy 也有 | 執行期使用 |
+**唯一例外**：`composables/useClickOutside.ts`。它做的是「這一下點在哪」的 hit-test，對象是任意祖先而不是某個登錄過的元素，所以仍用 `Element.closest`——`KEEP_SELECTION`（`[data-card],[data-taskid],[data-rowtask],[data-rowgroup],[data-issuerow],[data-dd],[data-errorbar],input,textarea,select,label`，逐字取自 legacy）與 `KEEP_POPUP`（`[data-dd],[data-errorbar]`）。改動這些屬性名會弄壞「點外面清選取 / 關浮層」，不是只有測試變紅。它也是 `no-query-selector.spec.ts` 的白名單唯一一筆。
+
+| 屬性 | 掛在 | 值 | legacy 也有 |
+|---|---|---|---|
+| `data-rowtask` | 甘特左欄任務列 | taskId | ✓ |
+| `data-rowgroup` | 甘特左欄分類列 | groupId | ✓ |
+| `data-taskid` | 甘特條（收合分類的摘要條為 `sum-<groupId>`） | taskId | ✓ |
+| `data-linkfor` | 甘特條兩側的連線圓點 | taskId | ✓ |
+| `data-card` | 看板任務卡 | taskId | ✓（legacy 值固定為 `1`，對照時只比存在性） |
+| `data-issuerow` | Issue 卡 | issueId | ✓ |
+| `data-col` | 看板欄內容區 | 狀態 key | ✓ |
+| `data-dd` | 所有下拉的觸發器與面板 | `1` | ✓ |
+| `data-zoom` | 甘特縮放滑桿 | `1` | ✓ |
+| `data-errorbar` | 錯誤條容器（同一元素帶 `role="alert"`） | 空值 | ✗ |
+| `data-selected` | 甘特任務列 / 任務卡 / Issue 卡 | `true` / `false` | ✗ |
+| `data-rel` | 任務卡 | `up` / `down` / `group` / 空 | ✗ |
+| `data-status` | 甘特條 / 任務卡 / Issue 卡 | 狀態 key，或 `delayed` | ✗ |
+| `data-panel` | 面板外殼 | `gantt` / `kanban` / `issues` | ✗ |
+| `data-testid` | 摘要卡 `summary-duration` / `summary-progress` / `summary-tasks` / `summary-issues`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count` | 固定字串 | ✗ |
+
+## 怎麼接後端
+
+前端已經整成「換掉 `src/api/` 的實作就能接」：**所有資料進出都經過 `src/api/types.ts` 的 `ProjectApi` 介面**，store 與元件都不認識 `src/mocks/`。現在的實作是記憶體 mock（`src/api/mock/`），資料來自 `src/mocks/sampleProject.ts`。
+
+`src/api/types.ts` 檔頭的 wire 約定註解跟這一節是同一份內容；改契約要兩邊一起改（端點表的一致性由 `src/__tests__/readme.spec.ts` 守著）。
+
+### 步驟
+
+1. **寫實作**：新增 `src/api/http/index.ts`，`export function createHttpApi(): ProjectApi`，照下面的端點表實作 19 支方法。不要改介面去遷就後端——後端形狀不同就在這一層轉，介面本身是契約。
+2. **切換**：`src/api/index.ts` 依 `VITE_API` 挑實作（目前 `VITE_API` 未設或 `'mock'` 用 mock，其他值直接丟錯）。加一支 `'http'` 分支即可，其餘檔案一行都不用改。`VITE_API` 的型別宣告在 `env.d.ts`。
+3. **adapter 的職責**（後端形狀 → 前端模型，全部在這一層做完，`src/types/models.ts` 不因後端而變）：
+
+   | 項目 | 前端 | 後端 / wire | 誰轉 |
+   |---|---|---|---|
+   | 空值 | `''`（`ISODate`、`done`、`Attachment.url`） | 多半是 `null` | adapter 雙向 `null ↔ ''`；`''` 是**有效值**（代表「沒有日期」），不是「這個欄位沒送」 |
+   | `Task.start / end / done`、`Issue.due / done / created` | `'YYYY-MM-DD'` | 同上或 ISO 8601 日期 | adapter |
+   | `Comment.at` | `'YYYY-MM-DDTHH:mm'`（**本地**時間、到分鐘） | ISO 8601 含 offset | adapter 兩邊轉，前端不做時區運算 |
+   | `Attachment.at` | `'YYYY-MM-DD'`（本地日） | ISO 8601 | adapter |
+   | `Group` | 只有 `id` / `name` | 後端若存了收合狀態要忽略 | 收合是畫面狀態，在 `ui.collapsedGroups`，不上 wire |
+   | `ProjectData.currentUserId` | 必填字串 | 登入還沒做 | adapter 從 session / token 填；沒有登入就先填一個固定成員 id |
+   | `Attachment.id` | `'<commentId>:<index>'`（`downloadAttachment` 的鍵） | 後端自己的附件主鍵 | adapter；只要 `loadProject` 與 `createComment` 回的 id 能餵回 `downloadAttachment` 就行 |
+
+4. **跑測試**：`npm run test:unit -- --run` 全綠、`PLAYWRIGHT_PORT=5174 npm run test:e2e` 全綠（兩條靠 mock 的會自動跳過，見下）。
+
+### 端點對照表
+
+路徑是建議值；後端不同就在 adapter 對應，**介面的參數 / 回傳 / 錯誤碼才是契約**。單一專案、不分頁。
+
+| 方法 | HTTP | 路徑 | request | response |
 |---|---|---|---|---|
-| `data-rowtask` | 甘特左欄任務列 | taskId | ✓ | `usePointerDrag`（列重排量測、分類整塊範圍）、`useClickOutside` |
-| `data-rowgroup` | 甘特左欄分類列 | groupId | ✓ | `usePointerDrag`（分類重排的 `blockRect`）、`useClickOutside` |
-| `data-taskid` | 甘特條（收合分類的摘要條為 `sum-<groupId>`） | taskId | ✓ | `usePointerDrag`（放開時判斷相依落在哪條）、`useClickOutside` |
-| `data-linkfor` | 甘特條兩側的連線圓點 | taskId | ✓ | `usePointerDrag`（放開時的第二順位命中目標） |
-| `data-card` | 看板任務卡 | taskId | ✓（legacy 值固定為 `1`，對照時只比存在性） | `KanbanPanel`（選取後捲到卡片）、`useClickOutside` |
-| `data-issuerow` | Issue 卡 | issueId | ✓ | `IssuePanel`（選取後捲到 Issue 列）、`useClickOutside` |
-| `data-col` | 看板欄內容區 | 狀態 key | ✓ | `KanbanPanel`（`closest` 找卡片所在欄當捲動容器） |
-| `data-dd` | 所有下拉的觸發器與面板 | `1` | ✓ | `useClickOutside`（點在它之外才關浮層） |
-| `data-zoom` | 甘特縮放滑桿 | `1` | ✓ | — |
-| `data-selected` | 甘特任務列 / 任務卡 / Issue 卡 | `true` / `false` | ✗ | — |
-| `data-rel` | 任務卡 | `up` / `down` / `group` / 空 | ✗ | — |
-| `data-status` | 甘特條 / 任務卡 / Issue 卡 | 狀態 key，或 `delayed` | ✗ | — |
-| `data-panel` | 面板外殼 | `gantt` / `kanban` / `issues` | ✗ | `TopBar`（頂部導覽捲到該面板） |
-| `data-testid` | 摘要卡 `summary-duration` / `summary-progress` / `summary-tasks` / `summary-issues`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count` | 固定字串 | ✗ | — |
+| `loadProject()` | GET | `/api/project` | — | `ProjectData`（整包；`tasks` / `groups` 的陣列順序就是顯示順序） |
+| `createTask()` | POST | `/api/tasks` | `Task`（含 client 產的 `id`） | `Task` |
+| `updateTask()` | PATCH | `/api/tasks/:id` | `Partial<Task>`（JSON merge patch） | `Task` |
+| `updateTasks()` | PATCH | `/api/tasks` | `Task[]`（整筆，已含 cascade 後的下游） | `Task[]`（server 最終狀態，client 直接套回） |
+| `deleteTask()` | DELETE | `/api/tasks/:id` | — | — |
+| `reorderTasks()` | PUT | `/api/tasks/order` | `{ id, groupId }[]`（整份順序） | — |
+| `createGroup()` | POST | `/api/groups` | `Group` | `Group` |
+| `updateGroup()` | PATCH | `/api/groups/:id` | `Partial<Group>` | `Group` |
+| `deleteGroup()` | DELETE | `/api/groups/:id` | — | — |
+| `reorderGroups()` | PUT | `/api/groups/order` | `string[]`（分類 id 的完整順序） | — |
+| `createDep()` | POST | `/api/deps` | `Dependency` | `Dependency` |
+| `deleteDep()` | DELETE | `/api/deps/:id` | — | — |
+| `createIssue()` | POST | `/api/issues` | `Issue` | `Issue` |
+| `updateIssue()` | PATCH | `/api/issues/:id` | `Partial<Issue>` | `Issue` |
+| `deleteIssue()` | DELETE | `/api/issues/:id` | — | — |
+| `createComment()` | POST | `/api/comments` | multipart：comment 的 JSON part + `files[]` | `Comment`（`files[].url` 換成 server url） |
+| `deleteComment()` | DELETE | `/api/comments/:id` | — | — |
+| `downloadAttachment()` | GET | `/api/attachments/:id` | — | `Blob`（檔案本身） |
+| `subscribe()` | — | `/api/events`（SSE）或 WS 或 polling | — | `ProjectEvent` 串流；回傳解訂函式 |
 
-契約 E 原本只把這些當測試鉤子，實作後它們同時是執行期依賴；要改成 template ref 是「接後端前重構」的項目，在那之前這張表就是唯一的依據。
+後端要注意的三件事：
 
-## 接後端注意
+- **id 由 client 產**（UUID v4，`src/lib/id.ts` 的 `newId()`：`crypto.randomUUID?.()`，非 https / 非 localhost 沒有這支時退回 `crypto.getRandomValues` 自己組）。主鍵接受 client 給的 id，重複回 **409**。
+- **後端不跑 cascade**。相依連動（`start` / `end` 改動推下游、`status=done` 填 `done` 日）前端已經算完，`updateTasks` 送的是整段結果。後端只存，response 回最終狀態（要糾正就在 response 糾正，client 會套回）。
+- **連動刪除由後端做**：`deleteTask` 連帶刪它的 issue / dep / comment，`deleteGroup` 連帶刪底下的任務（以及那些任務的 issue / dep / comment），`deleteIssue` 連帶刪它的留言。事件順序見下。
 
-現在整份資料來自 `src/mocks/sampleProject.ts`，改接真實後端前，這幾點要一起處理：
+### 錯誤碼對照表
 
-- **介面已經定好，但 store 還沒接上**。`src/api/types.ts` 是完整的讀寫 + 事件契約、`src/api/mock/` 是記憶體實作；store 的寫入 action 目前仍直接改自己的陣列，還沒走 api（乐觀更新與失敗還原是下一步）。這一節會在寫入路徑接上 api 之後改寫成「怎麼接後端」。
-- **載入沒有錯誤處理**。`DashboardView` 的載入失敗時畫面只會停在空狀態，沒有重試也沒有提示；接後端要補 loading / error 狀態。
-- **留言附件目前只做前端預覽**。`addDraftFiles` 直接 `URL.createObjectURL`，沒有任何檢查。接真實上傳時要補檔案大小上限、MIME 型別與副檔名白名單（三者都要，只擋副檔名擋不住偽裝的檔案），伺服器端再驗一次。
-- **部署時要加 CSP**。目前沒有 Content-Security-Policy；上線前在伺服器或 CDN 層補上，至少限制 `script-src` / `style-src` / `img-src`（`blob:` 要放行，附件預覽用得到）。
+api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`code` 決定畫面文案，`message`（server 原文）只進 console，不上畫面。
+
+| `ApiError.code` | HTTP status | 錯誤條文案 |
+|---|---|---|
+| `network` | fetch 直接拋錯 / 沒有回應 | 連線失敗 |
+| `validation` | 400、422 | 資料不合法 |
+| `not_found` | 404 | 資料已不存在 |
+| `conflict` | 409 | 與伺服器狀態衝突 |
+| `unknown` | 其他 | 發生錯誤 |
+
+對照表在 `src/constants/dashboard.ts`（`API_ERROR_TEXT` / `apiErrorCode()`）。錯誤條 `ErrorBar` 顯示的是「操作名稱（`label`，例如『更新任務』）＋ 上表文案」，同 label 會合併成 `×N`，最多留 5 筆、畫面顯示 3 筆，不自動關閉。
+
+### 事件
+
+`subscribe(handler)` 是後端推變更的唯一入口，前端只有 `src/stores/_sync.ts` 的 `useProjectSync()` 訂閱它（`DashboardView` 掛載時 `start()`、卸載時 `stop()`），再依 `type` 前綴路由到各資料 store 的 `applyEvent`。
+
+三種實作都可以，介面不變：
+
+| 做法 | 怎麼接 | 取捨 |
+|---|---|---|
+| polling | `setInterval` 打 `loadProject()`，跟上一份 diff 出事件；或後端給 `/api/events?since=<cursor>` | 最好做、後端零長連線；延遲等於輪詢間隔，流量大 |
+| SSE | `new EventSource('/api/events')`，每則 `data` 是一個 `ProjectEvent`；`onerror` 時瀏覽器自動重連 | 單向推送、走一般 HTTP，最貼合這個介面 |
+| WebSocket | `new WebSocket(...)`，訊息就是 `ProjectEvent` 的 JSON | 雙向、延遲最低；要自己做心跳與重連 |
+
+不論哪一種，client 端的規則是固定的：
+
+- **廣播含發起者**：自己改的東西也會收到自己的事件。不要為了省流量排除發起者——前端靠這則事件確認 server 的最終值。
+- **同值 no-op**：同一個 id 收到跟本地一樣的值，不重繪也不算變更。
+- **in-flight 期間只寫 `serverState`**：某個 id 還有請求在飛時，事件只更新「最後已知的 server 狀態」，不動本地；等該 id 的請求全部結束才對齊。所以**事件早於或晚於對應的 response 到達都正確**，後端不必保證順序。
+- **順序不保證**，但連動刪除例外：被連帶刪掉的實體要**先**各發一則 `deleted`，主體自己的 `deleted` **最後**發（前端依這個順序清懸空 id）。
+- **重連後補一次 `project.reloaded`**（payload 是整包 `ProjectData`），前端直接重載。
+- **`reorderTasks` / `reorderGroups` 沒有對應事件**。純順序變更要讓別的 client 看到，靠的是重連時的 `project.reloaded`；只有搬動造成 `groupId` 改變時才會有一則 `task.updated`。
+
+### 乐觀更新怎麼運作
+
+所有寫入都是先改本地、再打 api，失敗才還原。機制在 `src/stores/_optimistic.ts`：
+
+- 每個 tracker 有三樣東西：`server`（id → **最後已知的 server 狀態**，Map 的插入順序就是 server 的顯示順序）、`inflight`（id → 還有幾個請求在飛）、`failed`。
+- `runOptimistic({ tracker, ids, label, apply, call, reconcile })`：`apply()` 改本地 → `inflight++` → `call()` 打 api。response 帶回的實體寫進 `server`；reject 就記 `failed` 並送錯誤。**該 id 的 `inflight` 歸零時才 `reconcile`**——成功是套上 server 最終狀態，失敗是放回 server 狀態（不是「送出前的本地快照」，多筆交錯時後者會還原成中途的值）。`runOptimistic` **永不 throw**，store action 不必 try/catch。
+- **拖曳放開才送**：`usePointerDrag` 每個 tick 只改本地（`applyLocalPatch` / `moveTaskToLocal` / `moveGroupLocal`），`pointerup` 才送一次 `commitTasks(collectDirtyTasks())` / `commitTaskOrder()` / `commitGroupOrder()`；取消或失敗走 `reconcileTasksFromServer()` 整段還原。
+- **改名 debounce**：`composables/useEditDraft.ts`——每一鍵都本地立即生效（維持 legacy 行為），api 走 trailing debounce 300ms，離開編輯（Enter / Esc / blur / 卸載）時 flush。
+- **錯誤出口 = 注入的 sink**：資料層不 import ui，失敗透過 `_optimistic.setErrorSink()` 送出去。
+- **啟動點 = `composables/useProjectBoot.ts`**：它把 `ui.pushError` 註冊成 sink、維護 `ui.loadState` / `ui.loadError`（載入中 / 失敗重試畫面）、確保派生層的清理 `watch` 在資料進來前掛好，並代理事件訂閱的 `start` / `stop`。`DashboardView` 是唯一呼叫端。
+
+### e2e 與 mock 把手
+
+dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (import.meta.env.DEV)`），e2e 用它注入延遲與失敗（`failNext` / `setLatency` / `reset` / `emit`）。
+
+接上真後端之後 `window.__mockApi` 會是 `undefined`，`e2e/interactions.spec.ts` 裡**那兩條**（api 失敗後還原並顯示錯誤條、載入失敗後重試）開頭就是 `test.skip(!__mockApi)`，會自動跳過，其餘 48 條照跑。要在真後端上也測失敗路徑，就換成在 `page.route()` 攔 HTTP 回錯誤碼。
+
+### 還沒做的（接後端時要補）
+
+- **逾時與取消**：`ProjectApi` 目前沒有 `AbortSignal`，也沒有逾時。網路實作至少要給每個請求一個逾時（逾時 → `ApiError('network')`）；離開頁面或連續改動時要能取消前一發。
+- **多人衝突**：現在是「後到的覆蓋先到的」，沒有版本號或 `If-Match`。同時編輯同一筆的情境沒有處理（spec 已排除）。
+- **附件上傳驗證**：`comment.addDraftFiles` 直接 `URL.createObjectURL`，沒有任何檢查。要補檔案大小上限、MIME 型別與副檔名白名單（三者都要，只擋副檔名擋不住偽裝的檔案），**伺服器端再驗一次**。
+- **CSP**：目前沒有 Content-Security-Policy；上線前在伺服器或 CDN 層補上，至少限制 `script-src` / `style-src` / `img-src`（`blob:` 要放行，附件預覽用得到）。
