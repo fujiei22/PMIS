@@ -1,6 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, mockApi } from '@/api'
+import { useProjectBoot } from '@/composables/useProjectBoot'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
@@ -20,7 +21,8 @@ describe('issueStore', () => {
     mockApi.reset(structuredClone(sampleProject))
     useClockStore().now = NOW
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    await useTaskStore().load()
+    // boot 負責 error sink，也把派生層的清理 watch 掛好（契約 E）
+    await useProjectBoot().reload()
   })
 
   afterEach(() => {

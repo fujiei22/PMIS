@@ -16,16 +16,14 @@ import SummaryCards from '@/components/summary/SummaryCards.vue'
 import { useClickOutside } from '@/composables/useClickOutside'
 import { useConfirmProps } from '@/composables/useConfirmProps'
 import { useNow } from '@/composables/useNow'
+import { useProjectBoot } from '@/composables/useProjectBoot'
 import { useStickyOffsets } from '@/composables/useStickyOffsets'
-import { useProjectSync } from '@/stores/_sync'
-import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 
-// 資料只從這裡進來一次：taskStore.load() 打 api 再分給其他 store。
-const taskStore = useTaskStore()
 const ui = useUiStore()
-// 後端事件也只在這裡訂閱一次（契約 B、review M6）
-const sync = useProjectSync()
+// 資料只從這裡進來一次、後端事件也只在這裡訂閱一次（契約 B / E、review M6）：
+// boot 同時負責載入狀態、錯誤條的 sink，與派生層清理 watch 的建立。
+const boot = useProjectBoot()
 
 // sticky 量測要在最上層建立，子元件用 inject 取用
 useStickyOffsets()
@@ -37,11 +35,11 @@ useNow()
 const confirmView = useConfirmProps()
 
 onMounted(() => {
-  sync.start()
-  void taskStore.load()
+  boot.start()
+  void boot.reload()
 })
 
-onBeforeUnmount(() => sync.stop())
+onBeforeUnmount(() => boot.stop())
 </script>
 
 <template>
@@ -54,7 +52,7 @@ onBeforeUnmount(() => sync.stop())
           v-if="ui.loadState !== 'ready'"
           :state="ui.loadState"
           :error="ui.loadError"
-          @retry="taskStore.load()"
+          @retry="boot.reload()"
         />
         <template v-else>
           <SummaryCards />

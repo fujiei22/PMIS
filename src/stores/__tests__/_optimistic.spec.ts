@@ -1,7 +1,13 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/types'
-import { applyServerValue, createTracker, runOptimistic, type Tracker } from '@/stores/_optimistic'
+import {
+  applyServerValue,
+  createTracker,
+  runOptimistic,
+  setErrorSink,
+  type Tracker,
+} from '@/stores/_optimistic'
 import { useUiStore } from '@/stores/ui'
 
 /** 測試用的最小實體。 */
@@ -24,10 +30,13 @@ describe('runOptimistic', () => {
     tracker = createTracker<Row>()
     tracker.server.set('r1', { id: 'r1', name: 'server' })
     local = new Map([['r1', { id: 'r1', name: 'server' }]])
+    // 錯誤出口是注入的（契約 E）：正式啟動由 useProjectBoot 掛，測試自己掛
+    setErrorSink((e) => useUiStore().pushError(e))
     vi.spyOn(console, 'error').mockImplementation(() => {})
   })
 
   afterEach(() => {
+    setErrorSink(null)
     vi.restoreAllMocks()
   })
 

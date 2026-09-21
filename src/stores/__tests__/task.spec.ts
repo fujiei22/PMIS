@@ -2,6 +2,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, mockApi } from '@/api'
 import { ApiError } from '@/api/types'
+import { useProjectBoot } from '@/composables/useProjectBoot'
 import { dayIndex, isoFromIndex } from '@/lib/date'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
@@ -23,7 +24,8 @@ describe('taskStore', () => {
     mockApi.reset(structuredClone(sampleProject))
     useClockStore().now = NOW
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    await useTaskStore().load()
+    // boot 負責 loadState 與 error sink，也把派生層的清理 watch 掛好（契約 E）
+    await useProjectBoot().reload()
   })
 
   afterEach(() => {
@@ -48,18 +50,11 @@ describe('taskStore', () => {
     }
   })
 
-  it('load 失敗時進 error 狀態，重試會成功', async () => {
+  // 載入失敗 / 重試的狀態機在啟動層（契約 E），見 useProjectBoot.spec
+  it('load 失敗時 reject，本地資料不動', async () => {
     const s = useTaskStore()
-    const ui = useUiStore()
     mockApi.failNext('loadProject')
-    s.tasks = []
-    await s.load()
-    expect(ui.loadState).toBe('error')
-    expect(ui.loadError).toBeTruthy()
-
-    await s.load()
-    expect(ui.loadState).toBe('ready')
-    expect(ui.loadError).toBeNull()
+    await expect(s.load()).rejects.toThrow()
     expect(s.tasks).toHaveLength(30)
   })
 

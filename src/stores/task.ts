@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { api } from '@/api'
 import type { ProjectEvent } from '@/api/types'
-import { API_ERROR_TEXT, apiErrorCode } from '@/constants/dashboard'
 import { newId } from '@/lib/id'
 import {
   applyTaskPatch,
@@ -23,7 +22,6 @@ import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
-import { useUiStore } from '@/stores/ui'
 import type { Dependency, DropTarget, Group, ISODate, ProjectData, Task } from '@/types/models'
 
 /**
@@ -67,28 +65,19 @@ export const useTaskStore = defineStore('task', () => {
   /**
    * 載入整包專案資料並分給各 store。
    *
-   * 不帶參數 = 走 `api.loadProject()` 並更新 `ui.loadState`；
-   * 帶 `data` = 直接採用（`project.reloaded` 事件走這條）。
-   * **不跑 cascade**：後端資料為準（spec 目標 5、已定案決策）。
+   * 不帶參數 = 走 `api.loadProject()`；帶 `data` = 直接採用
+   * （`project.reloaded` 事件走這條）。**不跑 cascade**：後端資料為準
+   * （spec 目標 5、已定案決策）。
+   *
+   * 失敗就 **reject**：`loadState` / `loadError` 是畫面狀態，由啟動層
+   * `useProjectBoot().reload()` 接（契約 E）。
    */
   async function load(data?: ProjectData): Promise<void> {
-    const ui = useUiStore()
     if (data) {
       applyProject(data)
-      ui.loadState = 'ready'
-      ui.loadError = null
       return
     }
-    ui.loadState = 'loading'
-    ui.loadError = null
-    try {
-      applyProject(await api.loadProject())
-      ui.loadState = 'ready'
-    } catch (error) {
-      console.error('[api]', '載入專案', error)
-      ui.loadError = API_ERROR_TEXT[apiErrorCode(error)]
-      ui.loadState = 'error'
-    }
+    applyProject(await api.loadProject())
   }
 
   /** 把一份 ProjectData 灌進各個 store，並重置三個 tracker。 */
