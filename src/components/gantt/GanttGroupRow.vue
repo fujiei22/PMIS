@@ -2,6 +2,7 @@
 // 甘特左欄的分類列：把手、收合箭頭、分類名、工期天數、刪除鈕。
 // legacy 對照：模板 :429-440，groupRows :2762-2813。
 import { computed, nextTick, ref, watch } from 'vue'
+import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { dayIndex } from '@/lib/date'
 import { useFilterStore } from '@/stores/filter'
 import { useSelectionStore } from '@/stores/selection'
@@ -15,6 +16,7 @@ const ui = useUiStore()
 const taskStore = useTaskStore()
 const filter = useFilterStore()
 const selection = useSelectionStore()
+const drag = usePointerDragContext()
 
 /** 這個分類底下、通過篩選的任務。legacy :2763 */
 const tasks = computed(() =>
@@ -86,6 +88,15 @@ function askDelete(e: MouseEvent): void {
   e.stopPropagation()
   ui.confirm = { kind: 'group', id: props.group.id, step: 1 }
 }
+
+/** 看板卡片拖到分類列 → 搬進這個分類（放在第一筆之前）。legacy `onDrop` :2813 */
+function onDrop(e: DragEvent): void {
+  e.preventDefault()
+  e.stopPropagation()
+  const raw = e.dataTransfer?.getData('text/plain') ?? ''
+  if (!raw.startsWith('task:')) return
+  taskStore.moveTaskTo(raw.slice(5), { kind: 'g', id: props.group.id })
+}
 </script>
 
 <template>
@@ -95,8 +106,17 @@ function askDelete(e: MouseEvent): void {
     :data-rowgroup="group.id"
     role="button"
     @click="onSelect"
+    @dragover.prevent
+    @drop="onDrop"
   >
-    <div class="grip" :class="{ grabbing: lifted }" @click.stop>⠿</div>
+    <div
+      class="grip"
+      :class="{ grabbing: lifted }"
+      @click.stop
+      @pointerdown="drag.startGroupReorder($event, group.id)"
+    >
+      ⠿
+    </div>
     <div class="caret" role="button" @click="onCaret">{{ group.collapsed ? '▶' : '▼' }}</div>
     <div v-if="!editing" class="name" :title="group.name" @dblclick="startEdit">
       {{ group.name }}

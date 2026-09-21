@@ -3,6 +3,7 @@
 // legacy 對照：模板 :442-466，groupRows[].tasks :2814-2877。
 import { computed, nextTick, ref, watch } from 'vue'
 import { useMenus } from '@/composables/useMenus'
+import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { DELAYED, TASK_STATUS } from '@/constants/dashboard'
 import { dayIndex, isoFromIndex, lengthOf } from '@/lib/date'
 import { fmtDate, stripYear } from '@/lib/format'
@@ -18,6 +19,7 @@ const ui = useUiStore()
 const selection = useSelectionStore()
 const taskStore = useTaskStore()
 const { openTaskDatePicker } = useMenus()
+const drag = usePointerDragContext()
 
 const late = computed(() => isLate(props.task, ui.todayIdx))
 /** 延遲蓋掉原本的狀態，供 CSS 變數與測試使用（契約 E）。 */
@@ -105,6 +107,16 @@ function openDeps(): void {
 function askDelete(): void {
   ui.confirm = { kind: 'task', id: props.task.id, step: 1 }
 }
+
+/** 看板卡片拖到這一列 → 插在這個任務後面（或前面，由 moveTaskTo 依原順序決定）。legacy `onDrop` :2886 */
+function onDrop(e: DragEvent): void {
+  e.preventDefault()
+  e.stopPropagation()
+  const raw = e.dataTransfer?.getData('text/plain') ?? ''
+  // 只接卡片；成員拖到列上 legacy 不處理
+  if (!raw.startsWith('task:')) return
+  taskStore.moveTaskTo(raw.slice(5), { kind: 't', id: props.task.id })
+}
 </script>
 
 <template>
@@ -119,8 +131,17 @@ function askDelete(): void {
     @click="onSelect"
     @mouseenter="ui.rowHoverId = task.id"
     @mouseleave="ui.rowHoverId === task.id && (ui.rowHoverId = null)"
+    @dragover.prevent
+    @drop="onDrop"
   >
-    <div class="grip" :class="{ grabbing: lifted }" @click.stop>⠿</div>
+    <div
+      class="grip"
+      :class="{ grabbing: lifted }"
+      @click.stop
+      @pointerdown="drag.startReorder($event, task.id)"
+    >
+      ⠿
+    </div>
     <div class="st-dot" :style="{ background: statusDot }"></div>
     <div v-if="!editing" class="name" :title="task.name" @dblclick="startEdit">{{ task.name }}</div>
     <input
