@@ -119,7 +119,7 @@ test('列拖曳重排到另一分類', async ({ page }) => {
 test('分類拖曳交換順序', async ({ page }) => {
   const app = new DashboardPage(page)
   await app.goto()
-  await page.getByRole('button', { name: '▼ 全部收合' }).click()
+  await page.getByRole('button', { name: '全部收合' }).click()
   await expect(app.row('t1')).toHaveCount(0)
   expect((await app.rowOrder()).slice(0, 2)).toEqual(['G:g1', 'G:g2'])
 
