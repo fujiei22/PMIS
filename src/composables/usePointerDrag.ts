@@ -102,23 +102,32 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     return { top: hr.top, bottom, height: bottom - hr.top }
   }
 
-  /** 條的移動與左右縮放：換算成整數天再寫回 store。legacy :2486-2496 */
-  function tickBar(d: Extract<DragState, { kind: 'move' | 'resL' | 'resR' }>, p: { x: number; y: number }): void {
+  /**
+   * 條的移動與左右縮放：換算成整數天再寫回 store。legacy :2486-2496。
+   *
+   * review C1：每個 tick **只改本地**（`applyLocalPatch`），
+   * 放開（`onUp`）才把整段結果送一次 `updateTasks`——
+   * 否則一次拖曳會打出幾十個請求，中途失敗的還原順序也無解。
+   */
+  function tickBar(
+    d: Extract<DragState, { kind: 'move' | 'resL' | 'resR' }>,
+    p: { x: number; y: number },
+  ): void {
     const sl = els.gantt.value?.scrollLeft ?? 0
     // 加上捲動位移，自動捲動時才不會因為畫面移動而多算幾天（legacy :2489）
     const delta = Math.round((p.x + sl - (d.x0 + d.sl0)) / ui.dayWidth)
     if (delta === d.last) return
     d.last = delta
     if (d.kind === 'move') {
-      taskStore.updateTask(d.id, {
+      taskStore.applyLocalPatch(d.id, {
         start: isoFromIndex(d.s0 + delta),
         end: isoFromIndex(d.e0 + delta),
       })
     } else if (d.kind === 'resL') {
       // 左把手不能越過結束日
-      taskStore.updateTask(d.id, { start: isoFromIndex(Math.min(d.s0 + delta, d.e0)) })
+      taskStore.applyLocalPatch(d.id, { start: isoFromIndex(Math.min(d.s0 + delta, d.e0)) })
     } else {
-      taskStore.updateTask(d.id, { end: isoFromIndex(Math.max(d.e0 + delta, d.s0)) })
+      taskStore.applyLocalPatch(d.id, { end: isoFromIndex(Math.max(d.e0 + delta, d.s0)) })
     }
   }
 
@@ -151,13 +160,13 @@ export function usePointerDrag(els: DragElements): PointerDrag {
       const nb = blockRect(nextId)
       if (nb && p.y > nb.top + nb.height / 2) {
         d.lastAt = now
-        taskStore.moveGroup(d.id, 1)
+        taskStore.moveGroupLocal(d.id, 1)
       }
     } else if (i > 0 && prevId && p.y < self.top) {
       const nb = blockRect(prevId)
       if (nb && p.y < nb.bottom - nb.height / 2) {
         d.lastAt = now
-        taskStore.moveGroup(d.id, -1)
+        taskStore.moveGroupLocal(d.id, -1)
       }
     }
   }
@@ -207,7 +216,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     if (best && best.id !== d.id && now - d.lastAt > REORDER_MS && Math.abs(y - d.lastY) > REORDER_PX) {
       d.lastAt = now
       d.lastY = y
-      taskStore.moveTaskTo(d.id, best)
+      taskStore.moveTaskToLocal(d.id, best)
     }
   }
 
@@ -339,6 +348,21 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   }
 
   /**
+   * 放開之後把整段拖曳的結果送一次（review C1）。
+   * 條的移動 / 縮放送 `updateTasks(changed)`（含被 cascade 推動的下游），
+   * 列與分類重排送各自的 order 端點；沒有變動時 store 自己會早退。
+   */
+  function commit(d: DragState): void {
+    if (d.kind === 'move' || d.kind === 'resL' || d.kind === 'resR') {
+      void taskStore.commitTasks(taskStore.collectDirtyTasks())
+    } else if (d.kind === 'reorder') {
+      void taskStore.commitTaskOrder()
+    } else if (d.kind === 'greorder') {
+      void taskStore.commitGroupOrder()
+    }
+  }
+
+  /**
    * 拖曳被瀏覽器接管而中止（觸控被捲動搶走、手寫筆離開、指標捕捉被收回）。
    *
    * review M3：legacy :2571 只聽 pointerup，觸控 / 手寫筆一被接管就再也收不到放開事件，
@@ -346,15 +370,23 @@ export function usePointerDrag(els: DragElements): PointerDrag {
    * 不建相依、也不把平移當成「點一下空白處」而清掉選取。
    */
   function onCancel(): void {
-    if (!finish()) return
+    const d = finish()
+    if (!d) return
     ui.linkLine = null
     ui.nearTaskId = null
+    // 中止不結算：本地已經改到一半，直接對齊回最後已知的 server 狀態（契約 B）
+    if (d.kind === 'move' || d.kind === 'resL' || d.kind === 'resR' || d.kind === 'reorder') {
+      taskStore.reconcileTasksFromServer()
+    } else if (d.kind === 'greorder') {
+      taskStore.reconcileGroupsFromServer()
+    }
   }
 
   /** 放開：連線要結算成相依，平移要判斷是不是「只是點一下空白處」。legacy `onUp`（:2571） */
   function onUp(e: PointerEvent): void {
     const d = finish()
     if (!d) return
+    commit(d)
 
     if (d.kind === 'link') {
       // 命中條或圓點都算，都沒中就用最後壓到的那一列（legacy :2574-2576）

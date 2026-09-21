@@ -344,6 +344,8 @@ export const useTaskStore = defineStore('task', () => {
   /** 把目前的分類順序送給後端（拖曳放開時送這一次）。 */
   async function commitGroupOrder(): Promise<void> {
     const ids = groups.value.map((g) => g.id)
+    const server = [...groupTracker.server.keys()]
+    if (ids.length === server.length && ids.every((id, i) => server[i] === id)) return
     let ok = false
     await runOptimistic<Group>({
       tracker: groupTracker,
@@ -473,6 +475,12 @@ export const useTaskStore = defineStore('task', () => {
   /** 把目前的任務順序（含 groupId）送給後端（拖曳放開時送這一次）。 */
   async function commitTaskOrder(): Promise<void> {
     const order = tasks.value.map((t) => ({ id: t.id, groupId: t.groupId }))
+    // 拖回原位（或根本沒動）就不用送
+    const server = [...taskTracker.server.entries()]
+    const same =
+      order.length === server.length &&
+      order.every((o, i) => server[i]![0] === o.id && server[i]![1].groupId === o.groupId)
+    if (same) return
     let ok = false
     await runOptimistic<Task>({
       tracker: taskTracker,

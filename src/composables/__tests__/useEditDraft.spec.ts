@@ -89,18 +89,17 @@ describe('useEditDraft', () => {
   it('commit 失敗（本地被還原）→ 結束編輯狀態', async () => {
     const ui = useUiStore()
     ui.editing = { kind: 't', id: 't1' }
-    let local!: { value: string }
-    const fail = vi.fn(async () => {
-      // runOptimistic 失敗時做的事：把本地放回 server 值
-      local.value = 'server'
-    })
-    const mounted = mountDraft(fail)
-    local = mounted.local
+    let onCommit: (v: string) => Promise<void> = async () => {}
+    const mounted = mountDraft((v) => onCommit(v))
+    // runOptimistic 失敗時做的事：把本地放回 server 值
+    onCommit = async () => {
+      mounted.local.value = 'server'
+    }
 
     mounted.draft.onInput('打到一半')
     await mounted.draft.flush()
 
-    expect(local.value).toBe('server')
+    expect(mounted.local.value).toBe('server')
     expect(ui.editing).toBeNull()
     mounted.unmount()
   })
@@ -108,20 +107,17 @@ describe('useEditDraft', () => {
   it('飛行途中又打字：對齊回送出的值之後，最新草稿會被放回本地', async () => {
     const ui = useUiStore()
     ui.editing = { kind: 't', id: 't1' }
-    let local!: { value: string }
     let release: () => void = () => {}
-    const commit = vi.fn(
+    const mounted = mountDraft(
       (v: string) =>
         new Promise<void>((resolve) => {
           release = () => {
             // 回應對齊：本地變成送出的值
-            local.value = v
+            mounted.local.value = v
             resolve()
           }
         }),
     )
-    const mounted = mountDraft(commit)
-    local = mounted.local
 
     mounted.draft.onInput('ab')
     const flushing = mounted.draft.flush()
@@ -129,7 +125,7 @@ describe('useEditDraft', () => {
     release()
     await flushing
 
-    expect(local.value).toBe('abc')
+    expect(mounted.local.value).toBe('abc')
     expect(ui.editing).not.toBeNull()
     mounted.unmount()
   })
