@@ -2,6 +2,7 @@
 // 檔案頁籤：把留言裡的附件攤平成圖示磚或清單，支援全選、多選下載與點圖開 Lightbox。
 // legacy 對照：模板 :1230-1287，fileRows :3889-3921。
 import { computed } from 'vue'
+import { api } from '@/api'
 import { fileKind, isImage } from '@/lib/file'
 import { fileSize } from '@/lib/format'
 import { useCommentStore, type CommentFile } from '@/stores/comment'
@@ -37,22 +38,32 @@ function toggleAll(): void {
   comment.fileSel = selected.value.length === files.value.length ? [] : files.value.map((f) => f.id)
 }
 
-/**
- * 下載一個檔：有 blob url 就直接下，mocks 的附件沒有內容，補一份說明用的文字 blob。
- * legacy `downloadFile` :2174
- */
-function download(f: CommentFile): void {
+/** 觸發瀏覽器下載。legacy `downloadFile` :2174 */
+function saveAs(href: string, name: string): void {
   const a = document.createElement('a')
-  a.download = f.name
+  a.download = name
+  a.href = href
+  a.click()
+}
+
+/**
+ * 下載一個檔：剛上傳的檔手上就有 blob url，直接開；
+ * 其餘（後端來的附件）跟 api 要 Blob——demo 內容已經在 api mock 裡，元件不再自己造。
+ */
+async function download(f: CommentFile): Promise<void> {
   if (f.url) {
-    a.href = f.url
-    a.click()
+    saveAs(f.url, f.name)
     return
   }
-  const blob = new Blob([`(demo) ${f.name} — ${f.size} bytes`], { type: 'text/plain' })
-  a.href = URL.createObjectURL(blob)
-  a.click()
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000)
+  try {
+    const url = URL.createObjectURL(await api.downloadAttachment(f.id))
+    saveAs(url, f.name)
+    // 4 秒後回收；太早 revoke 會讓還沒開始的下載拿到空檔。
+    setTimeout(() => URL.revokeObjectURL(url), 4000)
+  } catch (err) {
+    // R2 之前還沒有錯誤條，先只留紀錄；下載失敗不該讓整個頁籤掛掉。
+    console.error('[api]', '下載附件', err)
+  }
 }
 
 /** 依序下載選取的檔，間隔 220ms 免得瀏覽器擋掉連續下載。legacy :3918 */
