@@ -79,7 +79,8 @@ useFocusRequest((req) => {
     <div class="board">
       <div v-for="c in columns" :key="c.k" class="col">
         <KanbanHeader :label="c.label" :color="c.color" :count="c.tasks.length" />
-        <div class="col-body" :data-col="c.k">
+        <!-- 欄位只吃掉預設行為、不改狀態：legacy 的看板欄 onDrop 就只有 preventDefault（:2994） -->
+        <div class="col-body" :data-col="c.k" @dragover.prevent @drop.prevent>
           <TaskCard v-for="t in c.tasks" :key="t.id" :task="t" />
         </div>
       </div>

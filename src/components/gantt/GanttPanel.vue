@@ -10,6 +10,7 @@ import GanttTaskRow from '@/components/gantt/GanttTaskRow.vue'
 import GanttTimeline, { type RulerDay, type RulerMonth } from '@/components/gantt/GanttTimeline.vue'
 import { useFocusRequest } from '@/composables/useFocusScroll'
 import { useGanttScroll } from '@/composables/useGanttScroll'
+import { usePointerDrag } from '@/composables/usePointerDrag'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex } from '@/lib/date'
@@ -33,8 +34,13 @@ const sticky = useStickyOffsetsContext()
 
 const scrollerEl = ref<HTMLElement | null>(null)
 const rulerEl = ref<HTMLElement | null>(null)
+const chartEl = ref<HTMLElement | null>(null)
+const bodyEl = ref<HTMLElement | null>(null)
 // scrollX / viewW 由 composable 繼續維護，S5 的拖曳要用；S3 的畫面本身用不到
 const { onScroll, jumpToday, onZoom, scrollTo } = useGanttScroll(scrollerEl, rulerEl)
+
+// 拖曳的容器在這一層，API 往下 provide 給列與條（GanttGroupRow / GanttTaskRow / GanttBars）
+const drag = usePointerDrag({ gantt: scrollerEl, chart: chartEl, vscroll: bodyEl })
 
 /** 選到任務就把它的條捲到畫面左側三分之一處。legacy `focus()` :2400-2403 */
 useFocusRequest((req) => {
@@ -174,7 +180,7 @@ const allCollapsed = computed(() => taskStore.groups.every((g) => g.collapsed))
       </div>
     </div>
 
-    <div class="gantt-body">
+    <div ref="bodyEl" class="gantt-body">
       <div class="gantt-rows">
         <!-- 左欄：平鋪 visibleRows，TransitionGroup 負責收合 / 重排的 FLIP -->
         <div class="gantt-left">
@@ -190,8 +196,11 @@ const allCollapsed = computed(() => taskStore.groups.every((g) => g.collapsed))
         <!-- 右側：可水平捲動的畫布 -->
         <div ref="scrollerEl" class="gantt-scroller" @scroll="onScroll">
           <div
+            ref="chartEl"
             class="gantt-chart"
+            :class="{ panning: ui.drag?.kind === 'pan' }"
             :style="{ width: `${chartWidth}px`, height: `${chartHeight}px` }"
+            @pointerdown="drag.startPan($event)"
           >
             <div
               v-for="d in days"
@@ -385,6 +394,11 @@ const allCollapsed = computed(() => taskStore.groups.every((g) => g.collapsed))
 .gantt-chart {
   position: relative;
   cursor: grab;
+}
+
+/* 平移中：整個畫布的游標換成抓握（body 也同步改，指標跑到畫布外也不會變回來） */
+.gantt-chart.panning {
+  cursor: grabbing;
 }
 
 .day-bg {

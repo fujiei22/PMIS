@@ -74,6 +74,21 @@ function askDelete(): void {
   ui.confirm = { kind: 'task', id: props.task.id, step: 1 }
 }
 
+/** 開始拖卡片；`task:<id>` 是甘特列與分類列認得的格式。legacy `onCardDragStart` :3090 */
+function onDragStart(e: DragEvent): void {
+  e.dataTransfer?.setData('text/plain', `task:${props.task.id}`)
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+}
+
+/** 成員拖到卡片上 → 指派；卡片拖到卡片上不做事。legacy `onDrop` :3088 */
+function onDrop(e: DragEvent): void {
+  e.preventDefault()
+  e.stopPropagation()
+  const raw = e.dataTransfer?.getData('text/plain') ?? ''
+  if (!raw || raw.startsWith('task:')) return
+  taskStore.assign(props.task.id, raw.split(',').filter(Boolean))
+}
+
 /** ⤢ 開 / 關任務詳情（視窗本體由 S6 做）。legacy `onToggleExpand` :3064 */
 function toggleDetail(): void {
   if (ui.detail?.kind === 'task' && ui.detail.id === props.task.id) ui.closeDetail()
@@ -92,6 +107,9 @@ function toggleDetail(): void {
     draggable="true"
     role="button"
     @click.stop="selection.toggleTask(task.id, 'card')"
+    @dragstart="onDragStart"
+    @dragover.prevent
+    @drop="onDrop"
   >
     <div class="del" role="button" title="刪除任務" @click.stop="askDelete()">✕</div>
     <div class="group" :title="groupName">{{ groupName }}</div>
