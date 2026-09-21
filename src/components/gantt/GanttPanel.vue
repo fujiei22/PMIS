@@ -31,7 +31,8 @@ const sticky = useStickyOffsetsContext()
 
 const scrollerEl = ref<HTMLElement | null>(null)
 const rulerEl = ref<HTMLElement | null>(null)
-const { scrollX, viewW, onScroll, jumpToday, onZoom } = useGanttScroll(scrollerEl, rulerEl)
+// scrollX / viewW 由 composable 繼續維護，S5 的拖曳要用；S3 的畫面本身用不到
+const { onScroll, jumpToday, onZoom } = useGanttScroll(scrollerEl, rulerEl)
 
 const rows = computed(() => taskStore.visibleRows)
 
@@ -196,7 +197,7 @@ const allCollapsed = computed(() => taskStore.groups.every((g) => g.collapsed))
               :style="{ top: `${s.top}px`, width: `${chartWidth}px` }"
             ></div>
             <DependencyLines :chart-width="chartWidth" :chart-height="chartHeight" />
-            <GanttBars :scroll-x="scrollX" :view-w="viewW" />
+            <GanttBars />
           </div>
         </div>
       </div>

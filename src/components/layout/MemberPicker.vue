@@ -271,7 +271,7 @@ function toggle(id: string): void {
   font-weight: var(--fw-bold);
   padding: var(--r-2) 7px;
   border-radius: var(--r-999);
-  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.3);
+  box-shadow: var(--shadow-badge);
 }
 
 .mp-clear {

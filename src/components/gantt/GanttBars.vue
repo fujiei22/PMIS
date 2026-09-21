@@ -11,16 +11,6 @@ import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 
-/** Issue 徽章的寬度，用來把它夾在可視範圍內。legacy :2933 */
-const BADGE_W = 38
-
-const props = defineProps<{
-  /** chart 目前的水平捲動位置（徽章夾邊用）。 */
-  scrollX: number
-  /** chart 可視寬度。 */
-  viewW: number
-}>()
-
 const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
@@ -41,8 +31,6 @@ interface Bar {
   label: string
   title: string
   issueOpen: number
-  badgeLeft: number
-  badgeTop: number
   /** 連線圓點的可視狀態與熱區位置。 */
   showL: boolean
   showR: boolean
@@ -84,8 +72,6 @@ const bars = computed<Bar[]>(() => {
         label: '',
         title: `${g.name}（收合）`,
         issueOpen: 0,
-        badgeLeft: 0,
-        badgeTop: 0,
         showL: false,
         showR: false,
         near: false,
@@ -127,14 +113,6 @@ const bars = computed<Bar[]>(() => {
           `${t.name}｜${t.start} → ${t.end}｜${lengthOf(t)} 天` +
           (rel ? `（${rel === 'up' ? '前置任務' : rel === 'down' ? '後續任務' : '同分類'}）` : ''),
         issueOpen: open,
-        // 徽章貼在條的右端，但不准跑出可視範圍（legacy :2932-2935）
-        badgeLeft: Math.round(
-          Math.max(
-            left + 6,
-            Math.min(left + w - BADGE_W - 6, props.scrollX + props.viewW - BADGE_W - 12),
-          ),
-        ),
-        badgeTop: i * ROW_HEIGHT + 10,
         showL: linking ? (isSrc ? side === 'L' : near && side === 'R') : hovered,
         showR: linking ? (isSrc ? side === 'R' : near && side === 'L') : hovered,
         near: linking && near,
@@ -334,7 +312,7 @@ function onBarClick(bar: Bar): void {
   height: 15px;
   padding: 0 var(--r-badge);
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--scrim-on-bar);
   color: var(--danger-text);
   font-size: var(--fs-10-2);
   font-weight: var(--fw-bold);
@@ -395,7 +373,7 @@ function onBarClick(bar: Bar): void {
   border: 2px solid var(--accent);
   transform: scale(1);
   transition: transform 0.15s ease;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
+  box-shadow: var(--shadow-dot);
 }
 
 .dot.near {

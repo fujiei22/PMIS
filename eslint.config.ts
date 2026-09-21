@@ -28,5 +28,12 @@ export default defineConfigWithVueTs(
     files: ['src/**/__tests__/*'],
   },
 
+  // 共用原子元件的檔名由 plan §檔案結構 指定（Avatar / Pill），照 plan 保留單字命名。
+  {
+    name: 'app/common-atoms',
+    files: ['src/components/common/{Avatar,Pill}.vue'],
+    rules: { 'vue/multi-word-component-names': 'off' },
+  },
+
   skipFormatting,
 )
