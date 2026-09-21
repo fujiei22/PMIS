@@ -60,6 +60,15 @@ describe('useClickOutside 的浮層', () => {
     expect(ui.openDropdown).toBe('cdate')
   })
 
+  it('點在錯誤條（[data-errorbar]）內也不關浮層', () => {
+    const ui = useUiStore()
+    ui.openDropdown = 'cdate'
+    const bar = addNode('<div data-errorbar><span class="dismiss">✕</span></div>')
+
+    down(bar.querySelector('.dismiss')!)
+    expect(ui.openDropdown).toBe('cdate')
+  })
+
   it('點在 [data-dd] 外把所有浮層關掉', () => {
     const ui = useUiStore()
     ui.openDropdown = 'cdate'
