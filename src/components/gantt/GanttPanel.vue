@@ -8,9 +8,11 @@ import GanttBars from '@/components/gantt/GanttBars.vue'
 import GanttGroupRow from '@/components/gantt/GanttGroupRow.vue'
 import GanttTaskRow from '@/components/gantt/GanttTaskRow.vue'
 import GanttTimeline, { type RulerDay, type RulerMonth } from '@/components/gantt/GanttTimeline.vue'
+import { useFocusRequest } from '@/composables/useFocusScroll'
 import { useGanttScroll } from '@/composables/useGanttScroll'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
 import { ROW_HEIGHT } from '@/constants/dashboard'
+import { dayIndex } from '@/lib/date'
 import { useFilterStore } from '@/stores/filter'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
@@ -32,7 +34,16 @@ const sticky = useStickyOffsetsContext()
 const scrollerEl = ref<HTMLElement | null>(null)
 const rulerEl = ref<HTMLElement | null>(null)
 // scrollX / viewW 由 composable 繼續維護，S5 的拖曳要用；S3 的畫面本身用不到
-const { onScroll, jumpToday, onZoom } = useGanttScroll(scrollerEl, rulerEl)
+const { onScroll, jumpToday, onZoom, scrollTo } = useGanttScroll(scrollerEl, rulerEl)
+
+/** 選到任務就把它的條捲到畫面左側三分之一處。legacy `focus()` :2400-2403 */
+useFocusRequest((req) => {
+  const t = taskStore.taskById(req.taskId)
+  const sc = scrollerEl.value
+  if (!t || !sc) return
+  const left = (dayIndex(t.start) - taskStore.range.a) * ui.dayWidth
+  scrollTo(Math.max(0, left - sc.clientWidth / 3), true)
+})
 
 const rows = computed(() => taskStore.visibleRows)
 

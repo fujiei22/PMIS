@@ -3,21 +3,22 @@
 // legacy 對照：模板 :533-642，columns :2989-3117。
 import { computed } from 'vue'
 import PanelShell from '@/components/common/PanelShell.vue'
+import SortChips from '@/components/common/SortChips.vue'
+import SortMenu from '@/components/common/SortMenu.vue'
 import KanbanHeader from '@/components/kanban/KanbanHeader.vue'
 import TaskCard from '@/components/kanban/TaskCard.vue'
+import { useFocusRequest, scrollIntoContainer } from '@/composables/useFocusScroll'
 import { TASK_STATUS } from '@/constants/dashboard'
 import { applySort } from '@/lib/sort'
 import { useFilterStore } from '@/stores/filter'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useTaskStore } from '@/stores/task'
-import { useUiStore } from '@/stores/ui'
 import type { TaskStatus } from '@/types/models'
 
 /** 看板欄的順序，逐字取自 legacy :2989。 */
 const COLUMNS: TaskStatus[] = ['todo', 'doing', 'paused', 'done']
 
-const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 const memberStore = useMemberStore()
@@ -49,6 +50,16 @@ const taskCountLabel = computed(() => {
     ? `共 ${all.length} 個任務`
     : `已篩選 ${matched}/${all.length} 個任務`
 })
+
+/**
+ * 選到任務時把它的卡片捲進所在欄位。legacy `focus()` :2404-2411。
+ * 來源是卡片本身（src='card'）就不捲——使用者已經看得到它了。
+ */
+useFocusRequest((req) => {
+  if (req.src === 'card') return
+  const card = document.querySelector(`[data-card="${req.taskId}"]`)
+  scrollIntoContainer(card, card?.closest('[data-col]'), 10)
+})
 </script>
 
 <template>
@@ -56,11 +67,9 @@ const taskCountLabel = computed(() => {
     <template #head>
       <h2 class="panel-title">任務看板</h2>
       <div class="panel-count" data-testid="task-count">{{ taskCountLabel }}</div>
-      <!-- 排序 chip 與排序選單是 S4 的範圍，這裡只放觸發鈕 -->
       <div class="sorts">
-        <div class="sort-trigger" data-dd="1" role="button" @click="ui.toggleDropdown('ksort')">
-          <span class="sort-icon">⇅</span><span>排序</span>
-        </div>
+        <SortChips kind="task" />
+        <SortMenu kind="task" />
       </div>
       <div class="spacer"></div>
       <button class="mini" @click="taskStore.addGroup()">＋ 新增分類</button>
@@ -101,30 +110,6 @@ const taskCountLabel = computed(() => {
   gap: var(--r-badge);
   flex-wrap: wrap;
   min-width: 0;
-}
-
-.sort-trigger {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  height: 26px;
-  padding: 0 var(--sp-5);
-  font-size: var(--fs-meta);
-  border: 1px dashed var(--border-control);
-  border-radius: var(--r-pill);
-  color: var(--text-muted);
-  background: var(--surface-1);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.sort-trigger:hover {
-  border-color: var(--text-placeholder);
-  color: var(--text-2);
-}
-
-.sort-icon {
-  font-size: var(--fs-caption);
 }
 
 .mini {

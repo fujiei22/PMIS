@@ -21,6 +21,8 @@ const selection = useSelectionStore()
 interface DepPath {
   id: string
   pts: string
+  /** 刪除確認要顯示的「A → B」。legacy :2984 */
+  label: string
   /** 連到選取任務：線變粗變藍、箭頭換色。legacy `hot` :2974 */
   hot: boolean
   dimmed: boolean
@@ -60,6 +62,7 @@ const paths = computed<DepPath[]>(() => {
     out.push({
       id: d.id,
       pts,
+      label: `${A.name} → ${B.name}`,
       hot: selection.taskId === A.id || selection.taskId === B.id,
       dimmed: selection.hasSelection,
       title: `${A.name} → ${B.name}（點擊刪除串接）`,
@@ -67,6 +70,11 @@ const paths = computed<DepPath[]>(() => {
   })
   return out
 })
+
+/** 點線 → 兩步刪除確認。legacy `onDelete` :2982 */
+function askDelete(p: DepPath): void {
+  ui.confirm = { kind: 'dep', id: p.id, step: 1, label: p.label }
+}
 </script>
 
 <template>
@@ -97,6 +105,7 @@ const paths = computed<DepPath[]>(() => {
       fill="none"
       stroke="transparent"
       stroke-width="11"
+      @click.stop="askDelete(p)"
     >
       <title>{{ p.title }}</title>
     </polyline>
