@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
-import { isoFromIndex, todayIndex } from '@/lib/date'
+import { computed, ref, toRef } from 'vue'
+import { ApiError, type ApiErrorCode } from '@/api/types'
+import { newId } from '@/lib/id'
+import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
@@ -59,18 +61,80 @@ export type OptionMenuKind =
 const DETAIL_HOLD_MS = 320
 /** 任務 ↔ Issue 切換動畫的長度（ms）。legacy `navAnim()` :2270 */
 const NAV_ANIM_MS = 280
+/** 錯誤條最多留幾筆、同 label 多久內算同一筆（契約 C）。 */
+const MAX_ERRORS = 5
+const MERGE_WINDOW_MS = 5000
+
+/** api 載入的四個狀態（契約 C）。 */
+export type LoadState = 'idle' | 'loading' | 'ready' | 'error'
+
+/** 錯誤條上的一筆；`message` 是 server 原文，只進 console，不上畫面（review M2）。 */
+export interface UiError {
+  id: string
+  label: string
+  code: ApiErrorCode
+  message: string
+  cause: unknown
+  at: number
+  count: number
+}
 
 /**
  * 純畫面狀態：時鐘、縮放、浮層、拖曳。
  * 這裡不放任何業務資料——資料在 task / issue / comment store。
  */
 export const useUiStore = defineStore('ui', () => {
-  /** 目前時間；useNow 每 60 秒 tick 一次（legacy :1923 的 setInterval forceUpdate）。 */
-  const now = ref(Date.now())
-  /** 今天的日索引，延遲判定與今日線都讀它。 */
-  const todayIdx = computed(() => todayIndex(now.value))
-  /** 今天的 'YYYY-MM-DD'，填完成日時用。legacy `today()` :2269 */
-  const todayIso = computed(() => isoFromIndex(todayIdx.value))
+  /**
+   * 時鐘搬到 `stores/clock.ts`（契約 C）；這三個是 R3 清掉前的轉接欄位，
+   * 讀寫的都是 clock 的同一份狀態，新程式碼請直接用 `useClockStore()`。
+   */
+  const clock = useClockStore()
+  const now = toRef(clock, 'now')
+  const todayIdx = computed(() => clock.todayIdx)
+  const todayIso = computed(() => clock.todayIso)
+
+  // ── 載入狀態與錯誤條（契約 C）────────────────────────────────────────────
+  /** 整包專案資料的載入狀態；DashboardView 依它切 LoadingState。 */
+  const loadState = ref<LoadState>('idle')
+  /** 載入失敗時給使用者看的中文；重試成功就清掉。 */
+  const loadError = ref<string | null>(null)
+  /** 寫入失敗的提示，最多 5 筆、新的在前；不自動關閉（review M3）。 */
+  const errors = ref<UiError[]>([])
+
+  /**
+   * 記一筆寫入失敗。同一個 label 在 5 秒內只累加 count，不洗版。
+   *
+   * `at` 取 `clock.now`（review Minor）——它每 60 秒才走一次，
+   * 所以實務上「同一次 tick 內的同 label」會合併成一筆，這是刻意的。
+   */
+  function pushError(e: { label: string; error: unknown }): void {
+    // review M3：畫面只給 label + code 的中文，原文留給開發者
+    console.error('[api]', e.label, e.error)
+    const at = clock.now
+    const hit = errors.value.find((x) => x.label === e.label && at - x.at < MERGE_WINDOW_MS)
+    if (hit) {
+      hit.count++
+      hit.at = at
+      return
+    }
+    const err = e.error
+    errors.value = [
+      {
+        id: newId(),
+        label: e.label,
+        code: err instanceof ApiError ? err.code : 'unknown',
+        message: err instanceof Error ? err.message : String(err),
+        cause: err,
+        at,
+        count: 1,
+      },
+      ...errors.value,
+    ].slice(0, MAX_ERRORS)
+  }
+
+  function dismissError(id: string): void {
+    errors.value = errors.value.filter((e) => e.id !== id)
+  }
 
   /** 甘特圖一天的寬度（px）。legacy `dayW()` :1898 */
   const dayWidth = ref(32)
@@ -248,6 +312,11 @@ export const useUiStore = defineStore('ui', () => {
     now,
     todayIdx,
     todayIso,
+    loadState,
+    loadError,
+    errors,
+    pushError,
+    dismissError,
     dayWidth,
     setDayWidth,
     zooming,
