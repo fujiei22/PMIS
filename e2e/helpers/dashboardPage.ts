@@ -173,4 +173,110 @@ export class DashboardPage {
   heightOf(locator: Locator): Promise<number> {
     return locator.evaluate((el) => Math.round(el.getBoundingClientRect().height))
   }
+
+  // ── S5 拖曳用 ──────────────────────────────────────────────────────────────
+
+  /** 相依連線（可見的那一層，不含透明的點擊熱區）。 */
+  get depLines(): Locator {
+    return this.page.locator('.dep-layer polyline.dep')
+  }
+
+  /** 拖曳建立相依時的虛線預覽。 */
+  get linkPreview(): Locator {
+    return this.page.locator('.link-layer')
+  }
+
+  /** 甘特條左 / 右側的連線圓點熱區（0 = 左、1 = 右）。 */
+  linkDot(taskId: string, side: 'L' | 'R'): Locator {
+    return this.page.locator(`[data-linkfor="${taskId}"]`).nth(side === 'L' ? 0 : 1)
+  }
+
+  /** 看板某一欄的內容區。 */
+  column(key: 'todo' | 'doing' | 'paused' | 'done'): Locator {
+    return this.page.locator(`[data-col="${key}"]`)
+  }
+
+  /** 頂部列成員選擇器的觸發鈕。 */
+  get memberPickerTrigger(): Locator {
+    return this.page.locator('.mp-trigger')
+  }
+
+  /** 成員選擇器展開後的清單列（0 起算）。 */
+  memberRow(index: number): Locator {
+    return this.page.locator('.mp-panel .mp-row').nth(index)
+  }
+
+  /** 甘特左欄目前的列順序，分類列前綴 `G:`。用來驗重排結果。 */
+  rowOrder(): Promise<string[]> {
+    return this.page
+      .locator('[data-rowtask],[data-rowgroup]')
+      .evaluateAll((els) =>
+        els.map((el) => el.getAttribute('data-rowtask') ?? `G:${el.getAttribute('data-rowgroup')}`),
+      )
+  }
+
+  /**
+   * 等甘特水平捲動停下來。
+   * 初次載入的 jumpToday 與選取任務後的 focus 捲動都是補間動畫，
+   * 量 boundingBox 之前不等它停，拖曳的起點就會落在錯的位置。
+   */
+  async waitForGanttSettle(): Promise<void> {
+    let last = Number.NaN
+    for (let i = 0; i < 40; i++) {
+      const cur = await this.scrollLeftOf(this.ganttScroller)
+      if (cur === last) return
+      last = cur
+      await this.page.waitForTimeout(80)
+    }
+  }
+}
+
+/**
+ * 指標拖曳：按住起點後依序移到每個座標。
+ *
+ * `gapMs` 是每步之間的等待——重排的節流看的是真實經過時間
+ * （列 140ms、分類 220ms），一口氣把座標送完只會觸發一次。
+ * 最後多等一次，讓 TransitionGroup 的 FLIP 位移跑完再放開，
+ * 否則下一次 dragTick 量到的是動畫中途的 rect。
+ */
+export async function stepDrag(
+  page: Page,
+  from: { x: number; y: number },
+  steps: { x: number; y: number }[],
+  gapMs = 0,
+): Promise<void> {
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  for (const s of steps) {
+    await page.mouse.move(s.x, s.y)
+    if (gapMs) await page.waitForTimeout(gapMs)
+  }
+  if (gapMs) await page.waitForTimeout(gapMs)
+  await page.mouse.up()
+}
+
+/**
+ * 觸發一次 HTML5 拖放（卡片、成員清單用的那種）。
+ *
+ * 用手動派發的 DragEvent 而不是 `locator.dragTo()`：
+ * 原生拖放在 headless Chromium 會連帶送出 click，落在卡片 / 成員列上會誤觸選取或勾選，
+ * 蓋掉真正要驗的 drop 結果。共用同一個 DataTransfer 才能讓 `setData` / `getData` 串起來。
+ */
+export async function html5Drag(page: Page, source: string, target: string): Promise<void> {
+  await page.evaluate(
+    ([src, tgt]) => {
+      const from = document.querySelector(src)
+      const to = document.querySelector(tgt)
+      if (!from || !to) throw new Error(`html5Drag 找不到元素：${src} / ${tgt}`)
+      const dataTransfer = new DataTransfer()
+      const fire = (el: Element, type: string): void => {
+        el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer }))
+      }
+      fire(from, 'dragstart')
+      fire(to, 'dragover')
+      fire(to, 'drop')
+      fire(from, 'dragend')
+    },
+    [source, target] as const,
+  )
 }
