@@ -16,11 +16,16 @@ export function isoFromIndex(i: number): ISODate {
 }
 
 /**
- * 毫秒時間戳 → 今天的日索引。legacy `todayIdx` :2276。
+ * 毫秒時間戳 → 今天的日索引（取**本地**年月日）。legacy `todayIdx` :2276。
  * now 由 uiStore 提供而不是直接讀 Date.now()，測試與 e2e 才能固定時鐘。
+ *
+ * review M2：legacy :1893 直接 `Math.floor(now / 86400000)`，算的是 UTC 日；
+ * UTC+8 每天 00:00-08:00 會把「今天」判成昨天（延遲判定 / 今天線 / 完成日 / 新任務日期全受影響）。
+ * user 2026-09-21 決定改成本地日期，這是刻意偏離 legacy 的行為。
  */
 export function todayIndex(now: number): number {
-  return Math.floor(now / 86400000)
+  const d = new Date(now)
+  return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000)
 }
 
 /** 任務工期（天），含頭尾兩天。legacy `len` :1900 */
