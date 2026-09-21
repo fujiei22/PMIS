@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Dashboard 主畫面：載資料、組頂部列 + 摘要卡 + 三個面板，並掛全域的點擊外部與時鐘。
 import { onMounted } from 'vue'
-import { loadProject } from '@/api/project'
+import { api } from '@/api'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import DatePicker from '@/components/common/DatePicker.vue'
 import OptionMenu from '@/components/common/OptionMenu.vue'
@@ -27,7 +27,7 @@ useClickOutside()
 useNow()
 
 onMounted(async () => {
-  taskStore.load(await loadProject())
+  taskStore.load(await api.loadProject())
 })
 </script>
 

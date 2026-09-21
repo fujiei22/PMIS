@@ -1,15 +1,15 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { isoFromIndex } from '@/lib/date'
-import { nextId } from '@/lib/id'
+import { newId } from '@/lib/id'
 import { applyTaskPatch, cascade, projectRange, reachable } from '@/lib/schedule'
 import { useCommentStore } from '@/stores/comment'
 import { useFilterStore } from '@/stores/filter'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useSelectionStore } from '@/stores/selection'
-import { useUiStore, type DropTarget } from '@/stores/ui'
-import type { Dependency, Group, ISODate, ProjectData, Task } from '@/types/models'
+import { useUiStore } from '@/stores/ui'
+import type { Dependency, DropTarget, Group, ISODate, ProjectData, Task } from '@/types/models'
 
 /**
  * 分類、任務與相依——Dashboard 的主資料。
@@ -56,10 +56,11 @@ export const useTaskStore = defineStore('task', () => {
    */
   const visibleRows = computed<{ kind: 'g' | 't'; id: string }[]>(() => {
     const filter = useFilterStore()
+    const collapsed = useUiStore().collapsedGroups
     const out: { kind: 'g' | 't'; id: string }[] = []
     for (const g of groups.value) {
       out.push({ kind: 'g', id: g.id })
-      if (g.collapsed) continue
+      if (collapsed.has(g.id)) continue
       for (const t of tasks.value) {
         if (t.groupId === g.id && filter.passTask(t)) out.push({ kind: 't', id: t.id })
       }
@@ -78,7 +79,7 @@ export const useTaskStore = defineStore('task', () => {
 
   /** 新增分類，接在最後。legacy `addGroup` :1849 */
   function addGroup(): Group {
-    const g: Group = { id: nextId('g'), name: '新分類 ' + (groups.value.length + 1), collapsed: false }
+    const g: Group = { id: newId(), name: '新分類 ' + (groups.value.length + 1) }
     groups.value.push(g)
     return g
   }
@@ -107,15 +108,14 @@ export const useTaskStore = defineStore('task', () => {
     if (ui.detail && (gone.has(ui.detail.id) || ui.detail.id === id)) ui.closeDetail()
   }
 
-  /** 收合 / 展開一個分類。legacy `onCaret` :2800 */
+  /** 收合 / 展開一個分類；狀態在 ui（review C5）。legacy `onCaret` :2800 */
   function toggleGroup(id: string): void {
-    const g = groupById(id)
-    if (g) g.collapsed = !g.collapsed
+    useUiStore().toggleGroup(id)
   }
 
   /** 全部收合 / 全部展開。legacy `toggleAllGroups` :4110 */
   function setAllCollapsed(v: boolean): void {
-    for (const g of groups.value) g.collapsed = v
+    useUiStore().setAllCollapsed(v)
   }
 
   /** 分類與相鄰的那個對調；已在頭尾就不動。legacy `moveGroup` :1835 */
@@ -142,7 +142,7 @@ export const useTaskStore = defineStore('task', () => {
     const sel = useSelectionStore()
     const base = useUiStore().todayIdx
     const t: Task = {
-      id: nextId('t'),
+      id: newId(),
       groupId:
         sel.groupId ?? (sel.taskId ? taskById(sel.taskId)?.groupId : null) ?? groups.value[0]!.id,
       name: '新任務',
@@ -161,7 +161,15 @@ export const useTaskStore = defineStore('task', () => {
 
   /** 改任務欄位並連動下游。legacy `setTask` :2294 */
   function updateTask(id: string, patch: Partial<Task>): void {
-    tasks.value = applyTaskPatch(tasks.value, deps.value, id, patch, useUiStore().todayIso)
+    // changed 是「真的變動的那幾筆」，R2 會拿它送 api.updateTasks；R1 只要新陣列
+    const { tasks: next } = applyTaskPatch(
+      tasks.value,
+      deps.value,
+      id,
+      patch,
+      useUiStore().todayIso,
+    )
+    tasks.value = next
   }
 
   /**
@@ -246,7 +254,7 @@ export const useTaskStore = defineStore('task', () => {
     if (!from || !to || from === to) return false
     if (deps.value.some((d) => d.from === from && d.to === to)) return false
     if (reachable(to, from, deps.value)) return false
-    deps.value = deps.value.concat([{ id: nextId('d'), from, to }])
+    deps.value = deps.value.concat([{ id: newId(), from, to }])
     tasks.value = cascade(tasks.value, deps.value, {})
     return true
   }

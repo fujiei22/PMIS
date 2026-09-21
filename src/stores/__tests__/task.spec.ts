@@ -1,12 +1,14 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { dayIndex, isoFromIndex } from '@/lib/date'
-import { resetIdSeq } from '@/lib/id'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useIssueStore } from '@/stores/issue'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+
+/** 新實體的 id 是 UUID v4（spec 目標 4），只能斷言格式。 */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
 /** 固定時鐘：2026-09-18，與 e2e 的 clock helper 同一天。 */
 const NOW = Date.parse('2026-09-18T10:00:00Z')
@@ -14,7 +16,6 @@ const NOW = Date.parse('2026-09-18T10:00:00Z')
 describe('taskStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    resetIdSeq()
     useUiStore().now = NOW
     useTaskStore().load(structuredClone(sampleProject))
   })
@@ -77,25 +78,37 @@ describe('taskStore', () => {
     const g = s.addGroup()
     expect(g.name).toBe('新分類 7')
     expect(s.groups[s.groups.length - 1]!.id).toBe(g.id)
-    expect(g.collapsed).toBe(false)
+    expect(useUiStore().collapsedGroups.has(g.id)).toBe(false)
   })
 
   it('renameGroup / toggleGroup / setAllCollapsed / moveGroup', () => {
     const s = useTaskStore()
+    const ui = useUiStore()
     s.renameGroup('g1', '前端')
     expect(s.groupById('g1')!.name).toBe('前端')
     s.toggleGroup('g1')
-    expect(s.groupById('g1')!.collapsed).toBe(true)
+    // review C5：收合狀態在 ui，不在 Group 上
+    expect(ui.collapsedGroups.has('g1')).toBe(true)
     expect(s.visibleRows).toHaveLength(36 - 6)
+    s.toggleGroup('g1')
+    expect(ui.collapsedGroups.has('g1')).toBe(false)
     s.setAllCollapsed(true)
-    expect(s.groups.every((g) => g.collapsed)).toBe(true)
+    expect(ui.collapsedGroups.size).toBe(s.groups.length)
     expect(s.visibleRows).toHaveLength(6)
     s.setAllCollapsed(false)
-    expect(s.groups.every((g) => !g.collapsed)).toBe(true)
+    expect(ui.collapsedGroups.size).toBe(0)
     s.moveGroup('g1', 1)
     expect(s.groups.map((g) => g.id).slice(0, 2)).toEqual(['g2', 'g1'])
     s.moveGroup('g2', -1)
     expect(s.groups.map((g) => g.id).slice(0, 2)).toEqual(['g2', 'g1'])
+  })
+
+  // review C5：改名走的是 groups 陣列，收合狀態在 ui，兩者互不影響
+  it('收合中的分類改名不會被展開', () => {
+    const s = useTaskStore()
+    s.toggleGroup('g1')
+    s.renameGroup('g1', '改過的名字')
+    expect(useUiStore().collapsedGroups.has('g1')).toBe(true)
   })
 
   it('removeGroup 連任務、issue、deps 一起刪並清 selection', () => {
@@ -139,13 +152,13 @@ describe('taskStore', () => {
     const sel = useSelectionStore()
     sel.groupId = 'g3'
     const t = s.addTask()!
-    expect(t.id).toBe('t101')
+    expect(t.id).toMatch(UUID)
     expect(t.groupId).toBe('g3')
     expect(t.start).toBe('2026-09-18')
     expect(t.end).toBe('2026-09-22')
     expect(t.status).toBe('todo')
     expect(t.priority).toBe('mid')
-    expect(sel.taskId).toBe('t101')
+    expect(sel.taskId).toBe(t.id)
   })
 
   it('addTask 無分類時改新增分類', () => {

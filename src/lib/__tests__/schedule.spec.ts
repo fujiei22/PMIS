@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { dayIndex } from '@/lib/date'
-import { applyTaskPatch, cascade, isLate, isLateIssue, projectRange, reachable } from '@/lib/schedule'
+import {
+  applyTaskPatch,
+  cascade,
+  isLate,
+  isLateIssue,
+  needsCascade,
+  projectRange,
+  reachable,
+} from '@/lib/schedule'
 import type { Dependency, Issue, Task } from '@/types/models'
 
 const t = (id: string, start: string, end: string, groupId = 'g1'): Task => ({
@@ -90,21 +98,21 @@ describe('reachable', () => {
 describe('applyTaskPatch', () => {
   it('applyTaskPatch: status→done 填 done；離開 done 清空', () => {
     const tasks = [t('a', '2026-09-01', '2026-09-05')]
-    const out = applyTaskPatch(tasks, [], 'a', { status: 'done' }, '2026-09-18')
+    const { tasks: out } = applyTaskPatch(tasks, [], 'a', { status: 'done' }, '2026-09-18')
     expect(out.find((x) => x.id === 'a')!.done).toBe('2026-09-18')
-    const back = applyTaskPatch(out, [], 'a', { status: 'doing' }, '2026-09-18')
+    const { tasks: back } = applyTaskPatch(out, [], 'a', { status: 'doing' }, '2026-09-18')
     expect(back.find((x) => x.id === 'a')!.done).toBe('')
   })
 
   it('applyTaskPatch 已填過的 done 不被覆蓋', () => {
     const tasks = [{ ...t('a', '2026-09-01', '2026-09-05'), done: '2026-09-03' }]
-    const out = applyTaskPatch(tasks, [], 'a', { status: 'done' }, '2026-09-18')
+    const { tasks: out } = applyTaskPatch(tasks, [], 'a', { status: 'done' }, '2026-09-18')
     expect(out[0]!.done).toBe('2026-09-03')
   })
 
   it('applyTaskPatch: start 早於前置 start 時整段平移保工期', () => {
     const tasks = [t('a', '2026-09-10', '2026-09-14'), t('b', '2026-09-15', '2026-09-19')]
-    const out = applyTaskPatch(
+    const { tasks: out } = applyTaskPatch(
       tasks,
       [d('a', 'b')],
       'b',
@@ -118,7 +126,7 @@ describe('applyTaskPatch', () => {
 
   it('applyTaskPatch 移動上游時下游跟著移', () => {
     const tasks = [t('a', '2026-09-01', '2026-09-05'), t('b', '2026-09-06', '2026-09-08')]
-    const out = applyTaskPatch(
+    const { tasks: out } = applyTaskPatch(
       tasks,
       [d('a', 'b')],
       'a',
@@ -130,7 +138,98 @@ describe('applyTaskPatch', () => {
 
   it('applyTaskPatch 找不到 id 時原樣回傳', () => {
     const tasks = [t('a', '2026-09-01', '2026-09-05')]
-    expect(applyTaskPatch(tasks, [], 'zz', { status: 'done' }, '2026-09-18')).toBe(tasks)
+    const out = applyTaskPatch(tasks, [], 'zz', { status: 'done' }, '2026-09-18')
+    expect(out.tasks).toBe(tasks)
+    expect(out.changed).toEqual([])
+  })
+})
+
+// spec 目標 7：只有 start / end / status 變動才跑 cascade，其餘欄位就地 patch；
+// 未變動的任務保留物件 identity，元件的 computed 才不會整批重算。
+describe('needsCascade', () => {
+  it('只有 start / end / status 需要 cascade', () => {
+    expect(needsCascade({ name: '改名' })).toBe(false)
+    expect(needsCascade({ priority: 'high' })).toBe(false)
+    expect(needsCascade({ assigneeIds: ['m1'] })).toBe(false)
+    expect(needsCascade({ done: '2026-09-18' })).toBe(false)
+    expect(needsCascade({ groupId: 'g2' })).toBe(false)
+    expect(needsCascade({})).toBe(false)
+    expect(needsCascade({ end: '2026-09-09' })).toBe(true)
+    expect(needsCascade({ start: '2026-09-02' })).toBe(true)
+    expect(needsCascade({ status: 'done' })).toBe(true)
+    expect(needsCascade({ name: 'x', start: '2026-09-02' })).toBe(true)
+  })
+})
+
+describe('applyTaskPatch 的 identity 與 changed', () => {
+  const trio = () => [
+    t('a', '2026-09-01', '2026-09-05'),
+    t('b', '2026-09-06', '2026-09-08'),
+    t('c', '2026-09-20', '2026-09-22', 'g2'),
+  ]
+
+  it('改名不跑 cascade：只有被改的那筆是新物件，其餘 identity 相同', () => {
+    const tasks = trio()
+    const { tasks: out, changed } = applyTaskPatch(
+      tasks,
+      [d('a', 'b')],
+      'a',
+      { name: '改名' },
+      '2026-09-18',
+    )
+    expect(out[0]).not.toBe(tasks[0])
+    expect(out[0]!.name).toBe('改名')
+    expect(out[0]!.start).toBe('2026-09-01')
+    expect(out[1]).toBe(tasks[1])
+    expect(out[2]).toBe(tasks[2])
+    expect(changed).toEqual([out[0]])
+    // 入參不被改
+    expect(tasks[0]!.name).toBe('a')
+  })
+
+  it('start 變動時下游被推，沒被影響的任務 identity 相同', () => {
+    const tasks = trio()
+    const { tasks: out, changed } = applyTaskPatch(
+      tasks,
+      [d('a', 'b')],
+      'a',
+      { start: '2026-09-04', end: '2026-09-08' },
+      '2026-09-18',
+    )
+    expect(out[0]!.start).toBe('2026-09-04')
+    expect(out[1]!.start).toBe('2026-09-09')
+    expect(out[2]).toBe(tasks[2])
+    expect(changed.map((x) => x.id)).toEqual(['a', 'b'])
+    expect(changed[0]).toBe(out[0])
+    expect(changed[1]).toBe(out[1])
+  })
+
+  it('patch 送的值跟現況一樣時什麼都不變，回原陣列與空 changed', () => {
+    const tasks = trio()
+    const { tasks: out, changed } = applyTaskPatch(
+      tasks,
+      [d('a', 'b')],
+      'a',
+      { name: 'a', assigneeIds: [] },
+      '2026-09-18',
+    )
+    expect(out).toBe(tasks)
+    expect(changed).toEqual([])
+  })
+
+  it('status 變動會跑 cascade，changed 只含真的變了的任務', () => {
+    const tasks = trio()
+    const { tasks: out, changed } = applyTaskPatch(
+      tasks,
+      [d('a', 'b')],
+      'a',
+      { status: 'done' },
+      '2026-09-18',
+    )
+    expect(out[0]!.done).toBe('2026-09-18')
+    expect(changed.map((x) => x.id)).toEqual(['a'])
+    expect(out[1]).toBe(tasks[1])
+    expect(out[2]).toBe(tasks[2])
   })
 })
 

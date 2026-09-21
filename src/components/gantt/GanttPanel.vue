@@ -124,7 +124,7 @@ const stripes = computed(() =>
 const zoomPct = computed(() => Math.round((ui.dayWidth / 32) * 100))
 /** 滑桿軌道左半段的填色比例。legacy `zoomFill` :3581 */
 const zoomFill = computed(() => Math.round(((ui.dayWidth - 14) / 18) * 100))
-const allCollapsed = computed(() => taskStore.groups.every((g) => g.collapsed))
+const allCollapsed = computed(() => taskStore.groups.every((g) => ui.collapsedGroups.has(g.id)))
 </script>
 
 <template>

@@ -1,24 +1,28 @@
-/** 可以產生 id 的資料種類：分類 / 任務 / Issue / 相依 / 留言 */
-export type IdPrefix = 'g' | 't' | 'i' | 'd' | 'c'
-
 /**
- * 前端暫時的流水號，從 100 起跳，避開 mocks 已經用掉的 g1…t30。
- * 接後端之後這些 id 改由 server 回填，這支檔案就只剩留言的樂觀更新會用到。
- */
-let seq = 100
-
-/**
- * 產生一個新 id；所有種類共用同一條流水號。
+ * 新實體的 id 一律由前端產生（契約 A：`id` 由 client 產、create 帶 id、重複回 409）。
  *
- * review M5：留言原本跟 legacy :2196 一樣用 `'c' + Date.now()`，
- * 但固定時鐘（單元測試與 e2e 的 `page.clock`）下同一毫秒連送兩則會拿到同一個 id，
- * v-for 的 key 撞號、刪一則會連帶刪掉另一則。改成流水號，起點 100 也避開 mocks 的 c1…c5。
+ * 為什麼是 UUID 而不是流水號：接後端之後同時有多個 client 在建立資料，
+ * 「本地遞增」必然撞號；UUID 讓乐觀更新可以先用最終 id 畫上去，
+ * 不必等 server 回填、也不用做 tempId → realId 的替換。
+ * mocks 既有的 g1 / t1 / i1 / d1 / c1 保持原樣（spec 目標 4）。
  */
-export function nextId(prefix: IdPrefix): string {
-  return prefix + ++seq
+
+/**
+ * 產生一個新 id（UUID v4 字串）。
+ *
+ * review M9：`crypto.randomUUID` 只在 secure context（https / localhost）才有，
+ * 內網用 http 開的話會是 undefined，所以退回 `crypto.getRandomValues` 自己組一個 v4。
+ */
+export function newId(): string {
+  return globalThis.crypto.randomUUID?.() ?? v4FromGetRandomValues()
 }
 
-/** 測試用：把流水號歸零回初始值。 */
-export function resetIdSeq(): void {
-  seq = 100
+/** 用 16 個亂數位元組組 UUID v4：第 7 位元組的高 4 bits 填 4、第 9 位元組的高 2 bits 填 10。 */
+function v4FromGetRandomValues(): string {
+  const b = new Uint8Array(16)
+  globalThis.crypto.getRandomValues(b)
+  b[6] = (b[6]! & 0x0f) | 0x40
+  b[8] = (b[8]! & 0x3f) | 0x80
+  const hex = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }

@@ -46,6 +46,9 @@ legacy/            改寫前的原型（唯讀基準，見下）
 public/            原樣複製到 dist/ 的靜態檔
 src/
   api/             資料存取層；接後端時只換這一層
+    types.ts       ProjectApi / ProjectEvent / ApiError 契約，檔頭是給後端看的 wire 約定
+    mock/          記憶體實作；可注入延遲與失敗（dev build 掛在 window.__mockApi）
+    index.ts       挑實作的唯一出口（VITE_API 未設或 'mock' 用 mock）
   assets/          tokens.css（設計 token）、base.css（全域樣式與 keyframes）
   components/      元件，依畫面區塊分子目錄
   composables/     可重用的組合式函式（拖曳、自動捲動、延遲卸載…）
@@ -156,7 +159,7 @@ store 的欄位分兩類，寫法不同：
 
 現在整份資料來自 `src/mocks/sampleProject.ts`，改接真實後端前，這幾點要一起處理：
 
-- **api 層目前只抽了 read**。`src/api/project.ts` 只有載入整包專案；27 個寫入 action 直接改 store 的陣列，沒有經過 api 層。要接後端就得先讓寫入路徑統一走 api，否則得在每個 action 裡各接一次。
+- **介面已經定好，但 store 還沒接上**。`src/api/types.ts` 是完整的讀寫 + 事件契約、`src/api/mock/` 是記憶體實作；store 的寫入 action 目前仍直接改自己的陣列，還沒走 api（乐觀更新與失敗還原是下一步）。這一節會在寫入路徑接上 api 之後改寫成「怎麼接後端」。
 - **載入沒有錯誤處理**。`DashboardView` 的載入失敗時畫面只會停在空狀態，沒有重試也沒有提示；接後端要補 loading / error 狀態。
 - **留言附件目前只做前端預覽**。`addDraftFiles` 直接 `URL.createObjectURL`，沒有任何檢查。接真實上傳時要補檔案大小上限、MIME 型別與副檔名白名單（三者都要，只擋副檔名擋不住偽裝的檔案），伺服器端再驗一次。
 - **部署時要加 CSP**。目前沒有 Content-Security-Policy；上線前在伺服器或 CDN 層補上，至少限制 `script-src` / `style-src` / `img-src`（`blob:` 要放行，附件預覽用得到）。

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { nextId } from '@/lib/id'
+import { newId } from '@/lib/id'
 import { useMemberStore } from '@/stores/member'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
@@ -36,7 +36,7 @@ export const useIssueStore = defineStore('issue', () => {
     const task = useTaskStore().taskById(taskId)
     if (!task) return null
     const issue: Issue = {
-      id: nextId('i'),
+      id: newId(),
       taskId,
       created: useUiStore().todayIso,
       title: '新 Issue（點擊可改名）',

@@ -32,6 +32,8 @@ const span = computed(() => {
 })
 
 const selected = computed(() => selection.groupId === props.group.id)
+/** 收合狀態在 ui，不在 Group 上（review C5）。 */
+const collapsed = computed(() => ui.collapsedGroups.has(props.group.id))
 /** 重排拖曳中：被拖的那列抬起來，其他列淡化。legacy :2780-2784（S5 才會填 drag） */
 const lifted = computed(() => ui.drag?.kind === 'greorder' && ui.drag.id === props.group.id)
 const dimmed = computed(() => ui.drag?.kind === 'greorder' && ui.drag.id !== props.group.id)
@@ -117,7 +119,7 @@ function onDrop(e: DragEvent): void {
     >
       ⠿
     </div>
-    <div class="caret" role="button" @click="onCaret">{{ group.collapsed ? '▶' : '▼' }}</div>
+    <div class="caret" role="button" @click="onCaret">{{ collapsed ? '▶' : '▼' }}</div>
     <div v-if="!editing" class="name" :title="group.name" @dblclick="startEdit">
       {{ group.name }}
     </div>

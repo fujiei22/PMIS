@@ -8,12 +8,12 @@ import type { Comment, Dependency, Group, Issue, Member, ProjectData, Task } fro
  */
 
 const groups: Group[] = [
-  { id: 'g1', name: '前端開發', collapsed: false },
-  { id: 'g2', name: '後端開發', collapsed: false },
-  { id: 'g3', name: '資料與整合', collapsed: false },
-  { id: 'g4', name: '測試與品質', collapsed: false },
-  { id: 'g5', name: '上線與維運', collapsed: false },
-  { id: 'g6', name: '專案管理', collapsed: false },
+  { id: 'g1', name: '前端開發' },
+  { id: 'g2', name: '後端開發' },
+  { id: 'g3', name: '資料與整合' },
+  { id: 'g4', name: '測試與品質' },
+  { id: 'g5', name: '上線與維運' },
+  { id: 'g6', name: '專案管理' },
 ]
 
 const members: Member[] = [
@@ -671,7 +671,7 @@ const comments: Comment[] = [
     memberId: 'm1',
     at: '2026-09-08T10:12',
     text: '設計稿已更新，導覽列高度改為 56px，請確認。',
-    files: [{ name: 'nav-spec-v3.png', size: 428000, at: '2026-09-08' }],
+    files: [{ id: 'c1:0', name: 'nav-spec-v3.png', size: 428000, at: '2026-09-08' }],
   },
   {
     id: 'c2',
@@ -690,8 +690,8 @@ const comments: Comment[] = [
     at: '2026-09-11T09:05',
     text: '補上元件檢查清單與字型授權文件。',
     files: [
-      { name: 'component-checklist.xlsx', size: 91500, at: '2026-09-11' },
-      { name: 'font-license.pdf', size: 1250000, at: '2026-09-11' },
+      { id: 'c3:0', name: 'component-checklist.xlsx', size: 91500, at: '2026-09-11' },
+      { id: 'c3:1', name: 'font-license.pdf', size: 1250000, at: '2026-09-11' },
     ],
   },
   {
@@ -701,7 +701,7 @@ const comments: Comment[] = [
     memberId: 'm4',
     at: '2026-09-12T16:40',
     text: 'API 欄位命名調整後的規格書。',
-    files: [{ name: 'api-schema.json', size: 23400, at: '2026-09-12' }],
+    files: [{ id: 'c4:0', name: 'api-schema.json', size: 23400, at: '2026-09-12' }],
   },
   {
     id: 'c5',
@@ -711,8 +711,8 @@ const comments: Comment[] = [
     at: '2026-09-15T11:20',
     text: '壓測結果附上，尖峰 QPS 可到 1.4k。',
     files: [
-      { name: 'loadtest-report.pdf', size: 780000, at: '2026-09-15' },
-      { name: 'qps-chart.png', size: 164000, at: '2026-09-15' },
+      { id: 'c5:0', name: 'loadtest-report.pdf', size: 780000, at: '2026-09-15' },
+      { id: 'c5:1', name: 'qps-chart.png', size: 164000, at: '2026-09-15' },
     ],
   },
 ]

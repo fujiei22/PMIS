@@ -12,11 +12,10 @@ export type IssueLevel = 'A' | 'B' | 'C' | 'D'
 export type IssueItem = 'C' | 'R' | 'F' | 'O'
 export type IssueStatus = 'open' | 'doing' | 'paused' | 'closed'
 
-/** 甘特圖左欄的任務分類 */
+/** 甘特圖左欄的任務分類；收合與否是畫面狀態，放在 `useUiStore().collapsedGroups`（契約 A） */
 export interface Group {
   id: string
   name: string
-  collapsed: boolean
 }
 
 export interface Member {
@@ -69,8 +68,12 @@ export interface Issue {
   solvedBios: string
 }
 
-/** 留言附件；mocks 無 url，送出留言時圖片才有 blob url */
+/**
+ * 留言附件；mocks 無 url，送出留言時圖片才有 blob url。
+ * `id` 是 `api.downloadAttachment(attachmentId)` 的鍵，格式 `<commentId>:<index>`（契約 A）。
+ */
 export interface Attachment {
+  id: string
   name: string
   size: number
   at: ISODate
@@ -88,6 +91,14 @@ export interface Comment {
   text: string
   files: Attachment[]
 }
+
+/**
+ * 拖曳 / 放置的落點：分類（可分上下半）或某個任務。
+ * 放在 models 而不是 ui store：`taskStore.moveTaskTo` 的參數型別，資料層不該 import 派生層（契約 E）。
+ */
+export type DropTarget =
+  | { kind: 'g'; id: string; dir?: 'up' | 'down' }
+  | { kind: 't'; id: string }
 
 export interface ProjectData {
   groups: Group[]

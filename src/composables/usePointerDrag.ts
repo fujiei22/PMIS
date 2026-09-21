@@ -4,7 +4,8 @@ import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex, isoFromIndex } from '@/lib/date'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
-import { useUiStore, type DragState, type DropTarget } from '@/stores/ui'
+import { useUiStore, type DragState } from '@/stores/ui'
+import type { DropTarget } from '@/types/models'
 
 /**
  * 甘特圖上的七種指標拖曳：條的移動 / 左右縮放、拉線建相依、列與分類重排、畫布平移。
