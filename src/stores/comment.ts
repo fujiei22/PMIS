@@ -6,8 +6,8 @@ import { useMemberStore } from '@/stores/member'
 import { useUiStore } from '@/stores/ui'
 import type { Attachment, Comment } from '@/types/models'
 
-/** 詳細視窗裡的檔案列，比 Attachment 多一個穩定的 id 與作者名。 */
-export type CommentFile = Attachment & { id: string; by: string }
+/** 詳細視窗裡的檔案列，比 Attachment 多一個作者名。 */
+export type CommentFile = Attachment & { by: string }
 
 /** Date → 本地 'YYYY-MM-DD'。legacy :2187 同樣用 getFullYear/getMonth/getDate。 */
 function localDay(d: Date): string {
@@ -58,15 +58,13 @@ export const useCommentStore = defineStore('comment', () => {
       .sort((a, b) => (a.at < b.at ? 1 : -1))
   }
 
-  /** 把留言裡的附件攤平成檔案列；id 用 留言id:索引，時間倒序。legacy `cFiles` :3379 */
+  /** 把留言裡的附件攤平成檔案列，時間倒序；id 直接用附件自己的。legacy `cFiles` :3379 */
   function filesForTarget(id: string): CommentFile[] {
     const members = useMemberStore()
     const out: CommentFile[] = []
     for (const c of forTarget(id)) {
       const m = members.byId(c.memberId)
-      c.files.forEach((f, i) => {
-        out.push({ ...f, id: c.id + ':' + i, by: m ? m.name : '成員' })
-      })
+      for (const f of c.files) out.push({ ...f, by: m ? m.name : '成員' })
     }
     return out.sort((a, b) => (a.at < b.at ? 1 : -1))
   }
@@ -94,14 +92,22 @@ export const useCommentStore = defineStore('comment', () => {
     const pad = (n: number) => String(n).padStart(2, '0')
     const day = localDay(now)
     const at = day + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes())
+    // 附件 id 綁這則留言（契約 A：`<commentId>:<index>`），送出後就不會再變
+    const id = newId()
     comments.value.push({
-      id: newId(),
+      id,
       targetId,
       targetKind,
       memberId: useMemberStore().currentUserId,
       at,
       text: draft.value.trim(),
-      files: draftFiles.value.map((f) => ({ name: f.name, size: f.size, at: day, url: f.url ?? '' })),
+      files: draftFiles.value.map((f, i) => ({
+        id: `${id}:${i}`,
+        name: f.name,
+        size: f.size,
+        at: day,
+        url: f.url ?? '',
+      })),
     })
     // 不走 resetDraft：blob url 已經轉給這則留言，revoke 掉縮圖就壞了
     clearDraft()
@@ -113,7 +119,9 @@ export const useCommentStore = defineStore('comment', () => {
    */
   function addDraftFiles(files: FileList | File[]): void {
     const ui = useUiStore()
+    // 草稿階段先給暫時 id（v-for 的 key 與移除用），送出時 `send` 會換成 `<commentId>:<index>`
     const picked = Array.from(files ?? []).map((f) => ({
+      id: newId(),
       name: f.name || '貼上的圖片-' + Date.now() + '.png',
       size: f.size,
       at: localDay(new Date(ui.now)),

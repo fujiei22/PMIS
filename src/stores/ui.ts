@@ -4,11 +4,7 @@ import { isoFromIndex, todayIndex } from '@/lib/date'
 import { useCommentStore } from '@/stores/comment'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
-
-/** 拖曳 / 放置的落點：分類（可分上下半）或某個任務。 */
-export type DropTarget =
-  | { kind: 'g'; id: string; dir?: 'up' | 'down' }
-  | { kind: 't'; id: string }
+import type { DropTarget } from '@/types/models'
 
 /**
  * 七種拖曳的共享狀態。S2 只定型別與初始值，S3 的元件讀它算樣式，S5 才真的填值。

@@ -8,8 +8,8 @@ import { useFilterStore } from '@/stores/filter'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useSelectionStore } from '@/stores/selection'
-import { useUiStore, type DropTarget } from '@/stores/ui'
-import type { Dependency, Group, ISODate, ProjectData, Task } from '@/types/models'
+import { useUiStore } from '@/stores/ui'
+import type { Dependency, DropTarget, Group, ISODate, ProjectData, Task } from '@/types/models'
 
 /**
  * 分類、任務與相依——Dashboard 的主資料。
