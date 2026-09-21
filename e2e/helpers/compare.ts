@@ -423,6 +423,29 @@ export async function runScenario(page: Page, kind: PageKind, scenario: Scenario
 }
 
 /**
+ * 新建立的實體，id 在兩頁一定不一樣：legacy 用 100 起跳的流水號（g101 / t101…），
+ * 新頁改成 UUID v4（spec 目標 4）。比對前把這類 id 換成出現順序的代號（NEW1、NEW2…），
+ * 「順序與結構一致」才是要比的東西，id 字面值不是。
+ * mocks 既有的 g1 / t30 / c5 是一到兩位數，不會被換掉。
+ */
+const GENERATED_ID =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\b[gtidc]\d{3,}\b/g
+
+/** 同一步的 dom + geo 共用一份對照表，兩頁各自按首次出現的順序編號。 */
+function normaliseIds(step: Step): Step {
+  const seen = new Map<string, string>()
+  const text = JSON.stringify(step).replace(GENERATED_ID, (hit) => {
+    let token = seen.get(hit)
+    if (!token) {
+      token = `NEW${seen.size + 1}`
+      seen.set(hit, token)
+    }
+    return token
+  })
+  return JSON.parse(text) as Step
+}
+
+/**
  * 同一組操作在 legacy 與新頁各跑一次並逐步比對。
  *
  * `options.geo` 設 false 就只比文字（拖曳中途之類的步驟用）。
@@ -433,8 +456,8 @@ export async function compareScenario(
   scenario: Scenario,
   options: { geo?: boolean } = {},
 ): Promise<void> {
-  const legacy = await runScenario(page, 'legacy', scenario)
-  const vue = await runScenario(page, 'vue', scenario)
+  const legacy = (await runScenario(page, 'legacy', scenario)).map(normaliseIds)
+  const vue = (await runScenario(page, 'vue', scenario)).map(normaliseIds)
 
   const dumpDir = process.env.COMPARE_DUMP
   if (dumpDir) {
