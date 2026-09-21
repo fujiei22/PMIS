@@ -1,9 +1,10 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { ApiError, type ApiErrorCode } from '@/api/types'
 import { newId } from '@/lib/id'
 import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
+import { useIssueStore } from '@/stores/issue'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import type { DropTarget } from '@/types/models'
@@ -152,11 +153,12 @@ export const useUiStore = defineStore('ui', () => {
 
   /**
    * 全部收合 / 全部展開。legacy `toggleAllGroups` :4110。
-   * 分類清單在 taskStore；ui 是派生層、可以讀資料層（契約 E），
-   * 只是 R1 的 taskStore 還反向 import ui，這條 import 到 R3 分層完才會變單向。
+   *
+   * 要收合的分類 id 由呼叫端給（契約 E）：全部展開就傳空陣列。
+   * 這樣 ui 不必為了「有哪些分類」去讀 taskStore.groups。
    */
-  function setAllCollapsed(v: boolean): void {
-    collapsedGroups.value = v ? new Set(useTaskStore().groups.map((g) => g.id)) : new Set()
+  function setAllCollapsed(ids: string[]): void {
+    collapsedGroups.value = new Set(ids)
   }
 
   const openDropdown = ref<DropdownKey | null>(null)
@@ -301,6 +303,50 @@ export const useUiStore = defineStore('ui', () => {
     // legacy 返回時把選取切回該任務（:3807）；直接改 taskId，不走 selectTask 以免重播捲動
     useSelectionStore().taskId = from
   }
+
+  // ── 懸空 id 清理（契約 E）──────────────────────────────────────────────────
+
+  /** 這個 kind / id 的實體還在嗎。 */
+  function exists(kind: 'task' | 'issue' | 'group' | 'dep', id: string): boolean {
+    const tasks = useTaskStore()
+    if (kind === 'task') return !!tasks.taskById(id)
+    if (kind === 'group') return !!tasks.groupById(id)
+    if (kind === 'dep') return tasks.deps.some((d) => d.id === id)
+    return !!useIssueStore().byId(id)
+  }
+
+  /**
+   * 指向已刪實體的浮層狀態一律關掉。
+   *
+   * 資料層不再回頭清 ui（契約 E）：不管刪除是本地發起、乐觀還原，還是別的
+   * client 推來的事件，都由這條 watch 收尾。`flush: 'sync'` 讓畫面不會有任何
+   * 一個 tick 停在不存在的 id 上（review M7）。
+   * 清理清單：`detail`（含 `detail.from`）、`confirm`、`depEditFor`、
+   * `pickerFor`、`expandedIssues[id]`。
+   */
+  watch(
+    () => {
+      const d = detail.value
+      const c = confirm.value
+      return {
+        detailGone: !!d && !exists(d.kind, d.id),
+        fromGone: !!d?.from && !exists('task', d.from),
+        confirmGone: !!c && !exists(c.kind, c.id),
+        depEditGone: !!depEditFor.value && !exists('task', depEditFor.value),
+        pickerGone: !!pickerFor.value && !exists('task', pickerFor.value),
+        expandedGone: Object.keys(expandedIssues.value).filter((id) => !exists('issue', id)),
+      }
+    },
+    (gone) => {
+      if (gone.detailGone) closeDetail()
+      else if (gone.fromGone && detail.value) detail.value.from = null
+      if (gone.confirmGone) confirm.value = null
+      if (gone.depEditGone) depEditFor.value = null
+      if (gone.pickerGone) pickerFor.value = null
+      for (const id of gone.expandedGone) delete expandedIssues.value[id]
+    },
+    { flush: 'sync' },
+  )
 
   return {
     loadState,

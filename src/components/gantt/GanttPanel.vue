@@ -131,6 +131,14 @@ const zoomPct = computed(() => Math.round((ui.dayWidth / 32) * 100))
 /** 滑桿軌道左半段的填色比例。legacy `zoomFill` :3581 */
 const zoomFill = computed(() => Math.round(((ui.dayWidth - 14) / 18) * 100))
 const allCollapsed = computed(() => taskStore.groups.every((g) => ui.collapsedGroups.has(g.id)))
+
+/**
+ * 全部收合 / 全部展開。legacy `toggleAllGroups` :4110。
+ * 分類清單在資料層，收合狀態在 ui——由這裡把 id 交給 ui（契約 E）。
+ */
+function toggleAllGroups(): void {
+  ui.setAllCollapsed(allCollapsed.value ? [] : taskStore.groups.map((g) => g.id))
+}
 </script>
 
 <template>
@@ -165,7 +173,7 @@ const allCollapsed = computed(() => taskStore.groups.every((g) => ui.collapsedGr
         任務 / 分類
         <span class="spacer"></span>
         <span class="head-actions">
-          <button class="mini" @click="taskStore.setAllCollapsed(!allCollapsed)">
+          <button class="mini" @click="toggleAllGroups()">
             <!-- 只有文字、不加箭頭符號（legacy `allGroupsCaret` :4106） -->
             {{ allCollapsed ? '全部展開' : '全部收合' }}
           </button>

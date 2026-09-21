@@ -23,7 +23,6 @@ import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
-import { useSelectionStore } from '@/stores/selection'
 import { useUiStore } from '@/stores/ui'
 import type { Dependency, DropTarget, Group, ISODate, ProjectData, Task } from '@/types/models'
 
@@ -226,7 +225,7 @@ export const useTaskStore = defineStore('task', () => {
 
   /**
    * 刪分類，連底下的任務、那些任務的 Issue / 相依 / 留言一起刪。legacy `grpDelete` :4013。
-   * 刪完把指到已刪 id 的選取清掉，免得畫面停在不存在的東西上（R3 才搬去派生層）。
+   * 指到已刪 id 的選取 / 浮層由派生層的 watch 自己清（契約 E）。
    */
   async function removeGroup(id: string): Promise<void> {
     const issues = useIssueStore()
@@ -254,13 +253,6 @@ export const useTaskStore = defineStore('task', () => {
     issues.dropLocal(goneIssues)
     comments.dropLocal(goneComments)
 
-    const sel = useSelectionStore()
-    if (sel.taskId && goneTasks.has(sel.taskId)) sel.taskId = null
-    if (sel.groupId === id) sel.groupId = null
-    if (sel.issueId && !issues.byId(sel.issueId)) sel.issueId = null
-    const ui = useUiStore()
-    if (ui.detail && (goneTasks.has(ui.detail.id) || ui.detail.id === id)) ui.closeDetail()
-
     let ok = false
     await runOptimistic<Group>({
       tracker: groupTracker,
@@ -282,16 +274,6 @@ export const useTaskStore = defineStore('task', () => {
         comments.restoreLocal(snapshot.comments)
       },
     })
-  }
-
-  /** 收合 / 展開一個分類；狀態在 ui（review C5）。legacy `onCaret` :2800 */
-  function toggleGroup(id: string): void {
-    useUiStore().toggleGroup(id)
-  }
-
-  /** 全部收合 / 全部展開。legacy `toggleAllGroups` :4110 */
-  function setAllCollapsed(v: boolean): void {
-    useUiStore().setAllCollapsed(v)
   }
 
   /** 分類與相鄰的那個對調（只改本地）；已在頭尾就不動，回傳有沒有真的動。legacy `moveGroup` :1835 */
@@ -495,7 +477,8 @@ export const useTaskStore = defineStore('task', () => {
 
   /**
    * 刪任務，連它的 Issue、相依與留言一起刪。legacy `confirmDelete` :4092。
-   * 也清掉 ui.detail（§不重現的原頁面 bug 1：legacy 刪完視窗會卡住不關 :1761）。
+   * `ui.detail` 由 ui 自己的 watch 關掉（§不重現的原頁面 bug 1：
+   * legacy 刪完視窗會卡住不關 :1761）。
    */
   async function removeTask(id: string): Promise<void> {
     const issues = useIssueStore()
@@ -516,14 +499,6 @@ export const useTaskStore = defineStore('task', () => {
     deps.value = deps.value.filter((d) => d.from !== id && d.to !== id)
     issues.dropLocal(goneIssues)
     comments.dropLocal(goneComments)
-
-    const sel = useSelectionStore()
-    if (sel.taskId === id) sel.taskId = null
-    if (sel.issueId && !issues.byId(sel.issueId)) sel.issueId = null
-    const ui = useUiStore()
-    if (ui.detail && (ui.detail.id === id || ui.detail.from === id)) ui.closeDetail()
-    if (ui.depEditFor === id) ui.depEditFor = null
-    if (ui.pickerFor === id) ui.pickerFor = null
 
     let ok = false
     await runOptimistic<Task>({
@@ -729,8 +704,6 @@ export const useTaskStore = defineStore('task', () => {
     renameGroupLocal,
     commitGroupPatch,
     removeGroup,
-    toggleGroup,
-    setAllCollapsed,
     moveGroup,
     moveGroupLocal,
     commitGroupOrder,

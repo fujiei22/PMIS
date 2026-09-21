@@ -12,8 +12,6 @@ import {
 } from '@/stores/_optimistic'
 import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
-import { useSelectionStore } from '@/stores/selection'
-import { useUiStore } from '@/stores/ui'
 import type { Issue, Task } from '@/types/models'
 
 /** Issue 清單與它的增刪改。Issue 一定掛在某個任務底下。 */
@@ -165,7 +163,10 @@ export const useIssueStore = defineStore('issue', () => {
     await commitIssuePatch(id, sent)
   }
 
-  /** 刪一筆 Issue（連它的留言），順手清掉指向它的選取與詳細視窗。legacy `iConfirmDelete` :4076 */
+  /**
+   * 刪一筆 Issue（連它的留言）。legacy `iConfirmDelete` :4076。
+   * 指到它的選取 / 詳細視窗 / 確認框由派生層的 watch 自己清（契約 E）。
+   */
   async function removeIssue(id: string): Promise<void> {
     if (!byId(id)) return
     const comments = useCommentStore()
@@ -174,13 +175,6 @@ export const useIssueStore = defineStore('issue', () => {
 
     issues.value = issues.value.filter((x) => x.id !== id)
     comments.dropLocal(goneComments)
-
-    const sel = useSelectionStore()
-    if (sel.issueId === id) sel.issueId = null
-    const ui = useUiStore()
-    if (ui.detail && ui.detail.kind === 'issue' && ui.detail.id === id) ui.closeDetail()
-    if (ui.confirm && ui.confirm.kind === 'issue' && ui.confirm.id === id) ui.confirm = null
-    delete ui.expandedIssues[id]
 
     let ok = false
     await runOptimistic<Issue>({

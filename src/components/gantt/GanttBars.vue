@@ -140,7 +140,7 @@ const todayLeft = computed(
 
 function onBarClick(bar: Bar): void {
   // 摘要條點了就展開該分類（legacy :2900）
-  if (bar.summary) taskStore.toggleGroup(bar.id.slice(4))
+  if (bar.summary) ui.toggleGroup(bar.id.slice(4))
   else selection.toggleTask(bar.id)
 }
 

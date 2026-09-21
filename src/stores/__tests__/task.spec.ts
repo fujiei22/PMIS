@@ -66,7 +66,7 @@ describe('taskStore', () => {
   it('load 後保留已收合的分類（收合是畫面狀態，不隨資料重載）', async () => {
     const s = useTaskStore()
     const ui = useUiStore()
-    s.toggleGroup('g1')
+    ui.toggleGroup('g1')
     await s.load()
     expect(ui.collapsedGroups.has('g1')).toBe(true)
   })
@@ -120,19 +120,20 @@ describe('taskStore', () => {
     expect(useUiStore().collapsedGroups.has(g.id)).toBe(false)
   })
 
-  it('renameGroup / toggleGroup / setAllCollapsed / moveGroup', async () => {
+  // 收合的 action 在 ui（契約 E：資料層不再轉呼叫派生層）
+  it('renameGroup / moveGroup 與 ui 的收合互不影響', async () => {
     const s = useTaskStore()
     const ui = useUiStore()
     await s.renameGroup('g1', '前端')
     expect(s.groupById('g1')!.name).toBe('前端')
-    s.toggleGroup('g1')
+    ui.toggleGroup('g1')
     // review C5：收合狀態在 ui，不在 Group 上
     expect(ui.collapsedGroups.has('g1')).toBe(true)
-    s.toggleGroup('g1')
+    ui.toggleGroup('g1')
     expect(ui.collapsedGroups.has('g1')).toBe(false)
-    s.setAllCollapsed(true)
+    ui.setAllCollapsed(s.groups.map((g) => g.id))
     expect(ui.collapsedGroups.size).toBe(s.groups.length)
-    s.setAllCollapsed(false)
+    ui.setAllCollapsed([])
     expect(ui.collapsedGroups.size).toBe(0)
     await s.moveGroup('g1', 1)
     expect(s.groups.map((g) => g.id).slice(0, 2)).toEqual(['g2', 'g1'])
@@ -143,7 +144,7 @@ describe('taskStore', () => {
   // review C5：改名走的是 groups 陣列，收合狀態在 ui，兩者互不影響
   it('收合中的分類改名不會被展開', async () => {
     const s = useTaskStore()
-    s.toggleGroup('g1')
+    useUiStore().toggleGroup('g1')
     await s.renameGroup('g1', '改過的名字')
     expect(useUiStore().collapsedGroups.has('g1')).toBe(true)
     expect(s.groupById('g1')!.name).toBe('改過的名字')
