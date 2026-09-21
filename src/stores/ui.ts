@@ -43,6 +43,21 @@ export type DropdownKey =
   | 'cdate'
   | 'cmem'
 
+/**
+ * 選項選單能改的欄位。legacy `openOpt(e, id, kind)` 的 kind :2671。
+ * S4 追加的具名型別；欄位本身與 §介面契約 D 的 `optionMenu.kind` 完全相同。
+ */
+export type OptionMenuKind =
+  | 'priority'
+  | 'status'
+  | 'group'
+  | 'ipri'
+  | 'iitem'
+  | 'istatus'
+  | 'itask'
+  | 'icreator'
+  | 'iowner'
+
 /** 詳細視窗關閉動畫的長度（ms）。legacy `hold()` :1741 */
 const DETAIL_HOLD_MS = 320
 /** 任務 ↔ Issue 切換動畫的長度（ms）。legacy `navAnim()` :2270 */
@@ -95,16 +110,7 @@ export const useUiStore = defineStore('ui', () => {
   /** 選項選單（含視窗邊界翻轉後的座標）。legacy `openOpt` :2671 */
   const optionMenu = ref<{
     id: string
-    kind:
-      | 'priority'
-      | 'status'
-      | 'group'
-      | 'ipri'
-      | 'iitem'
-      | 'istatus'
-      | 'itask'
-      | 'icreator'
-      | 'iowner'
+    kind: OptionMenuKind
     left: number
     top: number
   } | null>(null)
