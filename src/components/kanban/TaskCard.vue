@@ -4,6 +4,7 @@
 import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import Pill from '@/components/common/Pill.vue'
+import { useDomRegistry, registerEl } from '@/composables/useDomRegistry'
 import { useMenus } from '@/composables/useMenus'
 import { DELAYED, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
 import { dayIndex, isoFromIndex, lengthOf } from '@/lib/date'
@@ -18,6 +19,8 @@ import { useUiStore } from '@/stores/ui'
 import type { Task } from '@/types/models'
 
 const props = defineProps<{ task: Task }>()
+
+const registry = useDomRegistry()
 
 const clock = useClockStore()
 const ui = useUiStore()
@@ -102,6 +105,7 @@ function toggleDetail(): void {
   <div
     class="card"
     :class="{ selected, dimmed, late, [`rel-${rel}`]: !!rel }"
+    :ref="registerEl(registry.cards, task.id)"
     :data-card="task.id"
     :data-selected="String(selected)"
     :data-rel="rel"

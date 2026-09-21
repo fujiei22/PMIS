@@ -2,6 +2,7 @@
 // 甘特左欄的任務列：把手、狀態點、任務名、起訖日期 + 工期、hover 才出現的快捷鈕。
 // legacy 對照：模板 :442-466，groupRows[].tasks :2814-2877。
 import { computed, nextTick, ref, watch } from 'vue'
+import { useDomRegistry, registerEl } from '@/composables/useDomRegistry'
 import { useEditDraft } from '@/composables/useEditDraft'
 import { useMenus } from '@/composables/useMenus'
 import { usePointerDragContext } from '@/composables/usePointerDrag'
@@ -23,6 +24,7 @@ const selection = useSelectionStore()
 const taskStore = useTaskStore()
 const { openTaskDatePicker } = useMenus()
 const drag = usePointerDragContext()
+const registry = useDomRegistry()
 
 const late = computed(() => isLate(props.task, clock.todayIdx))
 /** 延遲蓋掉原本的狀態，供 CSS 變數與測試使用（契約 E）。 */
@@ -142,6 +144,7 @@ function onDrop(e: DragEvent): void {
   <div
     class="task-row"
     :class="{ selected, dimmed, lifted, 'others-lifted': othersLifted, 'drop-over': dropOver }"
+    :ref="registerEl(registry.rows, task.id)"
     :data-rowtask="task.id"
     :data-selected="String(selected)"
     :data-status="status"

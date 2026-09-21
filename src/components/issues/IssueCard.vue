@@ -6,6 +6,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import Pill from '@/components/common/Pill.vue'
 import { useDelayedUnmount } from '@/composables/useDelayedUnmount'
+import { useDomRegistry, registerEl } from '@/composables/useDomRegistry'
 import { useEditDraft, type EditDraft } from '@/composables/useEditDraft'
 import { useMenus } from '@/composables/useMenus'
 import { DELAYED, ISSUE_ITEM, ISSUE_LEVEL, ISSUE_STATUS } from '@/constants/dashboard'
@@ -26,6 +27,8 @@ const MAX_OWNERS = 2
 const EXPAND_HOLD_MS = 320
 
 const props = defineProps<{ issue: Issue }>()
+
+const registry = useDomRegistry()
 
 const clock = useClockStore()
 const ui = useUiStore()
@@ -194,6 +197,7 @@ function openDetail(): void {
   <div
     class="icard"
     :class="{ on, strong: strongSelected, rel, dimmed, overdue }"
+    :ref="registerEl(registry.issueRows, issue.id)"
     :data-issuerow="issue.id"
     :data-selected="String(on)"
     :data-status="status"
