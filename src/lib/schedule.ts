@@ -93,8 +93,11 @@ export function needsCascade(patch: Partial<Task>): boolean {
   return CASCADE_FIELDS.some((k) => k in patch)
 }
 
-/** 兩筆任務的欄位是否完全一樣（陣列逐項比）；用來判斷能不能沿用舊物件。 */
-function sameTask(a: Task, b: Task): boolean {
+/**
+ * 兩筆任務的欄位是否完全一樣（陣列逐項比）；用來判斷能不能沿用舊物件。
+ * R2 的 `taskStore.collectDirtyTasks` 也用它比對「本地 vs 最後已知 server 狀態」。
+ */
+export function sameTask(a: Task, b: Task): boolean {
   if (a === b) return true
   const keys = Object.keys(a) as (keyof Task)[]
   if (keys.length !== Object.keys(b).length) return false

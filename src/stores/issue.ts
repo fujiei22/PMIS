@@ -1,6 +1,17 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import { api } from '@/api'
+import type { ProjectEvent } from '@/api/types'
 import { newId } from '@/lib/id'
+import {
+  applyServerValue,
+  cloneEntity,
+  createTracker,
+  resetTracker,
+  runOptimistic,
+} from '@/stores/_optimistic'
+import { useClockStore } from '@/stores/clock'
+import { useCommentStore } from '@/stores/comment'
 import { useMemberStore } from '@/stores/member'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
@@ -10,6 +21,8 @@ import type { Issue } from '@/types/models'
 /** Issue 清單與它的增刪改。Issue 一定掛在某個任務底下。 */
 export const useIssueStore = defineStore('issue', () => {
   const issues = ref<Issue[]>([])
+  /** 最後已知的 server 狀態（契約 B）。 */
+  const tracker = createTracker<Issue>()
 
   /** id → Issue 的索引，避免每次 find 掃全表。legacy `idx('issues')` :1901 */
   const index = computed(() => new Map(issues.value.map((i) => [i.id, i])))
@@ -23,9 +36,55 @@ export const useIssueStore = defineStore('issue', () => {
     return issues.value.filter((i) => i.taskId === taskId)
   }
 
+  /**
+   * taskId → 未結案的 Issue 數。
+   * spec 目標 7：改成一顆 Map computed，30 張卡不再各掃一次全表。
+   */
+  const openCounts = computed(() => {
+    const out = new Map<string, number>()
+    for (const i of issues.value) {
+      if (i.status === 'closed') continue
+      out.set(i.taskId, (out.get(i.taskId) ?? 0) + 1)
+    }
+    return out
+  })
+
   /** 未結案的 Issue 數；篩選、排序與卡片上的紅點都讀它。legacy `matchIssue` 內的 filter :2240 */
   function openCount(taskId: string): number {
-    return issues.value.filter((i) => i.taskId === taskId && i.status !== 'closed').length
+    return openCounts.value.get(taskId) ?? 0
+  }
+
+  /** 載入時整份換掉並重置 tracker。 */
+  function setAll(list: Issue[]): void {
+    issues.value = list
+    resetTracker(tracker, list)
+  }
+
+  /** 連動刪除時由 taskStore 呼叫：只動本地。 */
+  function dropLocal(ids: string[]): void {
+    if (!ids.length) return
+    const gone = new Set(ids)
+    issues.value = issues.value.filter((i) => !gone.has(i.id))
+  }
+
+  /** 連動刪除還原時由 taskStore 呼叫。 */
+  function restoreLocal(list: Issue[]): void {
+    issues.value = list
+  }
+
+  /** 連動刪除成功後，把 server 狀態也清掉。 */
+  function dropServer(ids: string[]): void {
+    for (const id of ids) tracker.server.delete(id)
+  }
+
+  function reconcile(server: Issue | undefined, id: string): void {
+    const i = issues.value.findIndex((x) => x.id === id)
+    if (!server) {
+      if (i >= 0) issues.value.splice(i, 1)
+      return
+    }
+    if (i >= 0) issues.value[i] = { ...server }
+    else issues.value.push({ ...server })
   }
 
   /**
@@ -38,7 +97,7 @@ export const useIssueStore = defineStore('issue', () => {
     const issue: Issue = {
       id: newId(),
       taskId,
-      created: useUiStore().todayIso,
+      created: useClockStore().todayIso,
       title: '新 Issue（點擊可改名）',
       item: 'F',
       level: 'C',
@@ -56,34 +115,113 @@ export const useIssueStore = defineStore('issue', () => {
       solvedBios: '',
     }
     issues.value.push(issue)
+    void runOptimistic<Issue>({
+      tracker,
+      ids: [issue.id],
+      label: '新增 Issue',
+      apply: () => {},
+      call: () => api.createIssue(cloneEntity(issue)),
+      reconcile,
+    })
     return issue
   }
 
-  /** 改 Issue 欄位；進 closed 補完成日、離開 closed 清掉。legacy `setIssue` :2280 */
-  function updateIssue(id: string, patch: Partial<Issue>): void {
+  /** 只改本地（逐鍵編輯的每一鍵走這條）。legacy `setIssue` :2280 */
+  function applyLocalPatch(id: string, patch: Partial<Issue>): Partial<Issue> | null {
     const i = byId(id)
-    if (!i) return
+    if (!i) return null
+    const next = { ...patch }
     const oldStatus = i.status
-    Object.assign(i, patch)
     if (patch.status && patch.status !== oldStatus) {
+      // 後端不跑這條規則（契約 A）：前端算完把 done 一起送出去
       if (patch.status === 'closed') {
-        if (!i.done) i.done = useUiStore().todayIso
+        if (!i.done) next.done = useClockStore().todayIso
       } else if (oldStatus === 'closed') {
-        i.done = ''
+        next.done = ''
       }
     }
+    Object.assign(i, next)
+    return next
   }
 
-  /** 刪一筆 Issue，順手清掉指向它的選取與詳細視窗。legacy `iConfirmDelete` :4076 / :3344 */
-  function removeIssue(id: string): void {
+  /** 改 Issue 欄位；進 closed 補完成日、離開 closed 清掉，然後送給後端。 */
+  async function updateIssue(id: string, patch: Partial<Issue>): Promise<void> {
+    const sent = applyLocalPatch(id, patch)
+    if (!sent) return
+    await runOptimistic<Issue>({
+      tracker,
+      ids: [id],
+      label: '更新 Issue',
+      apply: () => {},
+      call: () => api.updateIssue(id, cloneEntity(sent)),
+      reconcile,
+    })
+  }
+
+  /** 刪一筆 Issue（連它的留言），順手清掉指向它的選取與詳細視窗。legacy `iConfirmDelete` :4076 */
+  async function removeIssue(id: string): Promise<void> {
+    if (!byId(id)) return
+    const comments = useCommentStore()
+    const snapshot = { issues: issues.value, comments: comments.comments }
+    const goneComments = comments.comments.filter((c) => c.targetId === id).map((c) => c.id)
+
     issues.value = issues.value.filter((x) => x.id !== id)
+    comments.dropLocal(goneComments)
+
     const sel = useSelectionStore()
     if (sel.issueId === id) sel.issueId = null
     const ui = useUiStore()
     if (ui.detail && ui.detail.kind === 'issue' && ui.detail.id === id) ui.closeDetail()
     if (ui.confirm && ui.confirm.kind === 'issue' && ui.confirm.id === id) ui.confirm = null
     delete ui.expandedIssues[id]
+
+    let ok = false
+    await runOptimistic<Issue>({
+      tracker,
+      ids: [id],
+      label: '刪除 Issue',
+      apply: () => {},
+      call: async () => {
+        await api.deleteIssue(id)
+        ok = true
+        tracker.server.delete(id)
+        comments.dropServer(goneComments)
+      },
+      reconcile: () => {
+        if (ok) return
+        issues.value = snapshot.issues
+        comments.restoreLocal(snapshot.comments)
+      },
+    })
   }
 
-  return { issues, byId, byTask, openCount, addIssue, updateIssue, removeIssue }
+  /** 後端推來的 Issue 事件；`_sync.ts` 路由過來。 */
+  function applyEvent(e: ProjectEvent): void {
+    switch (e.type) {
+      case 'issue.created':
+      case 'issue.updated':
+        applyServerValue(tracker, e.payload.id, e.payload, reconcile)
+        break
+      case 'issue.deleted':
+        applyServerValue(tracker, e.payload.id, undefined, reconcile)
+        break
+    }
+  }
+
+  return {
+    issues,
+    byId,
+    byTask,
+    openCounts,
+    openCount,
+    setAll,
+    dropLocal,
+    restoreLocal,
+    dropServer,
+    addIssue,
+    applyLocalPatch,
+    updateIssue,
+    removeIssue,
+    applyEvent,
+  }
 })

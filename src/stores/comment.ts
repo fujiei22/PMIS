@@ -1,13 +1,28 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { api } from '@/api'
+import type { ProjectEvent } from '@/api/types'
 import { dayIndex } from '@/lib/date'
 import { newId } from '@/lib/id'
+import {
+  applyServerValue,
+  cloneEntity,
+  createTracker,
+  resetTracker,
+  runOptimistic,
+} from '@/stores/_optimistic'
+import { useClockStore } from '@/stores/clock'
 import { useMemberStore } from '@/stores/member'
-import { useUiStore } from '@/stores/ui'
 import type { Attachment, Comment } from '@/types/models'
 
 /** 詳細視窗裡的檔案列，比 Attachment 多一個作者名。 */
 export type CommentFile = Attachment & { by: string }
+
+/**
+ * 草稿附件：除了顯示用的 Attachment，還抓著原始 `File`（review C2）——
+ * `api.createComment(comment, files)` 是 multipart，真的要送出去的是檔案本身。
+ */
+export type CommentDraftFile = Attachment & { file: File }
 
 /** Date → 本地 'YYYY-MM-DD'。legacy :2187 同樣用 getFullYear/getMonth/getDate。 */
 function localDay(d: Date): string {
@@ -22,10 +37,12 @@ function localDay(d: Date): string {
  */
 export const useCommentStore = defineStore('comment', () => {
   const comments = ref<Comment[]>([])
+  /** 最後已知的 server 狀態（契約 B）。 */
+  const tracker = createTracker<Comment>()
 
   /** 正在打的留言與夾帶的附件。legacy `draft` / `draftFiles` :1600 */
   const draft = ref('')
-  const draftFiles = ref<Attachment[]>([])
+  const draftFiles = ref<CommentDraftFile[]>([])
 
   /** 留言篩選：日期區間與成員。legacy `cD1` / `cD2` / `cMem` :1596 */
   const dateFrom = ref('')
@@ -36,6 +53,38 @@ export const useCommentStore = defineStore('comment', () => {
   const tab = ref<'comments' | 'files'>('comments')
   const fileView = ref<'icon' | 'list'>('icon')
   const fileSel = ref<string[]>([])
+
+  /** 載入時整份換掉並重置 tracker。 */
+  function setAll(list: Comment[]): void {
+    comments.value = list
+    resetTracker(tracker, list)
+  }
+
+  /** 連動刪除時由 task / issue store 呼叫：只動本地。 */
+  function dropLocal(ids: string[]): void {
+    if (!ids.length) return
+    const gone = new Set(ids)
+    comments.value = comments.value.filter((c) => !gone.has(c.id))
+  }
+
+  function restoreLocal(list: Comment[]): void {
+    comments.value = list
+  }
+
+  /** 連動刪除成功後，把 server 狀態也清掉。 */
+  function dropServer(ids: string[]): void {
+    for (const id of ids) tracker.server.delete(id)
+  }
+
+  function reconcile(server: Comment | undefined, id: string): void {
+    const i = comments.value.findIndex((c) => c.id === id)
+    if (!server) {
+      if (i >= 0) comments.value.splice(i, 1)
+      return
+    }
+    if (i >= 0) comments.value[i] = { ...server }
+    else comments.value.push({ ...server })
+  }
 
   /** 留言時間是否落在篩選區間內；兩端都空就不篩。legacy `cDateOk` :2161 */
   function dateOk(at: string): boolean {
@@ -82,19 +131,22 @@ export const useCommentStore = defineStore('comment', () => {
    * 送出留言；作者是目前登入者，草稿全空就不送。legacy `sendComment` :2188。
    *
    * review M1：日期與時分要出自同一個本地時鐘（legacy :2186-2188 用
-   * getFullYear/getMonth/getDate）。這裡直接從 `ui.now` 取本地欄位，不繞 `ui.todayIso`，
+   * getFullYear/getMonth/getDate）。這裡直接從 `clock.now` 取本地欄位，不繞 `todayIso`，
    * 免得日索引換算方式改動時又出現「本地時分配 UTC 日期」的組合。
+   *
+   * 附件走 multipart（契約 A）：Attachment 進 comment、原始 File 走 `files` 參數；
+   * response 若把 blob url 換成 server url，舊的 blob url 要 revoke（review M13）。
    */
-  function send(targetId: string, targetKind: 'task' | 'issue'): void {
+  async function send(targetId: string, targetKind: 'task' | 'issue'): Promise<void> {
     if (!draft.value.trim() && !draftFiles.value.length) return
-    const ui = useUiStore()
-    const now = new Date(ui.now)
+    const now = new Date(useClockStore().now)
     const pad = (n: number) => String(n).padStart(2, '0')
     const day = localDay(now)
     const at = day + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes())
     // 附件 id 綁這則留言（契約 A：`<commentId>:<index>`），送出後就不會再變
     const id = newId()
-    comments.value.push({
+    const files = draftFiles.value.map((f) => f.file)
+    const comment: Comment = {
       id,
       targetId,
       targetKind,
@@ -108,9 +160,28 @@ export const useCommentStore = defineStore('comment', () => {
         at: day,
         url: f.url ?? '',
       })),
-    })
+    }
+    comments.value.push(comment)
     // 不走 resetDraft：blob url 已經轉給這則留言，revoke 掉縮圖就壞了
     clearDraft()
+
+    await runOptimistic<Comment>({
+      tracker,
+      ids: [id],
+      label: '送出留言',
+      apply: () => {},
+      call: async () => {
+        const saved = await api.createComment(cloneEntity(comment), files)
+        // server 換了 url → 本地那份 blob url 沒人要了，放掉（review M13）
+        comment.files.forEach((local, i) => {
+          const next = saved.files[i]
+          if (!next || next.url === local.url) return
+          if (local.url?.startsWith('blob:')) URL.revokeObjectURL(local.url)
+        })
+        return saved
+      },
+      reconcile,
+    })
   }
 
   /**
@@ -118,14 +189,15 @@ export const useCommentStore = defineStore('comment', () => {
    * review M1：附件日期同樣取本地日（送出時 `send` 會再蓋一次同一天的值）。
    */
   function addDraftFiles(files: FileList | File[]): void {
-    const ui = useUiStore()
+    const now = useClockStore().now
     // 草稿階段先給暫時 id（v-for 的 key 與移除用），送出時 `send` 會換成 `<commentId>:<index>`
-    const picked = Array.from(files ?? []).map((f) => ({
+    const picked: CommentDraftFile[] = Array.from(files ?? []).map((f) => ({
       id: newId(),
       name: f.name || '貼上的圖片-' + Date.now() + '.png',
       size: f.size,
-      at: localDay(new Date(ui.now)),
+      at: localDay(new Date(now)),
       url: (f.type || '').startsWith('image') ? URL.createObjectURL(f) : '',
+      file: f,
     }))
     if (picked.length) draftFiles.value.push(...picked)
   }
@@ -146,8 +218,26 @@ export const useCommentStore = defineStore('comment', () => {
   }
 
   /** 刪掉一則留言。legacy `onDelete` :3878 */
-  function remove(commentId: string): void {
+  async function remove(commentId: string): Promise<void> {
+    const gone = comments.value.find((c) => c.id === commentId)
+    if (!gone) return
+    const snapshot = comments.value
     comments.value = comments.value.filter((c) => c.id !== commentId)
+    let ok = false
+    await runOptimistic<Comment>({
+      tracker,
+      ids: [commentId],
+      label: '刪除留言',
+      apply: () => {},
+      call: async () => {
+        await api.deleteComment(commentId)
+        ok = true
+        tracker.server.delete(commentId)
+      },
+      reconcile: () => {
+        if (!ok) comments.value = snapshot
+      },
+    })
   }
 
   /** 只清欄位，不動 blob url（送出留言時用：url 的所有權交給那則留言了）。 */
@@ -165,6 +255,18 @@ export const useCommentStore = defineStore('comment', () => {
     clearDraft()
   }
 
+  /** 後端推來的留言事件；`_sync.ts` 路由過來。 */
+  function applyEvent(e: ProjectEvent): void {
+    switch (e.type) {
+      case 'comment.created':
+        applyServerValue(tracker, e.payload.id, e.payload, reconcile)
+        break
+      case 'comment.deleted':
+        applyServerValue(tracker, e.payload.id, undefined, reconcile)
+        break
+    }
+  }
+
   return {
     comments,
     draft,
@@ -175,6 +277,10 @@ export const useCommentStore = defineStore('comment', () => {
     tab,
     fileView,
     fileSel,
+    setAll,
+    dropLocal,
+    restoreLocal,
+    dropServer,
     forTarget,
     filesForTarget,
     commenterIds,
@@ -183,5 +289,6 @@ export const useCommentStore = defineStore('comment', () => {
     removeDraft,
     remove,
     resetDraft,
+    applyEvent,
   }
 })
