@@ -151,3 +151,34 @@ test('從詳情刪任務後視窗正常關閉、body 可捲動', async ({ page }
   await expect(app.card('t3')).toHaveCount(0)
   await expect(page.locator('[data-card]')).toHaveCount(29)
 })
+
+// review M4：標題原本用 HTML autofocus，每份文件只生效一次，第二次雙擊不會聚焦。
+test('詳情標題可以重複進出編輯，每次都自動聚焦', async ({ page }) => {
+  const app = new DashboardPage(page)
+  await app.goto()
+  await openTaskDetail(page, 't3')
+
+  const title = modal(page).locator('.detail-title')
+  const input = modal(page).locator('.detail-title-input')
+
+  // 第一次：雙擊進編輯、有焦點、打字直接寫得進去
+  await title.dblclick()
+  await expect(input).toBeFocused()
+  await page.keyboard.type('一')
+  await expect(input).toHaveValue('前端框架建置一')
+  await page.keyboard.press('Enter')
+  await expect(input).toHaveCount(0)
+  await expect(title).toHaveText('前端框架建置一')
+
+  // 第二次：同一份文件再雙擊，仍要聚焦，不必先手動點輸入框
+  await title.dblclick()
+  await expect(input).toBeFocused()
+  await page.keyboard.type('二')
+  await expect(input).toHaveValue('前端框架建置一二')
+  await page.keyboard.press('Enter')
+  await expect(title).toHaveText('前端框架建置一二')
+
+  // 名稱同步回甘特列
+  await modal(page).locator('.detail-close').click()
+  await expect(page.locator('[data-rowtask="t3"] .name')).toHaveText('前端框架建置一二')
+})
