@@ -32,7 +32,7 @@ describe('taskStore', () => {
   it('load 直接採用 api 的資料、不跑 cascade（spec 目標 5）', () => {
     const s = useTaskStore()
     expect(s.tasks).toHaveLength(30)
-    expect(s.visibleRows).toHaveLength(36)
+    expect(s.groups).toHaveLength(6)
     expect(useUiStore().loadState).toBe('ready')
     // 日期逐筆等於 mocks 原值——載入不該改動任何一天
     for (const t of sampleProject.tasks) {
@@ -77,11 +77,10 @@ describe('taskStore', () => {
     expect(s.taskById('nope')).toBeUndefined()
   })
 
-  it('range 與 rowIndexOf 反映目前可見列', () => {
+  // visibleRows / rowIndexOf 已搬到派生層的 rows store（契約 E），見 rows.spec
+  it('range 涵蓋所有任務', () => {
     const s = useTaskStore()
     expect(s.range.b - s.range.a).toBeGreaterThan(0)
-    expect(s.rowIndexOf.t1).toBe(1)
-    expect(Object.keys(s.rowIndexOf)).toHaveLength(30)
   })
 
   it('addDep 拒絕循環回 false、成功回 true 並 cascade', async () => {
@@ -128,12 +127,10 @@ describe('taskStore', () => {
     s.toggleGroup('g1')
     // review C5：收合狀態在 ui，不在 Group 上
     expect(ui.collapsedGroups.has('g1')).toBe(true)
-    expect(s.visibleRows).toHaveLength(36 - 6)
     s.toggleGroup('g1')
     expect(ui.collapsedGroups.has('g1')).toBe(false)
     s.setAllCollapsed(true)
     expect(ui.collapsedGroups.size).toBe(s.groups.length)
-    expect(s.visibleRows).toHaveLength(6)
     s.setAllCollapsed(false)
     expect(ui.collapsedGroups.size).toBe(0)
     await s.moveGroup('g1', 1)

@@ -9,12 +9,14 @@ import { isLate } from '@/lib/schedule'
 import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
 import { useIssueStore } from '@/stores/issue'
+import { useRowsStore } from '@/stores/rows'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 
 const clock = useClockStore()
 const ui = useUiStore()
+const rowsStore = useRowsStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 const filter = useFilterStore()
@@ -49,8 +51,8 @@ interface Bar {
 const bars = computed<Bar[]>(() => {
   const rangeA = taskStore.range.a
   const dw = ui.dayWidth
-  const rows = taskStore.visibleRows
-  const rowIndex = taskStore.rowIndexOf
+  const rows = rowsStore.visibleRows
+  const rowIndex = rowsStore.rowIndexOf
   const drag = ui.drag
   const collapsed = ui.collapsedGroups
   const linking = drag?.kind === 'link'

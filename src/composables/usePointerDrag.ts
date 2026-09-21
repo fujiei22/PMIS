@@ -2,6 +2,7 @@ import { inject, onBeforeUnmount, onMounted, provide, type InjectionKey, type Re
 import { useAutoScroll } from '@/composables/useAutoScroll'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex, isoFromIndex } from '@/lib/date'
+import { useRowsStore } from '@/stores/rows'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore, type DragState } from '@/stores/ui'
@@ -72,6 +73,7 @@ const DRAG_KEY: InjectionKey<PointerDrag> = Symbol('pointer-drag')
  */
 export function usePointerDrag(els: DragElements): PointerDrag {
   const ui = useUiStore()
+  const rowsStore = useRowsStore()
   const taskStore = useTaskStore()
   const selection = useSelectionStore()
 
@@ -137,7 +139,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     if (!box) return
     const r = box.getBoundingClientRect()
     const y = p.y - r.top
-    const row = taskStore.visibleRows[Math.floor(y / ROW_HEIGHT)]
+    const row = rowsStore.visibleRows[Math.floor(y / ROW_HEIGHT)]
     ui.linkLine = { x1: d.ax, y1: d.ay, x2: p.x - r.left, y2: y }
     ui.nearTaskId = row && row.kind === 't' && row.id !== d.id ? row.id : null
   }
@@ -180,7 +182,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     if (!self) return
     const y = p.y
     const selfR = self.getBoundingClientRect()
-    const rows = taskStore.visibleRows
+    const rows = rowsStore.visibleRows
     const myIdx = rows.findIndex((v) => v.kind === 't' && v.id === d.id)
     const myGroup = taskStore.taskById(d.id)?.groupId
     let best: DropTarget | null = null
@@ -277,7 +279,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     const t = taskStore.taskById(id)
     if (!t) return
     const dw = ui.dayWidth
-    const idx = taskStore.visibleRows.findIndex((v) => v.kind === 't' && v.id === id)
+    const idx = rowsStore.visibleRows.findIndex((v) => v.kind === 't' && v.id === id)
     const barL = (dayIndex(t.start) - taskStore.range.a) * dw
     const barW = (dayIndex(t.end) - dayIndex(t.start) + 1) * dw
     // 起點落在圓點中心（右側 +10.5、左側 -9.5）。legacy :2606

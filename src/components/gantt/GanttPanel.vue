@@ -16,6 +16,7 @@ import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex } from '@/lib/date'
 import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
+import { useRowsStore } from '@/stores/rows'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -29,6 +30,7 @@ const WEEKDAY = ['日', '一', '二', '三', '四', '五', '六']
 
 const clock = useClockStore()
 const ui = useUiStore()
+const rowsStore = useRowsStore()
 const taskStore = useTaskStore()
 const filter = useFilterStore()
 const selection = useSelectionStore()
@@ -53,7 +55,7 @@ useFocusRequest((req) => {
   scrollTo(Math.max(0, left - sc.clientWidth / 3), true)
 })
 
-const rows = computed(() => taskStore.visibleRows)
+const rows = computed(() => rowsStore.visibleRows)
 
 /** 左欄要畫的列，先把 id 解成實體，template 就不必用非空斷言。 */
 interface LeftRow {

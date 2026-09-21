@@ -181,33 +181,6 @@ export const useTaskStore = defineStore('task', () => {
   /** 甘特圖的時間範圍。legacy `range()` :1995 */
   const range = computed(() => projectRange(tasks.value, useClockStore().todayIdx))
 
-  /**
-   * 甘特左欄實際會畫出來的列：每個分類一列，未收合時接上通過篩選的任務。
-   * legacy `visible()` :2260
-   */
-  const visibleRows = computed<{ kind: 'g' | 't'; id: string }[]>(() => {
-    const filter = useFilterStore()
-    const collapsed = useUiStore().collapsedGroups
-    const out: { kind: 'g' | 't'; id: string }[] = []
-    for (const g of groups.value) {
-      out.push({ kind: 'g', id: g.id })
-      if (collapsed.has(g.id)) continue
-      for (const t of tasks.value) {
-        if (t.groupId === g.id && filter.passTask(t)) out.push({ kind: 't', id: t.id })
-      }
-    }
-    return out
-  })
-
-  /** 任務 id → 它在 visibleRows 的索引，甘特條算 top 用。legacy `rowOf` :2711 */
-  const rowIndexOf = computed<Record<string, number>>(() => {
-    const out: Record<string, number> = {}
-    visibleRows.value.forEach((v, i) => {
-      if (v.kind === 't') out[v.id] = i
-    })
-    return out
-  })
-
   // ── 分類 ─────────────────────────────────────────────────────────────────
 
   /** 新增分類，接在最後。legacy `addGroup` :1849 */
@@ -753,8 +726,6 @@ export const useTaskStore = defineStore('task', () => {
     load,
     applyEvent,
     range,
-    visibleRows,
-    rowIndexOf,
     addGroup,
     renameGroup,
     renameGroupLocal,
