@@ -146,7 +146,11 @@ export const useCommentStore = defineStore('comment', () => {
    * 免得日索引換算方式改動時又出現「本地時分配 UTC 日期」的組合。
    *
    * 附件走 multipart（契約 A）：Attachment 進 comment、原始 File 走 `files` 參數；
-   * response 若把 blob url 換成 server url，舊的 blob url 要 revoke（review M13）。
+   * response 若把 blob url 換成 server url，舊的 blob url 要 revoke（review M13）——
+   * 只有成功才 revoke（review F6），失敗時那些 url 還要給放回去的草稿用。
+   *
+   * review F6：送不出去時把草稿（文字 + 附件）原樣放回來；使用者已經開始打新的字
+   * 就不覆蓋，寧可掉這一份也不要吃掉他正在打的。
    */
   async function send(targetId: string, targetKind: 'task' | 'issue'): Promise<void> {
     if (!draft.value.trim() && !draftFiles.value.length) return
@@ -173,15 +177,19 @@ export const useCommentStore = defineStore('comment', () => {
       })),
     }
     comments.value.push(comment)
-    // 不走 resetDraft：blob url 已經轉給這則留言，revoke 掉縮圖就壞了
+    // 送出失敗要放回去的草稿；不走 resetDraft，blob url 已經轉給這則留言
+    const sentDraft = draft.value
+    const sentFiles = draftFiles.value.slice()
     clearDraft()
 
+    let ok = false
     await runOptimistic<Comment>({
       tracker,
       ids: [id],
       label: '送出留言',
       call: async () => {
         const saved = await api.createComment(cloneEntity(comment), files)
+        ok = true
         // server 換了 url → 本地那份 blob url 沒人要了，放掉（review M13）
         comment.files.forEach((local, i) => {
           const next = saved.files[i]
@@ -190,7 +198,15 @@ export const useCommentStore = defineStore('comment', () => {
         })
         return saved
       },
-      reconcile,
+      reconcile: (server, cid) => {
+        reconcile(server, cid)
+        if (ok) return
+        // review F6：草稿放回去；使用者已經重打的話就不動他（blob 一律不 revoke）
+        if (!draft.value && !draftFiles.value.length) {
+          draft.value = sentDraft
+          draftFiles.value = sentFiles
+        }
+      },
     })
   }
 
