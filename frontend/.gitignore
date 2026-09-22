@@ -1,0 +1,36 @@
+# 前端自己的產物。跨子專案的通用規則（.env / OS / 編輯器 / docs 任務文件）在根 .gitignore。
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+*.local
+
+# Test output
+coverage/
+test-results/
+playwright-report/
+playwright/.cache/
+
+# S3 對照截圖（本機產物，不進版控）
+e2e/screenshots/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# ESLint cache
+.eslintcache
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editors
+.vscode/*
+!.vscode/extensions.json

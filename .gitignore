@@ -1,19 +1,10 @@
-# Dependencies
-node_modules/
+# 根層只放跨子專案的通用規則。
+# 前端自己的產物（node_modules / dist / 測試輸出…）在 frontend/.gitignore。
 
-# Build output
-dist/
-dist-ssr/
-*.local
-
-# Test output
-coverage/
-test-results/
-playwright-report/
-playwright/.cache/
-
-# TypeScript incremental build info
-*.tsbuildinfo
+# Environment variables (keep example files)
+.env
+.env.*
+!.env.example
 
 # Logs
 logs/
@@ -23,14 +14,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Environment variables (keep example files)
-.env
-.env.*
-!.env.example
-
 # Editors / OS
-.vscode/*
-!.vscode/extensions.json
 .idea/
 .DS_Store
 Thumbs.db
@@ -46,11 +30,8 @@ docs/snapshots/
 docs/retros/
 docs/incidents/
 
-# ESLint cache
-.eslintcache
-
 # Agent worktrees / local agent state
 .claude/
 
-# S3 對照截圖（本機產物，不進版控）
-e2e/screenshots/
+# Playwright MCP 的本機暫存
+.playwright-mcp/
