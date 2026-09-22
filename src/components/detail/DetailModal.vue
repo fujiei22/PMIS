@@ -65,6 +65,8 @@ const titleDraft = useEditDraft({
     if (task.value) await taskStore.commitTaskPatch(task.value.id, { name: v })
     else if (issue.value) await issueStore.commitIssuePatch(issue.value.id, { title: v })
   },
+  // 詳情標題的 ui.editing 是 { kind: 'dt', id: 這一筆的 id }
+  editingId: () => task.value?.id ?? issue.value?.id ?? null,
 })
 
 function rename(v: string): void {

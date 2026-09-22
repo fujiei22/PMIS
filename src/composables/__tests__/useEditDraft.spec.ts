@@ -9,7 +9,10 @@ import { useUiStore } from '@/stores/ui'
  * 掛一個最小宿主元件：本地值放在 ref，commit 由測試決定成功或失敗。
  * `commit` 模擬 `runOptimistic` 的行為——永不 throw，失敗時把本地還原成 server 值。
  */
-function mountDraft(commit: (v: string) => Promise<void>): {
+function mountDraft(
+  commit: (v: string) => Promise<void>,
+  editingId: () => string | null = () => 't1',
+): {
   draft: EditDraft
   local: { value: string }
   unmount: () => void
@@ -24,6 +27,7 @@ function mountDraft(commit: (v: string) => Promise<void>): {
           local.value = v
         },
         commit,
+        editingId,
       })
       return () => h('div')
     },
@@ -127,6 +131,39 @@ describe('useEditDraft', () => {
 
     expect(mounted.local.value).toBe('abc')
     expect(ui.editing).not.toBeNull()
+    mounted.unmount()
+  })
+
+  // review F7：失敗還原只該關掉「自己」那個編輯框
+  it('commit 失敗但編輯中的是別筆 → 不動 ui.editing', async () => {
+    const ui = useUiStore()
+    ui.editing = { kind: 't', id: '別筆' }
+    let onCommit: (v: string) => Promise<void> = async () => {}
+    const mounted = mountDraft((v) => onCommit(v), () => 't1')
+    onCommit = async () => {
+      mounted.local.value = 'server'
+    }
+
+    mounted.draft.onInput('打到一半')
+    await mounted.draft.flush()
+
+    expect(ui.editing).toEqual({ kind: 't', id: '別筆' })
+    mounted.unmount()
+  })
+
+  it('不擁有 editing 的欄位（editingId 回 null）失敗時不清 ui.editing', async () => {
+    const ui = useUiStore()
+    ui.editing = { kind: 'i', id: 'i1' }
+    let onCommit: (v: string) => Promise<void> = async () => {}
+    const mounted = mountDraft((v) => onCommit(v), () => null)
+    onCommit = async () => {
+      mounted.local.value = 'server'
+    }
+
+    mounted.draft.onInput('打到一半')
+    await mounted.draft.flush()
+
+    expect(ui.editing).toEqual({ kind: 'i', id: 'i1' })
     mounted.unmount()
   })
 

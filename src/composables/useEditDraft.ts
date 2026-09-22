@@ -28,6 +28,14 @@ export function useEditDraft(opts: {
   get: () => string
   applyLocal: (v: string) => void
   commit: (v: string) => Promise<void>
+  /**
+   * 這份草稿對應的 `ui.editing.id`；回 null = 這個欄位不擁有編輯狀態
+   * （例如 IssueProperties / IssueCard 展開表單裡的欄位）。
+   *
+   * review F7：失敗時只有 `ui.editing?.id` 正好是自己才清掉——
+   * 否則一個欄位送失敗會把使用者正在編輯的**別筆**輸入框關掉。
+   */
+  editingId: () => string | null
   debounceMs?: number
 }): EditDraft {
   const ui = useUiStore()
@@ -56,7 +64,10 @@ export function useEditDraft(opts: {
       if (latest !== null && opts.get() !== latest) opts.applyLocal(latest)
       return
     }
-    if (opts.get() !== sent) ui.editing = null
+    if (opts.get() === sent) return
+    // review F7：只關自己的編輯框
+    const mine = opts.editingId()
+    if (mine !== null && ui.editing?.id === mine) ui.editing = null
   }
 
   function cancel(): void {
