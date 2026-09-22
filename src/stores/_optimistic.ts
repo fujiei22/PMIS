@@ -75,6 +75,21 @@ export function resetTracker<T extends { id: string }>(tracker: Tracker<T>, list
   for (const item of list) tracker.server.set(item.id, cloneEntity(item))
 }
 
+/**
+ * server 的顯示順序中，這個 id 應該插回本地陣列的哪個位置。
+ *
+ * 往前找第一個「server 順序在它前面、而且本地還在」的實體，插在它後面；
+ * 都找不到就是第一筆。刪除失敗的還原（review F1）與事件補進新實體都走這條。
+ */
+export function insertIndexOf(order: string[], list: { id: string }[], id: string): number {
+  const at = order.indexOf(id)
+  for (let k = at - 1; k >= 0; k--) {
+    const j = list.findIndex((x) => x.id === order[k])
+    if (j >= 0) return j + 1
+  }
+  return 0
+}
+
 /** 標記「本地改了還沒送出」（review F2）。 */
 export function markDirty<T extends { id: string }>(
   tracker: Tracker<T>,

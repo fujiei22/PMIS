@@ -443,6 +443,37 @@ describe('taskStore', () => {
       expect(useUiStore().errors[0]!.label).toBe('刪除任務')
     })
 
+    // review F1：還原的來源是 tracker.server，不是送出前的整份快照
+    it('刪除失敗但 task.deleted 事件已經先到 → 本地不復活', async () => {
+      const s = useTaskStore()
+      mockApi.setLatency(5)
+      mockApi.failNext('deleteTask', new ApiError('not_found', '找不到', 404))
+      const pending = s.removeTask('t3')
+      // 別的 client 早就刪掉了，事件比 404 先到
+      s.applyEvent({ type: 'task.deleted', payload: { id: 't3' } })
+      await pending
+      mockApi.setLatency(0)
+
+      expect(s.taskById('t3')).toBeUndefined()
+      expect(useUiStore().errors[0]!.code).toBe('not_found')
+    })
+
+    it('刪除在飛時別筆的 task.updated 不被失敗還原蓋掉', async () => {
+      const s = useTaskStore()
+      mockApi.setLatency(5)
+      mockApi.failNext('deleteTask')
+      const pending = s.removeTask('t3')
+      s.applyEvent({
+        type: 'task.updated',
+        payload: { ...s.taskById('t10')!, name: '別人改的' },
+      })
+      await pending
+      mockApi.setLatency(0)
+
+      expect(s.taskById('t3')).toBeDefined()
+      expect(s.taskById('t10')!.name).toBe('別人改的')
+    })
+
     it('刪除分類失敗 → 分類與底下的任務回來', async () => {
       const s = useTaskStore()
       const before = { groups: s.groups.map((g) => g.id), tasks: s.tasks.map((t) => t.id) }

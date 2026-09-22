@@ -8,6 +8,7 @@ import {
   clearDirty,
   cloneEntity,
   createTracker,
+  insertIndexOf,
   markDirty,
   resetTracker,
   runOptimistic,
@@ -65,11 +66,6 @@ export const useIssueStore = defineStore('issue', () => {
     issues.value = issues.value.filter((i) => !gone.has(i.id))
   }
 
-  /** 連動刪除還原時由 taskStore 呼叫。 */
-  function restoreLocal(list: Issue[]): void {
-    issues.value = list
-  }
-
   /** 連動刪除成功後，把 server 狀態也清掉。 */
   function dropServer(ids: string[]): void {
     for (const id of ids) tracker.server.delete(id)
@@ -81,8 +77,22 @@ export const useIssueStore = defineStore('issue', () => {
       if (i >= 0) issues.value.splice(i, 1)
       return
     }
-    if (i >= 0) issues.value[i] = { ...server }
-    else issues.value.push({ ...server })
+    if (i >= 0) {
+      issues.value[i] = { ...server }
+      return
+    }
+    // review F1：補回來的位置照 server 順序
+    issues.value.splice(insertIndexOf([...tracker.server.keys()], issues.value, id), 0, {
+      ...server,
+    })
+  }
+
+  /**
+   * 連動刪除失敗時由 taskStore 呼叫：把這幾筆從 `tracker.server` 放回原位（review F1）。
+   * server 已經沒有的（事件先刪掉了）就不復活。
+   */
+  function restoreFromServer(ids: string[]): void {
+    for (const id of ids) reconcile(tracker.server.get(id), id)
   }
 
   /**
@@ -173,7 +183,6 @@ export const useIssueStore = defineStore('issue', () => {
   async function removeIssue(id: string): Promise<void> {
     if (!byId(id)) return
     const comments = useCommentStore()
-    const snapshot = { issues: issues.value, comments: comments.comments }
     const goneComments = comments.comments.filter((c) => c.targetId === id).map((c) => c.id)
 
     issues.value = issues.value.filter((x) => x.id !== id)
@@ -192,10 +201,11 @@ export const useIssueStore = defineStore('issue', () => {
         tracker.server.delete(id)
         comments.dropServer(goneComments)
       },
-      reconcile: () => {
+      // review F1：成功時 server 已無此筆 → no-op；失敗才把它與它的留言從 server 放回來
+      reconcile: (server, iid) => {
+        reconcile(server, iid)
         if (ok) return
-        issues.value = snapshot.issues
-        comments.restoreLocal(snapshot.comments)
+        comments.restoreFromServer(goneComments)
       },
     })
   }
@@ -221,7 +231,7 @@ export const useIssueStore = defineStore('issue', () => {
     openCount,
     setAll,
     dropLocal,
-    restoreLocal,
+    restoreFromServer,
     dropServer,
     addIssue,
     applyLocalPatch,

@@ -16,6 +16,7 @@ import {
   clearDirty,
   cloneEntity,
   createTracker,
+  insertIndexOf,
   markDirty,
   resetTracker,
   runOptimistic,
@@ -97,16 +98,6 @@ export const useTaskStore = defineStore('task', () => {
 
   // ── 對齊 server（失敗還原 / 事件）────────────────────────────────────────
 
-  /** server 順序中，這個 id 應該插回本地陣列的哪個位置。 */
-  function insertIndexOf(order: string[], list: { id: string }[], id: string): number {
-    const at = order.indexOf(id)
-    for (let k = at - 1; k >= 0; k--) {
-      const j = list.findIndex((x) => x.id === order[k])
-      if (j >= 0) return j + 1
-    }
-    return 0
-  }
-
   function reconcileTask(server: Task | undefined, id: string): void {
     const i = tasks.value.findIndex((t) => t.id === id)
     if (!server) {
@@ -144,7 +135,30 @@ export const useTaskStore = defineStore('task', () => {
       if (i >= 0) deps.value.splice(i, 1)
       return
     }
-    if (i < 0) deps.value.push({ ...server })
+    // review F1：補回來的位置照 server 順序，刪除失敗的還原才不會把相依洗到最後面
+    if (i < 0) {
+      deps.value.splice(insertIndexOf([...depTracker.server.keys()], deps.value, id), 0, {
+        ...server,
+      })
+    }
+  }
+
+  /**
+   * 刪除失敗時，把被連帶刪掉的那幾筆從各 tracker 的 `server` 放回來（review F1）。
+   *
+   * 不用「送出前的整份快照」：那會連刪除在飛期間別的 client 推來的變更一起蓋掉，
+   * 也會讓「事件已經先把它刪掉」的實體復活（`server` 裡早就沒有它了）。
+   */
+  function restoreCascadeFromServer(
+    taskIds: Iterable<string>,
+    depIds: string[],
+    issueIds: string[],
+    commentIds: string[],
+  ): void {
+    for (const id of taskIds) reconcileTask(taskTracker.server.get(id), id)
+    for (const id of depIds) reconcileDep(depTracker.server.get(id), id)
+    useIssueStore().restoreFromServer(issueIds)
+    useCommentStore().restoreFromServer(commentIds)
   }
 
   /**
@@ -260,14 +274,6 @@ export const useTaskStore = defineStore('task', () => {
     const issues = useIssueStore()
     const comments = useCommentStore()
     if (!groupById(id)) return
-    // 失敗要還原的不只分類本身（review C1）：連動刪掉的四份陣列都留一份快照
-    const snapshot = {
-      groups: groups.value,
-      tasks: tasks.value,
-      deps: deps.value,
-      issues: issues.issues,
-      comments: comments.comments,
-    }
     const goneTasks = new Set(tasks.value.filter((t) => t.groupId === id).map((t) => t.id))
     const goneIssues = issues.issues.filter((i) => goneTasks.has(i.taskId)).map((i) => i.id)
     const targets = new Set<string>([...goneTasks, ...goneIssues])
@@ -296,13 +302,12 @@ export const useTaskStore = defineStore('task', () => {
         groupTracker.server.delete(id)
         dropServerCascade(goneTasks, goneDeps, goneIssues, goneComments)
       },
-      reconcile: () => {
+      // review F1：成功時 server 已經沒有這筆 → reconcileGroup 是 no-op；
+      // 失敗才會把分類與連帶刪掉的那幾筆各自從 server 放回原位
+      reconcile: (server, gid) => {
+        reconcileGroup(server, gid)
         if (ok) return
-        groups.value = snapshot.groups
-        tasks.value = snapshot.tasks
-        deps.value = snapshot.deps
-        issues.restoreLocal(snapshot.issues)
-        comments.restoreLocal(snapshot.comments)
+        restoreCascadeFromServer(goneTasks, goneDeps, goneIssues, goneComments)
       },
     })
   }
@@ -522,12 +527,6 @@ export const useTaskStore = defineStore('task', () => {
     const issues = useIssueStore()
     const comments = useCommentStore()
     if (!taskById(id)) return
-    const snapshot = {
-      tasks: tasks.value,
-      deps: deps.value,
-      issues: issues.issues,
-      comments: comments.comments,
-    }
     const goneIssues = issues.issues.filter((i) => i.taskId === id).map((i) => i.id)
     const targets = new Set<string>([id, ...goneIssues])
     const goneComments = comments.comments.filter((c) => targets.has(c.targetId)).map((c) => c.id)
@@ -550,12 +549,11 @@ export const useTaskStore = defineStore('task', () => {
         ok = true
         dropServerCascade(new Set([id]), goneDeps, goneIssues, goneComments)
       },
-      reconcile: () => {
+      // review F1：失敗時只把被刪的那幾筆從 server 放回原位（事件已經刪掉的就不復活）
+      reconcile: (server, tid) => {
+        reconcileTask(server, tid)
         if (ok) return
-        tasks.value = snapshot.tasks
-        deps.value = snapshot.deps
-        issues.restoreLocal(snapshot.issues)
-        comments.restoreLocal(snapshot.comments)
+        restoreCascadeFromServer([], goneDeps, goneIssues, goneComments)
       },
     })
   }
@@ -668,21 +666,17 @@ export const useTaskStore = defineStore('task', () => {
 
   async function removeDep(id: string): Promise<void> {
     if (!deps.value.some((d) => d.id === id)) return
-    const snapshot = deps.value
     deps.value = deps.value.filter((d) => d.id !== id)
-    let ok = false
     await runOptimistic<Dependency>({
       tracker: depTracker,
       ids: [id],
       label: '刪除相依',
       call: async () => {
         await api.deleteDep(id)
-        ok = true
         depTracker.server.delete(id)
       },
-      reconcile: () => {
-        if (!ok) deps.value = snapshot
-      },
+      // review F1：成功時 server 已無此筆 → no-op；失敗才照 server 順序插回來
+      reconcile: reconcileDep,
     })
   }
 

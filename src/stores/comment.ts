@@ -8,6 +8,7 @@ import {
   applyServerValue,
   cloneEntity,
   createTracker,
+  insertIndexOf,
   resetTracker,
   runOptimistic,
 } from '@/stores/_optimistic'
@@ -67,10 +68,6 @@ export const useCommentStore = defineStore('comment', () => {
     comments.value = comments.value.filter((c) => !gone.has(c.id))
   }
 
-  function restoreLocal(list: Comment[]): void {
-    comments.value = list
-  }
-
   /** 連動刪除成功後，把 server 狀態也清掉。 */
   function dropServer(ids: string[]): void {
     for (const id of ids) tracker.server.delete(id)
@@ -82,8 +79,22 @@ export const useCommentStore = defineStore('comment', () => {
       if (i >= 0) comments.value.splice(i, 1)
       return
     }
-    if (i >= 0) comments.value[i] = { ...server }
-    else comments.value.push({ ...server })
+    if (i >= 0) {
+      comments.value[i] = { ...server }
+      return
+    }
+    // review F1：補回來的位置照 server 順序
+    comments.value.splice(insertIndexOf([...tracker.server.keys()], comments.value, id), 0, {
+      ...server,
+    })
+  }
+
+  /**
+   * 連動刪除失敗時由 task / issue store 呼叫：把這幾筆從 `tracker.server` 放回原位
+   * （review F1）。server 已經沒有的（事件先刪掉了）就不復活。
+   */
+  function restoreFromServer(ids: string[]): void {
+    for (const id of ids) reconcile(tracker.server.get(id), id)
   }
 
   /** 留言時間是否落在篩選區間內；兩端都空就不篩。legacy `cDateOk` :2161 */
@@ -220,21 +231,17 @@ export const useCommentStore = defineStore('comment', () => {
   async function remove(commentId: string): Promise<void> {
     const gone = comments.value.find((c) => c.id === commentId)
     if (!gone) return
-    const snapshot = comments.value
     comments.value = comments.value.filter((c) => c.id !== commentId)
-    let ok = false
     await runOptimistic<Comment>({
       tracker,
       ids: [commentId],
       label: '刪除留言',
       call: async () => {
         await api.deleteComment(commentId)
-        ok = true
         tracker.server.delete(commentId)
       },
-      reconcile: () => {
-        if (!ok) comments.value = snapshot
-      },
+      // review F1：成功時 server 已無此筆 → no-op；失敗才照 server 順序插回來
+      reconcile,
     })
   }
 
@@ -277,7 +284,7 @@ export const useCommentStore = defineStore('comment', () => {
     fileSel,
     setAll,
     dropLocal,
-    restoreLocal,
+    restoreFromServer,
     dropServer,
     forTarget,
     filesForTarget,
