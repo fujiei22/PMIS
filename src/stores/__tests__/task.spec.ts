@@ -401,6 +401,50 @@ describe('taskStore', () => {
       expect(reorderGroups.mock.calls[0]![0].slice(0, 2)).toEqual(['g2', 'g1'])
     })
 
+    // review F3：order 是送出當下的快照，之後才寫進 server 的實體不在裡面
+    it('重排在飛時回來的 create 不會被重排成功踢出 server', async () => {
+      const s = useTaskStore()
+      let finishReorder: () => void = () => {}
+      vi.spyOn(api, 'reorderTasks').mockImplementation(
+        () => new Promise<void>((resolve) => (finishReorder = resolve)),
+      )
+      s.moveTaskToLocal('t1', { kind: 't', id: 't3' })
+      const pending = s.commitTaskOrder()
+
+      // 重排還在飛的時候，另一筆新任務建立成功並寫進 server
+      const t = s.addTask({
+        groupId: 'g1',
+        assigneeIds: [],
+        start: '2026-09-18',
+        end: '2026-09-22',
+      })!
+      await new Promise((r) => setTimeout(r, 0))
+      finishReorder()
+      await pending
+
+      // 整份對齊回 server（拖曳取消 / 下一次重排失敗）時它不該消失
+      s.reconcileTasksFromServer()
+      expect(s.taskById(t.id)).toBeDefined()
+    })
+
+    it('重排在飛時回來的 createGroup 不會被重排成功踢出 server', async () => {
+      const s = useTaskStore()
+      let finishReorder: () => void = () => {}
+      vi.spyOn(api, 'reorderGroups').mockImplementation(
+        () => new Promise<void>((resolve) => (finishReorder = resolve)),
+      )
+      s.moveGroupLocal('g1', 1)
+      const pending = s.commitGroupOrder()
+
+      const g = s.addGroup()
+      await new Promise((r) => setTimeout(r, 0))
+      finishReorder()
+      await pending
+
+      s.reconcileGroupsFromServer()
+      expect(s.groupById(g.id)).toBeDefined()
+    })
+
     it('列重排失敗 → 順序還原', async () => {
       const s = useTaskStore()
       const order = s.tasks.map((t) => t.id)

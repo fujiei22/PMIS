@@ -353,6 +353,9 @@ export const useTaskStore = defineStore('task', () => {
           const server = prev.get(id)
           if (server) next.set(id, server)
         }
+        // review F3：`ids` 是送出當下的快照，之後才寫進 server 的（例如 create 的回應）
+        // 不在裡面——把它們接在後面，不要整批丟掉
+        for (const [id, server] of prev) if (!next.has(id)) next.set(id, server)
         groupTracker.server = next
       },
       reconcile: () => {
@@ -493,6 +496,9 @@ export const useTaskStore = defineStore('task', () => {
           const server = prev.get(o.id)
           if (server) next.set(o.id, { ...server, groupId: o.groupId })
         }
+        // review F3：`order` 是送出當下的快照，之後才寫進 server 的（例如 create 的回應）
+        // 不在裡面——把它們接在後面，不要整批丟掉
+        for (const [id, server] of prev) if (!next.has(id)) next.set(id, server)
         taskTracker.server = next
       },
       reconcile: () => {
