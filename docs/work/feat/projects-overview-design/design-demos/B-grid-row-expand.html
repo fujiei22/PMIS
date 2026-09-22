@@ -1,0 +1,1606 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>所有專案 — PMIS（方向 B：等寬網格＋整列展開）</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    >
+    <style>
+      /* ============================================================
+         設計 token：原封不動複製自 frontend/src/assets/tokens.css
+         ============================================================ */
+      :root {
+        /* surfaces */
+        --bg-page: #eef2f6;
+        --surface-1: #ffffff;
+        --surface-2: #f8fafc;
+        --surface-3: #f1f5f9;
+        --surface-group: #eef2f7;
+
+        /* borders */
+        --border-1: #e2e8f0;
+        --border-hair: #f1f5f9;
+        --border-control: #cbd5e1;
+
+        /* text */
+        --text-1: #0f172a;
+        --text-2: #334155;
+        --text-3: #475569;
+        --text-muted: #64748b;
+        --text-placeholder: #94a3b8;
+        --glyph-disabled: #cbd5e1;
+
+        /* accent */
+        --accent: #2563eb;
+        --accent-hover: #1d4ed8;
+        --accent-tint-1: #eff6ff;
+        --accent-tint-2: #dbeafe;
+        --accent-tint-3: #bfdbfe;
+        --accent-ring: rgba(37, 99, 235, 0.35);
+
+        /* semantic */
+        --danger: #dc2626;
+        --danger-text: #b91c1c;
+        --danger-bg: #fef2f2;
+        --danger-bd: #fecaca;
+        --success: #10b981;
+        --success-text: #047857;
+        --success-bg: #ecfdf5;
+        --success-bd: #a7f3d0;
+        --success-track: #dcfce7;
+        --today: #ef4444;
+
+        /* 甘特底色（契約 F；原型寫在行內 style） */
+        --bg-late: #fff5f5;
+        --bg-weekend: #e6ebf2;
+        --bg-weekend-head: #dfe6ee;
+        --bg-today: rgba(239, 68, 68, 0.07);
+
+        /* task status (text / bar / dot) — 對應 constants/dashboard.ts 的 TASK_STATUS */
+        --st-todo: #64748b;
+        --st-todo-bar: #64748b;
+        --st-todo-dot: #94a3b8;
+        --st-doing: #2563eb;
+        --st-doing-bar: #2563eb;
+        --st-doing-dot: #3b82f6;
+        --st-done: #059669;
+        --st-done-bar: #047857;
+        --st-done-dot: #10b981;
+        --st-delayed: #dc2626;
+        --st-delayed-bar: #dc2626;
+        --st-delayed-dot: #ef4444;
+        --st-paused: #b45309;
+        --st-paused-bar: #b45309;
+        --st-paused-dot: #f59e0b;
+
+        /* task priority — 對應 PRIORITY */
+        --pr-high: #dc2626;
+        --pr-mid: #d97706;
+        --pr-low: #0891b2;
+
+        /* issue class (fill / text-on-white) — 對應 ISSUE_LEVEL */
+        --cls-a: #b91c1c;
+        --cls-a-text: #b91c1c;
+        --cls-b: #dc2626;
+        --cls-b-text: #dc2626;
+        --cls-c: #d97706;
+        --cls-c-text: #b45309;
+        --cls-d: #0891b2;
+        --cls-d-text: #0e7490;
+
+        /* issue status (bg / fg / border) — 對應 ISSUE_STATUS
+           spec §設計方向：文字色以原型程式值為準（open #64748b、doing #2563eb、closed #059669）；
+           原本的 blocked 一組改名為 paused，值取程式（#fffbeb / #b45309 / #fde68a）。 */
+        --ist-open-bg: #f1f5f9;
+        --ist-open-fg: #64748b;
+        --ist-open-bd: #e2e8f0;
+        --ist-doing-bg: #eff6ff;
+        --ist-doing-fg: #2563eb;
+        --ist-doing-bd: #bfdbfe;
+        --ist-paused-bg: #fffbeb;
+        --ist-paused-fg: #b45309;
+        --ist-paused-bd: #fde68a;
+        --ist-closed-bg: #ecfdf5;
+        --ist-closed-fg: #059669;
+        --ist-closed-bd: #a7f3d0;
+
+        /* spec §設計方向：成員色由成員資料提供，不建 --m1 … --m7 token。 */
+
+        /* 其他色 */
+        --focus-soft: #93c5fd; /* 留言框 focus 邊框 */
+        --accent-soft: #60a5fa; /* S6：草稿附件 chip 上的檔案大小 */
+        --text-on-dark: #e2e8f0; /* S6：Lightbox 深色底上的說明文字 */
+        --scrim-caption: rgba(15, 23, 42, 0.62); /* S6：留言縮圖底部的檔名條 */
+        --drag-ghost: #0f172a; /* 拖曳時跟著游標的影子 */
+        --backdrop: rgba(15, 23, 42, 0.45);
+        --backdrop-modal: rgba(15, 23, 42, 0.55);
+        --backdrop-lightbox: rgba(15, 23, 42, 0.82);
+
+        /* typography */
+        --font-sans: 'Noto Sans TC', 'Helvetica Neue', Helvetica, sans-serif;
+        --font-mono: 'IBM Plex Mono', monospace;
+        --fs-hero: 30px;
+        --fs-modal: 21px;
+        --fs-dialog: 17.2px;
+        --fs-panel: 15.2px;
+        --fs-month: 14.2px;
+        --fs-record: 13.7px;
+        --fs-control: 13.2px;
+        --fs-select: 12.7px;
+        --fs-meta: 12.5px;
+        --fs-date: 12px;
+        --fs-pill: 11.5px;
+        --fs-caption: 11px;
+        --fs-micro: 10.5px;
+        --fs-weekday: 9.5px;
+        --fs-caret: 8px;
+        /* 原型有用、design-system.html 未定義的字級（spec §設計方向）。
+           命名為 --fs-<px>，小數點寫成 -；--fs-6 為 6.5px，沿用契約 F 的名稱。 */
+        --fs-6: 6.5px;
+        --fs-7: 7px;
+        --fs-7-5: 7.5px;
+        --fs-8-5: 8.5px;
+        --fs-9: 9px;
+        --fs-10: 10px;
+        --fs-10-2: 10.2px;
+        --fs-14: 14px;
+        --fs-19: 19px;
+        --lh-tight: 1.22;
+        --lh-body: 1.4;
+        --lh-loose: 1.65;
+        /* 兩步刪除確認對話框的內文（legacy :1518 等 6 處 line-height:1.7） */
+        --lh-dialog: 1.7;
+        --fw-regular: 400;
+        --fw-medium: 500;
+        --fw-bold: 700;
+        --tracking-overline: 0.07em;
+
+        /* spacing */
+        --sp-1: 3px;
+        --sp-2: 4px;
+        --sp-3: 6px;
+        --sp-4: 8px;
+        --sp-5: 10px;
+        --sp-6: 12px;
+        --sp-7: 14px;
+        --sp-8: 16px;
+        --sp-9: 18px;
+        --sp-10: 20px;
+        --sp-12: 24px;
+        --pad-card: 14px 16px;
+        --pad-panel-head: 12px 16px;
+        --pad-row: 9px 16px;
+        --pad-kanban-card: 9px;
+        --pad-pill: 3px 10px;
+        --gap-boards: 14px;
+        --gap-table: 6px;
+        --gantt-row: 34px;
+        --gantt-head: 54px;
+        --gantt-left: 366px;
+        --day-min: 14px;
+        --day-max: 32px;
+        --kpi-hero-lh: 38px;
+        --modal-w: min(1280px, 96vw);
+        --modal-h: min(880px, 93vh);
+        --modal-left-pane: 392px;
+
+        /* radius */
+        --r-badge: 5px;
+        --r-control: 7px;
+        --r-input: 8px;
+        --r-card-sm: 9px;
+        --r-card: 10px;
+        --r-panel: 12px;
+        --r-day: 14px;
+        --r-modal: 16px;
+        /* 兩步刪除確認與相依編輯器的對話框（legacy :1387 / :1414 border-radius:14px） */
+        --r-dialog: 14px;
+        --r-pill: 20px;
+        /* 原型有用、design-system.html 未定義的圓角（spec §設計方向） */
+        --r-2: 2px;
+        --r-3: 3px;
+        --r-4: 4px;
+        --r-6: 6px;
+        --r-999: 999px;
+
+        /* shadow / ring */
+        --shadow-menu: 0 14px 32px rgba(15, 23, 42, 0.16);
+        --shadow-popover: 0 18px 40px rgba(15, 23, 42, 0.18);
+        --shadow-modal: 0 34px 80px rgba(15, 23, 42, 0.34);
+        --shadow-lift: 0 10px 22px rgba(15, 23, 42, 0.18);
+        --shadow-card-hover: 0 4px 14px rgba(15, 23, 42, 0.1);
+        --shadow-left-col: 2px 0 6px rgba(15, 23, 42, 0.06);
+        --shadow-bar: 0 1px 2px rgba(15, 23, 42, 0.18);
+        /* S3 新增：甘特連線圓點與拖曳計數徽章的陰影、條上 Issue 徽章的白底 */
+        --shadow-dot: 0 1px 2px rgba(15, 23, 42, 0.25);
+        --shadow-badge: 0 3px 8px rgba(15, 23, 42, 0.3);
+        --scrim-on-bar: rgba(255, 255, 255, 0.92);
+        /* S6 新增：詳情裡 Issue 列的 hover、檔案磚上的勾選框、相依編輯器與 Lightbox */
+        --shadow-row-hover: 0 2px 8px rgba(15, 23, 42, 0.08);
+        --shadow-checkbox: 0 1px 3px rgba(15, 23, 42, 0.14);
+        --shadow-dialog: 0 24px 60px rgba(15, 23, 42, 0.35);
+        --shadow-lightbox: 0 30px 70px rgba(0, 0, 0, 0.5);
+        --ring-focus: 0 0 0 3px rgba(37, 99, 235, 0.35);
+        --ring-node: 0 0 0 2px rgba(15, 23, 42, 0.12);
+        --hover-dim: brightness(0.94);
+
+        /* motion */
+        --ease: cubic-bezier(0.4, 0, 0.2, 1);
+        --t-fast: 0.16s;
+        --t-base: 0.18s;
+        --t-layout: 0.24s;
+        --t-panel: 0.26s;
+        --t-pop: 0.14s;
+        --t-modal: 0.17s;
+        --t-menu: 0.13s;
+        --t-hover: 0.22s;
+        --t-bar: 0.2s;
+        --t-progress: 0.35s;
+      }
+
+      /* ============================================================
+         本頁新增的唯一一個值（若採用本版，要回寫 tokens.css）：
+         總覽卡片的最小欄寬。auto-fit 用它決定欄數：1440 視口 3 欄、1920 視口 4 欄。
+         其餘所有尺寸皆由既有 token 組合（例：32px 按鈕 = --sp-8 × 2）。
+         ============================================================ */
+      :root {
+        --ov-card-min: 392px;
+      }
+
+      /* ── 基底 ─────────────────────────────────────────────────── */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        background: var(--bg-page);
+        color: var(--text-1);
+        font-family: var(--font-sans);
+        font-size: var(--fs-14);
+        line-height: var(--lh-body);
+        font-synthesis: none;
+        line-break: strict;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .mono {
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ── 頁首（沿用 TopBar：sticky 白底、下邊框、標題 --fs-dialog 粗體） ── */
+      .top-bar {
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        background: var(--surface-1);
+        border-bottom: 1px solid var(--border-1);
+        transform: translateZ(0);
+        backface-visibility: hidden;
+      }
+
+      .top-row {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-5);
+        padding: var(--sp-5) var(--sp-10);
+      }
+
+      .burger {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-1);
+        width: var(--sp-9);
+      }
+
+      .burger i {
+        height: var(--r-2);
+        background: var(--text-3);
+        border-radius: var(--r-2);
+      }
+
+      .page-title {
+        margin: 0;
+        font-size: var(--fs-dialog);
+        font-weight: var(--fw-bold);
+        letter-spacing: -0.01em;
+        white-space: nowrap;
+      }
+
+      .page-count {
+        font-size: var(--fs-control);
+        color: var(--text-muted);
+        font-weight: var(--fw-medium);
+        white-space: nowrap;
+      }
+
+      .grow {
+        flex: 1;
+      }
+
+      /* 總覽 pill：與 TopBar 的「清除篩選」亮起狀態同一套色（danger-bg / bd / text） */
+      .alert-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--sp-3);
+        height: calc(var(--sp-5) * 3);
+        padding: 0 var(--sp-6);
+        border: 1px solid var(--danger-bd);
+        background: var(--danger-bg);
+        color: var(--danger-text);
+        border-radius: var(--r-pill);
+        font-size: var(--fs-control);
+        font-weight: var(--fw-bold);
+        white-space: nowrap;
+      }
+
+      .alert-pill .num {
+        font-family: var(--font-mono);
+        font-size: var(--fs-month);
+      }
+
+      .alert-dot {
+        width: var(--sp-4);
+        height: var(--sp-4);
+        border-radius: 50%;
+        background: var(--today);
+        flex: 0 0 var(--sp-4);
+      }
+
+      /* 頭像：沿用 Avatar.vue（圓形色塊 + 名字最後一字；成員色來自資料，走 inline） */
+      .avatar {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        width: var(--av-size);
+        height: var(--av-size);
+        border-radius: var(--r-pill);
+        background: var(--av-color);
+        color: var(--surface-1);
+        border: var(--av-ring, 0px) solid var(--surface-1);
+        font-size: var(--fs-pill);
+        font-weight: var(--fw-bold);
+        line-height: 1;
+      }
+
+      .me {
+        --av-size: calc(var(--sp-5) * 3);
+        font-size: var(--fs-control);
+      }
+
+      /* ── 主區：等寬網格 ────────────────────────────────────────── */
+      .main {
+        padding: var(--sp-10);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(var(--ov-card-min), 1fr));
+        gap: var(--gap-boards);
+        align-items: stretch;
+      }
+
+      /* ── 卡片（沿用 SummaryCards / TaskCard：白底、1px 邊、--r-panel、--pad-card） ── */
+      .card {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-6);
+        background: var(--surface-1);
+        border: 1px solid var(--border-1);
+        border-radius: var(--r-panel);
+        padding: var(--pad-card);
+        transition:
+          border-color var(--t-base) ease,
+          box-shadow var(--t-base) ease,
+          transform var(--t-base) var(--ease);
+      }
+
+      /* 「需要注意」＝ 整圈邊框改成狀態色（不用左側色條、不用整卡淡底） */
+      .card.st-delayed {
+        border-color: var(--danger-bd);
+      }
+
+      .card.st-paused {
+        border-color: var(--ist-paused-bd);
+      }
+
+      /* hover：沿用 TaskCard；狀態邊框的卡只做浮起與陰影，邊框色保留狀態訊號 */
+      .card:hover,
+      .card.is-hover {
+        box-shadow: var(--shadow-card-hover);
+        transform: translateY(-1px);
+      }
+
+      .card.st-doing:hover,
+      .card.st-done:hover,
+      .card.st-doing.is-hover,
+      .card.st-done.is-hover {
+        border-color: var(--text-placeholder);
+      }
+
+      .hover-note {
+        position: absolute;
+        top: var(--sp-3);
+        right: var(--sp-5);
+        font-size: var(--fs-micro);
+        color: var(--text-muted);
+        font-weight: var(--fw-medium);
+        letter-spacing: var(--tracking-overline);
+      }
+
+      .card-head {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-4);
+        min-width: 0;
+      }
+
+      .st-dot {
+        width: var(--sp-4);
+        height: var(--sp-4);
+        flex: 0 0 var(--sp-4);
+        border-radius: 50%;
+        background: var(--st-color-dot);
+      }
+
+      .card-name {
+        margin: 0;
+        flex: 1;
+        min-width: 0;
+        font-size: var(--fs-panel);
+        font-weight: var(--fw-bold);
+        line-height: var(--lh-tight);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* 狀態 pill：沿用 TaskCard .st（狀態色文字 + 12% 淡底 + 圓點） */
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--sp-2);
+        flex: 0 0 auto;
+        font-size: var(--fs-pill);
+        font-weight: var(--fw-bold);
+        border-radius: var(--r-pill);
+        padding: var(--pad-pill);
+        white-space: nowrap;
+        color: var(--st-color-text);
+        background: color-mix(in srgb, var(--st-color-bar) 12%, transparent);
+      }
+
+      .pill .pill-dot {
+        width: var(--r-badge);
+        height: var(--r-badge);
+        flex: 0 0 var(--r-badge);
+        border-radius: 50%;
+        background: var(--st-color-bar);
+      }
+
+      /* 狀態色對照（來自 content.md 的狀態定義） */
+      .st-delayed {
+        --st-color-bar: var(--st-delayed-bar);
+        --st-color-dot: var(--st-delayed-dot);
+        --st-color-text: var(--danger-text);
+      }
+
+      .st-paused {
+        --st-color-bar: var(--st-paused-bar);
+        --st-color-dot: var(--st-paused-dot);
+        --st-color-text: var(--st-paused);
+      }
+
+      .st-doing {
+        --st-color-bar: var(--st-doing-bar);
+        --st-color-dot: var(--st-doing-dot);
+        --st-color-text: var(--st-doing);
+      }
+
+      .st-done {
+        --st-color-bar: var(--st-done-bar);
+        --st-color-dot: var(--st-done-dot);
+        --st-color-text: var(--st-done-bar);
+      }
+
+      /* 進度條：沿用 SummaryCards（bar-head + track + fill） */
+      .bar-head {
+        display: flex;
+        align-items: baseline;
+        gap: var(--sp-3);
+        margin-bottom: var(--sp-2);
+      }
+
+      .bar-label {
+        font-size: var(--fs-date);
+        color: var(--text-3);
+      }
+
+      .bar-frac {
+        font-size: var(--fs-meta);
+        color: var(--text-muted);
+        margin-left: auto;
+      }
+
+      .bar-pct {
+        font-size: var(--fs-14);
+        font-weight: var(--fw-bold);
+      }
+
+      .bar-pct.actual {
+        color: var(--success-text);
+      }
+
+      .bar-pct.plan {
+        color: var(--text-3);
+      }
+
+      .track {
+        height: var(--sp-3);
+        border-radius: var(--r-4);
+        overflow: hidden;
+      }
+
+      .track-actual {
+        background: var(--success-track);
+      }
+
+      .track-plan {
+        background: var(--border-1);
+      }
+
+      .fill {
+        height: var(--sp-3);
+        transition: width var(--t-progress) var(--ease);
+      }
+
+      .fill-actual {
+        background: var(--success);
+      }
+
+      .fill-plan {
+        background: var(--text-muted);
+      }
+
+      /* 按鈕列：32px 高（--sp-8 × 2），圓角 --r-control */
+      .card-actions {
+        display: flex;
+        gap: var(--sp-4);
+        margin-top: auto;
+        padding-top: var(--sp-6);
+        border-top: 1px solid var(--border-hair);
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--sp-2);
+        min-height: calc(var(--sp-8) * 2);
+        padding: 0 var(--sp-7);
+        border-radius: var(--r-control);
+        border: 1px solid var(--border-1);
+        background: var(--surface-1);
+        color: var(--text-2);
+        font: inherit;
+        font-size: var(--fs-control);
+        font-weight: var(--fw-medium);
+        cursor: pointer;
+        white-space: nowrap;
+        transition:
+          background var(--t-fast) ease,
+          border-color var(--t-fast) ease,
+          color var(--t-fast) ease;
+      }
+
+      .btn:hover {
+        background: var(--surface-3);
+        color: var(--text-1);
+      }
+
+      .btn:focus-visible {
+        outline: none;
+        box-shadow: var(--ring-focus);
+      }
+
+      .btn-quick {
+        flex: 1;
+      }
+
+      .btn-quick .caret {
+        font-size: var(--fs-control);
+        line-height: 1;
+        opacity: 0.85;
+      }
+
+      /* 展開中的卡：速覽按鈕轉成 accent 淡底，讓「誰展開的」在卡上也看得到 */
+      .card.is-open .btn-quick {
+        background: var(--accent-tint-1);
+        border-color: var(--accent-tint-3);
+        color: var(--accent-hover);
+      }
+
+      .btn-enter {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--surface-1);
+      }
+
+      .btn-enter:hover {
+        background: var(--accent-hover);
+        border-color: var(--accent-hover);
+        color: var(--surface-1);
+      }
+
+      /* ── 整列速覽面板（grid-column: 1 / -1，插在該列之後） ─────── */
+      .quick {
+        display: none;
+        position: relative;
+        grid-column: 1 / -1;
+        background: var(--surface-1);
+        border: 1px solid var(--border-1);
+        border-radius: var(--r-panel);
+        /* --caret-x 由指令碼依被展開的卡片中心算出（版面資料，非設計值） */
+        --caret-x: 50%;
+      }
+
+      .quick.is-open {
+        display: block;
+      }
+
+      /* 指回被展開的那張卡的小三角：白底、左上兩邊描邊、旋轉 45 度 */
+      .quick::before {
+        content: '';
+        position: absolute;
+        top: calc(-1 * var(--sp-3) - 1px);
+        left: var(--caret-x);
+        width: var(--sp-6);
+        height: var(--sp-6);
+        margin-left: calc(-1 * var(--sp-3));
+        background: var(--surface-1);
+        border-top: 1px solid var(--border-1);
+        border-left: 1px solid var(--border-1);
+        transform: rotate(45deg);
+        z-index: 1;
+      }
+
+      /* 面板頭：沿用 PanelShell（--pad-panel-head、下邊框、24×24 收合鈕） */
+      .quick-head {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-6);
+        padding: var(--pad-panel-head);
+        border-bottom: 1px solid var(--border-1);
+      }
+
+      .quick-title {
+        margin: 0;
+        font-size: var(--fs-panel);
+        font-weight: var(--fw-bold);
+      }
+
+      .quick-sub {
+        font-size: var(--fs-date);
+        color: var(--text-muted);
+        font-weight: var(--fw-bold);
+        letter-spacing: var(--tracking-overline);
+      }
+
+      .quick-toggle {
+        width: var(--sp-12);
+        height: var(--sp-12);
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--border-1);
+        border-radius: var(--r-control);
+        background: var(--surface-1);
+        color: var(--text-muted);
+        font-size: var(--fs-micro);
+        cursor: pointer;
+        padding: 0;
+      }
+
+      .quick-toggle:hover {
+        background: var(--surface-3);
+        color: var(--text-1);
+      }
+
+      .quick-body {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .quick-col {
+        min-width: 0;
+        padding: var(--pad-card);
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-5);
+      }
+
+      .quick-col + .quick-col {
+        border-left: 1px solid var(--border-hair);
+      }
+
+      .overline {
+        font-size: var(--fs-date);
+        font-weight: var(--fw-bold);
+        color: var(--text-muted);
+        letter-spacing: var(--tracking-overline);
+      }
+
+      .bars {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-4);
+      }
+
+      .gap-note {
+        font-size: var(--fs-date);
+        font-weight: var(--fw-bold);
+      }
+
+      .gap-note.behind {
+        color: var(--danger-text);
+      }
+
+      .gap-note.flat {
+        color: var(--text-muted);
+      }
+
+      /* 任務數：四格小統計 */
+      .counts {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: var(--sp-3);
+        padding-top: var(--sp-4);
+        border-top: 1px dashed var(--border-1);
+      }
+
+      .count {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-1);
+        min-width: 0;
+      }
+
+      .count-label {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--sp-2);
+        font-size: var(--fs-date);
+        color: var(--text-3);
+        white-space: nowrap;
+      }
+
+      .count-label .dot {
+        width: var(--r-control);
+        height: var(--r-control);
+        flex: 0 0 var(--r-control);
+        border-radius: 50%;
+      }
+
+      .count-num {
+        font-size: var(--fs-modal);
+        font-weight: var(--fw-bold);
+        color: var(--text-1);
+        line-height: var(--lh-tight);
+      }
+
+      /* 時程 */
+      .range {
+        font-size: var(--fs-14);
+        color: var(--text-2);
+        font-weight: var(--fw-medium);
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: var(--sp-3);
+      }
+
+      .stat {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-1);
+        min-width: 0;
+      }
+
+      .stat-label {
+        font-size: var(--fs-date);
+        color: var(--text-3);
+        white-space: nowrap;
+      }
+
+      .stat-num {
+        font-size: var(--fs-modal);
+        font-weight: var(--fw-bold);
+        color: var(--text-1);
+        line-height: var(--lh-tight);
+      }
+
+      .stat-num .unit {
+        font-family: var(--font-sans);
+        font-size: var(--fs-date);
+        font-weight: var(--fw-medium);
+        color: var(--text-muted);
+        margin-left: var(--sp-1);
+      }
+
+      .stat-num.danger {
+        color: var(--danger);
+      }
+
+      .stat-num.muted {
+        color: var(--text-muted);
+      }
+
+      .closed-note {
+        font-size: var(--fs-14);
+        color: var(--success-text);
+        font-weight: var(--fw-medium);
+      }
+
+      /* 風險 */
+      .risk {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+        gap: var(--sp-6);
+      }
+
+      .levels {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--sp-2);
+      }
+
+      .lv {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--sp-1);
+        font-size: var(--fs-date);
+        font-weight: var(--fw-bold);
+        border-radius: var(--r-badge);
+        padding: 1px var(--sp-3);
+        color: var(--lv-color);
+        background: color-mix(in srgb, var(--lv-color) 12%, transparent);
+        white-space: nowrap;
+      }
+
+      .lv-a {
+        --lv-color: var(--cls-a-text);
+      }
+
+      .lv-b {
+        --lv-color: var(--cls-b-text);
+      }
+
+      .lv-c {
+        --lv-color: var(--cls-c-text);
+      }
+
+      .lv-d {
+        --lv-color: var(--cls-d-text);
+      }
+
+      .closed-count {
+        font-size: var(--fs-date);
+        color: var(--text-muted);
+      }
+
+      /* 成員與近期任務 */
+      .members {
+        display: flex;
+        align-items: center;
+      }
+
+      .members .avatar {
+        --av-size: var(--sp-12);
+        --av-ring: var(--r-2);
+        margin-right: calc(-1 * var(--sp-3));
+      }
+
+      .members-count {
+        margin-left: var(--sp-6);
+        font-size: var(--fs-date);
+        color: var(--text-muted);
+      }
+
+      .due-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .due {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-4);
+        padding: var(--sp-3) 0;
+        border-top: 1px solid var(--border-hair);
+        min-width: 0;
+      }
+
+      .due-date {
+        flex: 0 0 auto;
+        font-size: var(--fs-date);
+        color: var(--text-3);
+      }
+
+      .due-date.soon {
+        color: var(--danger-text);
+        font-weight: var(--fw-medium);
+      }
+
+      .due-name {
+        flex: 1;
+        min-width: 0;
+        font-size: var(--fs-14);
+        color: var(--text-1);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .due .avatar {
+        --av-size: var(--sp-10);
+      }
+
+      .due-empty {
+        font-size: var(--fs-14);
+        color: var(--text-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top-bar">
+      <div class="top-row">
+        <div class="burger"><i></i><i></i><i></i></div>
+        <h1 class="page-title">所有專案</h1>
+        <span class="page-count">6 個專案</span>
+        <span class="grow"></span>
+        <span class="alert-pill"><span class="alert-dot"></span><span class="num">3</span><span>個需要注意</span></span>
+        <span class="avatar me" style="--av-color: #d97706" title="成員5 · 專案經理">5</span>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="grid" id="grid" aria-label="專案列表">
+        <!-- 1. PMIS 專案管理系統（落後；預設展開） -->
+        <article class="card st-delayed" data-id="pmis">
+          <div class="card-head">
+            <span class="st-dot"></span>
+            <h2 class="card-name">PMIS 專案管理系統</h2>
+            <span class="pill"><span class="pill-dot"></span>落後</span>
+          </div>
+          <div>
+            <div class="bar-head">
+              <span class="bar-label">實際進度</span>
+              <span class="bar-frac mono">4 / 35</span>
+              <span class="bar-pct actual mono">11%</span>
+            </div>
+            <div class="track track-actual"><div class="fill fill-actual" style="width: 11%"></div></div>
+          </div>
+          <div class="card-actions">
+            <button class="btn btn-quick" type="button" data-toggle="pmis"><span class="caret">▾</span><span>速覽</span></button>
+            <button class="btn btn-enter" type="button">進入 →</button>
+          </div>
+        </article>
+
+        <!-- 2. 客戶入口網站改版（需注意；hover 示意） -->
+        <article class="card st-paused is-hover" data-id="portal">
+          <span class="hover-note">hover 示意</span>
+          <div class="card-head">
+            <span class="st-dot"></span>
+            <h2 class="card-name">客戶入口網站改版</h2>
+            <span class="pill"><span class="pill-dot"></span>需注意</span>
+          </div>
+          <div>
+            <div class="bar-head">
+              <span class="bar-label">實際進度</span>
+              <span class="bar-frac mono">26 / 42</span>
+              <span class="bar-pct actual mono">62%</span>
+            </div>
+            <div class="track track-actual"><div class="fill fill-actual" style="width: 62%"></div></div>
+          </div>
+          <div class="card-actions">
+            <button class="btn btn-quick" type="button" data-toggle="portal"><span class="caret">▾</span><span>速覽</span></button>
+            <button class="btn btn-enter" type="button">進入 →</button>
+          </div>
+        </article>
+
+        <!-- 3. 金流介接（進行中） -->
+        <article class="card st-doing" data-id="payment">
+          <div class="card-head">
+            <span class="st-dot"></span>
+            <h2 class="card-name">金流介接</h2>
+            <span class="pill"><span class="pill-dot"></span>進行中</span>
+          </div>
+          <div>
+            <div class="bar-head">
+              <span class="bar-label">實際進度</span>
+              <span class="bar-frac mono">5 / 18</span>
+              <span class="bar-pct actual mono">28%</span>
+            </div>
+            <div class="track track-actual"><div class="fill fill-actual" style="width: 28%"></div></div>
+          </div>
+          <div class="card-actions">
+            <button class="btn btn-quick" type="button" data-toggle="payment"><span class="caret">▾</span><span>速覽</span></button>
+            <button class="btn btn-enter" type="button">進入 →</button>
+          </div>
+        </article>
+
+        <!-- 4. 報表資料倉儲（已完成） -->
+        <article class="card st-done" data-id="dw">
+          <div class="card-head">
+            <span class="st-dot"></span>
+            <h2 class="card-name">報表資料倉儲</h2>
+            <span class="pill"><span class="pill-dot"></span>已完成</span>
+          </div>
+          <div>
+            <div class="bar-head">
+              <span class="bar-label">實際進度</span>
+              <span class="bar-frac mono">24 / 24</span>
+              <span class="bar-pct actual mono">100%</span>
+            </div>
+            <div class="track track-actual"><div class="fill fill-actual" style="width: 100%"></div></div>
+          </div>
+          <div class="card-actions">
+            <button class="btn btn-quick" type="button" data-toggle="dw"><span class="caret">▾</span><span>速覽</span></button>
+            <button class="btn btn-enter" type="button">進入 →</button>
+          </div>
+        </article>
+
+        <!-- 5. 行動 App v2（進行中） -->
+        <article class="card st-doing" data-id="app">
+          <div class="card-head">
+            <span class="st-dot"></span>
+            <h2 class="card-name">行動 App v2</h2>
+            <span class="pill"><span class="pill-dot"></span>進行中</span>
+          </div>
+          <div>
+            <div class="bar-head">
+              <span class="bar-label">實際進度</span>
+              <span class="bar-frac mono">2 / 51</span>
+              <span class="bar-pct actual mono">4%</span>
+            </div>
+            <div class="track track-actual"><div class="fill fill-actual" style="width: 4%"></div></div>
+          </div>
+          <div class="card-actions">
+            <button class="btn btn-quick" type="button" data-toggle="app"><span class="caret">▾</span><span>速覽</span></button>
+            <button class="btn btn-enter" type="button">進入 →</button>
+          </div>
+        </article>
+
+        <!-- 6. 內部知識庫（落後） -->
+        <article class="card st-delayed" data-id="kb">
+          <div class="card-head">
+            <span class="st-dot"></span>
+            <h2 class="card-name">內部知識庫</h2>
+            <span class="pill"><span class="pill-dot"></span>落後</span>
+          </div>
+          <div>
+            <div class="bar-head">
+              <span class="bar-label">實際進度</span>
+              <span class="bar-frac mono">9 / 15</span>
+              <span class="bar-pct actual mono">60%</span>
+            </div>
+            <div class="track track-actual"><div class="fill fill-actual" style="width: 60%"></div></div>
+          </div>
+          <div class="card-actions">
+            <button class="btn btn-quick" type="button" data-toggle="kb"><span class="caret">▾</span><span>速覽</span></button>
+            <button class="btn btn-enter" type="button">進入 →</button>
+          </div>
+        </article>
+
+        <!-- ============ 速覽面板（每專案一個；指令碼把展開的那個搬到該列之後） ============ -->
+
+        <!-- PMIS 專案管理系統 -->
+        <section class="quick" data-for="pmis" aria-label="PMIS 專案管理系統 速覽">
+          <div class="quick-head">
+            <span class="quick-sub">速覽</span>
+            <h3 class="quick-title">PMIS 專案管理系統</h3>
+            <button class="quick-toggle" type="button" data-close title="收合速覽">▲</button>
+          </div>
+          <div class="quick-body">
+            <div class="quick-col">
+              <div class="overline">進度與任務數</div>
+              <div class="bars">
+                <div>
+                  <div class="bar-head">
+                    <span class="bar-label">實際進度</span>
+                    <span class="bar-frac mono">4 / 35</span>
+                    <span class="bar-pct actual mono">11%</span>
+                  </div>
+                  <div class="track track-actual"><div class="fill fill-actual" style="width: 11%"></div></div>
+                </div>
+                <div>
+                  <div class="bar-head">
+                    <span class="bar-label">理論進度</span>
+                    <span class="bar-frac mono">12 / 35</span>
+                    <span class="bar-pct plan mono">34%</span>
+                  </div>
+                  <div class="track track-plan"><div class="fill fill-plan" style="width: 34%"></div></div>
+                </div>
+                <div class="gap-note behind">落後 23 個百分點</div>
+              </div>
+              <div class="counts">
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-done-dot)"></span>完成</span><span class="count-num mono">4</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-doing-dot)"></span>進行中</span><span class="count-num mono">11</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-paused-dot)"></span>暫停</span><span class="count-num mono">3</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-todo-dot)"></span>待辦</span><span class="count-num mono">17</span></div>
+              </div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">時程</div>
+              <div class="range mono">2026-08-24 → 2026-11-10</div>
+              <div class="stats">
+                <div class="stat"><span class="stat-label">總天數</span><span class="stat-num mono">78<span class="unit">天</span></span></div>
+                <div class="stat"><span class="stat-label">已過</span><span class="stat-num mono muted">29<span class="unit">天</span></span></div>
+                <div class="stat"><span class="stat-label">剩餘</span><span class="stat-num mono">49<span class="unit">天</span></span></div>
+              </div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">風險項目</div>
+              <div class="risk">
+                <div class="stat"><span class="stat-label">已延遲任務</span><span class="stat-num mono danger">3</span></div>
+                <div class="stat">
+                  <span class="stat-label">未結 Issue</span>
+                  <span class="stat-num mono">5</span>
+                  <div class="levels"><span class="lv lv-a">A 級 1</span><span class="lv lv-b">B 級 2</span><span class="lv lv-c">C 級 2</span></div>
+                </div>
+              </div>
+              <div class="closed-count">已結 Issue <span class="mono">2</span></div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">成員與近期任務</div>
+              <div class="members">
+                <span class="avatar" style="--av-color: #2563eb" title="成員1 · 前端工程師">1</span>
+                <span class="avatar" style="--av-color: #059669" title="成員2 · 後端工程師">2</span>
+                <span class="avatar" style="--av-color: #7c3aed" title="成員3 · UI 設計師">3</span>
+                <span class="avatar" style="--av-color: #db2777" title="成員4 · QA 工程師">4</span>
+                <span class="avatar" style="--av-color: #d97706" title="成員5 · 專案經理">5</span>
+                <span class="avatar" style="--av-color: #0891b2" title="成員6 · 資料工程師">6</span>
+                <span class="avatar" style="--av-color: #475569" title="成員7 · DevOps">7</span>
+                <span class="members-count">7 位成員</span>
+              </div>
+              <ul class="due-list">
+                <li class="due"><span class="due-date mono soon">09-24</span><span class="due-name">身分驗證與權限</span><span class="avatar" style="--av-color: #059669" title="成員2">2</span></li>
+                <li class="due"><span class="due-date mono">09-25</span><span class="due-name">資料庫 Schema 建置</span><span class="avatar" style="--av-color: #0891b2" title="成員6">6</span></li>
+                <li class="due"><span class="due-date mono">09-26</span><span class="due-name">設計系統與元件規範</span><span class="avatar" style="--av-color: #7c3aed" title="成員3">3</span></li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- 客戶入口網站改版 -->
+        <section class="quick" data-for="portal" aria-label="客戶入口網站改版 速覽">
+          <div class="quick-head">
+            <span class="quick-sub">速覽</span>
+            <h3 class="quick-title">客戶入口網站改版</h3>
+            <button class="quick-toggle" type="button" data-close title="收合速覽">▲</button>
+          </div>
+          <div class="quick-body">
+            <div class="quick-col">
+              <div class="overline">進度與任務數</div>
+              <div class="bars">
+                <div>
+                  <div class="bar-head"><span class="bar-label">實際進度</span><span class="bar-frac mono">26 / 42</span><span class="bar-pct actual mono">62%</span></div>
+                  <div class="track track-actual"><div class="fill fill-actual" style="width: 62%"></div></div>
+                </div>
+                <div>
+                  <div class="bar-head"><span class="bar-label">理論進度</span><span class="bar-frac mono">31 / 42</span><span class="bar-pct plan mono">75%</span></div>
+                  <div class="track track-plan"><div class="fill fill-plan" style="width: 75%"></div></div>
+                </div>
+                <div class="gap-note behind">落後 13 個百分點</div>
+              </div>
+              <div class="counts">
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-done-dot)"></span>完成</span><span class="count-num mono">26</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-doing-dot)"></span>進行中</span><span class="count-num mono">9</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-paused-dot)"></span>暫停</span><span class="count-num mono">0</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-todo-dot)"></span>待辦</span><span class="count-num mono">7</span></div>
+              </div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">時程</div>
+              <div class="range mono">2026-07-06 → 2026-10-16</div>
+              <div class="stats">
+                <div class="stat"><span class="stat-label">總天數</span><span class="stat-num mono">102<span class="unit">天</span></span></div>
+                <div class="stat"><span class="stat-label">已過</span><span class="stat-num mono muted">78<span class="unit">天</span></span></div>
+                <div class="stat"><span class="stat-label">剩餘</span><span class="stat-num mono">24<span class="unit">天</span></span></div>
+              </div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">風險項目</div>
+              <div class="risk">
+                <div class="stat"><span class="stat-label">已延遲任務</span><span class="stat-num mono danger">1</span></div>
+                <div class="stat">
+                  <span class="stat-label">未結 Issue</span>
+                  <span class="stat-num mono">3</span>
+                  <div class="levels"><span class="lv lv-a">A 級 1</span><span class="lv lv-c">C 級 2</span></div>
+                </div>
+              </div>
+              <div class="closed-count">已結 Issue <span class="mono">8</span></div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">成員與近期任務</div>
+              <div class="members">
+                <span class="avatar" style="--av-color: #2563eb" title="成員1 · 前端工程師">1</span>
+                <span class="avatar" style="--av-color: #7c3aed" title="成員3 · UI 設計師">3</span>
+                <span class="avatar" style="--av-color: #db2777" title="成員4 · QA 工程師">4</span>
+                <span class="avatar" style="--av-color: #d97706" title="成員5 · 專案經理">5</span>
+                <span class="avatar" style="--av-color: #475569" title="成員7 · DevOps">7</span>
+                <span class="members-count">5 位成員</span>
+              </div>
+              <ul class="due-list">
+                <li class="due"><span class="due-date mono soon">09-23</span><span class="due-name">無障礙檢測修正</span><span class="avatar" style="--av-color: #2563eb" title="成員1">1</span></li>
+                <li class="due"><span class="due-date mono">09-26</span><span class="due-name">UAT 第二輪</span><span class="avatar" style="--av-color: #db2777" title="成員4">4</span></li>
+                <li class="due"><span class="due-date mono">09-30</span><span class="due-name">上線前效能壓測</span><span class="avatar" style="--av-color: #475569" title="成員7">7</span></li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- 金流介接 -->
+        <section class="quick" data-for="payment" aria-label="金流介接 速覽">
+          <div class="quick-head">
+            <span class="quick-sub">速覽</span>
+            <h3 class="quick-title">金流介接</h3>
+            <button class="quick-toggle" type="button" data-close title="收合速覽">▲</button>
+          </div>
+          <div class="quick-body">
+            <div class="quick-col">
+              <div class="overline">進度與任務數</div>
+              <div class="bars">
+                <div>
+                  <div class="bar-head"><span class="bar-label">實際進度</span><span class="bar-frac mono">5 / 18</span><span class="bar-pct actual mono">28%</span></div>
+                  <div class="track track-actual"><div class="fill fill-actual" style="width: 28%"></div></div>
+                </div>
+                <div>
+                  <div class="bar-head"><span class="bar-label">理論進度</span><span class="bar-frac mono">6 / 18</span><span class="bar-pct plan mono">32%</span></div>
+                  <div class="track track-plan"><div class="fill fill-plan" style="width: 32%"></div></div>
+                </div>
+                <div class="gap-note behind">落後 4 個百分點</div>
+              </div>
+              <div class="counts">
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-done-dot)"></span>完成</span><span class="count-num mono">5</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-doing-dot)"></span>進行中</span><span class="count-num mono">4</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-paused-dot)"></span>暫停</span><span class="count-num mono">0</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-todo-dot)"></span>待辦</span><span class="count-num mono">9</span></div>
+              </div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">時程</div>
+              <div class="range mono">2026-09-01 → 2026-10-31</div>
+              <div class="stats">
+                <div class="stat"><span class="stat-label">總天數</span><span class="stat-num mono">60<span class="unit">天</span></span></div>
+                <div class="stat"><span class="stat-label">已過</span><span class="stat-num mono muted">21<span class="unit">天</span></span></div>
+                <div class="stat"><span class="stat-label">剩餘</span><span class="stat-num mono">39<span class="unit">天</span></span></div>
+              </div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">風險項目</div>
+              <div class="risk">
+                <div class="stat"><span class="stat-label">已延遲任務</span><span class="stat-num mono muted">0</span></div>
+                <div class="stat">
+                  <span class="stat-label">未結 Issue</span>
+                  <span class="stat-num mono">2</span>
+                  <div class="levels"><span class="lv lv-c">C 級 1</span><span class="lv lv-d">D 級 1</span></div>
+                </div>
+              </div>
+              <div class="closed-count">已結 Issue <span class="mono">1</span></div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">成員與近期任務</div>
+              <div class="members">
+                <span class="avatar" style="--av-color: #059669" title="成員2 · 後端工程師">2</span>
+                <span class="avatar" style="--av-color: #d97706" title="成員5 · 專案經理">5</span>
+                <span class="avatar" style="--av-color: #0891b2" title="成員6 · 資料工程師">6</span>
+                <span class="members-count">3 位成員</span>
+              </div>
+              <ul class="due-list">
+                <li class="due"><span class="due-date mono">09-25</span><span class="due-name">交易對帳批次</span><span class="avatar" style="--av-color: #0891b2" title="成員6">6</span></li>
+                <li class="due"><span class="due-date mono">09-29</span><span class="due-name">退款流程</span><span class="avatar" style="--av-color: #059669" title="成員2">2</span></li>
+                <li class="due"><span class="due-date mono">10-02</span><span class="due-name">沙盒環境驗證</span><span class="avatar" style="--av-color: #059669" title="成員2">2</span></li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- 報表資料倉儲 -->
+        <section class="quick" data-for="dw" aria-label="報表資料倉儲 速覽">
+          <div class="quick-head">
+            <span class="quick-sub">速覽</span>
+            <h3 class="quick-title">報表資料倉儲</h3>
+            <button class="quick-toggle" type="button" data-close title="收合速覽">▲</button>
+          </div>
+          <div class="quick-body">
+            <div class="quick-col">
+              <div class="overline">進度與任務數</div>
+              <div class="bars">
+                <div>
+                  <div class="bar-head"><span class="bar-label">實際進度</span><span class="bar-frac mono">24 / 24</span><span class="bar-pct actual mono">100%</span></div>
+                  <div class="track track-actual"><div class="fill fill-actual" style="width: 100%"></div></div>
+                </div>
+                <div>
+                  <div class="bar-head"><span class="bar-label">理論進度</span><span class="bar-frac mono">24 / 24</span><span class="bar-pct plan mono">100%</span></div>
+                  <div class="track track-plan"><div class="fill fill-plan" style="width: 100%"></div></div>
+                </div>
+                <div class="gap-note flat">與時程相符</div>
+              </div>
+              <div class="counts">
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-done-dot)"></span>完成</span><span class="count-num mono">24</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-doing-dot)"></span>進行中</span><span class="count-num mono">0</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-paused-dot)"></span>暫停</span><span class="count-num mono">0</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-todo-dot)"></span>待辦</span><span class="count-num mono">0</span></div>
+              </div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">時程</div>
+              <div class="range mono">2026-06-15 → 2026-09-12</div>
+              <div class="stats">
+                <div class="stat"><span class="stat-label">總天數</span><span class="stat-num mono">89<span class="unit">天</span></span></div>
+              </div>
+              <div class="closed-note">已於 09-12 結案</div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">風險項目</div>
+              <div class="risk">
+                <div class="stat"><span class="stat-label">已延遲任務</span><span class="stat-num mono muted">0</span></div>
+                <div class="stat"><span class="stat-label">未結 Issue</span><span class="stat-num mono muted">0</span></div>
+              </div>
+              <div class="closed-count">已結 Issue <span class="mono">11</span></div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">成員與近期任務</div>
+              <div class="members">
+                <span class="avatar" style="--av-color: #059669" title="成員2 · 後端工程師">2</span>
+                <span class="avatar" style="--av-color: #d97706" title="成員5 · 專案經理">5</span>
+                <span class="avatar" style="--av-color: #0891b2" title="成員6 · 資料工程師">6</span>
+                <span class="avatar" style="--av-color: #475569" title="成員7 · DevOps">7</span>
+                <span class="members-count">4 位成員</span>
+              </div>
+              <div class="due-empty">無到期任務</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 行動 App v2 -->
+        <section class="quick" data-for="app" aria-label="行動 App v2 速覽">
+          <div class="quick-head">
+            <span class="quick-sub">速覽</span>
+            <h3 class="quick-title">行動 App v2</h3>
+            <button class="quick-toggle" type="button" data-close title="收合速覽">▲</button>
+          </div>
+          <div class="quick-body">
+            <div class="quick-col">
+              <div class="overline">進度與任務數</div>
+              <div class="bars">
+                <div>
+                  <div class="bar-head"><span class="bar-label">實際進度</span><span class="bar-frac mono">2 / 51</span><span class="bar-pct actual mono">4%</span></div>
+                  <div class="track track-actual"><div class="fill fill-actual" style="width: 4%"></div></div>
+                </div>
+                <div>
+                  <div class="bar-head"><span class="bar-label">理論進度</span><span class="bar-frac mono">3 / 51</span><span class="bar-pct plan mono">5%</span></div>
+                  <div class="track track-plan"><div class="fill fill-plan" style="width: 5%"></div></div>
+                </div>
+                <div class="gap-note behind">落後 1 個百分點</div>
+              </div>
+              <div class="counts">
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-done-dot)"></span>完成</span><span class="count-num mono">2</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-doing-dot)"></span>進行中</span><span class="count-num mono">6</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-paused-dot)"></span>暫停</span><span class="count-num mono">0</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-todo-dot)"></span>待辦</span><span class="count-num mono">43</span></div>
+              </div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">時程</div>
+              <div class="range mono">2026-09-15 → 2027-01-20</div>
+              <div class="stats">
+                <div class="stat"><span class="stat-label">總天數</span><span class="stat-num mono">127<span class="unit">天</span></span></div>
+                <div class="stat"><span class="stat-label">已過</span><span class="stat-num mono muted">7<span class="unit">天</span></span></div>
+                <div class="stat"><span class="stat-label">剩餘</span><span class="stat-num mono">120<span class="unit">天</span></span></div>
+              </div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">風險項目</div>
+              <div class="risk">
+                <div class="stat"><span class="stat-label">已延遲任務</span><span class="stat-num mono muted">0</span></div>
+                <div class="stat">
+                  <span class="stat-label">未結 Issue</span>
+                  <span class="stat-num mono">1</span>
+                  <div class="levels"><span class="lv lv-d">D 級 1</span></div>
+                </div>
+              </div>
+              <div class="closed-count">已結 Issue <span class="mono">0</span></div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">成員與近期任務</div>
+              <div class="members">
+                <span class="avatar" style="--av-color: #2563eb" title="成員1 · 前端工程師">1</span>
+                <span class="avatar" style="--av-color: #7c3aed" title="成員3 · UI 設計師">3</span>
+                <span class="avatar" style="--av-color: #db2777" title="成員4 · QA 工程師">4</span>
+                <span class="avatar" style="--av-color: #d97706" title="成員5 · 專案經理">5</span>
+                <span class="avatar" style="--av-color: #0891b2" title="成員6 · 資料工程師">6</span>
+                <span class="avatar" style="--av-color: #475569" title="成員7 · DevOps">7</span>
+                <span class="members-count">6 位成員</span>
+              </div>
+              <ul class="due-list">
+                <li class="due"><span class="due-date mono">09-26</span><span class="due-name">資訊架構定稿</span><span class="avatar" style="--av-color: #7c3aed" title="成員3">3</span></li>
+                <li class="due"><span class="due-date mono">09-30</span><span class="due-name">開發環境建置</span><span class="avatar" style="--av-color: #475569" title="成員7">7</span></li>
+                <li class="due"><span class="due-date mono">10-03</span><span class="due-name">登入流程原型</span><span class="avatar" style="--av-color: #2563eb" title="成員1">1</span></li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- 內部知識庫 -->
+        <section class="quick" data-for="kb" aria-label="內部知識庫 速覽">
+          <div class="quick-head">
+            <span class="quick-sub">速覽</span>
+            <h3 class="quick-title">內部知識庫</h3>
+            <button class="quick-toggle" type="button" data-close title="收合速覽">▲</button>
+          </div>
+          <div class="quick-body">
+            <div class="quick-col">
+              <div class="overline">進度與任務數</div>
+              <div class="bars">
+                <div>
+                  <div class="bar-head"><span class="bar-label">實際進度</span><span class="bar-frac mono">9 / 15</span><span class="bar-pct actual mono">60%</span></div>
+                  <div class="track track-actual"><div class="fill fill-actual" style="width: 60%"></div></div>
+                </div>
+                <div>
+                  <div class="bar-head"><span class="bar-label">理論進度</span><span class="bar-frac mono">13 / 15</span><span class="bar-pct plan mono">88%</span></div>
+                  <div class="track track-plan"><div class="fill fill-plan" style="width: 88%"></div></div>
+                </div>
+                <div class="gap-note behind">落後 28 個百分點</div>
+              </div>
+              <div class="counts">
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-done-dot)"></span>完成</span><span class="count-num mono">9</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-doing-dot)"></span>進行中</span><span class="count-num mono">2</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-paused-dot)"></span>暫停</span><span class="count-num mono">2</span></div>
+                <div class="count"><span class="count-label"><span class="dot" style="background: var(--st-todo-dot)"></span>待辦</span><span class="count-num mono">2</span></div>
+              </div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">時程</div>
+              <div class="range mono">2026-08-03 → 2026-09-30</div>
+              <div class="stats">
+                <div class="stat"><span class="stat-label">總天數</span><span class="stat-num mono">58<span class="unit">天</span></span></div>
+                <div class="stat"><span class="stat-label">已過</span><span class="stat-num mono muted">50<span class="unit">天</span></span></div>
+                <div class="stat"><span class="stat-label">剩餘</span><span class="stat-num mono danger">8<span class="unit">天</span></span></div>
+              </div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">風險項目</div>
+              <div class="risk">
+                <div class="stat"><span class="stat-label">已延遲任務</span><span class="stat-num mono danger">4</span></div>
+                <div class="stat">
+                  <span class="stat-label">未結 Issue</span>
+                  <span class="stat-num mono">4</span>
+                  <div class="levels"><span class="lv lv-b">B 級 2</span><span class="lv lv-c">C 級 2</span></div>
+                </div>
+              </div>
+              <div class="closed-count">已結 Issue <span class="mono">3</span></div>
+            </div>
+            <div class="quick-col">
+              <div class="overline">成員與近期任務</div>
+              <div class="members">
+                <span class="avatar" style="--av-color: #2563eb" title="成員1 · 前端工程師">1</span>
+                <span class="avatar" style="--av-color: #059669" title="成員2 · 後端工程師">2</span>
+                <span class="avatar" style="--av-color: #d97706" title="成員5 · 專案經理">5</span>
+                <span class="members-count">3 位成員</span>
+              </div>
+              <ul class="due-list">
+                <li class="due"><span class="due-date mono soon">09-23</span><span class="due-name">全文檢索</span><span class="avatar" style="--av-color: #059669" title="成員2">2</span></li>
+                <li class="due"><span class="due-date mono">09-26</span><span class="due-name">權限分級</span><span class="avatar" style="--av-color: #059669" title="成員2">2</span></li>
+                <li class="due"><span class="due-date mono">09-29</span><span class="due-name">匯入舊文件</span><span class="avatar" style="--av-color: #2563eb" title="成員1">1</span></li>
+              </ul>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      // 整列展開：把被點的專案的速覽面板搬到「該卡所在那一列」的最後一張卡之後，
+      // 再把面板的小三角對準該卡的水平中心。同一時間只開一張。
+      (function () {
+        var grid = document.getElementById('grid');
+        var openId = null;
+
+        function cards() {
+          return Array.prototype.slice.call(grid.querySelectorAll('.card'));
+        }
+
+        function rowEndOf(card) {
+          var top = card.offsetTop;
+          var last = card;
+          cards().forEach(function (c) {
+            if (c.offsetTop === top) last = c;
+          });
+          return last;
+        }
+
+        function place(id) {
+          var card = grid.querySelector('.card[data-id="' + id + '"]');
+          var panel = grid.querySelector('.quick[data-for="' + id + '"]');
+          if (!card || !panel) return;
+          var end = rowEndOf(card);
+          end.insertAdjacentElement('afterend', panel);
+          var c = card.getBoundingClientRect();
+          var p = panel.getBoundingClientRect();
+          panel.style.setProperty('--caret-x', c.left + c.width / 2 - p.left + 'px');
+        }
+
+        function close() {
+          if (!openId) return;
+          var card = grid.querySelector('.card[data-id="' + openId + '"]');
+          var panel = grid.querySelector('.quick[data-for="' + openId + '"]');
+          card.classList.remove('is-open');
+          panel.classList.remove('is-open');
+          setCaret(card, '▾', '速覽');
+          openId = null;
+        }
+
+        function setCaret(card, glyph, label) {
+          var btn = card.querySelector('.btn-quick');
+          btn.querySelector('.caret').textContent = glyph;
+          btn.querySelector('.caret + span').textContent = label;
+        }
+
+        function open(id) {
+          if (openId === id) {
+            close();
+            return;
+          }
+          close();
+          var card = grid.querySelector('.card[data-id="' + id + '"]');
+          var panel = grid.querySelector('.quick[data-for="' + id + '"]');
+          card.classList.add('is-open');
+          panel.classList.add('is-open');
+          setCaret(card, '▴', '收合');
+          openId = id;
+          place(id);
+        }
+
+        grid.addEventListener('click', function (e) {
+          var t = e.target.closest('[data-toggle]');
+          if (t) {
+            open(t.getAttribute('data-toggle'));
+            return;
+          }
+          if (e.target.closest('[data-close]')) close();
+        });
+
+        window.addEventListener('resize', function () {
+          if (openId) place(openId);
+        });
+
+        // 截圖用預設狀態：「PMIS 專案管理系統」展開
+        open('pmis');
+        if (document.fonts && document.fonts.ready) {
+          document.fonts.ready.then(function () {
+            if (openId) place(openId);
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>
