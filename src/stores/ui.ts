@@ -66,6 +66,13 @@ const NAV_ANIM_MS = 280
 const MAX_ERRORS = 5
 const MERGE_WINDOW_MS = 5000
 
+/** 懸空旗標的位元（review F8，同 `selection.ts` 的寫法）。 */
+const GONE_DETAIL = 1
+const GONE_FROM = 2
+const GONE_CONFIRM = 4
+const GONE_DEP_EDIT = 8
+const GONE_PICKER = 16
+
 /** api 載入的四個狀態（契約 C）。 */
 export type LoadState = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -321,29 +328,45 @@ export const useUiStore = defineStore('ui', () => {
    * 資料層不再回頭清 ui（契約 E）：不管刪除是本地發起、乐觀還原，還是別的
    * client 推來的事件，都由這條 watch 收尾。`flush: 'sync'` 讓畫面不會有任何
    * 一個 tick 停在不存在的 id 上（review M7）。
-   * 清理清單：`detail`（含 `detail.from`）、`confirm`、`depEditFor`、
-   * `pickerFor`、`expandedIssues[id]`。
+   * 清理清單：`detail`（含 `detail.from`）、`confirm`、`depEditFor`、`pickerFor`。
+   *
+   * review F8：getter 回位元遮罩（同 `selection.ts`）。原本回一個每次都重建的
+   * 物件，等於**每一次資料變動**（連改個名字都算）都要跑一次 callback。
    */
   watch(
     () => {
       const d = detail.value
       const c = confirm.value
-      return {
-        detailGone: !!d && !exists(d.kind, d.id),
-        fromGone: !!d?.from && !exists('task', d.from),
-        confirmGone: !!c && !exists(c.kind, c.id),
-        depEditGone: !!depEditFor.value && !exists('task', depEditFor.value),
-        pickerGone: !!pickerFor.value && !exists('task', pickerFor.value),
-        expandedGone: Object.keys(expandedIssues.value).filter((id) => !exists('issue', id)),
-      }
+      return (
+        (d && !exists(d.kind, d.id) ? GONE_DETAIL : 0) |
+        (d?.from && !exists('task', d.from) ? GONE_FROM : 0) |
+        (c && !exists(c.kind, c.id) ? GONE_CONFIRM : 0) |
+        (depEditFor.value && !exists('task', depEditFor.value) ? GONE_DEP_EDIT : 0) |
+        (pickerFor.value && !exists('task', pickerFor.value) ? GONE_PICKER : 0)
+      )
     },
     (gone) => {
-      if (gone.detailGone) closeDetail()
-      else if (gone.fromGone && detail.value) detail.value.from = null
-      if (gone.confirmGone) confirm.value = null
-      if (gone.depEditGone) depEditFor.value = null
-      if (gone.pickerGone) pickerFor.value = null
-      for (const id of gone.expandedGone) delete expandedIssues.value[id]
+      if (gone & GONE_DETAIL) closeDetail()
+      else if (gone & GONE_FROM && detail.value) detail.value.from = null
+      if (gone & GONE_CONFIRM) confirm.value = null
+      if (gone & GONE_DEP_EDIT) depEditFor.value = null
+      if (gone & GONE_PICKER) pickerFor.value = null
+    },
+    { flush: 'sync' },
+  )
+
+  /**
+   * 展開中的 Issue 卡另外一條（review F8）：它只跟 Issue 清單有關，
+   * 併在上面那條裡會讓任何一筆任務的改動都去掃一次整份 `expandedIssues`。
+   * getter 回字串（id 以空白相接）——一樣是 primitive，值沒變就不進 callback。
+   */
+  watch(
+    () =>
+      Object.keys(expandedIssues.value)
+        .filter((id) => !exists('issue', id))
+        .join(' '),
+    (gone) => {
+      for (const id of gone.split(' ')) if (id) delete expandedIssues.value[id]
     },
     { flush: 'sync' },
   )

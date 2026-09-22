@@ -202,6 +202,22 @@ describe('uiStore', () => {
       expect(ui.confirm).toBeNull()
     })
 
+    // review F8：getter 回位元遮罩（同 selection.ts），expandedIssues 另外一條 watch。
+    // 改個任務名字不該讓「展開中的 Issue 卡還在不在」整份重算。
+    it('改名不會讓懸空清理去掃 expandedIssues', () => {
+      const ui = useUiStore()
+      const issues = useIssueStore()
+      ui.expandedIssues.i1 = true
+      ui.openDetail('t3', 'task')
+      const byId = vi.spyOn(issues, 'byId')
+
+      useTaskStore().applyLocalPatch('t3', { name: '改名' })
+
+      expect(byId).not.toHaveBeenCalled()
+      expect(ui.expandedIssues.i1).toBe(true)
+      byId.mockRestore()
+    })
+
     it('還在的 id 不會被動到', () => {
       const ui = useUiStore()
       ui.openDetail('t3', 'task')
