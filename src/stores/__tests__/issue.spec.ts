@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, mockApi } from '@/api'
+import { api, mockApi as maybeMockApi } from '@/api'
 import { useProjectBoot } from '@/composables/useProjectBoot'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
@@ -9,6 +9,9 @@ import { useIssueStore } from '@/stores/issue'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+
+/** 測試一定走 mock 實作（review F11：mockApi 在型別上是 optional）。 */
+const mockApi = maybeMockApi!
 
 /** 新實體的 id 是 UUID v4（spec 目標 4），只能斷言格式。 */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/

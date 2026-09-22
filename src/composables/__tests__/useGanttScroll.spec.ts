@@ -2,13 +2,16 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h, ref, type Ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mockApi } from '@/api'
+import { mockApi as maybeMockApi } from '@/api'
 import { useGanttScroll, type GanttScroll } from '@/composables/useGanttScroll'
 import { dayFraction } from '@/lib/date'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+
+/** 測試一定走 mock 實作（review F11：mockApi 在型別上是 optional）。 */
+const mockApi = maybeMockApi!
 
 /**
  * 甘特圖水平捲動：尺規同步、`scrollTo` 的補間終值、`jumpToday` 的落點、縮放。

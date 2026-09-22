@@ -1,11 +1,14 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, mockApi } from '@/api'
+import { api, mockApi as maybeMockApi } from '@/api'
 import { useProjectBoot } from '@/composables/useProjectBoot'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useUiStore } from '@/stores/ui'
+
+/** 測試一定走 mock 實作（review F11：mockApi 在型別上是 optional）。 */
+const mockApi = maybeMockApi!
 
 const NOW = Date.parse('2026-09-18T10:00:00Z')
 

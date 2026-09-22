@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, mockApi } from '@/api'
+import { api, mockApi as maybeMockApi } from '@/api'
 import {
   provideDomRegistry,
   registerEl,
@@ -14,6 +14,9 @@ import { sampleProject } from '@/mocks/sampleProject'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+
+/** 測試一定走 mock 實作（review F11：mockApi 在型別上是 optional）。 */
+const mockApi = maybeMockApi!
 
 /** jsdom 沒有 PointerEvent 建構子，拖曳只用到 button / clientX / clientY，用 MouseEvent 代打。 */
 function pointer(type: string, x = 0, y = 0): MouseEvent {
