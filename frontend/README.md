@@ -1,10 +1,12 @@
-# PMIS
+# PMIS 前端
 
 專案管理資訊系統（Project Management Information System）前端。目前只有一個頁面：Dashboard（`/`），內含四張摘要卡、專案時程（甘特圖）、任務看板與 Issue 看板。
 
-技術棧與使用慣例見 [`docs/reference/tech-stack.md`](docs/reference/tech-stack.md)；設計語言區塊地圖見 [`docs/reference/design-map.md`](docs/reference/design-map.md)。
+技術棧與使用慣例見 [`docs/reference/tech-stack.md`](../docs/reference/tech-stack.md)；設計語言區塊地圖見 [`docs/reference/design-map.md`](../docs/reference/design-map.md)。
 
 ## 安裝
+
+本檔以下的指令都在這個 `frontend/` 目錄下執行（從 repo 根目錄先 `cd frontend`）。
 
 需要 Node.js 22 以上（版本記在 `.nvmrc`）。
 
@@ -44,38 +46,39 @@ PLAYWRIGHT_PORT=5175 npm run test:e2e                 # 換 port（多個工作�
 ## 目錄結構
 
 ```
-legacy/            改寫前的原型（唯讀基準，見下）
-public/            原樣複製到 dist/ 的靜態檔
-src/
-  api/             資料存取層；接後端時只換這一層
-    types.ts       ProjectApi / ProjectEvent / ApiError 契約，檔頭是給後端看的 wire 約定
-    mock/          記憶體實作（store.ts + index.ts）；可注入延遲與失敗
-    index.ts       挑實作的唯一出口（VITE_API 未設或 'mock' 用 mock；dev build 掛 window.__mockApi）
-  assets/          tokens.css（設計 token）、base.css（全域樣式與 keyframes）
-  components/      元件，依畫面區塊分子目錄（common / layout / summary / gantt / kanban / issues / detail / dialogs）
-  composables/     可重用的組合式函式
-    useProjectBoot.ts    啟動層：注入 error sink、載入狀態、訂閱事件
-    useDomRegistry.ts    DOM 登錄表（執行期不再用選擇器找元素）
-    useTaskActions.ts    新增任務 / Issue 的預設值（派生層讀取集中在這）
-    useEditDraft.ts      逐鍵編輯：本地即時 + api debounce
-    useConfirmProps.ts   確認對話框的文案與 onConfirm（ConfirmDialog 純展示）
-    （其餘：usePointerDrag / useGanttScroll / useAutoScroll / useClickOutside /
-      useMenus / useFocusScroll / useNow / useStickyOffsets / useDelayedUnmount）
-  constants/       畫面用常數（狀態 / 優先度 / 等級的標籤與顏色、API_ERROR_TEXT）
-  lib/             純函式（日期、月曆格、排程連動、篩選、排序、格式化、id…）
-  mocks/           範例資料
-  router/          路由
-  stores/          Pinia store（三層，見下）
-    clock.ts               時鐘層
-    task / issue / comment / member.ts   資料層
-    _optimistic.ts         乐觀更新的共用機制（tracker / runOptimistic / error sink）
-    _sync.ts               api.subscribe 的唯一訂閱點，把事件路由到各資料 store
-    rows / filter / selection / ui.ts    派生層
-  types/           資料模型型別
-  views/           頁面
-  __tests__/       跨目錄的結構守衛（readme / no-query-selector）
-e2e/               Playwright 測試與 helper
-docs/reference/    長期參考文件
+frontend/
+  legacy/            改寫前的原型（唯讀基準，見下）
+  public/            原樣複製到 dist/ 的靜態檔
+  src/
+    api/             資料存取層；接後端時只換這一層
+      types.ts       ProjectApi / ProjectEvent / ApiError 契約，檔頭是給後端看的 wire 約定
+      mock/          記憶體實作（store.ts + index.ts）；可注入延遲與失敗
+      index.ts       挑實作的唯一出口（VITE_API 未設或 'mock' 用 mock；dev build 掛 window.__mockApi）
+    assets/          tokens.css（設計 token）、base.css（全域樣式與 keyframes）
+    components/      元件，依畫面區塊分子目錄（common / layout / summary / gantt / kanban / issues / detail / dialogs）
+    composables/     可重用的組合式函式
+      useProjectBoot.ts    啟動層：注入 error sink、載入狀態、訂閱事件
+      useDomRegistry.ts    DOM 登錄表（執行期不再用選擇器找元素）
+      useTaskActions.ts    新增任務 / Issue 的預設值（派生層讀取集中在這）
+      useEditDraft.ts      逐鍵編輯：本地即時 + api debounce
+      useConfirmProps.ts   確認對話框的文案與 onConfirm（ConfirmDialog 純展示）
+      （其餘：usePointerDrag / useGanttScroll / useAutoScroll / useClickOutside /
+        useMenus / useFocusScroll / useNow / useStickyOffsets / useDelayedUnmount）
+    constants/       畫面用常數（狀態 / 優先度 / 等級的標籤與顏色、API_ERROR_TEXT）
+    lib/             純函式（日期、月曆格、排程連動、篩選、排序、格式化、id…）
+    mocks/           範例資料
+    router/          路由
+    stores/          Pinia store（三層，見下）
+      clock.ts               時鐘層
+      task / issue / comment / member.ts   資料層
+      _optimistic.ts         乐觀更新的共用機制（tracker / runOptimistic / error sink）
+      _sync.ts               api.subscribe 的唯一訂閱點，把事件路由到各資料 store
+      rows / filter / selection / ui.ts    派生層
+    types/           資料模型型別
+    views/           頁面
+    __tests__/       跨目錄的結構守衛（readme / no-query-selector）
+  e2e/               Playwright 測試與 helper
+../docs/reference/   長期參考文件
 ```
 
 單元測試放在被測檔案旁的 `__tests__/`（例如 `src/lib/__tests__/date.spec.ts`）。不屬於任何單一檔案的結構守衛放 `src/__tests__/`：`no-query-selector.spec.ts`（執行期不得用 DOM 選擇器）、`readme.spec.ts`（本檔的端點表與 `ProjectApi` 一致），另有 `src/stores/__tests__/imports.spec.ts`（store 分層白名單）。
