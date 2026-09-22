@@ -67,11 +67,15 @@ export function cloneEntity<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-/** 用一份 server 清單重建 tracker（load / project.reloaded）。 */
+/**
+ * 用一份 server 清單重建 tracker（load / project.reloaded）。
+ *
+ * review F12：只換 `server`。`inflight` 與 `dirty` 是**這個 client 自己**的狀態
+ * ——重載改變的是「server 現在長怎樣」，不是「我這邊還有幾筆在飛、有什麼還沒送出」。
+ * 清掉它們會讓重載當下在飛的請求回來時錯誤地 reconcile，也會抹掉還在打字的草稿。
+ */
 export function resetTracker<T extends { id: string }>(tracker: Tracker<T>, list: T[]): void {
   tracker.server.clear()
-  tracker.inflight.clear()
-  tracker.dirty.clear()
   for (const item of list) tracker.server.set(item.id, cloneEntity(item))
 }
 

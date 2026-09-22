@@ -4,6 +4,8 @@ import { ApiError } from '@/api/types'
 import {
   applyServerValue,
   createTracker,
+  markDirty,
+  resetTracker,
   runOptimistic,
   setErrorSink,
   type Tracker,
@@ -135,6 +137,28 @@ describe('runOptimistic', () => {
     await second
     expect(local.get('r1')!.name).toBe('server2')
     expect(tracker.server.get('r1')!.name).toBe('server2')
+  })
+
+  // review F12：重載只換「server 是什麼」，不改「我這邊還有什麼在飛 / 沒送出」
+  it('resetTracker 只重建 server，保留 inflight 與 dirty', async () => {
+    let finish: (r: Row) => void = () => {}
+    markDirty(tracker, ['r2'])
+    const op = runOptimistic<Row>({
+      tracker,
+      ids: ['r1'],
+      label: '更新資料',
+      call: () => new Promise<Row>((resolve) => (finish = resolve)),
+      reconcile,
+    })
+
+    resetTracker(tracker, [{ id: 'r1', name: 'reloaded' }])
+    expect(tracker.server.get('r1')!.name).toBe('reloaded')
+    expect(tracker.inflight.get('r1')).toBe(1)
+    expect(tracker.dirty.has('r2')).toBe(true)
+
+    finish({ id: 'r1', name: '我送出的' })
+    await op
+    expect(local.get('r1')!.name).toBe('我送出的')
   })
 
   it('tracker 沒有 failed 這張表（review F9）', () => {
