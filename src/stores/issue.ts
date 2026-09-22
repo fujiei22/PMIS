@@ -116,7 +116,6 @@ export const useIssueStore = defineStore('issue', () => {
       tracker,
       ids: [issue.id],
       label: '新增 Issue',
-      apply: () => {},
       call: () => api.createIssue(cloneEntity(issue)),
       reconcile,
     })
@@ -150,7 +149,6 @@ export const useIssueStore = defineStore('issue', () => {
       tracker,
       ids: [id],
       label: '更新 Issue',
-      apply: () => {},
       call: () => api.updateIssue(id, cloneEntity(patch)),
       reconcile,
     })
@@ -181,7 +179,6 @@ export const useIssueStore = defineStore('issue', () => {
       tracker,
       ids: [id],
       label: '刪除 Issue',
-      apply: () => {},
       call: async () => {
         await api.deleteIssue(id)
         ok = true

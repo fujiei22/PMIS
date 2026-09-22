@@ -177,7 +177,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: groupTracker,
       ids: [g.id],
       label: '新增分類',
-      apply: () => {},
       call: () => api.createGroup(cloneEntity(g)),
       reconcile: reconcileGroup,
     })
@@ -199,7 +198,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: groupTracker,
       ids: [id],
       label: '更新分類',
-      apply: () => {},
       call: () => api.updateGroup(id, cloneEntity(patch)),
       reconcile: reconcileGroup,
     })
@@ -247,7 +245,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: groupTracker,
       ids: [id],
       label: '刪除分類',
-      apply: () => {},
       call: async () => {
         await api.deleteGroup(id)
         ok = true
@@ -293,7 +290,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: groupTracker,
       ids: [GROUP_ORDER_KEY],
       label: '調整分類順序',
-      apply: () => {},
       call: async () => {
         await api.reorderGroups(ids)
         ok = true
@@ -344,7 +340,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: taskTracker,
       ids: [t.id],
       label: '新增任務',
-      apply: () => {},
       call: () => api.createTask(cloneEntity(t)),
       reconcile: reconcileTask,
     })
@@ -379,7 +374,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: taskTracker,
       ids: payload.map((t) => t.id),
       label: '更新任務',
-      apply: () => {},
       call: () => (single ? api.updateTask(id, cloneEntity(patch)) : api.updateTasks(payload)),
       reconcile: reconcileTask,
     })
@@ -394,7 +388,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: taskTracker,
       ids: [id],
       label: '更新任務',
-      apply: () => {},
       call: () => api.updateTask(id, cloneEntity(patch)),
       reconcile: reconcileTask,
     })
@@ -408,7 +401,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: taskTracker,
       ids: payload.map((t) => t.id),
       label: '更新任務',
-      apply: () => {},
       call: () => api.updateTasks(payload),
       reconcile: reconcileTask,
     })
@@ -428,7 +420,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: taskTracker,
       ids: [TASK_ORDER_KEY],
       label: '調整任務順序',
-      apply: () => {},
       call: async () => {
         await api.reorderTasks(order)
         ok = true
@@ -458,7 +449,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: taskTracker,
       ids: [id],
       label: '更新任務',
-      apply: () => {},
       call: () => api.updateTask(id, { done }),
       reconcile: reconcileTask,
     })
@@ -494,7 +484,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: taskTracker,
       ids: [id],
       label: '刪除任務',
-      apply: () => {},
       call: async () => {
         await api.deleteTask(id)
         ok = true
@@ -606,7 +595,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: depTracker,
       ids: [dep.id],
       label: '建立相依',
-      apply: () => {},
       call: () => api.createDep(cloneEntity(dep)),
       reconcile: reconcileDep,
     })
@@ -623,7 +611,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: depTracker,
       ids: [id],
       label: '刪除相依',
-      apply: () => {},
       call: async () => {
         await api.deleteDep(id)
         ok = true

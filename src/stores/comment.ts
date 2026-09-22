@@ -169,7 +169,6 @@ export const useCommentStore = defineStore('comment', () => {
       tracker,
       ids: [id],
       label: '送出留言',
-      apply: () => {},
       call: async () => {
         const saved = await api.createComment(cloneEntity(comment), files)
         // server 換了 url → 本地那份 blob url 沒人要了，放掉（review M13）
@@ -228,7 +227,6 @@ export const useCommentStore = defineStore('comment', () => {
       tracker,
       ids: [commentId],
       label: '刪除留言',
-      apply: () => {},
       call: async () => {
         await api.deleteComment(commentId)
         ok = true

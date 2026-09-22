@@ -5,8 +5,8 @@
  * - 每個實體記一份 **最後已知的 server 狀態** `server`，還原時放回它，
  *   而不是「送出前的本地快照」——多筆變更交錯時後者會還原成中途的值。
  * - 每個 id 記 in-flight 計數：還有請求在飛就不對齊本地，
- *   免得先回來的那筆把後送出的本地變更蓋掉。
- * - 失敗只先標記 `failed`；等該 id 的最後一筆請求結束才一次還原。
+ *   免得先回來的那筆把後送出的本地變更蓋掉。等該 id 的最後一筆請求結束才一次對齊
+ *   （成功是套上 server 最終狀態，失敗就是還原）。
  * - `runOptimistic` **永不 throw**：呼叫端（store action）不必 try/catch。
  *
  * `server` 是 Map，插入順序就是 server 的顯示順序——
@@ -17,12 +17,10 @@ export interface Tracker<T extends { id: string }> {
   server: Map<string, T>
   /** id → 還有幾個請求在飛。 */
   inflight: Map<string, number>
-  /** 這一輪已經失敗、等 in-flight 歸零再還原的 id。 */
-  failed: Set<string>
 }
 
 export function createTracker<T extends { id: string }>(): Tracker<T> {
-  return { server: new Map(), inflight: new Map(), failed: new Set() }
+  return { server: new Map(), inflight: new Map() }
 }
 
 /** 失敗提示的出口（實作是 `ui.pushError`）。 */
@@ -64,7 +62,6 @@ export function cloneEntity<T>(value: T): T {
 export function resetTracker<T extends { id: string }>(tracker: Tracker<T>, list: T[]): void {
   tracker.server.clear()
   tracker.inflight.clear()
-  tracker.failed.clear()
   for (const item of list) tracker.server.set(item.id, cloneEntity(item))
 }
 
@@ -102,8 +99,6 @@ export interface OptimisticOp<T extends { id: string }> {
   ids: string[]
   /** 錯誤條上的主文，例如「更新任務」。 */
   label: string
-  /** 立即改本地；呼叫端已經改完的話可以是 no-op。 */
-  apply: () => void
   /** 打 api；response 若帶實體就寫回 `server`。 */
   call: () => Promise<T | T[] | void>
   /** 把本地對齊 server（undefined = 已刪除）。 */
@@ -111,12 +106,14 @@ export interface OptimisticOp<T extends { id: string }> {
 }
 
 /**
- * 跑一次乐觀更新：先改本地，再打 api，失敗就把牽動到的 id 放回 server 狀態。
+ * 跑一次乐觀更新：打 api，失敗就把牽動到的 id 放回 server 狀態。
+ *
+ * review F9：本地的變更一律由呼叫端在呼叫前自己做完（每個 store action 本來就是
+ * 這樣寫的），所以沒有 `apply` 這個鉤子——留著只會讓人以為有第二條路。
  * 回傳的 promise 永遠 resolve（錯誤已經送進 error sink 與 console）。
  */
 export async function runOptimistic<T extends { id: string }>(op: OptimisticOp<T>): Promise<void> {
-  const { tracker, ids, label, apply, call, reconcile } = op
-  apply()
+  const { tracker, ids, label, call, reconcile } = op
   for (const id of ids) bump(tracker, id, 1)
 
   try {
@@ -125,7 +122,6 @@ export async function runOptimistic<T extends { id: string }>(op: OptimisticOp<T
       tracker.server.set(item.id, cloneEntity(item))
     }
   } catch (error) {
-    for (const id of ids) tracker.failed.add(id)
     errorSink({ label, error })
   } finally {
     for (const id of ids) {
@@ -133,7 +129,6 @@ export async function runOptimistic<T extends { id: string }>(op: OptimisticOp<T
       if (isInflight(tracker, id)) continue
       // 最後一筆結束了才對齊：成功就是套上 server 的最終狀態，失敗就是還原
       reconcile(tracker.server.get(id), id)
-      tracker.failed.delete(id)
     }
   }
 }
