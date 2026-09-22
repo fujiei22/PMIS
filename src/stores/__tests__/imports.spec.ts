@@ -48,26 +48,54 @@ const ALLOWED = [
 
 /** `import ... from '<spec>'` / `export ... from '<spec>'`；`type` 前綴另外抓。 */
 const FROM_RE = /(?:^|\n)\s*(?:import|export)\s+(type\s+)?([\s\S]*?)\s*from\s+'([^']+)'/g
+/** 動態 `import('<spec>')`（review F13：一樣是執行期依賴，繞過去就白檢查了）。 */
+const DYNAMIC_RE = /\bimport\s*\(\s*'([^']+)'/g
+/** 副作用 `import '<spec>'`（沒有 from）。 */
+const BARE_RE = /(?:^|\n)\s*import\s+'([^']+)'/g
 
 interface Dep {
   spec: string
   typeOnly: boolean
 }
 
-function depsOf(file: string): Dep[] {
-  const src = readFileSync(resolve(process.cwd(), 'src/stores', file), 'utf8')
+/** 相對路徑一律當成同層 store，避免用 './ui' 繞過白名單。 */
+function normalize(raw: string): string {
+  return raw.startsWith('.') ? `@/stores/${raw.replace(/^\.+\//, '')}` : raw
+}
+
+/** 從原始碼抽出所有 import 目標；三種寫法都要抓到（review F13）。 */
+export function depsIn(src: string): Dep[] {
   const out: Dep[] = []
-  for (const m of src.matchAll(FROM_RE)) {
-    const typeOnly = !!m[1]
-    // 相對路徑一律當成同層 store，避免用 './ui' 繞過白名單
-    const raw = m[3]!
-    const spec = raw.startsWith('.') ? `@/stores/${raw.replace(/^\.+\//, '')}` : raw
-    out.push({ spec, typeOnly })
-  }
+  for (const m of src.matchAll(FROM_RE)) out.push({ spec: normalize(m[3]!), typeOnly: !!m[1] })
+  // 動態與副作用 import 不可能是 type-only
+  for (const m of src.matchAll(DYNAMIC_RE)) out.push({ spec: normalize(m[1]!), typeOnly: false })
+  for (const m of src.matchAll(BARE_RE)) out.push({ spec: normalize(m[1]!), typeOnly: false })
   return out
 }
 
+function depsOf(file: string): Dep[] {
+  return depsIn(readFileSync(resolve(process.cwd(), 'src/stores', file), 'utf8'))
+}
+
 describe('store 分層（契約 E）', () => {
+  // review F13：只看 `from '...'` 的話，動態 import 與副作用 import 可以整個繞過白名單
+  it('三種 import 寫法都抓得到，type-only 仍豁免', () => {
+    const src = [
+      "import { useUiStore } from '@/stores/ui'",
+      "import type { Row } from '@/stores/rows'",
+      "const lazy = () => import('@/stores/filter')",
+      "import '@/stores/selection'",
+      "import { x } from './ui'",
+    ].join('\n')
+
+    const runtime = depsIn(src)
+      .filter((d) => !d.typeOnly)
+      .map((d) => d.spec)
+      .sort()
+    expect(runtime).toEqual(['@/stores/filter', '@/stores/selection', '@/stores/ui', '@/stores/ui'])
+    expect(depsIn(src).filter((d) => d.typeOnly).map((d) => d.spec)).toEqual(['@/stores/rows'])
+  })
+
   it.each(DATA_LAYER)('%s 只 import 白名單內的模組', (file) => {
     const bad = depsOf(file)
       .filter((d) => !d.typeOnly && d.spec.startsWith('@/'))
