@@ -116,7 +116,7 @@ export const useSelectionStore = defineStore('selection', () => {
   /**
    * 懸空 id 清理（契約 E）。
    *
-   * 資料層刪掉實體後不會回頭通知派生層——不管刪除是本地發起、乐觀還原，
+   * 資料層刪掉實體後不會回頭通知派生層——不管刪除是本地發起、樂觀還原，
    * 還是別的 client 推來的事件，都由這條 watch 統一收尾。
    * `flush: 'sync'` 是必要的：畫面不能有任何一個 tick 停在不存在的 id 上
    * （review M7）。getter 回一個位元遮罩，只有「懸空與否」變了才進 callback。

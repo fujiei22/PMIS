@@ -38,7 +38,7 @@ const GROUP_ORDER_KEY = 'groups:order'
  * 分類、任務與相依——Dashboard 的主資料。
  * 它也是 load() 的入口：一次把 ProjectData 分給 member / issue / comment store。
  *
- * 每個寫入 action 都是乐觀的（契約 B）：先改本地、再打 api，
+ * 每個寫入 action 都是樂觀的（契約 B）：先改本地、再打 api，
  * 失敗時把牽動到的 id 放回 `tracker.server`（最後已知的 server 狀態）。
  */
 export const useTaskStore = defineStore('task', () => {

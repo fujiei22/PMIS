@@ -232,8 +232,8 @@ describe('commentStore', () => {
     })
   })
 
-  // ── 乐觀更新（契約 B / review C2）────────────────────────────────────────
-  describe('經 api 的乐觀更新', () => {
+  // ── 樂觀更新（契約 B / review C2）────────────────────────────────────────
+  describe('經 api 的樂觀更新', () => {
     /** 造一個會被當成圖片的 File 替身。 */
     const img = (name: string) => ({ name, size: 10, type: 'image/png' }) as unknown as File
 

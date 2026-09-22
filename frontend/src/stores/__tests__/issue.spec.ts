@@ -99,8 +99,8 @@ describe('issueStore', () => {
     expect(ui.detail).toBeNull()
   })
 
-  // ── 乐觀更新（契約 B）────────────────────────────────────────────────────
-  describe('經 api 的乐觀更新', () => {
+  // ── 樂觀更新（契約 B）────────────────────────────────────────────────────
+  describe('經 api 的樂觀更新', () => {
     it('updateIssue 把前端推導出來的 done 一起送給後端（後端不跑規則）', async () => {
       const s = useIssueStore()
       const spy = vi.spyOn(api, 'updateIssue')

@@ -249,7 +249,7 @@ test('選取任務後甘特捲到 bar 附近', async ({ page }) => {
     .toBe(true)
 })
 
-// ── R2：乐觀更新失敗與載入錯誤（只有 mock api 才注入得了失敗）────────────────
+// ── R2：樂觀更新失敗與載入錯誤（只有 mock api 才注入得了失敗）────────────────
 
 test('api 失敗時改名還原並顯示錯誤條', async ({ page }) => {
   const app = new DashboardPage(page)

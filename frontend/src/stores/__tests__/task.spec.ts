@@ -274,8 +274,8 @@ describe('taskStore', () => {
     expect(ui.detail).toBeNull()
   })
 
-  // ── 乐觀更新（契約 B）────────────────────────────────────────────────────
-  describe('經 api 的乐觀更新', () => {
+  // ── 樂觀更新（契約 B）────────────────────────────────────────────────────
+  describe('經 api 的樂觀更新', () => {
     it('單筆改名只送一次 api.updateTask', async () => {
       const s = useTaskStore()
       const one = vi.spyOn(api, 'updateTask')
