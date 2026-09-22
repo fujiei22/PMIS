@@ -640,6 +640,10 @@ export const useTaskStore = defineStore('task', () => {
    * 建立相依，回傳有沒有成功。legacy `addDep` :2360。
    * 已經有同一條、或反向已經走得到（會成環）就拒絕；成功後跑一次 cascade 對齊日期，
    * 被推動的任務跟著送一批 `updateTasks`（後端不跑 cascade，契約 A）。
+   *
+   * review F5：相依與 cascade 是一筆交易——`updateTasks` 要等 `createDep` 成功
+   * 才送，createDep 失敗就把相依與被它推動的下游一起還原（否則後端會存下
+   * 「沒有相依卻被推過」的日期）。
    */
   function addDep(from: string, to: string): boolean {
     if (!from || !to || from === to) return false
@@ -659,14 +663,26 @@ export const useTaskStore = defineStore('task', () => {
       return t
     })
 
-    void runOptimistic<Dependency>({
-      tracker: depTracker,
-      ids: [dep.id],
-      label: '建立相依',
-      call: () => api.createDep(cloneEntity(dep)),
-      reconcile: reconcileDep,
-    })
-    void commitTasks(changed)
+    void (async () => {
+      let ok = false
+      await runOptimistic<Dependency>({
+        tracker: depTracker,
+        ids: [dep.id],
+        label: '建立相依',
+        call: async () => {
+          const saved = await api.createDep(cloneEntity(dep))
+          ok = true
+          return saved
+        },
+        reconcile: reconcileDep,
+      })
+      if (!ok) {
+        // 相依沒建起來 → 它推動的日期也不該留著（review F5）
+        for (const t of changed) reconcileTask(taskTracker.server.get(t.id), t.id)
+        return
+      }
+      await commitTasks(changed)
+    })()
     return true
   }
 

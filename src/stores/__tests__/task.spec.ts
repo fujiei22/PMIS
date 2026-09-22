@@ -534,6 +534,40 @@ describe('taskStore', () => {
       s.addDep('t1', 't5')
       await vi.waitFor(() => expect(s.deps).toHaveLength(before))
     })
+
+    // review F5：cascade 的 updateTasks 不能跟 createDep 各走各的
+    it('addDep 等 createDep 成功才送 cascade 的 updateTasks', async () => {
+      const s = useTaskStore()
+      let finish: () => void = () => {}
+      vi.spyOn(api, 'createDep').mockImplementation(
+        (d) => new Promise((resolve) => (finish = () => resolve(d))),
+      )
+      const many = vi.spyOn(api, 'updateTasks')
+      // t24（10-08 起）推 t3（9-08 起）→ 一定有下游要送
+      expect(s.addDep('t24', 't3')).toBe(true)
+      await new Promise((r) => setTimeout(r, 0))
+      expect(many).not.toHaveBeenCalled()
+
+      finish()
+      await vi.waitFor(() => expect(many).toHaveBeenCalledTimes(1))
+      expect(many.mock.calls[0]![0].map((t) => t.id)).toContain('t3')
+    })
+
+    it('createDep 失敗 → 相依與被它推動的下游一起還原，也不送 updateTasks', async () => {
+      const s = useTaskStore()
+      const many = vi.spyOn(api, 'updateTasks')
+      const before = { start: s.taskById('t3')!.start, end: s.taskById('t3')!.end }
+      mockApi.failNext('createDep')
+      expect(s.addDep('t24', 't3')).toBe(true)
+      expect(s.taskById('t3')!.start).not.toBe(before.start)
+
+      await vi.waitFor(() =>
+        expect(s.deps.some((d) => d.from === 't24' && d.to === 't3')).toBe(false),
+      )
+      expect(s.taskById('t3')!.start).toBe(before.start)
+      expect(s.taskById('t3')!.end).toBe(before.end)
+      expect(many).not.toHaveBeenCalled()
+    })
   })
 
   // ── 事件（契約 B）────────────────────────────────────────────────────────
