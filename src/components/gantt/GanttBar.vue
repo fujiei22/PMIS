@@ -6,7 +6,7 @@
 // （`.bar` 與兩個 `.dot-zone` 是兄弟，維持 legacy 的 DOM 結構），
 // 樣式全部拆成回傳 primitive 的小 computed——一條 hover 不會讓別條重畫。
 import { computed } from 'vue'
-import { registerEl, useDomRegistry, type ElRef } from '@/composables/useDomRegistry'
+import { registerEl, registerPair, useDomRegistry } from '@/composables/useDomRegistry'
 import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex, lengthOf } from '@/lib/date'
@@ -137,21 +137,12 @@ const zoneL = computed(() => left.value - 33)
 const zoneR = computed(() => left.value + w.value + 2)
 const zoneY = computed(() => props.rowIndex * ROW_HEIGHT - 3)
 
-/** 兩顆圓點都到齊才登錄成一組（契約 F 的 `linkDots`）。 */
-const dots: { L?: HTMLElement; R?: HTMLElement } = {}
-
-function makeDotRef(side: 'L' | 'R'): (el: ElRef) => void {
-  return (el: ElRef) => {
-    if (el instanceof HTMLElement) dots[side] = el
-    else delete dots[side]
-    const { L, R } = dots
-    if (L && R) registry.linkDots.set(id.value, { L, R })
-    else registry.linkDots.delete(id.value)
-  }
-}
-
-const setDotL = makeDotRef('L')
-const setDotR = makeDotRef('R')
+/**
+ * 兩顆圓點都到齊才登錄成一組（契約 F 的 `linkDots`）。
+ * review F10：解除登錄的規則跟 `registerEl` 一致，由 `registerPair` 統一處理
+ * （原本「其中一顆變 null 就立刻 delete」，同 id 重掛時會刪掉剛登錄好的那組）。
+ */
+const dotRefs = computed(() => registerPair(registry.linkDots, id.value))
 
 /** 點條：摘要條展開分類，一般條切換選取。legacy :2900 / :2915 */
 function onClick(): void {
@@ -223,7 +214,7 @@ function onDrop(e: DragEvent): void {
 
   <template v-if="kind === 'task'">
     <div
-      :ref="setDotL"
+      :ref="dotRefs.L"
       class="dot-zone zone-l"
       :class="{ shown: showL }"
       :data-linkfor="id"
@@ -235,7 +226,7 @@ function onDrop(e: DragEvent): void {
       <div class="dot" :class="{ near }"></div>
     </div>
     <div
-      :ref="setDotR"
+      :ref="dotRefs.R"
       class="dot-zone zone-r"
       :class="{ shown: showR }"
       :data-linkfor="id"

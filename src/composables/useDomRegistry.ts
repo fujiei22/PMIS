@@ -9,6 +9,12 @@ import { inject, provide, type ComponentPublicInstance, type InjectionKey } from
  * 登錄表只存元素，**不存任何狀態**；讀的人（`usePointerDrag`、面板跳轉、
  * 捲動對位）自己決定要拿來做什麼。
  */
+/** 條左右兩側的連線圓點熱區，兩顆一組。 */
+export interface ElPair {
+  L: HTMLElement
+  R: HTMLElement
+}
+
 export interface DomRegistry {
   /** 甘特左欄的任務列（`data-rowtask`）。 */
   rows: Map<string, HTMLElement>
@@ -17,7 +23,7 @@ export interface DomRegistry {
   /** 甘特條本體（`data-taskid`；摘要條的 key 是 `sum-<gid>`）。 */
   bars: Map<string, HTMLElement>
   /** 條左右兩側的連線圓點熱區（`data-linkfor`）。 */
-  linkDots: Map<string, { L: HTMLElement; R: HTMLElement }>
+  linkDots: Map<string, ElPair>
   /** 看板卡片（`data-card`）。 */
   cards: Map<string, HTMLElement>
   /** 看板欄位的內容區（`data-col`），key 是任務狀態。 */
@@ -66,7 +72,17 @@ export function useDomRegistry(): DomRegistry {
 }
 
 /** 每張表各自的 ref callback 快取，依 id memo。 */
-const memo = new WeakMap<Map<string, HTMLElement>, Map<string, (el: ElRef) => void>>()
+const memo = new WeakMap<object, Map<string, unknown>>()
+
+/** 取（或建）某張表的 memo 格子。 */
+function cacheFor(map: object): Map<string, unknown> {
+  let byId = memo.get(map)
+  if (!byId) {
+    byId = new Map()
+    memo.set(map, byId)
+  }
+  return byId
+}
 
 /**
  * 產生登錄用的函式式 `ref`。
@@ -75,15 +91,14 @@ const memo = new WeakMap<Map<string, HTMLElement>, Map<string, (el: ElRef) => vo
  * 函式換身分的話 Vue 會先用舊的解除登錄再用新的登錄，白白抖一次。
  *
  * @param map 要寫進去的那張表
- * @param id 元素的識別（任務 / 分類 / 欄位 id）
+ * @param id 元素的識別（任務 / 分類 / 面板 key）
  */
-export function registerEl(map: Map<string, HTMLElement>, id: string): (el: ElRef) => void {
-  let byId = memo.get(map)
-  if (!byId) {
-    byId = new Map()
-    memo.set(map, byId)
-  }
-  const cached = byId.get(id)
+export function registerEl<K extends string>(
+  map: Map<K, HTMLElement>,
+  id: K,
+): (el: ElRef) => void {
+  const byId = cacheFor(map)
+  const cached = byId.get(id) as ((el: ElRef) => void) | undefined
   if (cached) return cached
 
   const fn = (el: ElRef): void => {
@@ -101,4 +116,47 @@ export function registerEl(map: Map<string, HTMLElement>, id: string): (el: ElRe
   }
   byId.set(id, fn)
   return fn
+}
+
+/**
+ * 成對元素（甘特條左右兩顆連線圓點）的登錄用 `ref`（review F10）。
+ *
+ * 規則跟 `registerEl` 一樣，只是要兩顆都到齊才寫進表裡；解除登錄同樣延到
+ * microtask 之後，只有真的離開文件才刪——原本 `GanttBar` 自己寫了一套
+ * 「其中一顆變 null 就立刻 delete」，同 id 重掛時會把剛登錄好的那組刪掉。
+ *
+ * @param map 要寫進去的那張表（`registry.linkDots`）
+ * @param id 條的識別（任務 id）
+ */
+export function registerPair(
+  map: Map<string, ElPair>,
+  id: string,
+): { L: (el: ElRef) => void; R: (el: ElRef) => void } {
+  const byId = cacheFor(map)
+  const cached = byId.get(id) as { L: (el: ElRef) => void; R: (el: ElRef) => void } | undefined
+  if (cached) return cached
+
+  const half: { L?: HTMLElement; R?: HTMLElement } = {}
+  const make =
+    (side: 'L' | 'R') =>
+    (el: ElRef): void => {
+      if (el instanceof HTMLElement) {
+        half[side] = el
+        const { L, R } = half
+        if (L && R) map.set(id, { L, R })
+        return
+      }
+      queueMicrotask(() => {
+        const cur = map.get(id)
+        if (!cur) return
+        if (cur.L.isConnected && cur.R.isConnected) return
+        map.delete(id)
+        delete half.L
+        delete half.R
+      })
+    }
+
+  const refs = { L: make('L'), R: make('R') }
+  byId.set(id, refs)
+  return refs
 }

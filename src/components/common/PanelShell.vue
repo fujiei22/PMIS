@@ -2,7 +2,7 @@
 // 三個面板（甘特 / 看板 / Issue）共用的外殼：sticky 標題列 + 可收合的內容區。
 import { computed, ref, watch } from 'vue'
 import { useDelayedUnmount } from '@/composables/useDelayedUnmount'
-import { useDomRegistry, type ElRef } from '@/composables/useDomRegistry'
+import { registerEl, useDomRegistry } from '@/composables/useDomRegistry'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
 import { useUiStore } from '@/stores/ui'
 
@@ -18,18 +18,11 @@ const registry = useDomRegistry()
 const headEl = ref<HTMLElement | null>(null)
 watch(headEl, (el) => sticky.observe(props.panel, el), { immediate: true })
 
-/** 面板外殼登錄進 `panels`，頂部列的捷徑靠它捲動（契約 F）。 */
-function registerPanel(el: ElRef): void {
-  if (el instanceof HTMLElement) {
-    registry.panels.set(props.panel, el)
-    return
-  }
-  queueMicrotask(() => {
-    if (registry.panels.get(props.panel)?.isConnected === false) {
-      registry.panels.delete(props.panel)
-    }
-  })
-}
+/**
+ * 面板外殼登錄進 `panels`，頂部列的捷徑靠它捲動（契約 F）。
+ * review F10：自己抄一套解除登錄規則沒有必要，直接用 `registerEl`。
+ */
+const registerPanel = computed(() => registerEl(registry.panels, props.panel))
 
 const open = computed(() => !ui.panelOff[props.panel])
 /** 收合動畫（grid-template-rows .26s）跑完前先別把內容拿掉。legacy `held()` :3651 */
