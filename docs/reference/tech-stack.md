@@ -21,7 +21,7 @@ PMIS 前端使用的技術與使用慣例。新加入的開發者先讀這份。
 
 ## 常用指令
 
-下表對應 `package.json` 的 `scripts`。
+以下指令在 `frontend/` 下執行（從 repo 根目錄先 `cd frontend`）。下表對應 `frontend/package.json` 的 `scripts`。
 
 | 指令 | 實際執行 | 用途 |
 |---|---|---|
