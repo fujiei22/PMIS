@@ -191,14 +191,14 @@ store 分三層，依賴**只能由上往下**：
 
 ## 怎麼接後端
 
-前端已經整成「換掉 `src/api/` 的實作就能接」：**所有資料進出都經過 `src/api/types.ts` 的 `ProjectApi` 介面**，store 與元件都不認識 `src/mocks/`。現在的實作是記憶體 mock（`src/api/mock/`），資料來自 `src/mocks/sampleProject.ts`。
+前端已經整成「換掉 `src/api/` 的實作就能接」：**所有資料進出都經過 `src/api/types.ts` 的 `ProjectApi` 介面**，store 與元件都不認識 `src/mocks/`。現在的實作是記憶體 mock（`src/api/mock/`），示範資料由 `createMockApi()` 自己帶（`src/mocks/sampleProject.ts`），進入點 `src/api/index.ts` 不碰它。
 
 `src/api/types.ts` 檔頭的 wire 約定註解跟這一節是同一份內容；改契約要兩邊一起改（端點表的一致性由 `src/__tests__/readme.spec.ts` 守著）。
 
 ### 步驟
 
 1. **寫實作**：新增 `src/api/http/index.ts`，`export function createHttpApi(): ProjectApi`，照下面的端點表實作 19 支方法。不要改介面去遷就後端——後端形狀不同就在這一層轉，介面本身是契約。
-2. **切換**：`src/api/index.ts` 依 `VITE_API` 挑實作（目前 `VITE_API` 未設或 `'mock'` 用 mock，其他值直接丟錯）。加一支 `'http'` 分支即可，其餘檔案一行都不用改。`VITE_API` 的型別宣告在 `env.d.ts`。
+2. **切換**：`src/api/index.ts` 的 `createApi()` 依 `VITE_API` 挑實作（未設、空字串或 `'mock'` 用 mock，其他值丟錯）。加一支 `'http'` 分支即可，其餘檔案一行都不用改。`VITE_API` 的型別宣告在 `env.d.ts`。走非 mock 實作時 `export const mockApi` 是 `undefined`（型別就是 `MockApi | undefined`）。
 3. **adapter 的職責**（後端形狀 → 前端模型，全部在這一層做完，`src/types/models.ts` 不因後端而變）：
 
    | 項目 | 前端 | 後端 / wire | 誰轉 |
@@ -222,7 +222,7 @@ store 分三層，依賴**只能由上往下**：
 | `loadProject()` | GET | `/api/project` | — | `ProjectData`（整包；`tasks` / `groups` 的陣列順序就是顯示順序） |
 | `createTask()` | POST | `/api/tasks` | `Task`（含 client 產的 `id`） | `Task` |
 | `updateTask()` | PATCH | `/api/tasks/:id` | `Partial<Task>`（JSON merge patch） | `Task` |
-| `updateTasks()` | PATCH | `/api/tasks` | `Task[]`（整筆，已含 cascade 後的下游） | `Task[]`（server 最終狀態，client 直接套回） |
+| `updateTasks()` | PATCH | `/api/tasks` | `Task[]`（**語意是整批 PUT**：body 是整筆 `Task[]`，不是 patch；已含 cascade 後的下游） | `Task[]`（server 最終狀態，client 直接套回） |
 | `deleteTask()` | DELETE | `/api/tasks/:id` | — | — |
 | `reorderTasks()` | PUT | `/api/tasks/order` | `{ id, groupId }[]`（整份順序） | — |
 | `createGroup()` | POST | `/api/groups` | `Group` | `Group` |
@@ -239,11 +239,12 @@ store 分三層，依賴**只能由上往下**：
 | `downloadAttachment()` | GET | `/api/attachments/:id` | — | `Blob`（檔案本身） |
 | `subscribe()` | — | `/api/events`（SSE）或 WS 或 polling | — | `ProjectEvent` 串流；回傳解訂函式 |
 
-後端要注意的三件事：
+後端要注意的四件事：
 
 - **id 由 client 產**（UUID v4，`src/lib/id.ts` 的 `newId()`：`crypto.randomUUID?.()`，非 https / 非 localhost 沒有這支時退回 `crypto.getRandomValues` 自己組）。主鍵接受 client 給的 id，重複回 **409**。
 - **後端不跑 cascade**。相依連動（`start` / `end` 改動推下游、`status=done` 填 `done` 日）前端已經算完，`updateTasks` 送的是整段結果。後端只存，response 回最終狀態（要糾正就在 response 糾正，client 會套回）。
 - **連動刪除由後端做**：`deleteTask` 連帶刪它的 issue / dep / comment，`deleteGroup` 連帶刪底下的任務（以及那些任務的 issue / dep / comment），`deleteIssue` 連帶刪它的留言。事件順序見下。
+- **事件與 response 的到達順序後端不必保證**。client 兩種順序都正確（機制見〈乐觀更新怎麼運作〉的 in-flight 規則）：事件先到就只更新「最後已知的 server 狀態」，等該 id 的請求全部結束才對齊本地。不要為了排順序而延後廣播或延後回應。
 
 ### 錯誤碼對照表
 
@@ -258,6 +259,8 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 | `unknown` | 其他 | 發生錯誤 |
 
 對照表在 `src/constants/dashboard.ts`（`API_ERROR_TEXT` / `apiErrorCode()`）。錯誤條 `ErrorBar` 顯示的是「操作名稱（`label`，例如『更新任務』）＋ 上表文案」，同 label 會合併成 `×N`，最多留 5 筆、畫面顯示 3 筆，不自動關閉。
+
+「同 label 合併」的視窗是 **`clock` 的 60 秒 tick**，不是牆鐘 5 秒：`ui.pushError` 的時間戳取 `clock.now`（每 60 秒才走一次），所以實際行為是「同一個 tick 內的同 label 合併成一筆」。刻意如此——連續失敗不該把錯誤條洗版。
 
 ### 事件
 
@@ -275,18 +278,21 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 
 - **廣播含發起者**：自己改的東西也會收到自己的事件。不要為了省流量排除發起者——前端靠這則事件確認 server 的最終值。
 - **同值 no-op**：同一個 id 收到跟本地一樣的值，不重繪也不算變更。
-- **in-flight 期間只寫 `serverState`**：某個 id 還有請求在飛時，事件只更新「最後已知的 server 狀態」，不動本地；等該 id 的請求全部結束才對齊。所以**事件早於或晚於對應的 response 到達都正確**，後端不必保證順序。
+- **in-flight 期間只寫 `serverState`**：某個 id 還有請求在飛時，事件只更新「最後已知的 server 狀態」，不動本地；等該 id 的請求全部結束才對齊（硬規則見端點表下方第四點）。
 - **順序不保證**，但連動刪除例外：被連帶刪掉的實體要**先**各發一則 `deleted`，主體自己的 `deleted` **最後**發（前端依這個順序清懸空 id）。
-- **重連後補一次 `project.reloaded`**（payload 是整包 `ProjectData`），前端直接重載。
-- **`reorderTasks` / `reorderGroups` 沒有對應事件**。純順序變更要讓別的 client 看到，靠的是重連時的 `project.reloaded`；只有搬動造成 `groupId` 改變時才會有一則 `task.updated`。
+- **事件的 payload 也要走 adapter 轉換**：`ProjectEvent.payload` 就是 `Task` / `Issue` / `Comment` / `ProjectData` 本身，所以上表那份對照（`null ↔ ''`、日期格式、`Attachment.id`）在事件這條路徑上要**再做一次**。只轉 response 不轉事件，本地會被推來的 `null` 汙染成非法值。
+- **`project.reloaded` 由 adapter 自己造，後端不用做**：重連偵測在前端這一層（`EventSource` 的 `onopen` 從**第二次**起、或 WebSocket 的 reconnect callback），adapter 自己 `await loadProject()` 之後 `emit({ type: 'project.reloaded', payload })`。後端只要能重新建立連線就好，不必記得補推什麼。
+- **`reorderTasks` / `reorderGroups` 沒有對應事件**。純順序變更要讓別的 client 看到，靠的是重連時 adapter 補的 `project.reloaded`；只有搬動造成 `groupId` 改變時才會有一則 `task.updated`。
 
 ### 乐觀更新怎麼運作
 
 所有寫入都是先改本地、再打 api，失敗才還原。機制在 `src/stores/_optimistic.ts`：
 
-- 每個 tracker 有三樣東西：`server`（id → **最後已知的 server 狀態**，Map 的插入順序就是 server 的顯示順序）、`inflight`（id → 還有幾個請求在飛）、`failed`。
-- `runOptimistic({ tracker, ids, label, apply, call, reconcile })`：`apply()` 改本地 → `inflight++` → `call()` 打 api。response 帶回的實體寫進 `server`；reject 就記 `failed` 並送錯誤。**該 id 的 `inflight` 歸零時才 `reconcile`**——成功是套上 server 最終狀態，失敗是放回 server 狀態（不是「送出前的本地快照」，多筆交錯時後者會還原成中途的值）。`runOptimistic` **永不 throw**，store action 不必 try/catch。
-- **拖曳放開才送**：`usePointerDrag` 每個 tick 只改本地（`applyLocalPatch` / `moveTaskToLocal` / `moveGroupLocal`），`pointerup` 才送一次 `commitTasks(collectDirtyTasks())` / `commitTaskOrder()` / `commitGroupOrder()`；取消或失敗走 `reconcileTasksFromServer()` 整段還原。
+- 每個 tracker 有三張表：`server`（id → **最後已知的 server 狀態**，Map 的插入順序就是 server 的顯示順序）、`inflight`（id → 還有幾個請求在飛）、`dirty`（id → 本地改了但**還沒送出**）。
+- `runOptimistic({ tracker, ids, label, call, reconcile })`：本地由呼叫端先改好 → `inflight++` → `call()` 打 api。response 帶回的實體寫進 `server`；reject 送錯誤。**該 id 的 `inflight` 歸零、而且不在 `dirty` 裡時才 `reconcile`**——成功是套上 server 最終狀態，失敗是放回 server 狀態（不是「送出前的本地快照」，多筆交錯時後者會還原成中途的值）。`runOptimistic` **永不 throw**，store action 不必 try/catch。
+- **`dirty` 擋的是「還沒送出」的那一段**：拖曳的每個 tick、逐鍵改名的 debounce 期間根本還沒有請求在飛，`inflight` 保護不到。標成 dirty 的 id 收到別筆的 response 或別人推來的事件時只更新 `server`，不動本地；對應的 commit 一送出就清掉。
+- **刪除失敗的還原也走 `server`**：`removeTask / removeGroup / removeDep / removeIssue / comment.remove` 失敗時逐 id `reconcile(tracker.server.get(id), id)`。`server` 裡已經沒有的（`deleted` 事件先到了）就不復活。
+- **拖曳放開才送**：`usePointerDrag` 每個 tick 只改本地（`applyLocalPatch` / `moveTaskToLocal` / `moveGroupLocal`），`pointerup` 才送一次 `commitTasks(collectDirtyTasks())` / `commitTaskOrder()` / `commitGroupOrder()`；取消走 `discardTaskDrag(ids)` / `discardGroupDrag()`——只放棄這一段拖曳自己標的 dirty，別處還在 debounce 的改名留著。
 - **改名 debounce**：`composables/useEditDraft.ts`——每一鍵都本地立即生效（維持 legacy 行為），api 走 trailing debounce 300ms，離開編輯（Enter / Esc / blur / 卸載）時 flush。
 - **錯誤出口 = 注入的 sink**：資料層不 import ui，失敗透過 `_optimistic.setErrorSink()` 送出去。
 - **啟動點 = `composables/useProjectBoot.ts`**：它把 `ui.pushError` 註冊成 sink、維護 `ui.loadState` / `ui.loadError`（載入中 / 失敗重試畫面）、確保派生層的清理 `watch` 在資料進來前掛好，並代理事件訂閱的 `start` / `stop`。`DashboardView` 是唯一呼叫端。
@@ -300,6 +306,8 @@ dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (im
 ### 還沒做的（接後端時要補）
 
 - **逾時與取消**：`ProjectApi` 目前沒有 `AbortSignal`，也沒有逾時。網路實作至少要給每個請求一個逾時（逾時 → `ApiError('network')`）；離開頁面或連續改動時要能取消前一發。
-- **多人衝突**：現在是「後到的覆蓋先到的」，沒有版本號或 `If-Match`。同時編輯同一筆的情境沒有處理（spec 已排除）。
+- **authn / authz**：`ProjectApi` 完全沒有身分概念，**每一支端點都要後端自己做認證與授權**。`ProjectData.currentUserId` 只是「留言掛誰、頭像顯示誰」的顯示用欄位，是 client 送什麼就是什麼，**絕對不能拿它當身分**。
+- **PATCH body 要用 schema 白名單驗欄位**：`updateTask` / `updateGroup` / `updateIssue` 送的是 JSON merge patch，後端必須逐欄位比對允許清單再寫入，**不可以整包 merge 進實體**（mass-assignment；也要擋 `__proto__` / `constructor` / `prototype` 這類鍵造成的原型污染）。同理 `createTask` 這些帶完整實體的端點也要過一次 schema。
+- **多人衝突**：現在是「後到的覆蓋先到的」，沒有版本號或 `If-Match`。同時編輯同一筆的情境沒有處理（spec 已排除）。附帶一提：`dirty`（本地改了還沒送出）只保護**本地**不被 reconcile 蓋掉，**不保護 server 端**——那段值還沒上 wire，別的 client 這段時間寫進去的東西，等它送出時一樣會被覆蓋。
 - **附件上傳驗證**：`comment.addDraftFiles` 直接 `URL.createObjectURL`，沒有任何檢查。要補檔案大小上限、MIME 型別與副檔名白名單（三者都要，只擋副檔名擋不住偽裝的檔案），**伺服器端再驗一次**。
 - **CSP**：目前沒有 Content-Security-Policy；上線前在伺服器或 CDN 層補上，至少限制 `script-src` / `style-src` / `img-src`（`blob:` 要放行，附件預覽用得到）。
