@@ -1,11 +1,14 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { mockApi } from '@/api'
+import { mockApi as maybeMockApi } from '@/api'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useProjectSync } from '@/stores/_sync'
 import { useCommentStore } from '@/stores/comment'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'
+
+/** 測試一定走 mock 實作（review F11：mockApi 在型別上是 optional）。 */
+const mockApi = maybeMockApi!
 
 describe('useProjectSync', () => {
   beforeEach(async () => {

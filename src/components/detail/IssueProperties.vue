@@ -65,6 +65,8 @@ const drafts = Object.fromEntries(
         issueStore.applyLocalPatch(props.issue.id, { [field]: v } as Partial<Issue>)
       },
       commit: (v) => issueStore.commitIssuePatch(props.issue.id, { [field]: v } as Partial<Issue>),
+      // review F7：這些欄位不擁有 ui.editing（詳情標題才是），失敗時不清它
+      editingId: () => null,
     }),
   ]),
 ) as Record<TextField, EditDraft>

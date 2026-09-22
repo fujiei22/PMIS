@@ -11,10 +11,14 @@ import type {
  * - 單專案、不分頁：loadProject() 回整包；tasks / groups 陣列順序 = 顯示順序（後端自存排序鍵）。
  * - id 一律由 client 產（UUID v4）；create 帶 id，重複回 409 conflict。
  * - patch = JSON merge patch（只送有變的欄位）；'' 是有效值（空日期），不是「未設」。adapter 負責 null ↔ ''。
+ *   後端收到 patch 要用 schema 白名單逐欄位驗，不可整包 merge（mass-assignment / __proto__）。
+ * - updateTasks 是例外：語意是**整批 PUT**，body 是整筆 Task[]（不是 patch），內容已含 cascade 後的下游。
  * - 日期：Task/Issue 的 ISODate 'YYYY-MM-DD'；Comment.at / Attachment.at 前端用本地 'YYYY-MM-DDTHH:mm' / 'YYYY-MM-DD'，後端存 ISO 8601 含 offset，adapter 轉。
  * - 後端不跑 cascade：updateTasks 已含下游、done 已由前端填；後端只存，response 回最終狀態（可糾正）。
- * - 事件廣播含發起者；client 對同 id 同值事件 no-op。事件可能早於或晚於對應 response 到達，兩種順序 client 都正確。
- * - 重連後 emit project.reloaded。Group 沒有 collapsed（UI 狀態）；currentUserId 由 adapter 填（登入未做）。
+ * - 事件廣播含發起者；client 對同 id 同值事件 no-op。事件可能早於或晚於對應 response 到達，兩種順序 client 都正確——
+ *   這是 client 的責任，後端不必為此排順序。事件的 payload 同樣要走 adapter 轉換（null ↔ ''、日期、Attachment.id）。
+ * - project.reloaded 由 adapter 自己造：偵測到重連（EventSource.onopen 第二次起 / WS reconnect）就 loadProject() 後 emit，後端不需要做。
+ * - Group 沒有 collapsed（UI 狀態）；currentUserId 由 adapter 填（登入未做），只是顯示用，不是身分——authn / authz 每支端點後端自己做。
  */
 
 /**
@@ -23,7 +27,7 @@ import type {
  * 補充（mock 的實作選擇，後端照做即可）：
  * - `reorderTasks` / `reorderGroups` 沒有對應事件——順序不在這個 union 裡。
  *   只有搬動造成 `groupId` 改變時會補一則 `task.updated`；純順序變更要讓其他 client 看到，
- *   靠的是重連時的 `project.reloaded`（實務上順序衝突的代價低，先不做細緻同步）。
+ *   靠的是重連時 adapter 自己補的 `project.reloaded`（實務上順序衝突的代價低，先不做細緻同步）。
  * - `deleteTask` / `deleteGroup` / `deleteIssue` 的連動刪除，server 要把每一筆被連帶刪掉的
  *   實體都各發一則 deleted 事件，最後才發主體自己的 deleted（client 依賴這個順序清懸空 id）。
  */
@@ -72,7 +76,10 @@ export interface ProjectApi {
 
   createTask(task: Task): Promise<Task> //                                   POST   /api/tasks
   updateTask(id: string, patch: Partial<Task>): Promise<Task> //             PATCH  /api/tasks/:id
-  /** 整筆陣列（cascade 結果）；response 是 server 最終狀態，client 直接套回。 */
+  /**
+   * 語意是**整批 PUT**：body 是整筆 `Task[]`（cascade 結果），不是 patch。
+   * response 是 server 最終狀態，client 直接套回。
+   */
   updateTasks(tasks: Task[]): Promise<Task[]> //                             PATCH  /api/tasks
   /** server 連動刪 issue / dep / comment。 */
   deleteTask(id: string): Promise<void> //                                   DELETE /api/tasks/:id

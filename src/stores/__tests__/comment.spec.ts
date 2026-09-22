@@ -1,11 +1,14 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, mockApi } from '@/api'
+import { api, mockApi as maybeMockApi } from '@/api'
 import { useProjectBoot } from '@/composables/useProjectBoot'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useUiStore } from '@/stores/ui'
+
+/** 測試一定走 mock 實作（review F11：mockApi 在型別上是 optional）。 */
+const mockApi = maybeMockApi!
 
 const NOW = Date.parse('2026-09-18T10:00:00Z')
 
@@ -274,6 +277,34 @@ describe('commentStore', () => {
       await c.send('t1', 'task')
       expect(c.forTarget('t1').map((x) => x.text)).not.toContain('送不出去')
       expect(useUiStore().errors[0]!.label).toBe('送出留言')
+    })
+
+    // review F6：送不出去不能連草稿一起吃掉
+    it('send 失敗 → 草稿的文字與附件回來，blob url 不被 revoke', async () => {
+      const c = useCommentStore()
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock/1')
+      const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+      mockApi.failNext('createComment')
+      c.addDraftFiles([img('a.png')])
+      c.draft = '送不出去'
+      await c.send('t1', 'task')
+
+      expect(c.draft).toBe('送不出去')
+      expect(c.draftFiles.map((f) => f.name)).toEqual(['a.png'])
+      expect(c.draftFiles[0]!.url).toBe('blob:mock/1')
+      expect(revoke).not.toHaveBeenCalled()
+    })
+
+    it('send 失敗但使用者已經開始打新的字 → 不蓋掉新草稿', async () => {
+      const c = useCommentStore()
+      mockApi.setLatency(5)
+      mockApi.failNext('createComment')
+      c.draft = '送不出去'
+      const pending = c.send('t1', 'task')
+      c.draft = '新打的字'
+      await pending
+      mockApi.setLatency(0)
+      expect(c.draft).toBe('新打的字')
     })
 
     it('remove 走 api.deleteComment，失敗時留言回來', async () => {

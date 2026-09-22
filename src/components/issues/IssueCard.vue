@@ -105,6 +105,7 @@ const titleDraft = useEditDraft({
     issueStore.applyLocalPatch(props.issue.id, { title: v })
   },
   commit: (v) => issueStore.commitIssuePatch(props.issue.id, { title: v }),
+  editingId: () => props.issue.id,
 })
 
 function onRename(e: Event): void {
@@ -170,6 +171,8 @@ const fieldDrafts = Object.fromEntries(
         issueStore.applyLocalPatch(props.issue.id, { [field]: v } as Partial<Issue>)
       },
       commit: (v) => issueStore.commitIssuePatch(props.issue.id, { [field]: v } as Partial<Issue>),
+      // 展開表單裡的欄位不擁有 ui.editing（那是標題的）——失敗時不該關掉別人的編輯框
+      editingId: () => null,
     }),
   ]),
 ) as Record<TextField, EditDraft>

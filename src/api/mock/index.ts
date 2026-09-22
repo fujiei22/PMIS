@@ -1,5 +1,6 @@
 import { createMockStore } from '@/api/mock/store'
 import { ApiError, type MockApi, type ProjectApi, type ProjectEvent } from '@/api/types'
+import { sampleProject } from '@/mocks/sampleProject'
 import type {
   Comment,
   Dependency,
@@ -17,8 +18,11 @@ import type {
  * 真後端也是這個順序（server 先寫入並廣播，回應才走完網路），
  * R2 的乐觀更新必須在「事件先到」與「事件後到」兩種順序下都正確，
  * 後者用 `mockApi.emit()` 手動製造。
+ *
+ * review F11：預設資料由這一層自己帶。`src/api/index.ts` 是所有 build 都會走的
+ * 進入點，它 import `@/mocks/*` 等於把示範資料釘進每一份 bundle。
  */
-export function createMockApi(initial: ProjectData): MockApi {
+export function createMockApi(initial: ProjectData = structuredClone(sampleProject)): MockApi {
   const store = createMockStore(initial)
   const handlers = new Set<(e: ProjectEvent) => void>()
   /** 方法 → 還要擋幾次、擋的時候丟什麼。 */

@@ -50,6 +50,15 @@ function firstColumnUnder(heading: string): string[] {
     .map((r) => r.split('|')[1]!.trim())
 }
 
+/** 某個標題到下一個同級（或更高級）標題之間的內容。 */
+function sectionUnder(heading: string): string {
+  const at = readme.indexOf(`\n${heading}\n`)
+  expect(at, `README 找不到標題：${heading}`).toBeGreaterThan(-1)
+  const rest = readme.slice(at + heading.length + 2)
+  const next = rest.search(/\n#{1,3} /)
+  return next < 0 ? rest : rest.slice(0, next)
+}
+
 describe('README 的「怎麼接後端」', () => {
   it('有這一節', () => {
     expect(readme).toContain('## 怎麼接後端')
@@ -64,6 +73,26 @@ describe('README 的「怎麼接後端」', () => {
     'crypto.randomUUID',
   ])('提到 %s', (keyword) => {
     expect(readme).toContain(keyword)
+  })
+
+  // review F14：這幾條是後端 / adapter 最容易漏掉的硬規則，寫死在測試裡免得又被改掉
+  it('「事件與 response 兩種順序 client 都正確」是端點表旁的硬規則', () => {
+    expect(sectionUnder('### 端點對照表')).toContain('後端不必保證')
+  })
+
+  it('錯誤條「同 label 合併」的視窗寫在錯誤碼那一節', () => {
+    expect(sectionUnder('### 錯誤碼對照表')).toContain('60 秒 tick')
+  })
+
+  it.each([
+    ['重連的 project.reloaded 由 adapter 自己造', '由 adapter 自己造'],
+    ['事件 payload 也要走 adapter 轉換', '事件的 payload 也要走 adapter 轉換'],
+    ['updateTasks 的語意是整批 PUT', '整批 PUT'],
+    ['每支端點後端自己做 authn / authz', 'authn / authz'],
+    ['PATCH 要用 schema 白名單擋 mass-assignment', 'mass-assignment'],
+    ['本地 dirty 不保護 server 端', '不保護 server 端'],
+  ])('寫到「%s」', (_name, needle) => {
+    expect(readme).toContain(needle)
   })
 
   it('端點對照表列出的方法 = ProjectApi 的方法', () => {

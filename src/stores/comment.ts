@@ -8,6 +8,7 @@ import {
   applyServerValue,
   cloneEntity,
   createTracker,
+  insertIndexOf,
   resetTracker,
   runOptimistic,
 } from '@/stores/_optimistic'
@@ -67,10 +68,6 @@ export const useCommentStore = defineStore('comment', () => {
     comments.value = comments.value.filter((c) => !gone.has(c.id))
   }
 
-  function restoreLocal(list: Comment[]): void {
-    comments.value = list
-  }
-
   /** 連動刪除成功後，把 server 狀態也清掉。 */
   function dropServer(ids: string[]): void {
     for (const id of ids) tracker.server.delete(id)
@@ -82,8 +79,22 @@ export const useCommentStore = defineStore('comment', () => {
       if (i >= 0) comments.value.splice(i, 1)
       return
     }
-    if (i >= 0) comments.value[i] = { ...server }
-    else comments.value.push({ ...server })
+    if (i >= 0) {
+      comments.value[i] = { ...server }
+      return
+    }
+    // review F1：補回來的位置照 server 順序
+    comments.value.splice(insertIndexOf([...tracker.server.keys()], comments.value, id), 0, {
+      ...server,
+    })
+  }
+
+  /**
+   * 連動刪除失敗時由 task / issue store 呼叫：把這幾筆從 `tracker.server` 放回原位
+   * （review F1）。server 已經沒有的（事件先刪掉了）就不復活。
+   */
+  function restoreFromServer(ids: string[]): void {
+    for (const id of ids) reconcile(tracker.server.get(id), id)
   }
 
   /** 留言時間是否落在篩選區間內；兩端都空就不篩。legacy `cDateOk` :2161 */
@@ -135,7 +146,11 @@ export const useCommentStore = defineStore('comment', () => {
    * 免得日索引換算方式改動時又出現「本地時分配 UTC 日期」的組合。
    *
    * 附件走 multipart（契約 A）：Attachment 進 comment、原始 File 走 `files` 參數；
-   * response 若把 blob url 換成 server url，舊的 blob url 要 revoke（review M13）。
+   * response 若把 blob url 換成 server url，舊的 blob url 要 revoke（review M13）——
+   * 只有成功才 revoke（review F6），失敗時那些 url 還要給放回去的草稿用。
+   *
+   * review F6：送不出去時把草稿（文字 + 附件）原樣放回來；使用者已經開始打新的字
+   * 就不覆蓋，寧可掉這一份也不要吃掉他正在打的。
    */
   async function send(targetId: string, targetKind: 'task' | 'issue'): Promise<void> {
     if (!draft.value.trim() && !draftFiles.value.length) return
@@ -162,16 +177,19 @@ export const useCommentStore = defineStore('comment', () => {
       })),
     }
     comments.value.push(comment)
-    // 不走 resetDraft：blob url 已經轉給這則留言，revoke 掉縮圖就壞了
+    // 送出失敗要放回去的草稿；不走 resetDraft，blob url 已經轉給這則留言
+    const sentDraft = draft.value
+    const sentFiles = draftFiles.value.slice()
     clearDraft()
 
+    let ok = false
     await runOptimistic<Comment>({
       tracker,
       ids: [id],
       label: '送出留言',
-      apply: () => {},
       call: async () => {
         const saved = await api.createComment(cloneEntity(comment), files)
+        ok = true
         // server 換了 url → 本地那份 blob url 沒人要了，放掉（review M13）
         comment.files.forEach((local, i) => {
           const next = saved.files[i]
@@ -180,7 +198,15 @@ export const useCommentStore = defineStore('comment', () => {
         })
         return saved
       },
-      reconcile,
+      reconcile: (server, cid) => {
+        reconcile(server, cid)
+        if (ok) return
+        // review F6：草稿放回去；使用者已經重打的話就不動他（blob 一律不 revoke）
+        if (!draft.value && !draftFiles.value.length) {
+          draft.value = sentDraft
+          draftFiles.value = sentFiles
+        }
+      },
     })
   }
 
@@ -221,22 +247,17 @@ export const useCommentStore = defineStore('comment', () => {
   async function remove(commentId: string): Promise<void> {
     const gone = comments.value.find((c) => c.id === commentId)
     if (!gone) return
-    const snapshot = comments.value
     comments.value = comments.value.filter((c) => c.id !== commentId)
-    let ok = false
     await runOptimistic<Comment>({
       tracker,
       ids: [commentId],
       label: '刪除留言',
-      apply: () => {},
       call: async () => {
         await api.deleteComment(commentId)
-        ok = true
         tracker.server.delete(commentId)
       },
-      reconcile: () => {
-        if (!ok) comments.value = snapshot
-      },
+      // review F1：成功時 server 已無此筆 → no-op；失敗才照 server 順序插回來
+      reconcile,
     })
   }
 
@@ -279,7 +300,7 @@ export const useCommentStore = defineStore('comment', () => {
     fileSel,
     setAll,
     dropLocal,
-    restoreLocal,
+    restoreFromServer,
     dropServer,
     forTarget,
     filesForTarget,

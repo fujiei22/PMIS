@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, mockApi } from '@/api'
+import { api, mockApi as maybeMockApi } from '@/api'
 import { ApiError } from '@/api/types'
 import { useProjectBoot } from '@/composables/useProjectBoot'
 import { dayIndex, isoFromIndex } from '@/lib/date'
@@ -11,6 +11,9 @@ import { useIssueStore } from '@/stores/issue'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+
+/** 測試一定走 mock 實作（review F11：mockApi 在型別上是 optional）。 */
+const mockApi = maybeMockApi!
 
 /** 新實體的 id 是 UUID v4（spec 目標 4），只能斷言格式。 */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -90,6 +93,15 @@ describe('taskStore', () => {
       dayIndex(s.taskById('t1')!.start),
     )
     await Promise.resolve()
+  })
+
+  // review F4：摘要條 `sum-<gid>` 之類的假 id 不該建出指向不存在任務的相依
+  it('addDep 對不存在的任務回 false', () => {
+    const s = useTaskStore()
+    const before = s.deps.length
+    expect(s.addDep('sum-g2', 't1')).toBe(false)
+    expect(s.addDep('t1', 'sum-g2')).toBe(false)
+    expect(s.deps).toHaveLength(before)
   })
 
   it('removeDep 只刪那一條', () => {
@@ -333,15 +345,57 @@ describe('taskStore', () => {
       const s = useTaskStore()
       const order = s.tasks.map((t) => t.id)
       const t3 = s.taskById('t3')!.start
-      s.applyLocalPatch('t3', { start: isoFromIndex(dayIndex(t3) + 5) })
+      const touched = s.applyLocalPatch('t3', { start: isoFromIndex(dayIndex(t3) + 5) })
       s.moveTaskToLocal('t1', { kind: 'g', id: 'g2', dir: 'up' })
       s.moveGroupLocal('g1', 1)
 
-      s.reconcileTasksFromServer()
-      s.reconcileGroupsFromServer()
+      s.discardTaskDrag([...touched.map((t) => t.id), 't1'])
+      s.discardGroupDrag()
       expect(s.tasks.map((t) => t.id)).toEqual(order)
       expect(s.taskById('t3')!.start).toBe(t3)
+      expect(s.taskById('t1')!.groupId).toBe('g1')
       expect(s.groups.map((g) => g.id).slice(0, 2)).toEqual(['g1', 'g2'])
+    })
+
+    // review F2：dirty 集合守住「本地改了但還沒送出」的欄位
+    it('改名還在飛時開始拖曳 → 回應到達不蓋掉拖曳中的日期', async () => {
+      const s = useTaskStore()
+      const t3 = s.taskById('t3')!
+      const s0 = dayIndex(t3.start)
+      const e0 = dayIndex(t3.end)
+      mockApi.setLatency(5)
+      // 改名 debounce 到期，送出；response 帶的是「舊日期 + 新名字」
+      s.applyLocalPatch('t3', { name: '改名中' })
+      const pending = s.commitTaskPatch('t3', { name: '改名中' })
+      // 還在飛的時候開始拖曳：本地日期又動了，這一段還沒送
+      s.applyLocalPatch('t3', { start: isoFromIndex(s0 + 4), end: isoFromIndex(e0 + 4) })
+      await pending
+      mockApi.setLatency(0)
+
+      expect(s.taskById('t3')!.start).toBe(isoFromIndex(s0 + 4))
+      expect(s.taskById('t3')!.end).toBe(isoFromIndex(e0 + 4))
+      expect(s.taskById('t3')!.name).toBe('改名中')
+    })
+
+    it('拖曳取消不會清掉別筆還在 debounce 的改名', () => {
+      const s = useTaskStore()
+      s.applyLocalPatch('t5', { name: '打到一半' })
+      const t3 = s.taskById('t3')!.start
+      const touched = s.applyLocalPatch('t3', { start: isoFromIndex(dayIndex(t3) + 5) })
+
+      s.discardTaskDrag(touched.map((t) => t.id))
+      expect(s.taskById('t3')!.start).toBe(t3)
+      expect(s.taskById('t5')!.name).toBe('打到一半')
+    })
+
+    it('別人推來的事件不蓋掉本地還沒送出的改名', () => {
+      const s = useTaskStore()
+      s.applyLocalPatch('t5', { name: '打到一半' })
+      s.applyEvent({
+        type: 'task.updated',
+        payload: { ...s.taskById('t5')!, name: '別人改的' },
+      })
+      expect(s.taskById('t5')!.name).toBe('打到一半')
     })
 
     it('列重排放開送一次 reorderTasks、分類重排送 reorderGroups', async () => {
@@ -357,6 +411,50 @@ describe('taskStore', () => {
       await s.commitGroupOrder()
       expect(reorderGroups).toHaveBeenCalledTimes(1)
       expect(reorderGroups.mock.calls[0]![0].slice(0, 2)).toEqual(['g2', 'g1'])
+    })
+
+    // review F3：order 是送出當下的快照，之後才寫進 server 的實體不在裡面
+    it('重排在飛時回來的 create 不會被重排成功踢出 server', async () => {
+      const s = useTaskStore()
+      let finishReorder: () => void = () => {}
+      vi.spyOn(api, 'reorderTasks').mockImplementation(
+        () => new Promise<void>((resolve) => (finishReorder = resolve)),
+      )
+      s.moveTaskToLocal('t1', { kind: 't', id: 't3' })
+      const pending = s.commitTaskOrder()
+
+      // 重排還在飛的時候，另一筆新任務建立成功並寫進 server
+      const t = s.addTask({
+        groupId: 'g1',
+        assigneeIds: [],
+        start: '2026-09-18',
+        end: '2026-09-22',
+      })!
+      await new Promise((r) => setTimeout(r, 0))
+      finishReorder()
+      await pending
+
+      // 整份對齊回 server（拖曳取消 / 下一次重排失敗）時它不該消失
+      s.reconcileTasksFromServer()
+      expect(s.taskById(t.id)).toBeDefined()
+    })
+
+    it('重排在飛時回來的 createGroup 不會被重排成功踢出 server', async () => {
+      const s = useTaskStore()
+      let finishReorder: () => void = () => {}
+      vi.spyOn(api, 'reorderGroups').mockImplementation(
+        () => new Promise<void>((resolve) => (finishReorder = resolve)),
+      )
+      s.moveGroupLocal('g1', 1)
+      const pending = s.commitGroupOrder()
+
+      const g = s.addGroup()
+      await new Promise((r) => setTimeout(r, 0))
+      finishReorder()
+      await pending
+
+      s.reconcileGroupsFromServer()
+      expect(s.groupById(g.id)).toBeDefined()
     })
 
     it('列重排失敗 → 順序還原', async () => {
@@ -401,6 +499,37 @@ describe('taskStore', () => {
       expect(useUiStore().errors[0]!.label).toBe('刪除任務')
     })
 
+    // review F1：還原的來源是 tracker.server，不是送出前的整份快照
+    it('刪除失敗但 task.deleted 事件已經先到 → 本地不復活', async () => {
+      const s = useTaskStore()
+      mockApi.setLatency(5)
+      mockApi.failNext('deleteTask', new ApiError('not_found', '找不到', 404))
+      const pending = s.removeTask('t3')
+      // 別的 client 早就刪掉了，事件比 404 先到
+      s.applyEvent({ type: 'task.deleted', payload: { id: 't3' } })
+      await pending
+      mockApi.setLatency(0)
+
+      expect(s.taskById('t3')).toBeUndefined()
+      expect(useUiStore().errors[0]!.code).toBe('not_found')
+    })
+
+    it('刪除在飛時別筆的 task.updated 不被失敗還原蓋掉', async () => {
+      const s = useTaskStore()
+      mockApi.setLatency(5)
+      mockApi.failNext('deleteTask')
+      const pending = s.removeTask('t3')
+      s.applyEvent({
+        type: 'task.updated',
+        payload: { ...s.taskById('t10')!, name: '別人改的' },
+      })
+      await pending
+      mockApi.setLatency(0)
+
+      expect(s.taskById('t3')).toBeDefined()
+      expect(s.taskById('t10')!.name).toBe('別人改的')
+    })
+
     it('刪除分類失敗 → 分類與底下的任務回來', async () => {
       const s = useTaskStore()
       const before = { groups: s.groups.map((g) => g.id), tasks: s.tasks.map((t) => t.id) }
@@ -416,6 +545,40 @@ describe('taskStore', () => {
       mockApi.failNext('createDep')
       s.addDep('t1', 't5')
       await vi.waitFor(() => expect(s.deps).toHaveLength(before))
+    })
+
+    // review F5：cascade 的 updateTasks 不能跟 createDep 各走各的
+    it('addDep 等 createDep 成功才送 cascade 的 updateTasks', async () => {
+      const s = useTaskStore()
+      let finish: () => void = () => {}
+      vi.spyOn(api, 'createDep').mockImplementation(
+        (d) => new Promise((resolve) => (finish = () => resolve(d))),
+      )
+      const many = vi.spyOn(api, 'updateTasks')
+      // t24（10-08 起）推 t3（9-08 起）→ 一定有下游要送
+      expect(s.addDep('t24', 't3')).toBe(true)
+      await new Promise((r) => setTimeout(r, 0))
+      expect(many).not.toHaveBeenCalled()
+
+      finish()
+      await vi.waitFor(() => expect(many).toHaveBeenCalledTimes(1))
+      expect(many.mock.calls[0]![0].map((t) => t.id)).toContain('t3')
+    })
+
+    it('createDep 失敗 → 相依與被它推動的下游一起還原，也不送 updateTasks', async () => {
+      const s = useTaskStore()
+      const many = vi.spyOn(api, 'updateTasks')
+      const before = { start: s.taskById('t3')!.start, end: s.taskById('t3')!.end }
+      mockApi.failNext('createDep')
+      expect(s.addDep('t24', 't3')).toBe(true)
+      expect(s.taskById('t3')!.start).not.toBe(before.start)
+
+      await vi.waitFor(() =>
+        expect(s.deps.some((d) => d.from === 't24' && d.to === 't3')).toBe(false),
+      )
+      expect(s.taskById('t3')!.start).toBe(before.start)
+      expect(s.taskById('t3')!.end).toBe(before.end)
+      expect(many).not.toHaveBeenCalled()
     })
   })
 

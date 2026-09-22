@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, mockApi } from '@/api'
+import { api, mockApi as maybeMockApi } from '@/api'
 import {
   provideDomRegistry,
   registerEl,
@@ -14,6 +14,9 @@ import { sampleProject } from '@/mocks/sampleProject'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+
+/** 測試一定走 mock 實作（review F11：mockApi 在型別上是 optional）。 */
+const mockApi = maybeMockApi!
 
 /** jsdom 沒有 PointerEvent 建構子，拖曳只用到 button / clientX / clientY，用 MouseEvent 代打。 */
 function pointer(type: string, x = 0, y = 0): MouseEvent {
@@ -283,6 +286,24 @@ describe('usePointerDrag 的中止事件（review M3）', () => {
 
     expect(tasks.deps.length).toBe(before + 1)
     expect(tasks.deps[tasks.deps.length - 1]).toMatchObject({ from: 't1', to: 't4' })
+    unmount()
+  })
+
+  // review F4：摘要條的 key 是 `sum-<gid>`，不是任務 id
+  it('拉線放開在收合分類的摘要條上：不建相依、也不推錯誤條', () => {
+    const ui = useUiStore()
+    const tasks = useTaskStore()
+    const { api: drag, registry, unmount } = mountDrag()
+    const before = tasks.deps.length
+
+    registerEl(registry.bars, 'sum-g2')(elAt({ top: 100, bottom: 110, left: 200, right: 320 }))
+
+    drag.startLink(pointer('pointerdown') as unknown as PointerEvent, 't1', 'R')
+    ui.nearTaskId = null
+    document.dispatchEvent(pointer('pointerup', 260, 105))
+
+    expect(tasks.deps.length).toBe(before)
+    expect(ui.errors).toEqual([])
     unmount()
   })
 

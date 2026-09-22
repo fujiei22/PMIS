@@ -1,10 +1,13 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mockApi } from '@/api'
+import { mockApi as maybeMockApi } from '@/api'
 import { useProjectBoot } from '@/composables/useProjectBoot'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+
+/** 測試一定走 mock 實作（review F11：mockApi 在型別上是 optional）。 */
+const mockApi = maybeMockApi!
 
 /**
  * 啟動層（契約 E）：資料 store 不認識 ui，所以

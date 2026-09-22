@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { defineComponent, h, nextTick } from 'vue'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { mockApi } from '@/api'
+import { mockApi as maybeMockApi } from '@/api'
 import GanttBar from '@/components/gantt/GanttBar.vue'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex } from '@/lib/date'
@@ -11,6 +11,9 @@ import { useClockStore } from '@/stores/clock'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+
+/** 測試一定走 mock 實作（review F11：mockApi 在型別上是 optional）。 */
+const mockApi = maybeMockApi!
 
 /**
  * 契約 G：`GanttBar` 是 fragment root（`.bar` 與兩個 `.dot-zone` 為兄弟）、

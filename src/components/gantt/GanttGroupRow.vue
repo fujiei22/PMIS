@@ -79,6 +79,7 @@ const nameDraft = useEditDraft({
   get: () => props.group.name,
   applyLocal: (v) => taskStore.renameGroupLocal(props.group.id, v),
   commit: (v) => taskStore.commitGroupPatch(props.group.id, { name: v }),
+  editingId: () => props.group.id,
 })
 
 function onRename(e: Event): void {

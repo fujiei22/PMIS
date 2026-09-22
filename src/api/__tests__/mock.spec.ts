@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMockApi } from '@/api/mock'
 import { ApiError, type MockApi, type ProjectEvent } from '@/api/types'
@@ -343,5 +345,40 @@ describe('mock api', () => {
   it('reset(data) 換成指定的資料', async () => {
     api.reset({ groups: [], members: [], tasks: [], deps: [], issues: [], comments: [], currentUserId: 'm1' })
     expect((await api.loadProject()).tasks).toHaveLength(0)
+  })
+})
+
+// ── api 進入點（review F11）────────────────────────────────────────────────
+describe('api 進入點', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  })
+
+  it('createMockApi 不帶參數時用 sampleProject，而且是拷貝', async () => {
+    const fresh = createMockApi()
+    const data = await fresh.loadProject()
+    expect(data.tasks).toHaveLength(sampleProject.tasks.length)
+    await fresh.updateTask('t1', { name: '改過的' })
+    expect(sampleProject.tasks.find((t) => t.id === 't1')!.name).not.toBe('改過的')
+  })
+
+  it('index.ts 不把 mocks 拉進 bundle（sampleProject 由 mock 層自己帶）', () => {
+    const src = readFileSync(resolve(process.cwd(), 'src/api/index.ts'), 'utf8')
+    expect(src).not.toMatch(/from\s+'@\/mocks\//)
+  })
+
+  it('VITE_API 是空字串時視同未設，走 mock', async () => {
+    vi.stubEnv('VITE_API', '')
+    vi.resetModules()
+    const mod = await import('@/api')
+    expect(mod.mockApi).toBeDefined()
+    expect(mod.api).toBe(mod.mockApi)
+  })
+
+  it('VITE_API 是還沒實作的值 → createApi 丟錯', async () => {
+    vi.stubEnv('VITE_API', 'http')
+    vi.resetModules()
+    await expect(import('@/api')).rejects.toThrow(/VITE_API/)
   })
 })

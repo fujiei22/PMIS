@@ -13,8 +13,11 @@ import {
 } from '@/lib/schedule'
 import {
   applyServerValue,
+  clearDirty,
   cloneEntity,
   createTracker,
+  insertIndexOf,
+  markDirty,
   resetTracker,
   runOptimistic,
 } from '@/stores/_optimistic'
@@ -95,16 +98,6 @@ export const useTaskStore = defineStore('task', () => {
 
   // ── 對齊 server（失敗還原 / 事件）────────────────────────────────────────
 
-  /** server 順序中，這個 id 應該插回本地陣列的哪個位置。 */
-  function insertIndexOf(order: string[], list: { id: string }[], id: string): number {
-    const at = order.indexOf(id)
-    for (let k = at - 1; k >= 0; k--) {
-      const j = list.findIndex((x) => x.id === order[k])
-      if (j >= 0) return j + 1
-    }
-    return 0
-  }
-
   function reconcileTask(server: Task | undefined, id: string): void {
     const i = tasks.value.findIndex((t) => t.id === id)
     if (!server) {
@@ -142,16 +135,75 @@ export const useTaskStore = defineStore('task', () => {
       if (i >= 0) deps.value.splice(i, 1)
       return
     }
-    if (i < 0) deps.value.push({ ...server })
+    // review F1：補回來的位置照 server 順序，刪除失敗的還原才不會把相依洗到最後面
+    if (i < 0) {
+      deps.value.splice(insertIndexOf([...depTracker.server.keys()], deps.value, id), 0, {
+        ...server,
+      })
+    }
   }
 
-  /** 整份任務放回 server 狀態（含順序）；拖曳取消 / 重排失敗走這條。 */
+  /**
+   * 刪除失敗時，把被連帶刪掉的那幾筆從各 tracker 的 `server` 放回來（review F1）。
+   *
+   * 不用「送出前的整份快照」：那會連刪除在飛期間別的 client 推來的變更一起蓋掉，
+   * 也會讓「事件已經先把它刪掉」的實體復活（`server` 裡早就沒有它了）。
+   */
+  function restoreCascadeFromServer(
+    taskIds: Iterable<string>,
+    depIds: string[],
+    issueIds: string[],
+    commentIds: string[],
+  ): void {
+    for (const id of taskIds) reconcileTask(taskTracker.server.get(id), id)
+    for (const id of depIds) reconcileDep(depTracker.server.get(id), id)
+    useIssueStore().restoreFromServer(issueIds)
+    useCommentStore().restoreFromServer(commentIds)
+  }
+
+  /**
+   * 整份任務放回 server 狀態（含順序）；拖曳取消 / 重排失敗走這條。
+   * review F2：dirty 的那幾筆（別處還在改、還沒送出）保留本地物件，只有順序照 server。
+   */
   function reconcileTasksFromServer(): void {
-    tasks.value = [...taskTracker.server.values()].map((t) => ({ ...t }))
+    const local = new Map(tasks.value.map((t) => [t.id, t]))
+    const next: Task[] = []
+    for (const [id, server] of taskTracker.server) {
+      const mine = local.get(id)
+      next.push(mine && taskTracker.dirty.has(id) ? mine : { ...server })
+    }
+    // server 還不知道、但本地改到一半的（例如 create 在飛時又被改名）留著
+    for (const t of tasks.value) if (!taskTracker.server.has(t.id) && taskTracker.dirty.has(t.id)) next.push(t)
+    tasks.value = next
   }
 
   function reconcileGroupsFromServer(): void {
-    groups.value = [...groupTracker.server.values()].map((g) => ({ ...g }))
+    const local = new Map(groups.value.map((g) => [g.id, g]))
+    const next: Group[] = []
+    for (const [id, server] of groupTracker.server) {
+      const mine = local.get(id)
+      next.push(mine && groupTracker.dirty.has(id) ? mine : { ...server })
+    }
+    for (const g of groups.value)
+      if (!groupTracker.server.has(g.id) && groupTracker.dirty.has(g.id)) next.push(g)
+    groups.value = next
+  }
+
+  /**
+   * 放棄這一段拖曳的本地變更（`usePointerDrag.onCancel`）。
+   *
+   * review F2：只清掉**這次拖曳自己標的** dirty，再整份對齊回 server——
+   * 別的欄位還在 debounce 的改名不屬於這次拖曳，不能一起被抹掉。
+   */
+  function discardTaskDrag(ids: Iterable<string>): void {
+    clearDirty(taskTracker, ids)
+    taskTracker.dirty.delete(TASK_ORDER_KEY)
+    reconcileTasksFromServer()
+  }
+
+  function discardGroupDrag(): void {
+    groupTracker.dirty.delete(GROUP_ORDER_KEY)
+    reconcileGroupsFromServer()
   }
 
   /** 本地跟最後已知 server 狀態有差的任務（拖曳放開時要送的就是這些）。 */
@@ -177,7 +229,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: groupTracker,
       ids: [g.id],
       label: '新增分類',
-      apply: () => {},
       call: () => api.createGroup(cloneEntity(g)),
       reconcile: reconcileGroup,
     })
@@ -187,7 +238,10 @@ export const useTaskStore = defineStore('task', () => {
   /** 只改本地的分類名（逐鍵編輯的每一鍵走這條）。legacy `onEdit` :2799 */
   function renameGroupLocal(id: string, name: string): void {
     const g = groupById(id)
-    if (g) g.name = name
+    if (!g) return
+    g.name = name
+    // review F2：debounce 還沒到期，這個值只存在本地
+    markDirty(groupTracker, [id])
   }
 
   /**
@@ -195,11 +249,11 @@ export const useTaskStore = defineStore('task', () => {
    * 它不看本地有沒有變——`useEditDraft` 已經逐鍵 apply 過了。
    */
   async function commitGroupPatch(id: string, patch: Partial<Group>): Promise<void> {
+    clearDirty(groupTracker, [id])
     await runOptimistic<Group>({
       tracker: groupTracker,
       ids: [id],
       label: '更新分類',
-      apply: () => {},
       call: () => api.updateGroup(id, cloneEntity(patch)),
       reconcile: reconcileGroup,
     })
@@ -220,14 +274,6 @@ export const useTaskStore = defineStore('task', () => {
     const issues = useIssueStore()
     const comments = useCommentStore()
     if (!groupById(id)) return
-    // 失敗要還原的不只分類本身（review C1）：連動刪掉的四份陣列都留一份快照
-    const snapshot = {
-      groups: groups.value,
-      tasks: tasks.value,
-      deps: deps.value,
-      issues: issues.issues,
-      comments: comments.comments,
-    }
     const goneTasks = new Set(tasks.value.filter((t) => t.groupId === id).map((t) => t.id))
     const goneIssues = issues.issues.filter((i) => goneTasks.has(i.taskId)).map((i) => i.id)
     const targets = new Set<string>([...goneTasks, ...goneIssues])
@@ -241,26 +287,27 @@ export const useTaskStore = defineStore('task', () => {
     deps.value = deps.value.filter((d) => !goneTasks.has(d.from) && !goneTasks.has(d.to))
     issues.dropLocal(goneIssues)
     comments.dropLocal(goneComments)
+    // review F2：刪掉的實體不必再保護未送出的本地變更，否則失敗時還原會被跳過
+    clearDirty(taskTracker, goneTasks)
+    clearDirty(groupTracker, [id])
 
     let ok = false
     await runOptimistic<Group>({
       tracker: groupTracker,
       ids: [id],
       label: '刪除分類',
-      apply: () => {},
       call: async () => {
         await api.deleteGroup(id)
         ok = true
         groupTracker.server.delete(id)
         dropServerCascade(goneTasks, goneDeps, goneIssues, goneComments)
       },
-      reconcile: () => {
+      // review F1：成功時 server 已經沒有這筆 → reconcileGroup 是 no-op；
+      // 失敗才會把分類與連帶刪掉的那幾筆各自從 server 放回原位
+      reconcile: (server, gid) => {
+        reconcileGroup(server, gid)
         if (ok) return
-        groups.value = snapshot.groups
-        tasks.value = snapshot.tasks
-        deps.value = snapshot.deps
-        issues.restoreLocal(snapshot.issues)
-        comments.restoreLocal(snapshot.comments)
+        restoreCascadeFromServer(goneTasks, goneDeps, goneIssues, goneComments)
       },
     })
   }
@@ -274,6 +321,8 @@ export const useTaskStore = defineStore('task', () => {
     if (i < 0 || !a || !b) return false
     groups.value[i] = b
     groups.value[j] = a
+    // review F2：順序改了但還沒送（拖曳中）
+    markDirty(groupTracker, [GROUP_ORDER_KEY])
     return true
   }
 
@@ -285,6 +334,8 @@ export const useTaskStore = defineStore('task', () => {
 
   /** 把目前的分類順序送給後端（拖曳放開時送這一次）。 */
   async function commitGroupOrder(): Promise<void> {
+    // review F2：這一段順序就此送出（或本來就沒動），不再是「還沒送出的本地變更」
+    groupTracker.dirty.delete(GROUP_ORDER_KEY)
     const ids = groups.value.map((g) => g.id)
     const server = [...groupTracker.server.keys()]
     if (ids.length === server.length && ids.every((id, i) => server[i] === id)) return
@@ -293,7 +344,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: groupTracker,
       ids: [GROUP_ORDER_KEY],
       label: '調整分類順序',
-      apply: () => {},
       call: async () => {
         await api.reorderGroups(ids)
         ok = true
@@ -303,6 +353,9 @@ export const useTaskStore = defineStore('task', () => {
           const server = prev.get(id)
           if (server) next.set(id, server)
         }
+        // review F3：`ids` 是送出當下的快照，之後才寫進 server 的（例如 create 的回應）
+        // 不在裡面——把它們接在後面，不要整批丟掉
+        for (const [id, server] of prev) if (!next.has(id)) next.set(id, server)
         groupTracker.server = next
       },
       reconcile: () => {
@@ -344,7 +397,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: taskTracker,
       ids: [t.id],
       label: '新增任務',
-      apply: () => {},
       call: () => api.createTask(cloneEntity(t)),
       reconcile: reconcileTask,
     })
@@ -364,6 +416,8 @@ export const useTaskStore = defineStore('task', () => {
       useClockStore().todayIso,
     )
     tasks.value = next
+    // review F2：這些值只在本地（拖曳的 tick、改名的 debounce），送出前不准被 reconcile 蓋掉
+    markDirty(taskTracker, changed.map((t) => t.id))
     return changed
   }
 
@@ -375,11 +429,11 @@ export const useTaskStore = defineStore('task', () => {
     // 有連動就送整批最終狀態，後端不重算（契約 A）。
     const single = !needsCascade(patch) && changed.length === 1
     const payload = changed.map((t) => cloneEntity(t))
+    clearDirty(taskTracker, payload.map((t) => t.id))
     await runOptimistic<Task>({
       tracker: taskTracker,
       ids: payload.map((t) => t.id),
       label: '更新任務',
-      apply: () => {},
       call: () => (single ? api.updateTask(id, cloneEntity(patch)) : api.updateTasks(payload)),
       reconcile: reconcileTask,
     })
@@ -390,11 +444,11 @@ export const useTaskStore = defineStore('task', () => {
    * 只給不牽動排程的欄位用（名稱 / 優先度…）——會 cascade 的欄位請走 `updateTask`。
    */
   async function commitTaskPatch(id: string, patch: Partial<Task>): Promise<void> {
+    clearDirty(taskTracker, [id])
     await runOptimistic<Task>({
       tracker: taskTracker,
       ids: [id],
       label: '更新任務',
-      apply: () => {},
       call: () => api.updateTask(id, cloneEntity(patch)),
       reconcile: reconcileTask,
     })
@@ -404,11 +458,11 @@ export const useTaskStore = defineStore('task', () => {
   async function commitTasks(changed: Task[]): Promise<void> {
     if (!changed.length) return
     const payload = changed.map((t) => cloneEntity(t))
+    clearDirty(taskTracker, payload.map((t) => t.id))
     await runOptimistic<Task>({
       tracker: taskTracker,
       ids: payload.map((t) => t.id),
       label: '更新任務',
-      apply: () => {},
       call: () => api.updateTasks(payload),
       reconcile: reconcileTask,
     })
@@ -417,6 +471,11 @@ export const useTaskStore = defineStore('task', () => {
   /** 把目前的任務順序（含 groupId）送給後端（拖曳放開時送這一次）。 */
   async function commitTaskOrder(): Promise<void> {
     const order = tasks.value.map((t) => ({ id: t.id, groupId: t.groupId }))
+    // review F2：這一段搬動就此送出，順序與被改到 groupId 的那幾筆都不再是「未送出」
+    taskTracker.dirty.delete(TASK_ORDER_KEY)
+    for (const o of order) {
+      if (taskTracker.server.get(o.id)?.groupId !== o.groupId) taskTracker.dirty.delete(o.id)
+    }
     // 拖回原位（或根本沒動）就不用送
     const server = [...taskTracker.server.entries()]
     const same =
@@ -428,7 +487,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: taskTracker,
       ids: [TASK_ORDER_KEY],
       label: '調整任務順序',
-      apply: () => {},
       call: async () => {
         await api.reorderTasks(order)
         ok = true
@@ -438,6 +496,9 @@ export const useTaskStore = defineStore('task', () => {
           const server = prev.get(o.id)
           if (server) next.set(o.id, { ...server, groupId: o.groupId })
         }
+        // review F3：`order` 是送出當下的快照，之後才寫進 server 的（例如 create 的回應）
+        // 不在裡面——把它們接在後面，不要整批丟掉
+        for (const [id, server] of prev) if (!next.has(id)) next.set(id, server)
         taskTracker.server = next
       },
       reconcile: () => {
@@ -458,7 +519,6 @@ export const useTaskStore = defineStore('task', () => {
       tracker: taskTracker,
       ids: [id],
       label: '更新任務',
-      apply: () => {},
       call: () => api.updateTask(id, { done }),
       reconcile: reconcileTask,
     })
@@ -473,12 +533,6 @@ export const useTaskStore = defineStore('task', () => {
     const issues = useIssueStore()
     const comments = useCommentStore()
     if (!taskById(id)) return
-    const snapshot = {
-      tasks: tasks.value,
-      deps: deps.value,
-      issues: issues.issues,
-      comments: comments.comments,
-    }
     const goneIssues = issues.issues.filter((i) => i.taskId === id).map((i) => i.id)
     const targets = new Set<string>([id, ...goneIssues])
     const goneComments = comments.comments.filter((c) => targets.has(c.targetId)).map((c) => c.id)
@@ -488,24 +542,24 @@ export const useTaskStore = defineStore('task', () => {
     deps.value = deps.value.filter((d) => d.from !== id && d.to !== id)
     issues.dropLocal(goneIssues)
     comments.dropLocal(goneComments)
+    // review F2：刪掉的那筆不必再保護未送出的本地變更
+    clearDirty(taskTracker, [id])
 
     let ok = false
     await runOptimistic<Task>({
       tracker: taskTracker,
       ids: [id],
       label: '刪除任務',
-      apply: () => {},
       call: async () => {
         await api.deleteTask(id)
         ok = true
         dropServerCascade(new Set([id]), goneDeps, goneIssues, goneComments)
       },
-      reconcile: () => {
+      // review F1：失敗時只把被刪的那幾筆從 server 放回原位（事件已經刪掉的就不復活）
+      reconcile: (server, tid) => {
+        reconcileTask(server, tid)
         if (ok) return
-        tasks.value = snapshot.tasks
-        deps.value = snapshot.deps
-        issues.restoreLocal(snapshot.issues)
-        comments.restoreLocal(snapshot.comments)
+        restoreCascadeFromServer([], goneDeps, goneIssues, goneComments)
       },
     })
   }
@@ -558,6 +612,9 @@ export const useTaskStore = defineStore('task', () => {
       list.splice(j >= i ? j + 1 : j, 0, moving)
     }
     tasks.value = list
+    // review F2：順序（與換了分類的那一筆）改了但還沒送
+    markDirty(taskTracker, [TASK_ORDER_KEY])
+    if (taskTracker.server.get(id)?.groupId !== moving.groupId) markDirty(taskTracker, [id])
     return true
   }
 
@@ -583,9 +640,15 @@ export const useTaskStore = defineStore('task', () => {
    * 建立相依，回傳有沒有成功。legacy `addDep` :2360。
    * 已經有同一條、或反向已經走得到（會成環）就拒絕；成功後跑一次 cascade 對齊日期，
    * 被推動的任務跟著送一批 `updateTasks`（後端不跑 cascade，契約 A）。
+   *
+   * review F5：相依與 cascade 是一筆交易——`updateTasks` 要等 `createDep` 成功
+   * 才送，createDep 失敗就把相依與被它推動的下游一起還原（否則後端會存下
+   * 「沒有相依卻被推過」的日期）。
    */
   function addDep(from: string, to: string): boolean {
     if (!from || !to || from === to) return false
+    // review F4：兩端都得是真的任務——摘要條的 `sum-<gid>` 不是
+    if (!taskById(from) || !taskById(to)) return false
     if (deps.value.some((d) => d.from === from && d.to === to)) return false
     if (reachable(to, from, deps.value)) return false
     const dep: Dependency = { id: newId(), from, to }
@@ -602,36 +665,42 @@ export const useTaskStore = defineStore('task', () => {
       return t
     })
 
-    void runOptimistic<Dependency>({
-      tracker: depTracker,
-      ids: [dep.id],
-      label: '建立相依',
-      apply: () => {},
-      call: () => api.createDep(cloneEntity(dep)),
-      reconcile: reconcileDep,
-    })
-    void commitTasks(changed)
+    void (async () => {
+      let ok = false
+      await runOptimistic<Dependency>({
+        tracker: depTracker,
+        ids: [dep.id],
+        label: '建立相依',
+        call: async () => {
+          const saved = await api.createDep(cloneEntity(dep))
+          ok = true
+          return saved
+        },
+        reconcile: reconcileDep,
+      })
+      if (!ok) {
+        // 相依沒建起來 → 它推動的日期也不該留著（review F5）
+        for (const t of changed) reconcileTask(taskTracker.server.get(t.id), t.id)
+        return
+      }
+      await commitTasks(changed)
+    })()
     return true
   }
 
   async function removeDep(id: string): Promise<void> {
     if (!deps.value.some((d) => d.id === id)) return
-    const snapshot = deps.value
     deps.value = deps.value.filter((d) => d.id !== id)
-    let ok = false
     await runOptimistic<Dependency>({
       tracker: depTracker,
       ids: [id],
       label: '刪除相依',
-      apply: () => {},
       call: async () => {
         await api.deleteDep(id)
-        ok = true
         depTracker.server.delete(id)
       },
-      reconcile: () => {
-        if (!ok) deps.value = snapshot
-      },
+      // review F1：成功時 server 已無此筆 → no-op；失敗才照 server 順序插回來
+      reconcile: reconcileDep,
     })
   }
 
@@ -705,6 +774,8 @@ export const useTaskStore = defineStore('task', () => {
     commitTasks,
     commitTaskOrder,
     reconcileTasksFromServer,
+    discardTaskDrag,
+    discardGroupDrag,
     setTaskDoneDirect,
     removeTask,
     moveTaskTo,

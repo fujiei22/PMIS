@@ -88,6 +88,7 @@ const nameDraft = useEditDraft({
     taskStore.applyLocalPatch(props.task.id, { name: v })
   },
   commit: (v) => taskStore.commitTaskPatch(props.task.id, { name: v }),
+  editingId: () => props.task.id,
 })
 
 function onRename(e: Event): void {
