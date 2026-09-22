@@ -5,8 +5,10 @@ import type { ProjectEvent } from '@/api/types'
 import { newId } from '@/lib/id'
 import {
   applyServerValue,
+  clearDirty,
   cloneEntity,
   createTracker,
+  markDirty,
   resetTracker,
   runOptimistic,
 } from '@/stores/_optimistic'
@@ -137,6 +139,8 @@ export const useIssueStore = defineStore('issue', () => {
       }
     }
     Object.assign(i, next)
+    // review F2：逐鍵編輯的 debounce 期間，這個值只存在本地
+    markDirty(tracker, [id])
     return next
   }
 
@@ -145,6 +149,7 @@ export const useIssueStore = defineStore('issue', () => {
    * 它不看本地有沒有變——`useEditDraft` 已經逐鍵 apply 過了。
    */
   async function commitIssuePatch(id: string, patch: Partial<Issue>): Promise<void> {
+    clearDirty(tracker, [id])
     await runOptimistic<Issue>({
       tracker,
       ids: [id],
@@ -173,6 +178,8 @@ export const useIssueStore = defineStore('issue', () => {
 
     issues.value = issues.value.filter((x) => x.id !== id)
     comments.dropLocal(goneComments)
+    // review F2：刪掉的那筆不必再保護未送出的本地變更
+    clearDirty(tracker, [id])
 
     let ok = false
     await runOptimistic<Issue>({

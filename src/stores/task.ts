@@ -13,8 +13,10 @@ import {
 } from '@/lib/schedule'
 import {
   applyServerValue,
+  clearDirty,
   cloneEntity,
   createTracker,
+  markDirty,
   resetTracker,
   runOptimistic,
 } from '@/stores/_optimistic'
@@ -145,13 +147,49 @@ export const useTaskStore = defineStore('task', () => {
     if (i < 0) deps.value.push({ ...server })
   }
 
-  /** 整份任務放回 server 狀態（含順序）；拖曳取消 / 重排失敗走這條。 */
+  /**
+   * 整份任務放回 server 狀態（含順序）；拖曳取消 / 重排失敗走這條。
+   * review F2：dirty 的那幾筆（別處還在改、還沒送出）保留本地物件，只有順序照 server。
+   */
   function reconcileTasksFromServer(): void {
-    tasks.value = [...taskTracker.server.values()].map((t) => ({ ...t }))
+    const local = new Map(tasks.value.map((t) => [t.id, t]))
+    const next: Task[] = []
+    for (const [id, server] of taskTracker.server) {
+      const mine = local.get(id)
+      next.push(mine && taskTracker.dirty.has(id) ? mine : { ...server })
+    }
+    // server 還不知道、但本地改到一半的（例如 create 在飛時又被改名）留著
+    for (const t of tasks.value) if (!taskTracker.server.has(t.id) && taskTracker.dirty.has(t.id)) next.push(t)
+    tasks.value = next
   }
 
   function reconcileGroupsFromServer(): void {
-    groups.value = [...groupTracker.server.values()].map((g) => ({ ...g }))
+    const local = new Map(groups.value.map((g) => [g.id, g]))
+    const next: Group[] = []
+    for (const [id, server] of groupTracker.server) {
+      const mine = local.get(id)
+      next.push(mine && groupTracker.dirty.has(id) ? mine : { ...server })
+    }
+    for (const g of groups.value)
+      if (!groupTracker.server.has(g.id) && groupTracker.dirty.has(g.id)) next.push(g)
+    groups.value = next
+  }
+
+  /**
+   * 放棄這一段拖曳的本地變更（`usePointerDrag.onCancel`）。
+   *
+   * review F2：只清掉**這次拖曳自己標的** dirty，再整份對齊回 server——
+   * 別的欄位還在 debounce 的改名不屬於這次拖曳，不能一起被抹掉。
+   */
+  function discardTaskDrag(ids: Iterable<string>): void {
+    clearDirty(taskTracker, ids)
+    taskTracker.dirty.delete(TASK_ORDER_KEY)
+    reconcileTasksFromServer()
+  }
+
+  function discardGroupDrag(): void {
+    groupTracker.dirty.delete(GROUP_ORDER_KEY)
+    reconcileGroupsFromServer()
   }
 
   /** 本地跟最後已知 server 狀態有差的任務（拖曳放開時要送的就是這些）。 */
@@ -186,7 +224,10 @@ export const useTaskStore = defineStore('task', () => {
   /** 只改本地的分類名（逐鍵編輯的每一鍵走這條）。legacy `onEdit` :2799 */
   function renameGroupLocal(id: string, name: string): void {
     const g = groupById(id)
-    if (g) g.name = name
+    if (!g) return
+    g.name = name
+    // review F2：debounce 還沒到期，這個值只存在本地
+    markDirty(groupTracker, [id])
   }
 
   /**
@@ -194,6 +235,7 @@ export const useTaskStore = defineStore('task', () => {
    * 它不看本地有沒有變——`useEditDraft` 已經逐鍵 apply 過了。
    */
   async function commitGroupPatch(id: string, patch: Partial<Group>): Promise<void> {
+    clearDirty(groupTracker, [id])
     await runOptimistic<Group>({
       tracker: groupTracker,
       ids: [id],
@@ -239,6 +281,9 @@ export const useTaskStore = defineStore('task', () => {
     deps.value = deps.value.filter((d) => !goneTasks.has(d.from) && !goneTasks.has(d.to))
     issues.dropLocal(goneIssues)
     comments.dropLocal(goneComments)
+    // review F2：刪掉的實體不必再保護未送出的本地變更，否則失敗時還原會被跳過
+    clearDirty(taskTracker, goneTasks)
+    clearDirty(groupTracker, [id])
 
     let ok = false
     await runOptimistic<Group>({
@@ -271,6 +316,8 @@ export const useTaskStore = defineStore('task', () => {
     if (i < 0 || !a || !b) return false
     groups.value[i] = b
     groups.value[j] = a
+    // review F2：順序改了但還沒送（拖曳中）
+    markDirty(groupTracker, [GROUP_ORDER_KEY])
     return true
   }
 
@@ -282,6 +329,8 @@ export const useTaskStore = defineStore('task', () => {
 
   /** 把目前的分類順序送給後端（拖曳放開時送這一次）。 */
   async function commitGroupOrder(): Promise<void> {
+    // review F2：這一段順序就此送出（或本來就沒動），不再是「還沒送出的本地變更」
+    groupTracker.dirty.delete(GROUP_ORDER_KEY)
     const ids = groups.value.map((g) => g.id)
     const server = [...groupTracker.server.keys()]
     if (ids.length === server.length && ids.every((id, i) => server[i] === id)) return
@@ -359,6 +408,8 @@ export const useTaskStore = defineStore('task', () => {
       useClockStore().todayIso,
     )
     tasks.value = next
+    // review F2：這些值只在本地（拖曳的 tick、改名的 debounce），送出前不准被 reconcile 蓋掉
+    markDirty(taskTracker, changed.map((t) => t.id))
     return changed
   }
 
@@ -370,6 +421,7 @@ export const useTaskStore = defineStore('task', () => {
     // 有連動就送整批最終狀態，後端不重算（契約 A）。
     const single = !needsCascade(patch) && changed.length === 1
     const payload = changed.map((t) => cloneEntity(t))
+    clearDirty(taskTracker, payload.map((t) => t.id))
     await runOptimistic<Task>({
       tracker: taskTracker,
       ids: payload.map((t) => t.id),
@@ -384,6 +436,7 @@ export const useTaskStore = defineStore('task', () => {
    * 只給不牽動排程的欄位用（名稱 / 優先度…）——會 cascade 的欄位請走 `updateTask`。
    */
   async function commitTaskPatch(id: string, patch: Partial<Task>): Promise<void> {
+    clearDirty(taskTracker, [id])
     await runOptimistic<Task>({
       tracker: taskTracker,
       ids: [id],
@@ -397,6 +450,7 @@ export const useTaskStore = defineStore('task', () => {
   async function commitTasks(changed: Task[]): Promise<void> {
     if (!changed.length) return
     const payload = changed.map((t) => cloneEntity(t))
+    clearDirty(taskTracker, payload.map((t) => t.id))
     await runOptimistic<Task>({
       tracker: taskTracker,
       ids: payload.map((t) => t.id),
@@ -409,6 +463,11 @@ export const useTaskStore = defineStore('task', () => {
   /** 把目前的任務順序（含 groupId）送給後端（拖曳放開時送這一次）。 */
   async function commitTaskOrder(): Promise<void> {
     const order = tasks.value.map((t) => ({ id: t.id, groupId: t.groupId }))
+    // review F2：這一段搬動就此送出，順序與被改到 groupId 的那幾筆都不再是「未送出」
+    taskTracker.dirty.delete(TASK_ORDER_KEY)
+    for (const o of order) {
+      if (taskTracker.server.get(o.id)?.groupId !== o.groupId) taskTracker.dirty.delete(o.id)
+    }
     // 拖回原位（或根本沒動）就不用送
     const server = [...taskTracker.server.entries()]
     const same =
@@ -478,6 +537,8 @@ export const useTaskStore = defineStore('task', () => {
     deps.value = deps.value.filter((d) => d.from !== id && d.to !== id)
     issues.dropLocal(goneIssues)
     comments.dropLocal(goneComments)
+    // review F2：刪掉的那筆不必再保護未送出的本地變更
+    clearDirty(taskTracker, [id])
 
     let ok = false
     await runOptimistic<Task>({
@@ -547,6 +608,9 @@ export const useTaskStore = defineStore('task', () => {
       list.splice(j >= i ? j + 1 : j, 0, moving)
     }
     tasks.value = list
+    // review F2：順序（與換了分類的那一筆）改了但還沒送
+    markDirty(taskTracker, [TASK_ORDER_KEY])
+    if (taskTracker.server.get(id)?.groupId !== moving.groupId) markDirty(taskTracker, [id])
     return true
   }
 
@@ -692,6 +756,8 @@ export const useTaskStore = defineStore('task', () => {
     commitTasks,
     commitTaskOrder,
     reconcileTasksFromServer,
+    discardTaskDrag,
+    discardGroupDrag,
     setTaskDoneDirect,
     removeTask,
     moveTaskTo,

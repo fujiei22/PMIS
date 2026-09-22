@@ -333,15 +333,57 @@ describe('taskStore', () => {
       const s = useTaskStore()
       const order = s.tasks.map((t) => t.id)
       const t3 = s.taskById('t3')!.start
-      s.applyLocalPatch('t3', { start: isoFromIndex(dayIndex(t3) + 5) })
+      const touched = s.applyLocalPatch('t3', { start: isoFromIndex(dayIndex(t3) + 5) })
       s.moveTaskToLocal('t1', { kind: 'g', id: 'g2', dir: 'up' })
       s.moveGroupLocal('g1', 1)
 
-      s.reconcileTasksFromServer()
-      s.reconcileGroupsFromServer()
+      s.discardTaskDrag([...touched.map((t) => t.id), 't1'])
+      s.discardGroupDrag()
       expect(s.tasks.map((t) => t.id)).toEqual(order)
       expect(s.taskById('t3')!.start).toBe(t3)
+      expect(s.taskById('t1')!.groupId).toBe('g1')
       expect(s.groups.map((g) => g.id).slice(0, 2)).toEqual(['g1', 'g2'])
+    })
+
+    // review F2：dirty 集合守住「本地改了但還沒送出」的欄位
+    it('改名還在飛時開始拖曳 → 回應到達不蓋掉拖曳中的日期', async () => {
+      const s = useTaskStore()
+      const t3 = s.taskById('t3')!
+      const s0 = dayIndex(t3.start)
+      const e0 = dayIndex(t3.end)
+      mockApi.setLatency(5)
+      // 改名 debounce 到期，送出；response 帶的是「舊日期 + 新名字」
+      s.applyLocalPatch('t3', { name: '改名中' })
+      const pending = s.commitTaskPatch('t3', { name: '改名中' })
+      // 還在飛的時候開始拖曳：本地日期又動了，這一段還沒送
+      s.applyLocalPatch('t3', { start: isoFromIndex(s0 + 4), end: isoFromIndex(e0 + 4) })
+      await pending
+      mockApi.setLatency(0)
+
+      expect(s.taskById('t3')!.start).toBe(isoFromIndex(s0 + 4))
+      expect(s.taskById('t3')!.end).toBe(isoFromIndex(e0 + 4))
+      expect(s.taskById('t3')!.name).toBe('改名中')
+    })
+
+    it('拖曳取消不會清掉別筆還在 debounce 的改名', () => {
+      const s = useTaskStore()
+      s.applyLocalPatch('t5', { name: '打到一半' })
+      const t3 = s.taskById('t3')!.start
+      const touched = s.applyLocalPatch('t3', { start: isoFromIndex(dayIndex(t3) + 5) })
+
+      s.discardTaskDrag(touched.map((t) => t.id))
+      expect(s.taskById('t3')!.start).toBe(t3)
+      expect(s.taskById('t5')!.name).toBe('打到一半')
+    })
+
+    it('別人推來的事件不蓋掉本地還沒送出的改名', () => {
+      const s = useTaskStore()
+      s.applyLocalPatch('t5', { name: '打到一半' })
+      s.applyEvent({
+        type: 'task.updated',
+        payload: { ...s.taskById('t5')!, name: '別人改的' },
+      })
+      expect(s.taskById('t5')!.name).toBe('打到一半')
     })
 
     it('列重排放開送一次 reorderTasks、分類重排送 reorderGroups', async () => {

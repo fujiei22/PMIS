@@ -83,6 +83,11 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   /** 最後一次指標座標；不需要響應式，每次 tick 直接讀。legacy `_ptr`（:2432） */
   let ptr: { x: number; y: number } | null = null
   let hoverTimer: ReturnType<typeof setTimeout> | undefined
+  /**
+   * 這一段拖曳改到的任務 id（含被 cascade 推動的下游）。
+   * review F2：中止時只放棄**自己**標的那幾筆，別處還在 debounce 的改名不能一起被抹掉。
+   */
+  const dragged = new Set<string>()
 
   const auto = useAutoScroll({
     // pan 自己就在捲，不再疊加自動捲動（legacy :2440）
@@ -124,16 +129,23 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     if (delta === d.last) return
     d.last = delta
     if (d.kind === 'move') {
-      taskStore.applyLocalPatch(d.id, {
-        start: isoFromIndex(d.s0 + delta),
-        end: isoFromIndex(d.e0 + delta),
-      })
+      track(
+        taskStore.applyLocalPatch(d.id, {
+          start: isoFromIndex(d.s0 + delta),
+          end: isoFromIndex(d.e0 + delta),
+        }),
+      )
     } else if (d.kind === 'resL') {
       // 左把手不能越過結束日
-      taskStore.applyLocalPatch(d.id, { start: isoFromIndex(Math.min(d.s0 + delta, d.e0)) })
+      track(taskStore.applyLocalPatch(d.id, { start: isoFromIndex(Math.min(d.s0 + delta, d.e0)) }))
     } else {
-      taskStore.applyLocalPatch(d.id, { end: isoFromIndex(Math.max(d.e0 + delta, d.s0)) })
+      track(taskStore.applyLocalPatch(d.id, { end: isoFromIndex(Math.max(d.e0 + delta, d.s0)) }))
     }
+  }
+
+  /** 記下這一段拖曳改到的任務（review F2）。 */
+  function track(changed: { id: string }[]): void {
+    for (const t of changed) dragged.add(t.id)
   }
 
   /** 相依預覽線 + 目前壓在哪一列。legacy :2497-2505 */
@@ -221,7 +233,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     if (best && best.id !== d.id && now - d.lastAt > REORDER_MS && Math.abs(y - d.lastY) > REORDER_PX) {
       d.lastAt = now
       d.lastY = y
-      taskStore.moveTaskToLocal(d.id, best)
+      if (taskStore.moveTaskToLocal(d.id, best)) dragged.add(d.id)
     }
   }
 
@@ -251,6 +263,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   /** 共同的開場：記下狀態與指標、開自動捲動、擋住文字選取。legacy :2596 / :2777 */
   function begin(state: DragState, e: PointerEvent): void {
     ui.drag = state
+    dragged.clear()
     ptr = { x: e.clientX, y: e.clientY }
     auto.start()
     // base.css 沒有行內的 user-select 規則，拖曳期間直接改 body 樣式（legacy :2598）
@@ -379,12 +392,14 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     if (!d) return
     ui.linkLine = null
     ui.nearTaskId = null
-    // 中止不結算：本地已經改到一半，直接對齊回最後已知的 server 狀態（契約 B）
+    // 中止不結算：本地已經改到一半，直接對齊回最後已知的 server 狀態（契約 B）。
+    // review F2：只放棄這一段拖曳自己改到的，別處未送出的改名留著。
     if (d.kind === 'move' || d.kind === 'resL' || d.kind === 'resR' || d.kind === 'reorder') {
-      taskStore.reconcileTasksFromServer()
+      taskStore.discardTaskDrag(dragged)
     } else if (d.kind === 'greorder') {
-      taskStore.reconcileGroupsFromServer()
+      taskStore.discardGroupDrag()
     }
+    dragged.clear()
   }
 
   /** 座標落在元素的矩形內。 */
