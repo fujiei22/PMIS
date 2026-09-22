@@ -63,10 +63,10 @@ PMIS 前端使用的技術與使用慣例。新加入的開發者先讀這份。
 #### api 層
 資料進出只走 `src/api/`：`types.ts` 的 `ProjectApi` 是介面（含 `subscribe` 事件），`mock/` 是記憶體實作，`index.ts` 依 `VITE_API` 挑一個。**store 與元件一律 `import { api } from '@/api'`**，不直接碰 `@/api/mock`，更不碰 `@/mocks/*`。
 
-#### 乐觀更新
+#### 樂觀更新
 寫入一律「先改本地、再打 api、失敗還原」，共用機制在 `src/stores/_optimistic.ts`（`createTracker` / `runOptimistic`，以 id 為單位記最後已知的 server 狀態與 in-flight 計數）。拖曳每個 tick 只改本地、放開才送一次；逐鍵編輯用 `composables/useEditDraft.ts` 做 300ms debounce。事件訂閱只有 `stores/_sync.ts` 一處，啟動與錯誤 sink 注入在 `composables/useProjectBoot.ts`。
 
-細節與後端契約（端點表、錯誤碼表、事件規則、adapter 職責）見 [README 的「怎麼接後端」](../../README.md#怎麼接後端)。
+細節與後端契約（端點表、錯誤碼表、事件規則、adapter 職責）見 [`frontend/README.md` 的「怎麼接後端」](../../frontend/README.md#怎麼接後端)。
 
 ### 路由
 - 每個頁面一個路由；Dashboard 掛在 `/`。

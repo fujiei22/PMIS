@@ -1,84 +1,121 @@
 # PMIS 前端
 
-專案管理資訊系統（Project Management Information System）前端。目前只有一個頁面：Dashboard（`/`），內含四張摘要卡、專案時程（甘特圖）、任務看板與 Issue 看板。
+專案管理資訊系統（Project Management Information System）前端。單一頁面 Dashboard（`/`），內含四張摘要卡、專案時程（甘特圖）、任務看板、Issue 看板與詳細視窗。
 
 技術棧與使用慣例見 [`docs/reference/tech-stack.md`](../docs/reference/tech-stack.md)；設計語言區塊地圖見 [`docs/reference/design-map.md`](../docs/reference/design-map.md)。
 
-## 安裝
+## 開工前先讀
 
-本檔以下的指令都在這個 `frontend/` 目錄下執行（從 repo 根目錄先 `cd frontend`）。
+### 現況
 
-需要 Node.js 22 以上（版本記在 `.nvmrc`）。
+- 由 `legacy/Dashboard.html` 的 React 原型改寫而成，行為已用 `e2e/compare.spec.ts` 逐項和原型對照過；新舊有差異時改 `src/`，不改 `legacy/`。
+- 資料全在記憶體 mock（`src/api/mock/`），重新整理就回到範例資料。後端待建，前端已整成「換掉 `src/api/` 的實作就能接」。
+- 沒有登入。`currentUserId` 是範例資料裡固定的成員，只決定留言掛誰。
+- 已知未做：請求逾時與取消、多人同時編輯的衝突、附件驗證、CSP。細節在最後一節〈還沒做的〉。
 
-```sh
-npm install
-npx playwright install chromium   # 只有要跑 e2e 時才需要
+### 資料流
+
+```
+寫入  元件 ──▶ 資料層 store 的 action（task / issue / comment / member）
+              先改本地 ──▶ runOptimistic ──▶ api.xxx()（src/api/index.ts 依 VITE_API 挑實作）
+              失敗：放回最後已知的 server 狀態，錯誤條經注入的 sink 顯示
+讀取  元件 ◀── 派生層 store（rows / filter / selection / ui）◀── 資料層
+事件  api.subscribe ──▶ stores/_sync.ts ──▶ 各資料層 store 的 applyEvent
+啟動  DashboardView ──▶ useProjectBoot()：注入 sink、loadProject()、訂閱事件
 ```
 
-## 指令
+演算法（日期、cascade、篩選、排序）是 `src/lib/` 的純函式，store 只存狀態並把它們接起來。
 
-| 指令 | 用途 |
+### 畫面對元件
+
+`views/DashboardView.vue` 掛的東西，都在 `src/components/`：
+
+| 畫面區塊 | 元件 |
 |---|---|
-| `npm run dev` | 啟動開發伺服器（預設 <http://localhost:5174>，可用 `PLAYWRIGHT_PORT` 改） |
-| `npm run build` | 型別檢查（`vue-tsc`）+ 打包（`vite build`），輸出到 `dist/` |
-| `npm run preview` | 預覽打包結果 |
-| `npm run lint` | ESLint 檢查並自動修正 |
-| `npm run format` | Prettier 格式化 `src/` |
-| `npm run type-check` | 只跑型別檢查 |
-| `npm run test:unit` | Vitest（watch 模式；CI 用 `npm run test:unit -- --run`） |
-| `npm run test:e2e` | Playwright E2E |
+| 頂部篩選列與錯誤條 | `layout/TopBar`（FilterDropdown、FilterCalendar、MemberPicker、common/ErrorBar） |
+| 四張摘要卡 | `summary/SummaryCards` |
+| 甘特圖 | `gantt/GanttPanel`（GanttTimeline、GanttGroupRow、GanttTaskRow、GanttBars → GanttBar、DependencyLines） |
+| 任務看板 | `kanban/KanbanPanel`（KanbanHeader、TaskCard） |
+| Issue 看板 | `issues/IssuePanel`（IssuePanelHeader、IssueCard） |
+| 詳細視窗 | `detail/DetailModal`（DetailHeader、TaskProperties、IssueProperties、CommentsTab、FilesTab、ActivityToolbar）、`detail/ImageLightbox` |
+| 浮層 | `common/OptionMenu`、`common/DatePicker`、`common/ConfirmDialog`、`dialogs/DependencyEditor` |
+| 三個面板共用 | `common/PanelShell`、`common/SortChips`、`common/SortMenu` |
 
-### 跑單一 e2e
+### 改動時要碰的檔
 
-```sh
-npm run test:e2e -- e2e/smoke.spec.ts                 # 單一檔案
-npm run test:e2e -- e2e/smoke.spec.ts -g '首頁可開'    # 單一測試（用標題關鍵字）
-npm run test:e2e -- --headed --debug                  # 開瀏覽器逐步除錯
-PLAYWRIGHT_PORT=5175 npm run test:e2e                 # 換 port（多個工作區同時跑時）
-```
+| 要做的事 | 依序碰 |
+|---|---|
+| 加或改資料欄位 | `types/models.ts` → `api/types.ts`（檔頭 wire 約定）→ `api/mock/store.ts` → 對應資料層 store 的 action → 元件 → 各自旁邊的 `__tests__/` → 本檔〈端點對照表〉 |
+| 加一支 api 方法 | `api/types.ts` 的 `ProjectApi` → `api/mock/index.ts` → store action → 本檔〈端點對照表〉（`readme.spec.ts` 會比對兩邊） |
+| 加畫面狀態（開關、選取、篩選） | 派生層 store（`ui` / `filter` / `selection`）加欄位，元件直接寫 |
+| 改純邏輯 | `lib/` 加純函式 + 單元測試，再由 store 或元件呼叫 |
+| 加設計值（顏色、間距） | 先加 `assets/tokens.css` 的變數，再在 `<style scoped>` 引用；不直接寫色碼 |
+| 改使用者操作流程 | 對應的 `e2e/*.spec.ts`；選擇器只用〈DOM 鉤子〉表裡的屬性 |
 
-`playwright.config.ts` 會自己起一份 dev server（`reuseExistingServer: false`），所以不必事先 `npm run dev`；port 由 `PLAYWRIGHT_PORT` 決定，預設 5174。
+### 守衛測試
 
-全部 e2e 的時鐘固定在 `2026-09-18T10:00:00`（`e2e/helpers/clock.ts` 的 `setFixedTime(page)`），否則「已延遲」「今天」這類跟當下時間有關的斷言會隨日期改變。
+這些測試讀的是原始碼或文件本身，違反規則就紅：
 
-目前共 50 條 e2e，分在 6 個檔：`smoke`(2) / `render`(3) / `interactions`(11) / `dragdrop`(9) / `detail`(7) / `compare`(18)。其中 `interactions.spec.ts` 有兩條靠 `window.__mockApi` 注入 api 失敗，接上真後端之後會自動跳過（見[怎麼接後端](#怎麼接後端)）。
+| 測試 | 守什麼 |
+|---|---|
+| `src/stores/__tests__/imports.spec.ts` | store 三層的 import 白名單，資料層不得引用派生層 |
+| `src/__tests__/no-query-selector.spec.ts` | `src/**` 執行期不得用 `querySelector` 等 DOM 選擇器（唯一例外 `useClickOutside`） |
+| `src/__tests__/readme.spec.ts` | 本檔〈端點對照表〉〈錯誤碼對照表〉與 `api/types.ts` 一致 |
+| `src/mocks/__tests__/consistency.spec.ts` | 範例資料必須已是 cascade 之後的樣子 |
+| `src/assets/__tests__/tokens.spec.ts` | `tokens.css` 必須含有程式用到的每個變數與約定值，改名或刪 token 會紅 |
+
+### 閱讀指引
+
+| 要做的事 | 讀哪幾節 |
+|---|---|
+| 任何前端改動 | 本節、〈目錄結構〉、〈lib 與 store 的分工〉 |
+| 改元件或 e2e | 加〈DOM 鉤子〉 |
+| 動到與原型有關的行為 | 加〈`legacy/` 是唯讀基準〉〈與 legacy 對照〉 |
+| 接後端、改 api 契約 | 〈怎麼接後端〉整節；前端日常開發不必讀 |
+
+## 安裝與指令
+
+環境安裝、常用指令與提交前檢查在[根目錄 README](../README.md)，指令都在這個 `frontend/` 目錄下執行。本檔只補 e2e 的細節：
+
+- `playwright.config.ts` 會自己起一份 dev server（`reuseExistingServer: false`），不必事先 `npm run dev`；port 由 `PLAYWRIGHT_PORT` 決定，預設 5174。
+- 全部 e2e 的時鐘固定在 `2026-09-18T10:00:00`（`e2e/helpers/clock.ts` 的 `setFixedTime(page)`），否則「已延遲」「今天」這類跟當下時間有關的斷言會隨日期改變。
+- `e2e/interactions.spec.ts` 有兩條靠 `window.__mockApi` 注入 api 失敗，接上真後端之後會自動跳過（見[怎麼接後端](#怎麼接後端)）。
 
 ## 目錄結構
 
 ```
 frontend/
-  legacy/            改寫前的原型（唯讀基準，見下）
-  public/            原樣複製到 dist/ 的靜態檔
-  src/
-    api/             資料存取層；接後端時只換這一層
-      types.ts       ProjectApi / ProjectEvent / ApiError 契約，檔頭是給後端看的 wire 約定
-      mock/          記憶體實作（store.ts + index.ts）；可注入延遲與失敗
-      index.ts       挑實作的唯一出口（VITE_API 未設或 'mock' 用 mock；dev build 掛 window.__mockApi）
-    assets/          tokens.css（設計 token）、base.css（全域樣式與 keyframes）
-    components/      元件，依畫面區塊分子目錄（common / layout / summary / gantt / kanban / issues / detail / dialogs）
-    composables/     可重用的組合式函式
-      useProjectBoot.ts    啟動層：注入 error sink、載入狀態、訂閱事件
-      useDomRegistry.ts    DOM 登錄表（執行期不再用選擇器找元素）
-      useTaskActions.ts    新增任務 / Issue 的預設值（派生層讀取集中在這）
-      useEditDraft.ts      逐鍵編輯：本地即時 + api debounce
-      useConfirmProps.ts   確認對話框的文案與 onConfirm（ConfirmDialog 純展示）
-      （其餘：usePointerDrag / useGanttScroll / useAutoScroll / useClickOutside /
-        useMenus / useFocusScroll / useNow / useStickyOffsets / useDelayedUnmount）
-    constants/       畫面用常數（狀態 / 優先度 / 等級的標籤與顏色、API_ERROR_TEXT）
-    lib/             純函式（日期、月曆格、排程連動、篩選、排序、格式化、id…）
-    mocks/           範例資料
-    router/          路由
-    stores/          Pinia store（三層，見下）
-      clock.ts               時鐘層
-      task / issue / comment / member.ts   資料層
-      _optimistic.ts         乐觀更新的共用機制（tracker / runOptimistic / error sink）
-      _sync.ts               api.subscribe 的唯一訂閱點，把事件路由到各資料 store
-      rows / filter / selection / ui.ts    派生層
-    types/           資料模型型別
-    views/           頁面
-    __tests__/       跨目錄的結構守衛（readme / no-query-selector）
-  e2e/               Playwright 測試與 helper
-../docs/reference/   長期參考文件
+├── legacy/                改寫前的原型（唯讀基準，見下）
+├── public/                原樣複製到 dist/ 的靜態檔
+├── src/
+│   ├── api/               資料存取層；接後端時只換這一層
+│   │   ├── types.ts       ProjectApi / ProjectEvent / ApiError 契約，檔頭是給後端看的 wire 約定
+│   │   ├── mock/          記憶體實作（store.ts + index.ts）；可注入延遲與失敗
+│   │   └── index.ts       挑實作的唯一出口（VITE_API 未設或 'mock' 用 mock；dev build 掛 window.__mockApi）
+│   ├── assets/            tokens.css（設計 token）、base.css（全域樣式與 keyframes）
+│   ├── components/        元件，依畫面區塊分子目錄（common / layout / summary / gantt / kanban / issues / detail / dialogs）
+│   ├── composables/       可重用的組合式函式
+│   │   ├── useProjectBoot.ts    啟動層：注入 error sink、載入狀態、訂閱事件
+│   │   ├── useDomRegistry.ts    DOM 登錄表（執行期不再用選擇器找元素）
+│   │   ├── useTaskActions.ts    新增任務 / Issue 的預設值（派生層讀取集中在這）
+│   │   ├── useEditDraft.ts      逐鍵編輯：本地即時 + api debounce
+│   │   ├── useConfirmProps.ts   確認對話框的文案與 onConfirm（ConfirmDialog 純展示）
+│   │   └── …                    usePointerDrag / useGanttScroll / useAutoScroll / useClickOutside /
+│   │                            useMenus / useFocusScroll / useNow / useStickyOffsets / useDelayedUnmount
+│   ├── constants/         畫面用常數（狀態 / 優先度 / 等級的標籤與顏色、API_ERROR_TEXT）
+│   ├── lib/               純函式（日期、月曆格、排程連動、篩選、排序、格式化、id…）
+│   ├── mocks/             範例資料
+│   ├── router/            路由
+│   ├── stores/            Pinia store（三層，見下）
+│   │   ├── clock.ts                           時鐘層
+│   │   ├── task / issue / comment / member.ts   資料層
+│   │   ├── _optimistic.ts                     樂觀更新的共用機制（tracker / runOptimistic / error sink）
+│   │   ├── _sync.ts                           api.subscribe 的唯一訂閱點，把事件路由到各資料 store
+│   │   └── rows / filter / selection / ui.ts  派生層
+│   ├── types/             資料模型型別
+│   ├── views/             頁面
+│   └── __tests__/         跨目錄的結構守衛（readme / no-query-selector）
+└── e2e/                   Playwright 測試與 helper
 ```
 
 單元測試放在被測檔案旁的 `__tests__/`（例如 `src/lib/__tests__/date.spec.ts`）。不屬於任何單一檔案的結構守衛放 `src/__tests__/`：`no-query-selector.spec.ts`（執行期不得用 DOM 選擇器）、`readme.spec.ts`（本檔的端點表與 `ProjectApi` 一致），另有 `src/stores/__tests__/imports.spec.ts`（store 分層白名單）。
@@ -200,7 +237,7 @@ store 分三層，依賴**只能由上往下**：
 
 ### 步驟
 
-1. **寫實作**：新增 `src/api/http/index.ts`，`export function createHttpApi(): ProjectApi`，照下面的端點表實作 19 支方法。不要改介面去遷就後端——後端形狀不同就在這一層轉，介面本身是契約。
+1. **寫實作**：新增 `src/api/http/index.ts`，`export function createHttpApi(): ProjectApi`，照下面的端點表逐一實作每支方法。不要改介面去遷就後端——後端形狀不同就在這一層轉，介面本身是契約。
 2. **切換**：`src/api/index.ts` 的 `createApi()` 依 `VITE_API` 挑實作（未設、空字串或 `'mock'` 用 mock，其他值丟錯）。加一支 `'http'` 分支即可，其餘檔案一行都不用改。`VITE_API` 的型別宣告在 `env.d.ts`。走非 mock 實作時 `export const mockApi` 是 `undefined`（型別就是 `MockApi | undefined`）。
 3. **adapter 的職責**（後端形狀 → 前端模型，全部在這一層做完，`src/types/models.ts` 不因後端而變）：
 
@@ -214,7 +251,7 @@ store 分三層，依賴**只能由上往下**：
    | `ProjectData.currentUserId` | 必填字串 | 登入還沒做 | adapter 從 session / token 填；沒有登入就先填一個固定成員 id |
    | `Attachment.id` | `'<commentId>:<index>'`（`downloadAttachment` 的鍵） | 後端自己的附件主鍵 | adapter；只要 `loadProject` 與 `createComment` 回的 id 能餵回 `downloadAttachment` 就行 |
 
-4. **跑測試**：`npm run test:unit -- --run` 全綠、`PLAYWRIGHT_PORT=5174 npm run test:e2e` 全綠（兩條靠 mock 的會自動跳過，見下）。
+4. **跑測試**：`npm run test:unit -- --run` 全綠、`PLAYWRIGHT_PORT=5174 npm run test:e2e` 全綠（靠 mock 的兩條會自動跳過，見下）。
 
 ### 端點對照表
 
@@ -247,7 +284,7 @@ store 分三層，依賴**只能由上往下**：
 - **id 由 client 產**（UUID v4，`src/lib/id.ts` 的 `newId()`：`crypto.randomUUID?.()`，非 https / 非 localhost 沒有這支時退回 `crypto.getRandomValues` 自己組）。主鍵接受 client 給的 id，重複回 **409**。
 - **後端不跑 cascade**。相依連動（`start` / `end` 改動推下游、`status=done` 填 `done` 日）前端已經算完，`updateTasks` 送的是整段結果。後端只存，response 回最終狀態（要糾正就在 response 糾正，client 會套回）。
 - **連動刪除由後端做**：`deleteTask` 連帶刪它的 issue / dep / comment，`deleteGroup` 連帶刪底下的任務（以及那些任務的 issue / dep / comment），`deleteIssue` 連帶刪它的留言。事件順序見下。
-- **事件與 response 的到達順序後端不必保證**。client 兩種順序都正確（機制見〈乐觀更新怎麼運作〉的 in-flight 規則）：事件先到就只更新「最後已知的 server 狀態」，等該 id 的請求全部結束才對齊本地。不要為了排順序而延後廣播或延後回應。
+- **事件與 response 的到達順序後端不必保證**。client 兩種順序都正確（機制見〈樂觀更新怎麼運作〉的 in-flight 規則）：事件先到就只更新「最後已知的 server 狀態」，等該 id 的請求全部結束才對齊本地。不要為了排順序而延後廣播或延後回應。
 
 ### 錯誤碼對照表
 
@@ -287,7 +324,7 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 - **`project.reloaded` 由 adapter 自己造，後端不用做**：重連偵測在前端這一層（`EventSource` 的 `onopen` 從**第二次**起、或 WebSocket 的 reconnect callback），adapter 自己 `await loadProject()` 之後 `emit({ type: 'project.reloaded', payload })`。後端只要能重新建立連線就好，不必記得補推什麼。
 - **`reorderTasks` / `reorderGroups` 沒有對應事件**。純順序變更要讓別的 client 看到，靠的是重連時 adapter 補的 `project.reloaded`；只有搬動造成 `groupId` 改變時才會有一則 `task.updated`。
 
-### 乐觀更新怎麼運作
+### 樂觀更新怎麼運作
 
 所有寫入都是先改本地、再打 api，失敗才還原。機制在 `src/stores/_optimistic.ts`：
 
@@ -304,7 +341,7 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 
 dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (import.meta.env.DEV)`），e2e 用它注入延遲與失敗（`failNext` / `setLatency` / `reset` / `emit`）。
 
-接上真後端之後 `window.__mockApi` 會是 `undefined`，`e2e/interactions.spec.ts` 裡**那兩條**（api 失敗後還原並顯示錯誤條、載入失敗後重試）開頭就是 `test.skip(!__mockApi)`，會自動跳過，其餘 48 條照跑。要在真後端上也測失敗路徑，就換成在 `page.route()` 攔 HTTP 回錯誤碼。
+接上真後端之後 `window.__mockApi` 會是 `undefined`，`e2e/interactions.spec.ts` 裡**那兩條**（api 失敗後還原並顯示錯誤條、載入失敗後重試）開頭就是 `test.skip(!__mockApi)`，會自動跳過，其餘照跑。要在真後端上也測失敗路徑，就換成在 `page.route()` 攔 HTTP 回錯誤碼。
 
 ### 還沒做的（接後端時要補）
 

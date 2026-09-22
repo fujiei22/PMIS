@@ -123,7 +123,7 @@ export function sameTask(a: Task, b: Task): boolean {
  * **identity**：沒有變動的任務回原本那個物件（`out[i] === tasks[i]`），
  * 元件的 computed 才能靠參照比對跳過重算；完全沒變動時連陣列都回原本那個。
  *
- * `changed` 是給乐觀更新用的：R2 的 `updateTasks(changed)` 只送真的變了的那幾筆。
+ * `changed` 是給樂觀更新用的：R2 的 `updateTasks(changed)` 只送真的變了的那幾筆。
  */
 export function applyTaskPatch(
   tasks: Task[],

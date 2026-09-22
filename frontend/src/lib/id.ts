@@ -2,7 +2,7 @@
  * 新實體的 id 一律由前端產生（契約 A：`id` 由 client 產、create 帶 id、重複回 409）。
  *
  * 為什麼是 UUID 而不是流水號：接後端之後同時有多個 client 在建立資料，
- * 「本地遞增」必然撞號；UUID 讓乐觀更新可以先用最終 id 畫上去，
+ * 「本地遞增」必然撞號；UUID 讓樂觀更新可以先用最終 id 畫上去，
  * 不必等 server 回填、也不用做 tempId → realId 的替換。
  * mocks 既有的 g1 / t1 / i1 / d1 / c1 保持原樣（spec 目標 4）。
  */

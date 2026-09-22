@@ -1,5 +1,5 @@
 /**
- * 乐觀更新的共用機制（契約 B）。
+ * 樂觀更新的共用機制（契約 B）。
  *
  * 規則（review C1）：
  * - 每個實體記一份 **最後已知的 server 狀態** `server`，還原時放回它，
@@ -159,7 +159,7 @@ export interface OptimisticOp<T extends { id: string }> {
 }
 
 /**
- * 跑一次乐觀更新：打 api，失敗就把牽動到的 id 放回 server 狀態。
+ * 跑一次樂觀更新：打 api，失敗就把牽動到的 id 放回 server 狀態。
  *
  * review F9：本地的變更一律由呼叫端在呼叫前自己做完（每個 store action 本來就是
  * 這樣寫的），所以沒有 `apply` 這個鉤子——留著只會讓人以為有第二條路。

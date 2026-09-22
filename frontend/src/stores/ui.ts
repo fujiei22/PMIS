@@ -325,7 +325,7 @@ export const useUiStore = defineStore('ui', () => {
   /**
    * 指向已刪實體的浮層狀態一律關掉。
    *
-   * 資料層不再回頭清 ui（契約 E）：不管刪除是本地發起、乐觀還原，還是別的
+   * 資料層不再回頭清 ui（契約 E）：不管刪除是本地發起、樂觀還原，還是別的
    * client 推來的事件，都由這條 watch 收尾。`flush: 'sync'` 讓畫面不會有任何
    * 一個 tick 停在不存在的 id 上（review M7）。
    * 清理清單：`detail`（含 `detail.from`）、`confirm`、`depEditFor`、`pickerFor`。
