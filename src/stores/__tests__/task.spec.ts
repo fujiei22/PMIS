@@ -92,6 +92,15 @@ describe('taskStore', () => {
     await Promise.resolve()
   })
 
+  // review F4：摘要條 `sum-<gid>` 之類的假 id 不該建出指向不存在任務的相依
+  it('addDep 對不存在的任務回 false', () => {
+    const s = useTaskStore()
+    const before = s.deps.length
+    expect(s.addDep('sum-g2', 't1')).toBe(false)
+    expect(s.addDep('t1', 'sum-g2')).toBe(false)
+    expect(s.deps).toHaveLength(before)
+  })
+
   it('removeDep 只刪那一條', () => {
     const s = useTaskStore()
     const before = s.deps.length

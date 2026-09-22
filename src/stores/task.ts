@@ -647,6 +647,8 @@ export const useTaskStore = defineStore('task', () => {
    */
   function addDep(from: string, to: string): boolean {
     if (!from || !to || from === to) return false
+    // review F4：兩端都得是真的任務——摘要條的 `sum-<gid>` 不是
+    if (!taskById(from) || !taskById(to)) return false
     if (deps.value.some((d) => d.from === from && d.to === to)) return false
     if (reachable(to, from, deps.value)) return false
     const dep: Dependency = { id: newId(), from, to }

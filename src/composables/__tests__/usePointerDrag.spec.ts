@@ -286,6 +286,24 @@ describe('usePointerDrag 的中止事件（review M3）', () => {
     unmount()
   })
 
+  // review F4：摘要條的 key 是 `sum-<gid>`，不是任務 id
+  it('拉線放開在收合分類的摘要條上：不建相依、也不推錯誤條', () => {
+    const ui = useUiStore()
+    const tasks = useTaskStore()
+    const { api: drag, registry, unmount } = mountDrag()
+    const before = tasks.deps.length
+
+    registerEl(registry.bars, 'sum-g2')(elAt({ top: 100, bottom: 110, left: 200, right: 320 }))
+
+    drag.startLink(pointer('pointerdown') as unknown as PointerEvent, 't1', 'R')
+    ui.nearTaskId = null
+    document.dispatchEvent(pointer('pointerup', 260, 105))
+
+    expect(tasks.deps.length).toBe(before)
+    expect(ui.errors).toEqual([])
+    unmount()
+  })
+
   it('中止後條的移動不再跟著指標跑', () => {
     const ui = useUiStore()
     const tasks = useTaskStore()

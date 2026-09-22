@@ -413,10 +413,16 @@ export function usePointerDrag(els: DragElements): PointerDrag {
    *
    * legacy 是用座標取最上層元素再 `closest('[data-taskid]') ?? closest('[data-linkfor]')`
    * （:2574-2576）；契約 F 改成對登錄表裡的條與圓點做矩形命中，順序維持「先條後圓點」。
+   *
+   * review F4：`bars` 也放收合分類的摘要條（key 是 `sum-<gid>`），那不是任務——
+   * 跳過非任務 id，免得放在摘要條上時建出指向不存在實體的相依。
    */
   function hitTaskAt(x: number, y: number): string | null {
-    for (const [id, el] of registry.bars) if (inRect(el, x, y)) return id
+    for (const [id, el] of registry.bars) {
+      if (taskStore.taskById(id) && inRect(el, x, y)) return id
+    }
     for (const [id, dots] of registry.linkDots) {
+      if (!taskStore.taskById(id)) continue
       if (inRect(dots.L, x, y) || inRect(dots.R, x, y)) return id
     }
     return null
