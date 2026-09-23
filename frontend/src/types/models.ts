@@ -109,3 +109,65 @@ export interface ProjectData {
   comments: Comment[]
   currentUserId: string
 }
+
+/* ── 多專案總覽 ─────────────────────────────────────────── */
+
+/** 專案整體狀態：未開始 / 進行中 / 已完成 */
+export type ProjectStatus = 'todo' | 'doing' | 'done'
+
+/** 專案需注意程度：落後 / 需注意 / 無；由前端依摘要數字派生（lib/portfolio.ts 的 alertOf） */
+export type ProjectAlert = 'late' | 'watch' | 'none'
+
+/** 專案速覽裡的一筆近期到期任務 */
+export interface UpcomingTask {
+  /** 任務名稱 */
+  name: string
+  /** 到期日 */
+  due: ISODate
+  /** 負責成員 id */
+  memberId: string
+}
+
+/** 總覽頁用的單一專案摘要；由後端彙整（mock 端見 api/mock/portfolio.ts） */
+export interface ProjectSummary {
+  /** 專案 id，也是 `/projects/:id` 的路由參數 */
+  id: string
+  /** 專案名稱 */
+  name: string
+  /** 專案經理的成員 id */
+  pmId: string
+  /** 專案整體狀態 */
+  status: ProjectStatus
+  /** 專案開始日 */
+  startDate: ISODate
+  /** 專案到期日 */
+  dueDate: ISODate
+  /** 任務總數 */
+  taskTotal: number
+  /** 已完成任務數 */
+  taskDone: number
+  /** 依排程此刻應完成的任務數（後端算）。 */
+  taskPlanned: number
+  /** 各任務狀態的數量 */
+  taskCounts: { done: number; doing: number; paused: number; todo: number }
+  /** 已逾期但未完成的任務數 */
+  delayedTasks: number
+  /** 各等級未結 Issue 數 */
+  openIssues: Record<IssueLevel, number>
+  /** 已結 Issue 數 */
+  closedIssues: number
+  /** 參與成員 id（速覽的頭像疊） */
+  memberIds: string[]
+  /** 近期到期任務，後端已依到期日排序、最多 3 筆。 */
+  upcoming: UpcomingTask[]
+}
+
+/** `api.listProjects()` 的回傳：專案摘要清單、成員名錄、登入者 */
+export interface PortfolioData {
+  /** 所有專案摘要 */
+  projects: ProjectSummary[]
+  /** 成員名錄（含 PM） */
+  members: Member[]
+  /** 登入者的成員 id */
+  currentUserId: string
+}
