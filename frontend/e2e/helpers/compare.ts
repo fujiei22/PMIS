@@ -211,8 +211,18 @@ export function domSnapshot(page: Page): Promise<DomSnapshot> {
       .filter((e) => /^共\s*\d+\s*(個任務|筆\s*Issue)$/.test(norm(e.textContent)))
       .map((e) => textOf(headOf(e)))
 
+    /**
+     * 刻意保留的差異：理論進度的判準。legacy 把今天到期的任務算進理論（`<=`），
+     * 新頁要隔天才算（`<`，與總覽和「已延遲」一致）。只遮掉受影響的三個數字：
+     * 差距標籤、理論的 N / 總數、理論 %，其餘摘要卡內容照比。
+     */
+    const maskPlan = (s: string): string =>
+      s
+        .replace(/整體進度(落後\d+%|超前\d+%|與時程相符)/, '整體進度<gap>')
+        .replace(/理論進度\d+\/\d+\d+%/, '理論進度<plan>')
+
     return {
-      summary: textOf(region),
+      summary: maskPlan(textOf(region)),
       heads,
       order: all('[data-rowtask],[data-rowgroup]').map(
         (el) => el.getAttribute('data-rowtask') ?? `G:${el.getAttribute('data-rowgroup')}`,
@@ -236,7 +246,7 @@ export function domSnapshot(page: Page): Promise<DomSnapshot> {
       ),
       dd: all('[data-dd]').map((el) => textOf(el)),
       float: all('[data-e2e-float]').map((el) => textOf(el)),
-      body: textOf(document.body),
+      body: maskPlan(textOf(document.body)),
       fields: [...document.querySelectorAll('input,textarea,select')].map((el, i) => {
         const f = el as HTMLInputElement
         return `${i}|${f.tagName}|${f.type}|${norm(f.value)}`
