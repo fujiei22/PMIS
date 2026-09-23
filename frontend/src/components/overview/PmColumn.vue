@@ -54,9 +54,13 @@ const cardMoveClass = computed(() =>
 
 <style scoped>
 .col {
-  /* 欄底 PM 色 5%、欄首 12%（spec 目標 5） */
-  --pm-bg: color-mix(in srgb, var(--pm) 5%, var(--surface-2));
-  --pm-head: color-mix(in srgb, var(--pm) 12%, var(--surface-2));
+  /*
+   * 欄底與欄首照 B2 實際畫出來的顏色（user 核可的是畫面）：B2 先宣告欄底 5%，
+   * 又被後面 `.g, .col` 的 --pm-soft 30% 蓋掉，所以畫面上欄底是 30%、欄首 12%，都混在 --surface-1 上。
+   * user 看設計稿時要求泳道底色要明顯區隔，淡的 5% 分不太出來。
+   */
+  --pm-bg: color-mix(in srgb, var(--pm) 30%, var(--surface-1));
+  --pm-head: color-mix(in srgb, var(--pm) 12%, var(--surface-1));
   --pm-line: color-mix(in srgb, var(--pm) 22%, var(--border-1));
   /* 卡片展開時的 PM 色系：外框、箭頭字色、速覽分隔線（照 B2 .g, .col） */
   --pm-frame: var(--pm);
