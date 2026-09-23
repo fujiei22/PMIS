@@ -1,5 +1,7 @@
 <script setup lang="ts">
 // 總覽的專案卡：名稱、狀態 pill、排序依據的 meta、實際進度、「進入」；點整張卡展開速覽。
+// 模板：整張卡可點展開是需求優先，所以 role="button" 裡面包了「進入」連結（巢狀互動元素，照 B2 保留）。
+// 「進入」自帶 @click.stop，速覽外殼也擋掉冒泡，兩者都不會觸發展開切換。
 import { computed, ref } from 'vue'
 import EnterLink from '@/components/overview/EnterLink.vue'
 import ProjectBadge from '@/components/overview/ProjectBadge.vue'
@@ -55,10 +57,6 @@ function onQuickTransitionEnd(e: TransitionEvent): void {
 </script>
 
 <template>
-  <!--
-    整張卡可點展開是需求優先，所以 role="button" 裡面包了「進入」連結（巢狀互動元素，照 B2 保留）。
-    「進入」自帶 @click.stop，速覽外殼也擋掉冒泡，兩者都不會觸發展開切換。
-  -->
   <article
     ref="root"
     class="card"
@@ -133,16 +131,32 @@ function onQuickTransitionEnd(e: TransitionEvent): void {
   cursor: pointer;
   /* 展開後捲到看得見時，要避開 sticky 的面板標題列與欄首（56px 是 B2 .col-head 的高度） */
   scroll-margin-top: calc(var(--ov-top, 0px) + var(--ov-head, 0px) + 56px);
+  /*
+   * hover 上浮用獨立的 translate 屬性，不用 transform：transform 留給 TransitionGroup 的重排（FLIP），
+   * 兩者寫在同一個屬性會互相覆蓋，重排時卡片會先跳位再飄回來。
+   */
   transition:
     border-color var(--t-base) var(--ease),
     box-shadow var(--t-base) var(--ease),
-    transform var(--t-base) var(--ease);
+    translate var(--t-base) var(--ease);
 }
 
 .card:hover {
   border-color: var(--text-placeholder);
   box-shadow: var(--shadow-card-hover);
-  transform: translateY(-1px);
+  translate: 0 -1px;
+}
+
+/*
+ * 重排（A8）：TransitionGroup 會加上 ov-card-move。全域 overview-motion.css 的同名規則權重
+ * 比上面的 .card（scoped）低、會被整個 transition 蓋掉，所以在這裡用更高權重補一次。
+ */
+.card.ov-card-move {
+  transition:
+    transform var(--t-panel) var(--ease),
+    border-color var(--t-base) var(--ease),
+    box-shadow var(--t-base) var(--ease),
+    translate var(--t-base) var(--ease);
 }
 
 .card:focus-visible {
@@ -169,7 +183,7 @@ function onQuickTransitionEnd(e: TransitionEvent): void {
   transition:
     border-color var(--t-base) var(--ease),
     box-shadow var(--t-fast) var(--ease),
-    transform var(--t-base) var(--ease);
+    translate var(--t-base) var(--ease);
 }
 
 .card.is-open:focus-visible {

@@ -1,15 +1,34 @@
 <script setup lang="ts">
 // 卡片檢視裡一位 PM 的直欄：sticky 欄首（頭像、名字、計數）＋ 該 PM 專案卡的 TransitionGroup。
+// 模板：PM 色來自資料，不是 token，所以走 inline --pm；衍生的淡色在 .col 裡用 color-mix 算
 import Avatar from '@/components/common/Avatar.vue'
 import ProjectCard from '@/components/overview/ProjectCard.vue'
+import { computed, onUpdated, ref } from 'vue'
 import { freezeLeave } from '@/composables/freezeLeave'
 import type { PmGroup } from '@/lib/portfolio'
 
-defineProps<{ group: PmGroup }>()
+const props = defineProps<{
+  group: PmGroup
+  /** 這一欄在看板上的位置；用來判斷這次更新整欄有沒有移動。 */
+  index: number
+}>()
+
+/*
+ * 巢狀 FLIP：欄在看板上換位置時，欄本身有重排動畫（CardBoard 的 ov-col）。
+ * 裡面的卡片 TransitionGroup 量的是頁面上的絕對位置，會把欄的位移再算一次，卡片就偏移兩倍。
+ * 所以欄移動的那一輪停用卡片的重排（卡片跟著欄一起動）；欄沒動、只有欄內順序變時才讓卡片自己重排。
+ * 子元件的 updated 先於父元件：TransitionGroup 用的是這一輪算出的 moveClass，之後才記下新位置。
+ */
+const prevIndex = ref(props.index)
+onUpdated(() => {
+  prevIndex.value = props.index
+})
+const cardMoveClass = computed(() =>
+  props.index === prevIndex.value ? 'ov-card-move' : 'ov-card-still',
+)
 </script>
 
 <template>
-  <!-- PM 色來自資料，不是 token，所以走 inline --pm；衍生的淡色在 .col 裡用 color-mix 算 -->
   <div class="col" :data-pm-col="group.pm.id" :style="{ '--pm': group.pm.color }">
     <div class="col-head">
       <Avatar class="col-avatar" :member="group.pm" :size="34" />
@@ -21,7 +40,13 @@ defineProps<{ group: PmGroup }>()
       </div>
     </div>
     <!-- 篩選造成卡片進出、排序造成重排（A7 / A8）；離場的卡由 freezeLeave 釘在原位 -->
-    <TransitionGroup name="ov-card" tag="div" class="col-body" @before-leave="freezeLeave">
+    <TransitionGroup
+      name="ov-card"
+      tag="div"
+      class="col-body"
+      :move-class="cardMoveClass"
+      @before-leave="freezeLeave"
+    >
       <ProjectCard v-for="row in group.rows" :key="row.p.id" :row="row" />
     </TransitionGroup>
   </div>

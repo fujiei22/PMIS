@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 「進入 →」連結：導到該專案的 Dashboard。專案卡與時間軸速覽共用，樣式只寫這一份。
+// 模板：@click.stop：別讓點擊冒泡到卡片或列，觸發展開切換
 import { RouterLink } from 'vue-router'
 
 defineProps<{
@@ -9,7 +10,6 @@ defineProps<{
 </script>
 
 <template>
-  <!-- @click.stop：別讓點擊冒泡到卡片或列，觸發展開切換 -->
   <RouterLink class="btn btn-enter" :to="{ name: 'dashboard', params: { id } }" @click.stop>
     進入 <span aria-hidden="true">→</span>
   </RouterLink>

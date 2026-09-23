@@ -25,7 +25,12 @@ const overview = useOverviewStore()
         class="board"
         @before-leave="freezeLeave"
       >
-        <PmColumn v-for="group in overview.groups" :key="group.pm.id" :group="group" />
+        <PmColumn
+          v-for="(group, i) in overview.groups"
+          :key="group.pm.id"
+          :group="group"
+          :index="i"
+        />
       </TransitionGroup>
       <OvEmpty v-else />
     </Transition>

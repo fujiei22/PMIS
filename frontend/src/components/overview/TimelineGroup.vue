@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 時間軸的一位 PM：可收合的群組列（收合時畫摘要 bar）＋ 底下的專案列；PM 色系變數由根元素 .g 提供給列與速覽。
-import { computed } from 'vue'
+import { computed, onUpdated, ref } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import TimelineProjectRow from '@/components/overview/TimelineProjectRow.vue'
 import { freezeLeave } from '@/composables/freezeLeave'
@@ -16,7 +16,23 @@ const props = defineProps<{
   startIdx: number
   /** 一天的寬（px）。 */
   dw: number
+  /** 這一組在時間軸上的位置；用來判斷這次更新整組有沒有移動。 */
+  index: number
 }>()
+
+/*
+ * 巢狀 FLIP：組在時間軸上換位置時，組本身有重排動畫（OverviewTimeline 的 ov-group）。
+ * 裡面的專案列 TransitionGroup 量的是頁面上的絕對位置，會把組的位移再算一次，列就偏移兩倍。
+ * 所以組移動的那一輪停用列的重排（列跟著組一起動）；組沒動、只有組內順序變時才讓列自己重排。
+ * 做法與卡片檢視的 PmColumn 相同。
+ */
+const prevIndex = ref(props.index)
+onUpdated(() => {
+  prevIndex.value = props.index
+})
+const rowMoveClass = computed(() =>
+  props.index === prevIndex.value ? 'ov-row-move' : 'ov-row-still',
+)
 
 const overview = useOverviewStore()
 
@@ -86,6 +102,7 @@ function onKey(e: KeyboardEvent): void {
           name="ov-row"
           tag="div"
           class="g-list"
+          :move-class="rowMoveClass"
           @before-leave="freezeLeave"
         >
           <TimelineProjectRow
@@ -151,7 +168,10 @@ function onKey(e: KeyboardEvent): void {
   border-right: 1px solid var(--border-1);
   border-bottom: 1px solid var(--pm-line);
   box-shadow: var(--shadow-left-col);
-  transition: background var(--t-fast) var(--ease);
+  /* focus ring 是 box-shadow，要一起過渡，不然鍵盤移到這列時框線會瞬間出現（A19） */
+  transition:
+    background var(--t-fast) var(--ease),
+    box-shadow var(--t-fast) var(--ease);
 }
 
 .g-canvas {
