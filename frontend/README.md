@@ -1,6 +1,12 @@
 # PMIS 前端
 
-專案管理資訊系統（Project Management Information System）前端。單一頁面 Dashboard（`/`），內含四張摘要卡、專案時程（甘特圖）、任務看板、Issue 看板與詳細視窗。
+專案管理資訊系統（Project Management Information System）前端。有兩個頁面：
+
+- **所有專案總覽**（`/`）
+  - 專案有兩種檢視：依 PM 分欄的卡片，以及時間軸。
+  - 頂欄可以依成員、狀態、需注意篩選，面板標題列可以多鍵排序。
+  - 讓 PM 主管一眼看出哪些專案需要注意。
+- **單一專案 Dashboard**（`/projects/:id`）：四張摘要卡、專案時程（甘特圖）、任務看板、Issue 看板與詳細視窗。
 
 技術棧與使用慣例見 [`docs/reference/tech-stack.md`](../docs/reference/tech-stack.md)；設計語言區塊地圖見 [`docs/reference/design-map.md`](../docs/reference/design-map.md)。
 
@@ -10,7 +16,11 @@
 
 - 由 `legacy/Dashboard.html` 的 React 原型改寫而成，行為已用 `e2e/compare.spec.ts` 逐項和原型對照過；新舊有差異時改 `src/`，不改 `legacy/`。
 - 資料全在記憶體 mock（`src/api/mock/`），重新整理就回到範例資料。後端待建，前端已整成「換掉 `src/api/` 的實作就能接」。
-- 沒有登入。`currentUserId` 是範例資料裡固定的成員，只決定留言掛誰。
+- 沒有登入。`currentUserId` 是範例資料裡固定的成員，只決定留言掛誰。總覽頂欄右端顯示的登入者也是它。
+- `/projects/:id` 的 `id` 暫時不影響載入。mock 只有一份完整專案資料（`mocks/sampleProject.ts`），任何 id 都顯示這一份，要等後端才會依 id 載入。
+- 總覽裡 PMIS 的摘要，是由那份範例專案即時彙整出來的（`api/mock/portfolio.ts` 的 `summarizeProject()`），所以在 Dashboard 改了任務，回到總覽看得到。
+  - 其他 6 個專案是靜態摘要（`mocks/samplePortfolio.ts`）。
+  - 在這 6 個專案按「進入」，看到的仍是 PMIS 那份資料。這是預期行為，不是 bug。
 - 已知未做：請求逾時與取消、多人同時編輯的衝突、附件驗證、CSP。細節在最後一節〈還沒做的〉。
 
 ### 資料流
@@ -22,6 +32,7 @@
 讀取  元件 ◀── 派生層 store（rows / filter / selection / ui）◀── 資料層
 事件  api.subscribe ──▶ stores/_sync.ts ──▶ 各資料層 store 的 applyEvent
 啟動  DashboardView ──▶ useProjectBoot()：注入 sink、loadProject()、訂閱事件
+      ProjectsOverviewView ──▶ usePortfolioBoot()：第一次 loading、之後背景重載 ──▶ api.listProjects()
 ```
 
 演算法（日期、cascade、篩選、排序）是 `src/lib/` 的純函式，store 只存狀態並把它們接起來。
@@ -41,6 +52,24 @@
 | 浮層 | `common/OptionMenu`、`common/DatePicker`、`common/ConfirmDialog`、`dialogs/DependencyEditor` |
 | 三個面板共用 | `common/PanelShell`、`common/SortChips`、`common/SortMenu` |
 
+`views/ProjectsOverviewView.vue`（總覽）掛的東西，都在 `src/components/overview/`：
+
+| 畫面區塊 | 元件 |
+|---|---|
+| 頂欄：檢視切換、篩選、登入者 | `OverviewTopBar`（PmFilter、OvDropdown） |
+| 卡片檢視 | `CardBoard`（PmColumn → ProjectCard → QuickView、EnterLink） |
+| 時間軸檢視 | `OverviewTimeline`（TimelineGroup → TimelineProjectRow → QuickView） |
+| 兩種檢視共用 | `OvPanel`（面板外殼與計數）、`OvSortControls`（排序 chip 與選單）、`ProjectBadge`（狀態 pill）、`OvEmpty`（空狀態） |
+
+總覽和 Dashboard 各有一套外觀相近的元件，這是**刻意分開的**。改其中一個的外觀或行為時，另一個要一起看：
+
+| 總覽 | Dashboard |
+|---|---|
+| `OvDropdown` | `FilterDropdown` |
+| `OvSortControls` | `SortChips` ＋ `SortMenu` |
+| `OvPanel` | `PanelShell` |
+
+分開的原因是狀態來源和尺寸不同：Dashboard 版綁著 Dashboard 的 `ui` / `filter` store；總覽版讀 `overview` store，尺寸照總覽的設計稿。
 ### 改動時要碰的檔
 
 | 要做的事 | 依序碰 |
@@ -51,6 +80,9 @@
 | 改純邏輯 | `lib/` 加純函式 + 單元測試，再由 store 或元件呼叫 |
 | 加設計值（顏色、間距） | 先加 `assets/tokens.css` 的變數，再在 `<style scoped>` 引用；不直接寫色碼 |
 | 改使用者操作流程 | 對應的 `e2e/*.spec.ts`；選擇器只用〈DOM 鉤子〉表裡的屬性 |
+| 改總覽的畫面狀態（篩選、排序、展開、檢視） | `stores/overview.ts`；純邏輯（派生值、篩選、排序、分組）在 `lib/portfolio.ts` |
+| 改總覽的範例專案 | `mocks/samplePortfolio.ts` ＋ `mocks/__tests__/portfolio.spec.ts`（數字要對得上設計稿）；PMIS 摘要改 `api/mock/portfolio.ts` |
+| 加總覽的互動或 UI 變化 | 元件 ＋ `assets/overview-motion.css`（過渡 class 唯一定義處）＋ `e2e/overview-motion.spec.ts`（每項動畫都有守衛） |
 
 ### 守衛測試
 
@@ -63,6 +95,8 @@
 | `src/__tests__/readme.spec.ts` | 本檔〈端點對照表〉〈錯誤碼對照表〉與 `api/types.ts` 一致 |
 | `src/mocks/__tests__/consistency.spec.ts` | 範例資料必須已是 cascade 之後的樣子 |
 | `src/assets/__tests__/tokens.spec.ts` | `tokens.css` 必須含有程式用到的每個變數與約定值，改名或刪 token 會紅 |
+| `src/mocks/__tests__/portfolio.spec.ts` | 總覽靜態專案算出的實際 / 理論 % 與需注意等於設計稿；m1–m7 與 `sampleProject` 的成員是同一份 |
+| `e2e/overview-motion.spec.ts` | 總覽每項互動與 UI 變化都有過渡動畫。重排時逐幀量位置，沒有動畫（直接跳到新位置）或位移算了兩次（先跳過頭再回彈），都會紅 |
 
 ### 閱讀指引
 
@@ -71,6 +105,7 @@
 | 任何前端改動 | 本節、〈目錄結構〉、〈lib 與 store 的分工〉 |
 | 改元件或 e2e | 加〈DOM 鉤子〉 |
 | 動到與原型有關的行為 | 加〈`legacy/` 是唯讀基準〉〈與 legacy 對照〉 |
+| 改總覽頁 | 〈畫面對元件〉的總覽表、〈DOM 鉤子〉的兩張總覽表 |
 | 接後端、改 api 契約 | 〈怎麼接後端〉整節；前端日常開發不必讀 |
 
 ## 安裝與指令
@@ -79,7 +114,11 @@
 
 - `playwright.config.ts` 會自己起一份 dev server（`reuseExistingServer: false`），不必事先 `npm run dev`；port 由 `PLAYWRIGHT_PORT` 決定，預設 5174。
 - 全部 e2e 的時鐘固定在 `2026-09-18T10:00:00`（`e2e/helpers/clock.ts` 的 `setFixedTime(page)`），否則「已延遲」「今天」這類跟當下時間有關的斷言會隨日期改變。
-- `e2e/interactions.spec.ts` 有兩條靠 `window.__mockApi` 注入 api 失敗，接上真後端之後會自動跳過（見[怎麼接後端](#怎麼接後端)）。
+- 靠 `window.__mockApi` 的 e2e，接上真後端之後會自動跳過（見[怎麼接後端](#怎麼接後端)）。共有四條：
+  - `e2e/interactions.spec.ts`：兩條注入 api 失敗的測試。
+  - `e2e/overview.spec.ts`：「載入失敗」與「Dashboard 改了資料回總覽看得到」。
+- Dashboard 的 e2e 一律開 `/projects/pmis`（`e2e/helpers/dashboardPage.ts`）；總覽開 `/`（`e2e/helpers/overviewPage.ts`）。
+- 總覽網址帶 `#timeline` 會直接開時間軸檢視。這是**單向**的慣例：只在進頁時讀一次，切換檢視不會寫回網址，是給 e2e 與截圖用的。
 
 ## 目錄結構
 
@@ -90,28 +129,32 @@ frontend/
 ├── src/
 │   ├── api/               資料存取層；接後端時只換這一層
 │   │   ├── types.ts       ProjectApi / ProjectEvent / ApiError 契約，檔頭是給後端看的 wire 約定
-│   │   ├── mock/          記憶體實作（store.ts + index.ts）；可注入延遲與失敗
+│   │   ├── mock/          記憶體實作（store.ts + index.ts）；可注入延遲與失敗；portfolio.ts 是總覽摘要的彙整
 │   │   └── index.ts       挑實作的唯一出口（VITE_API 未設或 'mock' 用 mock；dev build 掛 window.__mockApi）
-│   ├── assets/            tokens.css（設計 token）、base.css（全域樣式與 keyframes）
-│   ├── components/        元件，依畫面區塊分子目錄（common / layout / summary / gantt / kanban / issues / detail / dialogs）
+│   ├── assets/            tokens.css（設計 token）、base.css（全域樣式與 keyframes）、overview-motion.css（總覽的過渡 class）
+│   ├── components/        元件，依畫面區塊分子目錄（common / layout / summary / gantt / kanban / issues / detail / dialogs / overview）
 │   ├── composables/       可重用的組合式函式
 │   │   ├── useProjectBoot.ts    啟動層：注入 error sink、載入狀態、訂閱事件
+│   │   ├── usePortfolioBoot.ts  總覽的啟動層：第一次顯示載入中，之後背景重載不閃
 │   │   ├── useDomRegistry.ts    DOM 登錄表（執行期不再用選擇器找元素）
 │   │   ├── useTaskActions.ts    新增任務 / Issue 的預設值（派生層讀取集中在這）
 │   │   ├── useEditDraft.ts      逐鍵編輯：本地即時 + api debounce
 │   │   ├── useConfirmProps.ts   確認對話框的文案與 onConfirm（ConfirmDialog 純展示）
 │   │   └── …                    usePointerDrag / useGanttScroll / useAutoScroll / useClickOutside /
-│   │                            useMenus / useFocusScroll / useNow / useStickyOffsets / useDelayedUnmount
-│   ├── constants/         畫面用常數（狀態 / 優先度 / 等級的標籤與顏色、API_ERROR_TEXT）
+│   │                            useMenus / useFocusScroll / useNow / useStickyOffsets / useDelayedUnmount /
+│   │                            useDismiss（總覽浮層的點外面與 Esc）/ freezeLeave（TransitionGroup 離場釘在原位）
+│   ├── constants/         畫面用常數（dashboard.ts：狀態 / 優先度 / 等級的標籤與顏色、API_ERROR_TEXT；overview.ts：總覽的排序鍵、標籤、門檻）
 │   ├── lib/               純函式（日期、月曆格、排程連動、篩選、排序、格式化、id…）
 │   ├── mocks/             範例資料
 │   ├── router/            路由
 │   ├── stores/            Pinia store（三層，見下）
 │   │   ├── clock.ts                           時鐘層
-│   │   ├── task / issue / comment / member.ts   資料層
+│   │   ├── task / issue / comment / member.ts   資料層（單一專案）
+│   │   ├── portfolio.ts                       資料層（總覽的專案摘要與成員名錄）
 │   │   ├── _optimistic.ts                     樂觀更新的共用機制（tracker / runOptimistic / error sink）
 │   │   ├── _sync.ts                           api.subscribe 的唯一訂閱點，把事件路由到各資料 store
-│   │   └── rows / filter / selection / ui.ts  派生層
+│   │   ├── rows / filter / selection / ui.ts  派生層（Dashboard）
+│   │   └── overview.ts                        派生層（總覽）
 │   ├── types/             資料模型型別
 │   ├── views/             頁面
 │   └── __tests__/         跨目錄的結構守衛（readme / no-query-selector）
@@ -133,11 +176,11 @@ frontend/
 
 **除了讓 vendor 生效所需的那一段 `window.__resources` 之外，`legacy/` 不再修改。** 新舊行為有差異時改的是 `src/`，不是 `legacy/`。
 
-開發伺服器把它掛在 <http://localhost:5174/legacy/Dashboard.html>，可以和 `/` 並排比對。
+開發伺服器把它掛在 <http://localhost:5174/legacy/Dashboard.html>，可以和 `/projects/pmis` 並排比對。
 
 ## 與 legacy 對照
 
-`e2e/compare.spec.ts` 是驗收用的對照測試：**同一組操作分別在 `/legacy/Dashboard.html` 與 `/` 跑一遍**，再比對兩邊的結果。涵蓋 8 項行為（選取連動、篩選、排序與分組、甘特拖曳與相依、重排與收合與新增、就地編輯、詳細視窗、刪除確認與相依編輯器），視窗 1440×900 與 1920×1080 各跑一輪。
+`e2e/compare.spec.ts` 是驗收用的對照測試：**同一組操作分別在 `/legacy/Dashboard.html` 與 `/projects/pmis` 跑一遍**，再比對兩邊的結果。涵蓋 8 項行為（選取連動、篩選、排序與分組、甘特拖曳與相依、重排與收合與新增、就地編輯、詳細視窗、刪除確認與相依編輯器），視窗 1440×900 與 1920×1080 各跑一輪。
 
 ```sh
 PLAYWRIGHT_PORT=5174 npm run test:e2e -- e2e/compare.spec.ts        # 全部
@@ -183,8 +226,14 @@ store 分三層，依賴**只能由上往下**：
 | 層 | 檔 | 職責 | 可以 import 誰 |
 |---|---|---|---|
 | 時鐘層 | `clock.ts` | `now` / `todayIdx` / `todayIso`（60 秒 tick） | 誰都不用 |
-| 資料層 | `task.ts`、`issue.ts`、`comment.ts`、`member.ts`（＋共用的 `_optimistic.ts`、`_sync.ts`） | 專案資料的唯一擁有者；所有寫入都經 `@/api` | `@/api/*`、`@/lib/*`、`@/types/*`、`@/stores/clock`、其他資料 store、`_optimistic` / `_sync` |
-| 派生層 | `rows.ts`、`filter.ts`、`selection.ts`、`ui.ts` | 從資料層算出畫面要的東西（可見列、篩選、選取、浮層 / 錯誤條 / 收合） | 所有層 |
+| 資料層 | `task.ts`、`issue.ts`、`comment.ts`、`member.ts`（＋共用的 `_optimistic.ts`、`_sync.ts`）；總覽的 `portfolio.ts` | 專案資料的唯一擁有者；所有寫入都經 `@/api` | `@/api/*`、`@/lib/*`、`@/types/*`、`@/stores/clock`、其他資料 store、`_optimistic` / `_sync` |
+| 派生層 | `rows.ts`、`filter.ts`、`selection.ts`、`ui.ts`；總覽的 `overview.ts` | 從資料層算出畫面要的東西（可見列、篩選、選取、浮層 / 錯誤條 / 收合） | 所有層 |
+
+成員名錄有兩份：`portfolio.members`（總覽，含各專案的 PM）與 `member.members`（Dashboard，單一專案的成員）。總覽元件查成員一律用 `portfolio.byId`。
+
+離開頁面時，兩邊的狀態處理方式不同：
+- `overview` store 會保留：從 Dashboard 回到總覽時，篩選、排序、展開與檢視都還在。
+- Dashboard 卸載時，`ui.resetTransient()` 會清掉詳細視窗與浮層這類暫態，回來時不會自己打開。
 
 **資料層不知道派生層存在**，所以三件原本會反向依賴的事改成這樣：
 
@@ -223,11 +272,39 @@ store 分三層，依賴**只能由上往下**：
 | `data-dd` | 所有下拉的觸發器與面板 | `1` | ✓ |
 | `data-zoom` | 甘特縮放滑桿 | `1` | ✓ |
 | `data-errorbar` | 錯誤條容器（同一元素帶 `role="alert"`） | 空值 | ✗ |
-| `data-selected` | 甘特任務列 / 任務卡 / Issue 卡 | `true` / `false` | ✗ |
+| `data-loadstate` / `data-load-error` | 載入中 / 失敗畫面的容器與錯誤訊息（Dashboard 與總覽共用 `LoadingState`） | 空值 | ✗ |
+| `data-selected` | 甘特任務列 / 任務卡 / Issue 卡 / 總覽時間軸的專案列 `.p-row` | `true` / `false` | ✗ |
 | `data-rel` | 任務卡 | `up` / `down` / `group` / 空 | ✗ |
 | `data-status` | 甘特條 / 任務卡 / Issue 卡 | 狀態 key，或 `delayed` | ✗ |
 | `data-panel` | 面板外殼 | `gantt` / `kanban` / `issues` | ✗ |
 | `data-testid` | 摘要卡 `summary-duration` / `summary-progress` / `summary-tasks` / `summary-issues`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count` | 固定字串 | ✗ |
+
+總覽頁的屬性。legacy 沒有這一頁，所以下表全部都不能用在新舊對照測試：
+
+| 屬性 | 掛在 | 值 |
+|---|---|---|
+| `data-view` | 總覽頁根元素 | `overview` |
+| `data-view-panel` | 兩種檢視的面板外殼（`OvPanel`） | `cards` / `timeline` |
+| `data-view-switch` | 頂欄的檢視切換鈕（帶 `aria-pressed`） | `cards` / `timeline` |
+| `data-project` | 專案卡；時間軸的 `.p-block`（同時包住 `.p-row` 與 `.qv`） | projectId |
+| `data-pm-col` | 卡片檢視的 PM 欄 | 成員 id |
+| `data-pm-group` | 時間軸的 PM 群組列 `.g-row` | 成員 id |
+| `data-pm-option` | 成員篩選面板的一列（帶 `aria-pressed`） | 成員 id |
+| `data-ov-dd` | 總覽頂欄的下拉根元素（見表下說明） | `pm` / `status` / `alert` |
+| `data-testid` | 面板計數 `overview-count`、清除篩選 `overview-clear`、空狀態 `overview-empty`、時間軸「今天」`overview-today` | 固定字串 |
+
+`data-ov-dd` 刻意和 Dashboard 的 `data-dd` 分開：它不在 `useClickOutside` 的保留清單裡，總覽的浮層改由 `useDismiss` 關閉。
+
+總覽 e2e 還依賴下表這些 class，**改名時要同步改測試**。用到的檔是 `e2e/overview.spec.ts`、`e2e/overview-motion.spec.ts`、`e2e/helpers/overviewPage.ts`：
+
+| 用途 | class |
+|---|---|
+| 頂欄與下拉 | `.dd-trigger` `.dd-menu` `.alert-dot` |
+| 排序 | `.sort-trigger` `.chip-x` `.chip-arrow` |
+| 面板 | `.panel-head` `.panel-body` `.panel-caret` |
+| 卡片 | `.card-name` `.card-caret` `.hero` `.fill-actual` `.quick-wrap` `.qb-title` |
+| 時間軸 | `.tl-body` `.today-tag` `.p-row` `.p-left` `.c-pct` `.c-gap` `.bar` `.g-caret` `.g-sum` `.qv` `.qv-head` `.btn-quick` |
+| 過渡（Vue 自動加上的 class） | `ov-pop-*` `ov-fade-*` `ov-view-*` `ov-card-*` `ov-col-*` `ov-row-*` `ov-chip-*`（定義在 `assets/overview-motion.css`） |
 
 ## 怎麼接後端
 
@@ -356,4 +433,7 @@ dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (im
 - **PATCH body 要用 schema 白名單驗欄位**：`updateTask` / `updateGroup` / `updateIssue` 送的是 JSON merge patch，後端必須逐欄位比對允許清單再寫入，**不可以整包 merge 進實體**（mass-assignment；也要擋 `__proto__` / `constructor` / `prototype` 這類鍵造成的原型污染）。同理 `createTask` 這些帶完整實體的端點也要過一次 schema。
 - **多人衝突**：現在是「後到的覆蓋先到的」，沒有版本號或 `If-Match`。同時編輯同一筆的情境沒有處理（spec 已排除）。附帶一提：`dirty`（本地改了還沒送出）只保護**本地**不被 reconcile 蓋掉，**不保護 server 端**——那段值還沒上 wire，別的 client 這段時間寫進去的東西，等它送出時一樣會被覆蓋。
 - **附件上傳驗證**：`comment.addDraftFiles` 直接 `URL.createObjectURL`，沒有任何檢查。要補檔案大小上限、MIME 型別與副檔名白名單（三者都要，只擋副檔名擋不住偽裝的檔案），**伺服器端再驗一次**。
+- **總覽的規模**：時間軸範圍涵蓋所有專案與今天，日刻度與底色格的 DOM 節點數跟天數成正比。專案變多、時間跨度拉長時，要考慮限縮範圍或做虛擬化。
+- **總覽的篩選不寫進網址**：重新整理或分享連結時，篩選條件不會保留。
+- **`prefers-reduced-motion`**：全專案都還沒支援。總覽的過渡集中在 `assets/overview-motion.css` 與各元件的 `transition`，要支援時從這裡下手。
 - **CSP**：目前沒有 Content-Security-Policy；上線前在伺服器或 CDN 層補上，至少限制 `script-src` / `style-src` / `img-src`（`blob:` 要放行，附件預覽用得到）。
