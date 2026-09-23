@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  alertOf, deriveProject, dueSoon, gapTone, groupByPm, matchProject, pct, pmOptions, sortRows, timelineRange,
+  alertOf,
+  bumpOverviewSort, deriveProject, dueSoon, gapTone, groupByPm, matchProject, pct, pmOptions, sortRows, timelineRange,
   type ProjectRow,
 } from '@/lib/portfolio'
 import type { Member, ProjectSummary } from '@/types/models'
@@ -175,5 +176,13 @@ describe('timelineRange', () => {
   })
   it('沒有專案時只有今天所在月份', () => {
     expect(timelineRange([], '2026-09-22').months.map((x) => x.iso)).toEqual(['2026-09'])
+  })
+
+  it('bumpOverviewSort：新鍵用總覽自己的預設方向（落後 / Issue 大到小、日期早到晚），再點翻方向', () => {
+    expect(bumpOverviewSort([], 'issues')).toEqual([{ k: 'issues', dir: 'desc' }])
+    expect(bumpOverviewSort([], 'start')).toEqual([{ k: 'start', dir: 'asc' }])
+    const two = bumpOverviewSort([{ k: 'gap', dir: 'desc' }], 'due')
+    expect(two).toEqual([{ k: 'gap', dir: 'desc' }, { k: 'due', dir: 'asc' }])
+    expect(bumpOverviewSort(two, 'gap')[0]).toEqual({ k: 'gap', dir: 'asc' })
   })
 })

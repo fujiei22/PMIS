@@ -25,13 +25,6 @@ export const PROJECT_BADGE_LABEL: Record<ProjectBadgeKind, string> = {
 export const BADGE_CLASS: Record<ProjectBadgeKind, string> = {
   late: 'late', watch: 'paused', doing: 'doing', todo: 'todo', done: 'done',
 }
-/** 需注意門檻：落後百分點。alertOf 與 gapTone 共用。 */
-export const LATE_GAP = 15
-export const WATCH_GAP = 5
-/** 延遲任務數達到這個值就算落後。 */
-export const LATE_DELAYED_TASKS = 3
-/** 近期任務距今幾天內標成快到期。 */
-export const DUE_SOON_DAYS = 2
 /** 時間軸一天寬（px）：Dashboard 甘特刻度上限 32px 的 22%（spec 目標 6）。 */
 export const TIMELINE_DAY_W = 32 * 0.22
 /** 時間軸左欄寬（px），CSS 端以 --gantt-left 同值。 */

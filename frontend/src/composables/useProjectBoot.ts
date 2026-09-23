@@ -1,4 +1,4 @@
-import { API_ERROR_TEXT, apiErrorCode } from '@/constants/dashboard'
+import { API_ERROR_TEXT, apiErrorCode } from '@/constants/api'
 import { setErrorSink } from '@/stores/_optimistic'
 import { useProjectSync } from '@/stores/_sync'
 import { useSelectionStore } from '@/stores/selection'

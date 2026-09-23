@@ -327,6 +327,13 @@ describe('uiStore', () => {
     ui.filterCalendarOpen = true
     ui.pickerFor = task.id
     ui.editing = { kind: 't', id: task.id }
+    ui.linkLine = { x1: 0, y1: 0, x2: 1, y2: 1 }
+    ui.nearTaskId = task.id
+    ui.hoverTaskId = task.id
+    ui.rowHoverId = task.id
+    ui.memberDrag = { from: 'm1', ids: ['m1'] }
+    ui.zooming = true
+    ui.pushError({ label: '更新任務', error: new Error('x') })
     ui.panelOff.gantt = true
     ui.setDayWidth(20)
     ui.toggleGroup('g1')
@@ -345,6 +352,10 @@ describe('uiStore', () => {
     expect(ui.filterCalendarOpen).toBe(false)
     expect(ui.pickerFor).toBeNull()
     expect(ui.editing).toBeNull()
+    expect([ui.linkLine, ui.nearTaskId, ui.hoverTaskId, ui.rowHoverId, ui.memberDrag]).toEqual([null, null, null, null, null])
+    expect(ui.drag).toBeNull()
+    expect(ui.zooming).toBe(false)
+    expect(ui.errors).toEqual([])
     // 版面偏好不動
     expect(ui.panelOff.gantt).toBe(true)
     expect(ui.dayWidth).toBe(20)

@@ -168,10 +168,9 @@ onBeforeUnmount(() => ro?.disconnect())
 
             <TransitionGroup name="ov-group" tag="div" class="tl-groups" @before-leave="freezeLeave">
               <TimelineGroup
-                v-for="(g, i) in groups"
+                v-for="g in groups"
                 :key="g.pm.id"
                 :group="g"
-                :index="i"
                 :start-idx="range.startIdx"
                 :dw="DW"
               />

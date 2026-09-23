@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // 時間軸的一位 PM：可收合的群組列（收合時畫摘要 bar）＋ 底下的專案列；PM 色系變數由根元素 .g 提供給列與速覽。
-import { computed, onUpdated, ref } from 'vue'
+import { computed, ref, type ComponentPublicInstance } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import TimelineProjectRow from '@/components/overview/TimelineProjectRow.vue'
 import { freezeLeave } from '@/composables/freezeLeave'
+import { useRelativeFlip } from '@/composables/useRelativeFlip'
 import { useDelayedUnmount } from '@/composables/useDelayedUnmount'
 import { PANEL_UNMOUNT_MS } from '@/constants/overview'
 import { dayIndex } from '@/lib/date'
@@ -16,22 +17,17 @@ const props = defineProps<{
   startIdx: number
   /** 一天的寬（px）。 */
   dw: number
-  /** 這一組在時間軸上的位置；用來判斷這次更新整組有沒有移動。 */
-  index: number
 }>()
 
 /*
- * 巢狀 FLIP：組在時間軸上換位置時，組本身有重排動畫（OverviewTimeline 的 ov-group）。
- * 裡面的專案列 TransitionGroup 量的是頁面上的絕對位置，會把組的位移再算一次，列就偏移兩倍。
- * 所以組移動的那一輪停用列的重排（列跟著組一起動）；組沒動、只有組內順序變時才讓列自己重排。
- * 做法與卡片檢視的 PmColumn 相同。
+ * 巢狀 FLIP：群組本身有重排動畫（OverviewTimeline 的 ov-group），組內專案列若也用 TransitionGroup
+ * 內建的 move，會用頁面上的絕對位置算位移、把群組的位移再算一次。所以列的重排改用相對於 .g-list 的位移
+ * （useRelativeFlip），內建 move 以不存在的 class `ov-row-still` 停用；列的進出場照舊。做法同 PmColumn。
  */
-const prevIndex = ref(props.index)
-onUpdated(() => {
-  prevIndex.value = props.index
-})
-const rowMoveClass = computed(() =>
-  props.index === prevIndex.value ? 'ov-row-move' : 'ov-row-still',
+const list = ref<ComponentPublicInstance | null>(null)
+useRelativeFlip(
+  computed(() => list.value?.$el as HTMLElement | undefined),
+  'data-project',
 )
 
 const overview = useOverviewStore()
@@ -102,7 +98,8 @@ function onKey(e: KeyboardEvent): void {
           name="ov-row"
           tag="div"
           class="g-list"
-          :move-class="rowMoveClass"
+          ref="list"
+          move-class="ov-row-still"
           @before-leave="freezeLeave"
         >
           <TimelineProjectRow

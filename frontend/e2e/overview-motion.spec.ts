@@ -93,9 +93,50 @@ test.describe('總覽 動畫清單', () => {
       .toBeGreaterThan(2)
   })
 
-  test('A18 載入完成換成內容；A29 切頁，都有 ov-view 過渡', async ({ page }) => {
+  test('A6 / A22 下拉選項、排序選項與成員勾選框的勾選態有過渡', async ({ page }) => {
     const ov = new OverviewPage(page); await ov.goto()
-    expect(await seesClass(page, 'ov-view-leave-active', () => ov.card('pmis').getByRole('link', { name: /進入/ }).click())).toBe(true)
+    await ov.openDropdown('status')
+    expect(await hasMotion(ov.dropdown('status').locator('.dd-item').first())).toBe(true)
+    await page.keyboard.press('Escape')
+    await ov.openDropdown('pm')
+    expect(await hasMotion(ov.dropdown('pm').locator('.mp-box').first())).toBe(true)
+    await page.keyboard.press('Escape')
+    await page.locator('[data-view-panel="cards"] .sort-trigger').click()
+    expect(await hasMotion(page.locator('[data-view-panel="cards"] .sort-option').first())).toBe(true)
+  })
+
+  test('A23 成員觸發鈕的頭像疊增減有過渡', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    // 沒勾人時顯示前三位；勾了成員10 之後頭像疊換成只有成員10，舊頭像離場、新頭像進場
+    expect(await seesClass(page, 'ov-av-leave-active', () => ov.pickPm('m10'))).toBe(true)
+  })
+
+  test('A27 時間軸展開時，選取列與速覽之間的連接框淡入', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto('#timeline')
+    expect(await seesClass(page, 'qv-cap ov-fade-enter-active', () => ov.row('pmis').locator('.p-row').click())).toBe(true)
+  })
+
+  test('A28 展開畫面底部的卡片後，速覽會捲進畫面', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    const card = ov.card('vendor')
+    // 讓卡片頂端落在畫面最下方 140px 內：展開後速覽一定超出畫面
+    await card.evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - (window.innerHeight - 140)))
+    await card.locator('.card-name').click()
+    const vh = page.viewportSize()!.height
+    const wrap = card.locator('.quick-wrap')
+    // 先等速覽完全展開（剛點下去時高度還是 0，底邊一定在畫面內，會假綠）
+    await expect.poll(async () => (await wrap.boundingBox())!.height).toBeGreaterThan(300)
+    await expect
+      .poll(async () => {
+        const box = (await wrap.boundingBox())!
+        return box.y + box.height
+      })
+      .toBeLessThanOrEqual(vh + 2)
+  })
+
+  test('A29 切頁有 page-view 過渡', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    expect(await seesClass(page, 'page-view-leave-active', () => ov.card('pmis').getByRole('link', { name: /進入/ }).click())).toBe(true)
   })
 })
 
@@ -146,6 +187,34 @@ test.describe('總覽 重排動畫（A8 / A9 / A20）', () => {
     const ov = new OverviewPage(page); await ov.goto()
     const dist = await trackMove(page, '[data-view-panel="cards"] [data-project="wiki"]', () =>
       page.locator('[data-view-panel="cards"] .chip-x').first().click(),
+    )
+    const r = moveReport(dist)
+    expect(r.start).toBeGreaterThan(50)
+    expect(r.hasMidFrame).toBe(true)
+    // 不回彈：途中不會比起點離終點更遠（容 2px 誤差）
+    expect(r.maxDist).toBeLessThanOrEqual(r.start + 2)
+  })
+
+  test('卡片檢視：欄換位置、同時欄內順序也變（金流介接移到 PMIS 前面），卡片平順移動、不回彈', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    const dist = await trackMove(page, '[data-view-panel="cards"] [data-project="payment"]', () =>
+      page.locator('[data-view-panel="cards"] .chip-x').first().click(),
+    )
+    const r = moveReport(dist)
+    expect(r.start).toBeGreaterThan(50)
+    expect(r.hasMidFrame).toBe(true)
+    // 不回彈：途中不會比起點離終點更遠（容 2px 誤差）
+    expect(r.maxDist).toBeLessThanOrEqual(r.start + 2)
+  })
+
+  test('卡片檢視：欄的 index 不變但整欄上移（前一列變矮），卡片不會位移兩倍', async ({ page }) => {
+    // 只看成員8 / 5 / 9：兩欄 grid 的第一列是成員8、成員5（各 2 張），第二列是成員9。
+    // 再篩「需注意＝無」：成員8、成員5 各剩 1 張、第一列變矮，成員9 整欄上移，index 仍是 2。
+    // 用 index 猜「欄有沒有動」的舊做法在這裡會把欄的位移算兩次（review 抓到的情境）。
+    const ov = new OverviewPage(page); await ov.goto()
+    await ov.pickPm('m8', 'm5', 'm9')
+    const dist = await trackMove(page, '[data-view-panel="cards"] [data-project="dw"]', () =>
+      ov.pick('alert', '無'),
     )
     const r = moveReport(dist)
     expect(r.start).toBeGreaterThan(50)

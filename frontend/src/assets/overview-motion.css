@@ -9,7 +9,7 @@
 .ov-fade-enter-active, .ov-fade-leave-active { transition: opacity var(--t-base) var(--ease); }
 .ov-fade-enter-from, .ov-fade-leave-to { opacity: 0; }
 
-/* 檢視切換與切頁（A10 / A29）：新的淡入並上移 4px，舊的淡出 */
+/* 總覽內的檢視切換與載入完成（A10 / A18）：新的淡入並上移 4px，舊的淡出。切頁過渡（A29）在 base.css 的 page-view */
 @keyframes ovViewIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }

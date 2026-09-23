@@ -172,6 +172,37 @@ test.describe('總覽 頁面', () => {
     await expect.poll(() => ov.cardIds()).toHaveLength(7)
   })
 
+  test('進 Dashboard 再按上一頁，總覽回到原本的捲動位置（spec 7b）', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    // 展開一張卡讓頁面夠長，捲到底，再把要點的連結捲進畫面。
+    // 位置要在點擊「之前」量：Playwright 的 click 會自動捲動讓元素可見，router 存的是點擊當下的位置。
+    await ov.card('wiki').click()
+    // 等速覽展開完（高度動畫結束）才量：頁面還在長高時量到的位置，點擊前就會變掉
+    await expect.poll(async () => (await ov.card('wiki').locator('.quick-wrap').boundingBox())!.height).toBeGreaterThan(300)
+    // 頁面高度連續兩幀不變＝展開動畫結束
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            new Promise<boolean>((resolve) => {
+              const h = document.documentElement.scrollHeight
+              requestAnimationFrame(() => requestAnimationFrame(() => resolve(document.documentElement.scrollHeight === h)))
+            }),
+        ),
+      )
+      .toBe(true)
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+    const link = ov.card('dw').getByRole('link', { name: /進入/ })
+    await link.scrollIntoViewIfNeeded()
+    const y = await page.evaluate(() => window.scrollY)
+    expect(y).toBeGreaterThan(100)
+    await link.click()
+    await expect(page.locator('[data-panel="gantt"]')).toBeVisible()
+    await page.goBack()
+    await expect(ov.card('wiki')).toBeVisible()
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(y)
+  })
+
   test('Dashboard 改了資料，回總覽就看得到，而且沒有閃出載入中', async ({ page }) => {
     const ov = new OverviewPage(page); await ov.goto()
     await expect(ov.card('pmis').locator('.hero')).toHaveText('13%')

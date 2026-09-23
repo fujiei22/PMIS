@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import {
+  bumpOverviewSort,
   DEFAULT_OVERVIEW_SORT,
   deriveProject,
   groupByPm,
@@ -8,12 +9,13 @@ import {
   pmOptions,
   sortRows,
   timelineRange,
+  type OverviewSort,
+  type OverviewSortKey,
   type ProjectRow,
 } from '@/lib/portfolio'
-import { bumpSort as bumpSortKey, type SortKey } from '@/lib/sort'
 import { useClockStore } from '@/stores/clock'
 import { usePortfolioStore } from '@/stores/portfolio'
-import type { LoadState } from '@/stores/ui'
+import type { LoadState } from '@/types/ui'
 import type { Member, ProjectAlert, ProjectStatus } from '@/types/models'
 
 /** 總覽的兩種檢視。 */
@@ -41,7 +43,7 @@ export const useOverviewStore = defineStore('overview', () => {
   const pmIds = ref<string[]>([])
   const statuses = ref<ProjectStatus[]>([])
   const alerts = ref<ProjectAlert[]>([])
-  const sorts = ref<SortKey[]>(DEFAULT_OVERVIEW_SORT.map((s) => ({ ...s })))
+  const sorts = ref<OverviewSort[]>(DEFAULT_OVERVIEW_SORT.map((s) => ({ ...s })))
   const view = ref<OverviewView>('cards')
   const openDropdown = ref<OverviewDropdown | null>(null)
   const expandedIds = ref<string[]>([])
@@ -121,11 +123,11 @@ export const useOverviewStore = defineStore('overview', () => {
     alerts.value = []
   }
 
-  /** 點排序鍵：沒在清單裡就加到最後，已經在就翻方向（日期類預設 asc，其餘 desc）。 */
-  function bumpSort(k: string): void {
-    sorts.value = bumpSortKey(sorts.value, k)
+  /** 點排序鍵：沒在清單裡就用預設方向加到最後，已經在就翻方向（OVERVIEW_SORT_DEFAULT_DIR）。 */
+  function bumpSort(k: OverviewSortKey): void {
+    sorts.value = bumpOverviewSort(sorts.value, k)
   }
-  function dropSort(k: string): void {
+  function dropSort(k: OverviewSortKey): void {
     sorts.value = sorts.value.filter((s) => s.k !== k)
   }
   /** 回到預設排序；複製一份，別讓常數被後續 bump 改到。 */

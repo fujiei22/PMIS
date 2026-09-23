@@ -7,7 +7,7 @@
  */
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildPortfolio } from '@/api/mock/portfolio'
 import OvEmpty from '@/components/overview/OvEmpty.vue'
 import { sampleProject } from '@/mocks/sampleProject'
@@ -31,5 +31,16 @@ describe('OvEmpty', () => {
     expect(w.text()).toContain('沒有符合條件的專案')
     await w.find('button').trigger('click')
     expect(ov.anyFilter).toBe(false)
+  })
+
+  it('有專案但都找不到 PM、也沒有篩選：「目前沒有專案」，不放沒作用的清除鈕', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const data = buildPortfolio(sampleProject, '2026-09-22')
+    for (const p of data.projects) p.pmId = 'ghost'
+    await usePortfolioStore().load(data)
+    const w = mount(OvEmpty)
+    expect(w.text()).toContain('目前沒有專案')
+    expect(w.find('button').exists()).toBe(false)
+    vi.restoreAllMocks()
   })
 })

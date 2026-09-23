@@ -76,13 +76,13 @@
 |---|---|
 | 加或改資料欄位 | `types/models.ts` → `api/types.ts`（檔頭 wire 約定）→ `api/mock/store.ts` → 對應資料層 store 的 action → 元件 → 各自旁邊的 `__tests__/` → 本檔〈端點對照表〉 |
 | 加一支 api 方法 | `api/types.ts` 的 `ProjectApi` → `api/mock/index.ts` → store action → 本檔〈端點對照表〉（`readme.spec.ts` 會比對兩邊） |
-| 加畫面狀態（開關、選取、篩選） | 派生層 store（`ui` / `filter` / `selection`）加欄位，元件直接寫 |
+| 加畫面狀態（開關、選取、篩選） | 派生層 store 加欄位，元件直接寫：Dashboard 是 `ui` / `filter` / `selection`，總覽是 `overview` |
 | 改純邏輯 | `lib/` 加純函式 + 單元測試，再由 store 或元件呼叫 |
 | 加設計值（顏色、間距） | 先加 `assets/tokens.css` 的變數，再在 `<style scoped>` 引用；不直接寫色碼 |
 | 改使用者操作流程 | 對應的 `e2e/*.spec.ts`；選擇器只用〈DOM 鉤子〉表裡的屬性 |
 | 改總覽的畫面狀態（篩選、排序、展開、檢視） | `stores/overview.ts`；純邏輯（派生值、篩選、排序、分組）在 `lib/portfolio.ts` |
 | 改總覽的範例專案 | `mocks/samplePortfolio.ts` ＋ `mocks/__tests__/portfolio.spec.ts`（數字要對得上設計稿）；PMIS 摘要改 `api/mock/portfolio.ts` |
-| 加總覽的互動或 UI 變化 | 元件 ＋ `assets/overview-motion.css`（過渡 class 唯一定義處）＋ `e2e/overview-motion.spec.ts`（每項動畫都有守衛） |
+| 加總覽的互動或 UI 變化 | 元件 ＋ `assets/overview-motion.css`（過渡 class 唯一定義處）＋ `e2e/overview-motion.spec.ts`（在 spec〈動畫清單〉加一項，就在這裡補一條守衛） |
 
 ### 守衛測試
 
@@ -96,7 +96,7 @@
 | `src/mocks/__tests__/consistency.spec.ts` | 範例資料必須已是 cascade 之後的樣子 |
 | `src/assets/__tests__/tokens.spec.ts` | `tokens.css` 必須含有程式用到的每個變數與約定值，改名或刪 token 會紅 |
 | `src/mocks/__tests__/portfolio.spec.ts` | 總覽靜態專案算出的實際 / 理論 % 與需注意等於設計稿；m1–m7 與 `sampleProject` 的成員是同一份 |
-| `e2e/overview-motion.spec.ts` | 總覽每項互動與 UI 變化都有過渡動畫。重排時逐幀量位置，沒有動畫（直接跳到新位置）或位移算了兩次（先跳過頭再回彈），都會紅 |
+| `e2e/overview-motion.spec.ts` | spec〈動畫清單〉每一項至少有一條守衛：宣告了 transition / animation，或過渡 class 真的出現（A19 hover / focus 另以瀏覽器逐一量測稽核）。重排時逐幀量位置，沒有動畫（直接跳到新位置）或位移算了兩次（先跳過頭再回彈），都會紅 |
 
 ### 閱讀指引
 
@@ -119,6 +119,7 @@
   - `e2e/overview.spec.ts`：「載入失敗」與「Dashboard 改了資料回總覽看得到」。
 - Dashboard 的 e2e 一律開 `/projects/pmis`（`e2e/helpers/dashboardPage.ts`）；總覽開 `/`（`e2e/helpers/overviewPage.ts`）。
 - 總覽網址帶 `#timeline` 會直接開時間軸檢視。這是**單向**的慣例：只在進頁時讀一次，切換檢視不會寫回網址，是給 e2e 與截圖用的。
+- 時間軸每次重建（進頁、面板收合再展開、空狀態切回來）都會橫向捲回今天，不保留上一次的橫向捲動位置，這是刻意的。
 
 ## 目錄結構
 
@@ -142,11 +143,12 @@ frontend/
 │   │   ├── useConfirmProps.ts   確認對話框的文案與 onConfirm（ConfirmDialog 純展示）
 │   │   └── …                    usePointerDrag / useGanttScroll / useAutoScroll / useClickOutside /
 │   │                            useMenus / useFocusScroll / useNow / useStickyOffsets / useDelayedUnmount /
-│   │                            useDismiss（總覽浮層的點外面與 Esc）/ freezeLeave（TransitionGroup 離場釘在原位）
-│   ├── constants/         畫面用常數（dashboard.ts：狀態 / 優先度 / 等級的標籤與顏色、API_ERROR_TEXT；overview.ts：總覽的排序鍵、標籤、門檻）
+│   │                            useDismiss（總覽浮層的點外面與 Esc）/ freezeLeave（TransitionGroup 離場釘在原位）/
+│   │                            useRelativeFlip（巢狀清單的重排動畫，以容器為基準量位移）
+│   ├── constants/         畫面用常數（dashboard.ts：狀態 / 優先度 / 等級的標籤與顏色；overview.ts：總覽的排序鍵、標籤、尺寸；api.ts：API_ERROR_TEXT）
 │   ├── lib/               純函式（日期、月曆格、排程連動、篩選、排序、格式化、id…）
 │   ├── mocks/             範例資料
-│   ├── router/            路由
+│   ├── router/            路由（pageSwap.ts：切頁過渡結束後才還原捲動位置）
 │   ├── stores/            Pinia store（三層，見下）
 │   │   ├── clock.ts                           時鐘層
 │   │   ├── task / issue / comment / member.ts   資料層（單一專案）
@@ -155,7 +157,7 @@ frontend/
 │   │   ├── _sync.ts                           api.subscribe 的唯一訂閱點，把事件路由到各資料 store
 │   │   ├── rows / filter / selection / ui.ts  派生層（Dashboard）
 │   │   └── overview.ts                        派生層（總覽）
-│   ├── types/             資料模型型別
+│   ├── types/             資料模型型別（models.ts）與畫面層共用型別（ui.ts：LoadState）
 │   ├── views/             頁面
 │   └── __tests__/         跨目錄的結構守衛（readme / no-query-selector）
 └── e2e/                   Playwright 測試與 helper
@@ -305,7 +307,7 @@ store 分三層，依賴**只能由上往下**：
 | 面板 | `.panel-head` `.panel-body` `.panel-caret` |
 | 卡片 | `.card-name` `.card-caret` `.hero` `.fill-actual` `.quick-wrap` `.qb-title` |
 | 時間軸 | `.tl-body` `.today-tag` `.p-row` `.p-left` `.c-pct` `.c-gap` `.bar` `.g-caret` `.g-sum` `.qv` `.qv-head` `.btn-quick` |
-| 過渡（Vue 自動加上的 class） | `ov-pop-*` `ov-fade-*` `ov-view-*` `ov-card-*` `ov-col-*` `ov-row-*` `ov-chip-*`（定義在 `assets/overview-motion.css`） |
+| 過渡（Vue 自動加上的 class） | `ov-pop-*` `ov-fade-*` `ov-view-*` `ov-card-*` `ov-col-*` `ov-row-*` `ov-chip-*` `ov-av-*`（定義在 `assets/overview-motion.css`）；切頁的 `page-view-*`（定義在 `assets/base.css`）；時間軸連接框 `.qv-cap` |
 
 ## 怎麼接後端
 
@@ -380,7 +382,7 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 | `conflict` | 409 | 與伺服器狀態衝突 |
 | `unknown` | 其他 | 發生錯誤 |
 
-對照表在 `src/constants/dashboard.ts`（`API_ERROR_TEXT` / `apiErrorCode()`）。錯誤條 `ErrorBar` 顯示的是「操作名稱（`label`，例如『更新任務』）＋ 上表文案」，同 label 會合併成 `×N`，最多留 5 筆、畫面顯示 3 筆，不自動關閉。
+對照表在 `src/constants/api.ts`（`API_ERROR_TEXT` / `apiErrorCode()`，Dashboard 與總覽共用）。錯誤條 `ErrorBar` 顯示的是「操作名稱（`label`，例如『更新任務』）＋ 上表文案」，同 label 會合併成 `×N`，最多留 5 筆、畫面顯示 3 筆，不自動關閉。
 
 「同 label 合併」的視窗是 **`clock` 的 60 秒 tick**，不是牆鐘 5 秒：`ui.pushError` 的時間戳取 `clock.now`（每 60 秒才走一次），所以實際行為是「同一個 tick 內的同 label 合併成一筆」。刻意如此——連續失敗不該把錯誤條洗版。
 
@@ -434,6 +436,11 @@ dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (im
 - **PATCH body 要用 schema 白名單驗欄位**：`updateTask` / `updateGroup` / `updateIssue` 送的是 JSON merge patch，後端必須逐欄位比對允許清單再寫入，**不可以整包 merge 進實體**（mass-assignment；也要擋 `__proto__` / `constructor` / `prototype` 這類鍵造成的原型污染）。同理 `createTask` 這些帶完整實體的端點也要過一次 schema。
 - **多人衝突**：現在是「後到的覆蓋先到的」，沒有版本號或 `If-Match`。同時編輯同一筆的情境沒有處理（spec 已排除）。附帶一提：`dirty`（本地改了還沒送出）只保護**本地**不被 reconcile 蓋掉，**不保護 server 端**——那段值還沒上 wire，別的 client 這段時間寫進去的東西，等它送出時一樣會被覆蓋。
 - **附件上傳驗證**：`comment.addDraftFiles` 直接 `URL.createObjectURL`，沒有任何檢查。要補檔案大小上限、MIME 型別與副檔名白名單（三者都要，只擋副檔名擋不住偽裝的檔案），**伺服器端再驗一次**。
+- **依 id 載入專案**：路由已經是 `/projects/:id`，但資料層仍是單專案設計（`loadProject()` 沒有參數、`subscribe` 不分專案、Dashboard 的 store 是單例）。接上時：
+  1. 契約改成 `loadProject(id)` → `GET /api/projects/:id`、`subscribe(id)`；`api/types.ts` 檔頭與〈端點對照表〉一起改。
+  2. DashboardView 從 `route.params.id` 取 id 傳給 `useProjectBoot()`。`App.vue` 的頁面 key 已經是 `route.path`，換專案時 Dashboard 會重新掛載、重新載入。
+  3. 換專案時要清空資料層（task / issue / comment / member）與 `selection` / `filter`，不能只靠 `ui.resetTransient()`（它只清暫態浮層）。
+  4. 總覽的 PMIS 摘要目前由 mock 從範例專案彙整，接上後改由後端的 `listProjects()` 提供。
 - **總覽的規模**：時間軸範圍涵蓋所有專案與今天，日刻度與底色格的 DOM 節點數跟天數成正比。專案變多、時間跨度拉長時，要考慮限縮範圍或做虛擬化。
 - **總覽的篩選不寫進網址**：重新整理或分享連結時，篩選條件不會保留。
 - **`prefers-reduced-motion`**：全專案都還沒支援。總覽的過渡集中在 `assets/overview-motion.css` 與各元件的 `transition`，要支援時從這裡下手。

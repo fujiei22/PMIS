@@ -1,4 +1,4 @@
-import { API_ERROR_TEXT, apiErrorCode } from '@/constants/dashboard'
+import { API_ERROR_TEXT, apiErrorCode } from '@/constants/api'
 import { useOverviewStore } from '@/stores/overview'
 import { usePortfolioStore } from '@/stores/portfolio'
 

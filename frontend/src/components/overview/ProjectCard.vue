@@ -132,7 +132,7 @@ function onQuickTransitionEnd(e: TransitionEvent): void {
   /* 展開後捲到看得見時，要避開 sticky 的面板標題列與欄首（56px 是 B2 .col-head 的高度） */
   scroll-margin-top: calc(var(--ov-top, 0px) + var(--ov-head, 0px) + 56px);
   /*
-   * hover 上浮用獨立的 translate 屬性，不用 transform：transform 留給 TransitionGroup 的重排（FLIP），
+   * hover 上浮用獨立的 translate 屬性，不用 transform：transform 留給欄內重排（useRelativeFlip），
    * 兩者寫在同一個屬性會互相覆蓋，重排時卡片會先跳位再飄回來。
    */
   transition:
@@ -147,17 +147,6 @@ function onQuickTransitionEnd(e: TransitionEvent): void {
   translate: 0 -1px;
 }
 
-/*
- * 重排（A8）：TransitionGroup 會加上 ov-card-move。全域 overview-motion.css 的同名規則權重
- * 比上面的 .card（scoped）低、會被整個 transition 蓋掉，所以在這裡用更高權重補一次。
- */
-.card.ov-card-move {
-  transition:
-    transform var(--t-panel) var(--ease),
-    border-color var(--t-base) var(--ease),
-    box-shadow var(--t-base) var(--ease),
-    translate var(--t-base) var(--ease);
-}
 
 .card:focus-visible {
   outline: none;

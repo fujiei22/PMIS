@@ -4,7 +4,7 @@ import { computed, ref } from 'vue'
 import { freezeLeave } from '@/composables/freezeLeave'
 import { useDismiss } from '@/composables/useDismiss'
 import { OVERVIEW_SORT_KEYS } from '@/constants/overview'
-import { bumpSort } from '@/lib/sort'
+import { OVERVIEW_SORT_DEFAULT_DIR, type OverviewSortKey } from '@/lib/portfolio'
 import { useOverviewStore } from '@/stores/overview'
 
 const overview = useOverviewStore()
@@ -14,9 +14,9 @@ const open = computed(() => overview.openDropdown === 'sort')
 
 const arrowOf = (dir: 'asc' | 'desc'): string => (dir === 'asc' ? '↑' : '↓')
 
-/** 某個鍵第一次被加進排序時的方向；直接問 lib 的 bumpSort，不另抄一份「日期類 asc」規則。 */
-function defaultDir(k: string): 'asc' | 'desc' {
-  return bumpSort([], k)[0]!.dir
+/** 某個鍵第一次被加進排序時的方向（總覽自己的預設，見 lib/portfolio.ts）。 */
+function defaultDir(k: OverviewSortKey): 'asc' | 'desc' {
+  return OVERVIEW_SORT_DEFAULT_DIR[k]
 }
 
 const chips = computed(() =>

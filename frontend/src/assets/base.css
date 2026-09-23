@@ -180,6 +180,16 @@ select {
   font-weight: var(--fw-medium);
 }
 
+/* ---------- 切頁過渡（App.vue，A29）：舊頁淡出、新頁淡入 ---------- */
+
+.page-view-enter-active {
+  animation: fadeIn var(--t-base) var(--ease);
+}
+
+.page-view-leave-active {
+  animation: fadeOut var(--t-fast) var(--ease);
+}
+
 /* ---------- keyframes ---------- */
 
 @keyframes popIn {

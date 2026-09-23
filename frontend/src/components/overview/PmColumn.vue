@@ -3,28 +3,22 @@
 // 模板：PM 色來自資料，不是 token，所以走 inline --pm；衍生的淡色在 .col 裡用 color-mix 算
 import Avatar from '@/components/common/Avatar.vue'
 import ProjectCard from '@/components/overview/ProjectCard.vue'
-import { computed, onUpdated, ref } from 'vue'
+import { computed, ref, type ComponentPublicInstance } from 'vue'
 import { freezeLeave } from '@/composables/freezeLeave'
+import { useRelativeFlip } from '@/composables/useRelativeFlip'
 import type { PmGroup } from '@/lib/portfolio'
 
-const props = defineProps<{
-  group: PmGroup
-  /** 這一欄在看板上的位置；用來判斷這次更新整欄有沒有移動。 */
-  index: number
-}>()
+defineProps<{ group: PmGroup }>()
 
 /*
- * 巢狀 FLIP：欄在看板上換位置時，欄本身有重排動畫（CardBoard 的 ov-col）。
- * 裡面的卡片 TransitionGroup 量的是頁面上的絕對位置，會把欄的位移再算一次，卡片就偏移兩倍。
- * 所以欄移動的那一輪停用卡片的重排（卡片跟著欄一起動）；欄沒動、只有欄內順序變時才讓卡片自己重排。
- * 子元件的 updated 先於父元件：TransitionGroup 用的是這一輪算出的 moveClass，之後才記下新位置。
+ * 巢狀 FLIP：欄本身有重排動畫（CardBoard 的 ov-col），欄內卡片若也用 TransitionGroup 內建的 move，
+ * 會用頁面上的絕對位置算位移、把欄的位移再算一次。所以卡片的重排改用相對於 .col-body 的位移
+ * （useRelativeFlip），內建 move 以不存在的 class `ov-card-still` 停用；卡片的進出場照舊由 TransitionGroup 處理。
  */
-const prevIndex = ref(props.index)
-onUpdated(() => {
-  prevIndex.value = props.index
-})
-const cardMoveClass = computed(() =>
-  props.index === prevIndex.value ? 'ov-card-move' : 'ov-card-still',
+const body = ref<ComponentPublicInstance | null>(null)
+useRelativeFlip(
+  computed(() => body.value?.$el as HTMLElement | undefined),
+  'data-project',
 )
 </script>
 
@@ -44,7 +38,8 @@ const cardMoveClass = computed(() =>
       name="ov-card"
       tag="div"
       class="col-body"
-      :move-class="cardMoveClass"
+      ref="body"
+      move-class="ov-card-still"
       @before-leave="freezeLeave"
     >
       <ProjectCard v-for="row in group.rows" :key="row.p.id" :row="row" />
@@ -65,6 +60,7 @@ const cardMoveClass = computed(() =>
   /* 卡片展開時的 PM 色系：外框、箭頭字色、速覽分隔線（照 B2 .g, .col） */
   --pm-frame: var(--pm);
   --pm-ink: color-mix(in srgb, var(--pm) 60%, var(--text-1)); /* 淡底上仍 ≥4.5:1 */
+  /* 和 --pm-bg 同值但用途不同（展開卡的速覽分隔線），分開命名，之後欄底調整不會連帶改到分隔線 */
   --pm-soft: color-mix(in srgb, var(--pm) 30%, var(--surface-1));
   display: flex;
   flex-direction: column;

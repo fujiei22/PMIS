@@ -1,11 +1,4 @@
-import {
-  DUE_SOON_DAYS,
-  LATE_DELAYED_TASKS,
-  LATE_GAP,
-  WATCH_GAP,
-} from '@/constants/overview'
 import { dayIndex, shiftMonth } from '@/lib/date'
-import type { SortKey } from '@/lib/sort'
 import type { ISODate, Member, ProjectAlert, ProjectStatus, ProjectSummary } from '@/types/models'
 
 /**
@@ -15,6 +8,31 @@ import type { ISODate, Member, ProjectAlert, ProjectStatus, ProjectSummary } fro
 
 /** 總覽的排序鍵：落後百分點 / 開始日 / 到期日 / 未結 Issue 數。 */
 export type OverviewSortKey = 'gap' | 'start' | 'due' | 'issues'
+
+/** 總覽的一層排序；k 限定在總覽的四個鍵。 */
+export interface OverviewSort {
+  k: OverviewSortKey
+  dir: 'asc' | 'desc'
+}
+
+/**
+ * 每個排序鍵第一次加進排序時的方向：落後與 Issue 數大到小（問題大的排前面），日期早到晚。
+ * 總覽自己定義，不借 Dashboard `lib/sort.ts` 的 bumpSort——那支靠鍵名猜方向，兩邊只是剛好同名。
+ */
+export const OVERVIEW_SORT_DEFAULT_DIR: Record<OverviewSortKey, 'asc' | 'desc'> = {
+  gap: 'desc',
+  start: 'asc',
+  due: 'asc',
+  issues: 'desc',
+}
+
+/** 需注意門檻：落後百分點。alertOf 與 gapTone 共用。 */
+export const LATE_GAP = 15
+export const WATCH_GAP = 5
+/** 延遲任務數達到這個值就算落後。 */
+export const LATE_DELAYED_TASKS = 3
+/** 近期任務距今幾天內標成快到期。 */
+export const DUE_SOON_DAYS = 2
 
 /** 狀態徽章：有需注意程度時優先顯示它，否則顯示專案狀態。 */
 export type ProjectBadgeKind = 'late' | 'watch' | 'doing' | 'todo' | 'done'
@@ -101,7 +119,7 @@ export interface TimelineRange {
 export type GapTone = 'behind' | 'warn' | 'flat'
 
 /** 總覽的預設排序：落後多的在前，同落後值再依到期日由近到遠。 */
-export const DEFAULT_OVERVIEW_SORT: SortKey[] = [
+export const DEFAULT_OVERVIEW_SORT: OverviewSort[] = [
   { k: 'gap', dir: 'desc' },
   { k: 'due', dir: 'asc' },
 ]
@@ -168,11 +186,18 @@ function sortValueOf(row: ProjectRow, k: string): number {
   return 0
 }
 
+/** 點一次排序鍵：沒在清單裡就用預設方向加到最後，已經在就翻轉方向。回傳新陣列。 */
+export function bumpOverviewSort(sorts: readonly OverviewSort[], k: OverviewSortKey): OverviewSort[] {
+  const i = sorts.findIndex((s) => s.k === k)
+  if (i < 0) return [...sorts, { k, dir: OVERVIEW_SORT_DEFAULT_DIR[k] }]
+  return sorts.map((s, j) => (j === i ? { k, dir: s.dir === 'asc' ? 'desc' : 'asc' } : s))
+}
+
 /**
  * 多鍵排序，回傳新陣列、不改動輸入。
  * 依序比到分出高下為止；全部相等時靠 Array.prototype.sort 的穩定性保住原順序。
  */
-export function sortRows(rows: ProjectRow[], sorts: SortKey[]): ProjectRow[] {
+export function sortRows(rows: ProjectRow[], sorts: readonly OverviewSort[]): ProjectRow[] {
   return rows.slice().sort((a, b) => {
     for (const s of sorts) {
       const c = sortValueOf(a, s.k) - sortValueOf(b, s.k)

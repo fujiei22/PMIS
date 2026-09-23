@@ -1,5 +1,7 @@
 <script setup lang="ts">
-// 總覽的空狀態：完全沒有專案，或專案都被篩掉（附「清除篩選」）；卡片與時間軸共用。
+// 總覽的空狀態：沒有可顯示的專案，或專案都被篩掉（附「清除篩選」）；卡片與時間軸共用。
+// 用「有沒有篩選」判斷而不是「有沒有專案」：專案都找不到 PM 時（groups 空、但 projects 不空），
+// 沒篩選卻顯示「清除篩選」會是一顆按了沒反應的按鈕。
 import { useOverviewStore } from '@/stores/overview'
 
 const overview = useOverviewStore()
@@ -7,7 +9,7 @@ const overview = useOverviewStore()
 
 <template>
   <div class="ov-empty" data-testid="overview-empty">
-    <template v-if="!overview.hasProjects">
+    <template v-if="!overview.anyFilter">
       <span>目前沒有專案</span>
     </template>
     <template v-else>

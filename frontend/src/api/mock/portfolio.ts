@@ -49,9 +49,11 @@ export function summarizeProject(
   }
 
   const assigned = new Set(tasks.flatMap((t) => t.assigneeIds))
+  // ISODate 允許 ''（沒填日期）。空字串會排在最前面、dayIndex('') 是 NaN，
+  // 所以起訖日、應完成數、近期任務只看有填日期的任務
   // ISODate 字串可以直接比大小，不必轉日索引
-  const starts = tasks.map((t) => t.start).sort()
-  const ends = tasks.map((t) => t.end).sort()
+  const starts = tasks.map((t) => t.start).filter(Boolean).sort()
+  const ends = tasks.map((t) => t.end).filter(Boolean).sort()
 
   return {
     ...meta,
@@ -59,14 +61,14 @@ export function summarizeProject(
     dueDate: ends[ends.length - 1] ?? todayIso,
     taskTotal: tasks.length,
     taskDone: taskCounts.done,
-    taskPlanned: tasks.filter((t) => dayIndex(t.end) < todayIdx).length,
+    taskPlanned: tasks.filter((t) => t.end && dayIndex(t.end) < todayIdx).length,
     taskCounts,
     delayedTasks: tasks.filter((t) => isLate(t, todayIdx)).length,
     openIssues,
     closedIssues,
     memberIds: data.members.filter((m) => assigned.has(m.id)).map((m) => m.id),
     upcoming: tasks
-      .filter((t) => t.status !== 'done')
+      .filter((t) => t.status !== 'done' && t.end)
       .sort((a, b) => dayIndex(a.end) - dayIndex(b.end))
       .slice(0, UPCOMING_LIMIT)
       .map((t) => ({ name: t.name, due: t.end, memberId: t.assigneeIds[0] ?? '' })),

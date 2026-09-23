@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import type { LoadState } from '@/types/ui'
 import { ref, watch } from 'vue'
 import { ApiError, type ApiErrorCode } from '@/api/types'
 import { newId } from '@/lib/id'
@@ -73,8 +74,8 @@ const GONE_CONFIRM = 4
 const GONE_DEP_EDIT = 8
 const GONE_PICKER = 16
 
-/** api 載入的四個狀態（契約 C）。 */
-export type LoadState = 'idle' | 'loading' | 'ready' | 'error'
+/** api 載入的四個狀態；定義搬到 types/ui.ts，這裡轉出去給既有的 import 用。 */
+export type { LoadState } from '@/types/ui'
 
 /** 錯誤條上的一筆；`message` 是 server 原文，只進 console，不上畫面（review M2）。 */
 export interface UiError {
@@ -333,6 +334,16 @@ export const useUiStore = defineStore('ui', () => {
     closeAllPopups()
     pickerFor.value = null
     editing.value = null
+    // 拖曳 / hover / 連線這些跟著指標事件走的暫態：離開頁面時沒有 pointerup / mouseleave，要手動清
+    drag.value = null
+    linkLine.value = null
+    nearTaskId.value = null
+    hoverTaskId.value = null
+    rowHoverId.value = null
+    memberDrag.value = null
+    zooming.value = false
+    // 錯誤條是這一趟操作的結果，回來時不該再出現
+    errors.value = []
   }
 
   // ── 懸空 id 清理（契約 E）──────────────────────────────────────────────────

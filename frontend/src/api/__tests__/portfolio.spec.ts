@@ -42,4 +42,15 @@ describe('summarizeProject', () => {
     expect(pf.members).toHaveLength(11)
     expect(pf.currentUserId).toBe('m11')
   })
+
+  it('日期空白的任務不影響起訖日與近期任務（不會算出 NaN）', () => {
+    const data: ProjectData = structuredClone(sampleProject)
+    data.tasks[0]!.start = ''
+    data.tasks[1]!.end = ''
+    const p = summarizeProject(data, PMIS_META, '2026-09-22')
+    expect(p.startDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(p.dueDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(p.upcoming.every((u) => u.due !== '')).toBe(true)
+    expect(Number.isNaN(p.taskPlanned)).toBe(false)
+  })
 })

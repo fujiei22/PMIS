@@ -2,7 +2,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api'
 import { usePortfolioBoot } from '@/composables/usePortfolioBoot'
-import { API_ERROR_TEXT } from '@/constants/dashboard'
+import { API_ERROR_TEXT } from '@/constants/api'
 import { ApiError } from '@/api/types'
 import { useOverviewStore } from '@/stores/overview'
 
