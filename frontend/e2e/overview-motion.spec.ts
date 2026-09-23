@@ -1,0 +1,168 @@
+import { expect, test, type Locator, type Page } from '@playwright/test'
+import { OverviewPage } from './helpers/overviewPage'
+
+/** 元素的 computed transition 或 animation 是否有非 0 時長（靜態宣告的守衛）。 */
+async function hasMotion(loc: Locator): Promise<boolean> {
+  return loc.evaluate((el) => {
+    const s = getComputedStyle(el)
+    const dur = (v: string) => v.split(',').some((x) => parseFloat(x) > 0)
+    return dur(s.transitionDuration) || dur(s.animationDuration)
+  })
+}
+
+/** 在 action 執行期間，頁面上是否出現過某個 class（抓 Vue Transition 的 *-active）。 */
+async function seesClass(page: Page, cls: string, action: () => Promise<void>): Promise<boolean> {
+  const seen = page.evaluate((c) => new Promise<boolean>((resolve) => {
+    const mo = new MutationObserver(() => {
+      if (document.getElementsByClassName(c).length) { mo.disconnect(); resolve(true) }
+    })
+    mo.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] })
+    setTimeout(() => { mo.disconnect(); resolve(false) }, 2000)
+  }), cls)
+  await action()
+  return seen
+}
+
+test.describe('總覽 動畫清單', () => {
+  test('A1 卡片 / A2 速覽外殼與 caret / A11 檢視鈕 / A15 清除 / A24 面板收合鈕 / A30 進度條', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    expect(await hasMotion(ov.card('pmis'))).toBe(true)
+    expect(await hasMotion(ov.card('pmis').locator('.quick-wrap'))).toBe(true)
+    expect(await hasMotion(ov.card('pmis').locator('.card-caret'))).toBe(true)
+    expect(await hasMotion(ov.card('pmis').locator('.fill-actual'))).toBe(true)
+    expect(await hasMotion(page.locator('[data-view-switch="cards"]'))).toBe(true)
+    expect(await hasMotion(page.getByTestId('overview-clear'))).toBe(true)
+    expect(await hasMotion(page.locator('[data-view-panel="cards"] .panel-caret'))).toBe(true)
+    expect(await hasMotion(page.locator('[data-view-panel="cards"] .panel-body'))).toBe(true)
+  })
+
+  test('A4 下拉開 / 關都有過渡', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    expect(await seesClass(page, 'ov-pop-enter-active', () => ov.openDropdown('status'))).toBe(true)
+    expect(await seesClass(page, 'ov-pop-leave-active', () => page.keyboard.press('Escape'))).toBe(true)
+  })
+
+  test('A5 排序選單 / A16 chip 移除 / A21 chip 箭頭', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    const panel = page.locator('[data-view-panel="cards"]')
+    expect(await hasMotion(panel.locator('.chip-arrow').first())).toBe(true)
+    expect(await seesClass(page, 'ov-pop-enter-active', () => panel.locator('.sort-trigger').click())).toBe(true)
+    await page.keyboard.press('Escape')
+    expect(await seesClass(page, 'ov-chip-leave-active', () => panel.locator('.chip-x').first().click())).toBe(true)
+  })
+
+  test('A7 / A8 篩選時卡片離場；A9 欄離場', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    expect(await seesClass(page, 'ov-card-leave-active', () => ov.pick('status', '未開始'))).toBe(true)
+    await page.getByTestId('overview-clear').click()
+    expect(await seesClass(page, 'ov-col-leave-active', () => ov.pickPm('m5'))).toBe(true)
+  })
+
+  test('A17 空狀態淡入', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    await ov.pick('status', '已完成')
+    expect(await seesClass(page, 'ov-fade-enter-active', () => ov.pick('alert', '落後'))).toBe(true)
+  })
+
+  test('A10 切換檢視；A3 / A13 / A20 / A25 / A26 時間軸', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    expect(await seesClass(page, 'ov-view-leave-active', () => page.locator('[data-view-switch="timeline"]').click())).toBe(true)
+    await expect(page.locator('[data-view-panel="timeline"]')).toBeVisible()
+    expect(await hasMotion(ov.row('pmis').locator('.qv .quick-wrap'))).toBe(true)
+    expect(await hasMotion(page.locator('[data-pm-group="m5"] .g-caret'))).toBe(true)
+    expect(await hasMotion(ov.row('pmis').locator('.bar'))).toBe(true)
+    expect(await hasMotion(ov.row('pmis').locator('.p-left'))).toBe(true)
+    expect(await seesClass(page, 'ov-row-leave-active', () => ov.pick('status', '未開始'))).toBe(true)
+  })
+
+  test('A14 今天按鈕是平滑捲動（捲動分多次、落在不同位置）', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto('#timeline')
+    const body = page.locator('.tl-body')
+    await body.evaluate((el) => { el.scrollLeft = 0 })
+    // 記錄 scroll 事件時的位置：瞬移只會有一個位置，平滑捲動會經過很多個。
+    // 不用固定幀數取樣，是因為平行跑時點擊可能晚到，取樣會全落在捲動開始之前（實測會 flaky）。
+    await body.evaluate((el) => {
+      const w = window as unknown as { __scrollXs: number[] }
+      w.__scrollXs = []
+      el.addEventListener('scroll', () => w.__scrollXs.push(el.scrollLeft))
+    })
+    await page.getByTestId('overview-today').click()
+    await expect.poll(() => body.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0)
+    await expect
+      .poll(() => page.evaluate(() => new Set((window as unknown as { __scrollXs: number[] }).__scrollXs).size))
+      .toBeGreaterThan(2)
+  })
+
+  test('A18 載入完成換成內容；A29 切頁，都有 ov-view 過渡', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    expect(await seesClass(page, 'ov-view-leave-active', () => ov.card('pmis').getByRole('link', { name: /進入/ }).click())).toBe(true)
+  })
+})
+
+/**
+ * 重排時逐幀量元素到終點的距離：要有介於起點與終點之間的中間幀（有動畫、不是瞬移），
+ * 而且過程中離終點的最大距離不超過起點距離（位移沒有被巢狀 TransitionGroup 算兩次、不會回彈）。
+ * 取樣 1.2 秒（重排 0.26 秒）：平行跑時點擊可能晚到，留足時間窗。
+ * 這兩種壞法 T10 實機都遇過：元件模板開頭有註解時沒有動畫；巢狀 FLIP 時先跳到終點再飄出去。
+ */
+async function trackMove(page: Page, selector: string, action: () => Promise<void>): Promise<number[]> {
+  const frames = page.evaluate(
+    (sel) =>
+      new Promise<number[][]>((resolve) => {
+        const out: number[][] = []
+        const t0 = performance.now()
+        const tick = () => {
+          const el = document.querySelector(sel)
+          if (el) {
+            const r = el.getBoundingClientRect()
+            out.push([r.x, r.y])
+          }
+          if (performance.now() - t0 < 1200) requestAnimationFrame(tick)
+          else resolve(out)
+        }
+        requestAnimationFrame(tick)
+      }),
+    selector,
+  )
+  await action()
+  const xs = await frames
+  const [ex, ey] = xs[xs.length - 1]!
+  return xs.map(([x, y]) => Math.hypot(x! - ex!, y! - ey!))
+}
+
+/** 把逐幀距離整理成三個要斷言的量：起點距離、有沒有中間幀、途中離終點最遠多少。 */
+function moveReport(dist: number[]): { start: number; hasMidFrame: boolean; maxDist: number } {
+  const start = dist[0]!
+  return {
+    start,
+    // 至少一幀在途中：離終點超過 10% 且少於 90% 的起點距離
+    hasMidFrame: dist.some((d) => d > start * 0.1 && d < start * 0.9),
+    maxDist: Math.max(...dist),
+  }
+}
+
+test.describe('總覽 重排動畫（A8 / A9 / A20）', () => {
+  test('卡片檢視：移掉「落後」排序，欄換位置時卡片平順移動、不回彈', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    const dist = await trackMove(page, '[data-view-panel="cards"] [data-project="wiki"]', () =>
+      page.locator('[data-view-panel="cards"] .chip-x').first().click(),
+    )
+    const r = moveReport(dist)
+    expect(r.start).toBeGreaterThan(50)
+    expect(r.hasMidFrame).toBe(true)
+    // 不回彈：途中不會比起點離終點更遠（容 2px 誤差）
+    expect(r.maxDist).toBeLessThanOrEqual(r.start + 2)
+  })
+
+  test('時間軸：移掉「落後」排序，群組換位置時列平順移動、不回彈', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto('#timeline')
+    const dist = await trackMove(page, '[data-view-panel="timeline"] [data-project="dw"] .p-row', () =>
+      page.locator('[data-view-panel="timeline"] .chip-x').first().click(),
+    )
+    const r = moveReport(dist)
+    expect(r.start).toBeGreaterThan(50)
+    expect(r.hasMidFrame).toBe(true)
+    // 不回彈：途中不會比起點離終點更遠（容 2px 誤差）
+    expect(r.maxDist).toBeLessThanOrEqual(r.start + 2)
+  })
+})
