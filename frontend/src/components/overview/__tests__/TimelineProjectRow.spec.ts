@@ -50,11 +50,11 @@ describe('TimelineProjectRow', () => {
     expect(w.find('.c-gap').classes()).toContain('warn')
   })
 
-  it('bar 位置 = (開始日 − 範圍起點) × 日寬，寬 = 總天數 × 日寬（102 天）', async () => {
+  it('bar 位置 = (開始日 − 範圍起點) × 日寬，寬 = 總天數 × 日寬（頭尾都算，103 天）', async () => {
     const w = await setup()
     const style = w.find('.bar').attributes('style')!
     expect(px(style, 'left')).toBeCloseTo((dayIndex('2026-07-06') - dayIndex('2026-06-01')) * TIMELINE_DAY_W, 3)
-    expect(px(style, 'width')).toBeCloseTo(102 * TIMELINE_DAY_W, 3)
+    expect(px(style, 'width')).toBeCloseTo(103 * TIMELINE_DAY_W, 3)
     expect(w.find('.bar-label').text()).toBe('客戶入口網站改版')
   })
 

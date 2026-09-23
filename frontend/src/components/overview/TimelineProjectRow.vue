@@ -29,8 +29,7 @@ const mounted = useDelayedUnmount(open, PANEL_UNMOUNT_MS)
 
 /**
  * bar 的位置與寬度，px 直接寫 inline，不四捨五入（日寬 7.04 不是整數，捨入會累積誤差）。
- * 寬度用 totalDays（到期日 − 開始日，不含到期日當天，B2 同樣如此）；
- * 這和 Dashboard 甘特的 lengthOf（頭尾兩天都算）刻意不同。
+ * 寬度用 totalDays（頭尾兩天都算，bar 蓋到到期日當天），和 Dashboard 甘特的 lengthOf 一致。
  */
 const barStyle = computed(() => ({
   left: `${(dayIndex(p.value.startDate) - props.startIdx) * props.dw}px`,

@@ -44,13 +44,13 @@ const rowsMounted = useDelayedUnmount(() => !collapsed.value, PANEL_UNMOUNT_MS)
 /** PM 色來自資料，不是 token，所以走 inline。 */
 const pmStyle = computed(() => ({ '--pm': props.group.pm.color }))
 
-/** 收合摘要 bar：組內最早開始日到最晚到期日（A13），寬度算法同專案 bar（不含到期日當天）。 */
+/** 收合摘要 bar：組內最早開始日到最晚到期日（A13），寬度算法同專案 bar（頭尾都算，蓋到到期日當天）。 */
 const sumStyle = computed(() => {
   const rows = props.group.rows
   if (!rows.length) return { left: '0px', width: '0px' }
   const a = Math.min(...rows.map((r) => dayIndex(r.p.startDate)))
   const b = Math.max(...rows.map((r) => dayIndex(r.p.dueDate)))
-  return { left: `${(a - props.startIdx) * props.dw}px`, width: `${(b - a) * props.dw}px` }
+  return { left: `${(a - props.startIdx) * props.dw}px`, width: `${(b - a + 1) * props.dw}px` }
 })
 
 function toggle(): void {

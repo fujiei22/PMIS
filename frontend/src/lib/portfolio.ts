@@ -33,7 +33,7 @@ export interface ProjectDerived {
   badge: ProjectBadgeKind
   /** 四個等級的未結 Issue 加總 */
   openIssueTotal: number
-  /** 開始日到到期日的天數 */
+  /** 開始日到到期日的天數，頭尾兩天都算（同 Dashboard「專案總時長」） */
   totalDays: number
   /** 已過天數（夾在 0 ~ totalDays） */
   elapsedDays: number
@@ -129,7 +129,8 @@ export function deriveProject(p: ProjectSummary, todayIso: ISODate): ProjectDeri
   const plannedPct = pct(p.taskPlanned, p.taskTotal)
   const gap = Math.max(0, plannedPct - actualPct)
   const alert = alertOf(p, gap)
-  const totalDays = dayIndex(p.dueDate) - dayIndex(p.startDate)
+  // 頭尾都算，和 Dashboard「專案總時長」（max − min + 1）一致；到期日當天還剩 1 天（review 後 user 決定）
+  const totalDays = dayIndex(p.dueDate) - dayIndex(p.startDate) + 1
   // 已完成的專案一律視為時間走完，不看今天落在哪
   const elapsedDays =
     p.status === 'done'

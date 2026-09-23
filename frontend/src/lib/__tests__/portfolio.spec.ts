@@ -31,11 +31,17 @@ describe('pct', () => {
 })
 
 describe('deriveProject', () => {
-  it('PMIS 設計稿數字：實際 11、理論 34、落後 23、已過 29、剩 49', () => {
+  it('PMIS 設計稿數字：實際 11、理論 34、落後 23；天數頭尾都算：總 79、已過 29、剩 50', () => {
     const d = deriveProject(proj({ delayedTasks: 3 }), '2026-09-22')
     expect(d).toMatchObject({ actualPct: 11, plannedPct: 34, gap: 23, alert: 'late', badge: 'late',
-      totalDays: 78, elapsedDays: 29, remainingDays: 49 })
+      totalDays: 79, elapsedDays: 29, remainingDays: 50 })
     expect(d.timePct).toBe(37)
+  })
+  it('天數和 Dashboard「專案總時長」一樣頭尾都算：到期日當天還剩 1 天，隔天才是 0', () => {
+    const p = proj({ startDate: '2026-09-01', dueDate: '2026-09-10' })
+    expect(deriveProject(p, '2026-09-01')).toMatchObject({ totalDays: 10, elapsedDays: 0, remainingDays: 10 })
+    expect(deriveProject(p, '2026-09-10')).toMatchObject({ elapsedDays: 9, remainingDays: 1 })
+    expect(deriveProject(p, '2026-09-11')).toMatchObject({ elapsedDays: 10, remainingDays: 0 })
   })
   it('實際超前理論時落後值為 0，不是負數', () => {
     expect(deriveProject(proj({ taskDone: 20, taskPlanned: 10 }), '2026-09-22').gap).toBe(0)
