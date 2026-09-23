@@ -8,9 +8,9 @@ import { describe, expect, it } from 'vitest'
  * 三層，只能由上往下依賴：
  *
  * 1. **時鐘層** `clock` —— 所有層都可以讀。
- * 2. **資料層** `member / task / issue / comment`（加上它們共用的
+ * 2. **資料層** `member / task / issue / comment / portfolio`（加上它們共用的
  *    `_optimistic` 與事件入口 `_sync`）—— 專案資料的唯一擁有者。
- * 3. **派生層** `rows / filter / selection / ui` —— 讀資料層算出畫面要的東西。
+ * 3. **派生層** `rows / filter / selection / ui / overview` —— 讀資料層算出畫面要的東西。
  *
  * 資料層**不知道派生層存在**：
  * - 不讀 selection / filter 算預設值 → 預設值由 `composables/useTaskActions.ts` 算好傳進來。
@@ -31,6 +31,7 @@ const DATA_LAYER = [
   'task.ts',
   'issue.ts',
   'comment.ts',
+  'portfolio.ts',
   '_optimistic.ts',
   '_sync.ts',
 ] as const
@@ -41,7 +42,7 @@ const ALLOWED = [
   /^@\/lib\/.*$/,
   /^@\/types\/.*$/,
   /^@\/stores\/clock$/,
-  /^@\/stores\/(member|task|issue|comment)$/,
+  /^@\/stores\/(member|task|issue|comment|portfolio)$/,
   /^@\/stores\/_optimistic$/,
   /^@\/stores\/_sync$/,
 ]
