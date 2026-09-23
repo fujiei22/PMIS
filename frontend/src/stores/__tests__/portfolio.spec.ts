@@ -28,4 +28,21 @@ describe('portfolio store', () => {
     expect(pf.projects).toHaveLength(7)
     vi.restoreAllMocks()
   })
+
+  it('兩發交錯時只套用最後一發：先發的晚回來也不會蓋掉新資料', async () => {
+    const pf = usePortfolioStore()
+    const newer = buildPortfolio(sampleProject, '2026-09-22')
+    newer.projects[1]!.name = '新的'
+    let releaseOld!: (v: Awaited<ReturnType<typeof api.listProjects>>) => void
+    vi.spyOn(api, 'listProjects')
+      .mockImplementationOnce(() => new Promise((r) => { releaseOld = r }))
+      .mockResolvedValueOnce(newer)
+    const first = pf.load()
+    await pf.load()
+    expect(pf.projects[1]!.name).toBe('新的')
+    releaseOld(buildPortfolio(sampleProject, '2026-09-22'))
+    await first
+    expect(pf.projects[1]!.name).toBe('新的')
+    vi.restoreAllMocks()
+  })
 })

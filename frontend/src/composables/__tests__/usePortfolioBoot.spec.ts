@@ -48,4 +48,22 @@ describe('usePortfolioBoot', () => {
     expect(ov.loadError).toBeNull()
     expect(err).toHaveBeenCalledWith('[api]', '載入專案清單（背景）', expect.any(ApiError))
   })
+
+  it('較舊的一發晚失敗，不會把已經 ready 的畫面切成錯誤（跨兩次掛載）', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const ov = useOverviewStore()
+    let failOld!: (e: unknown) => void
+    vi.spyOn(api, 'listProjects').mockImplementationOnce(() => new Promise((_, rej) => { failOld = rej }))
+    // 第一次掛載：載入中
+    const first = usePortfolioBoot().reload()
+    expect(ov.loadState).toBe('loading')
+    // 使用者離開又回來（新的一次掛載），這次成功
+    await usePortfolioBoot().reload()
+    expect(ov.loadState).toBe('ready')
+    // 第一發這時才失敗：不能把畫面切成錯誤
+    failOld(new ApiError('network', 'x'))
+    await first
+    expect(ov.loadState).toBe('ready')
+    expect(ov.loadError).toBeNull()
+  })
 })

@@ -15,13 +15,20 @@ export const usePortfolioStore = defineStore('portfolio', () => {
   const members = ref<Member[]>([])
   /** 登入者；接後端時由 adapter 從登入流程填。 */
   const currentUserId = ref('')
+  /**
+   * 請求序號：進出總覽很快時，背景重載可能同時有好幾發在飛、回來的順序也不一定。
+   * 只套用最後發出的那一發，較早的回應晚到就丟掉，舊資料才不會蓋掉新資料。
+   */
+  let loadSeq = 0
 
   /**
    * 載入整份摘要。給 `data` 就直接套用（測試用，比照 `taskStore.load(data?)`），
    * 否則打 `api.listProjects()`。失敗直接往上拋，舊資料不動。
    */
   async function load(data?: PortfolioData): Promise<void> {
+    const ticket = ++loadSeq
     const next = data ?? (await api.listProjects())
+    if (ticket !== loadSeq) return
     projects.value = next.projects
     members.value = next.members
     currentUserId.value = next.currentUserId
