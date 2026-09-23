@@ -1,0 +1,36 @@
+/* 總覽頁的 Transition / TransitionGroup class。時長只用 tokens.css 的 --t-*。
+   離場元素由 composables/freezeLeave.ts 釘在原位，所以這裡不寫 position。 */
+
+/* 浮層：下拉、排序選單（A4 / A5） */
+.ov-pop-enter-active { animation: popIn var(--t-menu) ease-out; }
+.ov-pop-leave-active { animation: popOut var(--t-fast) var(--ease); }
+
+/* 淡入淡出：空狀態、摘要 bar、速覽內容、.qv-cap（A13 / A17 / A27） */
+.ov-fade-enter-active, .ov-fade-leave-active { transition: opacity var(--t-base) var(--ease); }
+.ov-fade-enter-from, .ov-fade-leave-to { opacity: 0; }
+
+/* 檢視切換與切頁（A10 / A29）：新的淡入並上移 4px，舊的淡出 */
+@keyframes ovViewIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.ov-view-enter-active { animation: ovViewIn var(--t-panel) var(--ease); }
+.ov-view-leave-active { animation: fadeOut var(--t-fast) var(--ease); }
+
+/* 卡片、欄、時間軸群組與列：進出與重排（A7 / A8 / A9 / A20） */
+.ov-card-move, .ov-col-move, .ov-row-move, .ov-group-move { transition: transform var(--t-panel) var(--ease); }
+.ov-card-enter-active, .ov-card-leave-active,
+.ov-col-enter-active, .ov-col-leave-active,
+.ov-row-enter-active, .ov-row-leave-active,
+.ov-group-enter-active, .ov-group-leave-active { transition: opacity var(--t-panel) var(--ease), transform var(--t-panel) var(--ease); }
+.ov-card-enter-from, .ov-card-leave-to,
+.ov-col-enter-from, .ov-col-leave-to { opacity: 0; transform: scale(0.96); }
+.ov-row-enter-from, .ov-row-leave-to,
+.ov-group-enter-from, .ov-group-leave-to { opacity: 0; transform: translateY(-4px); }
+
+/* 排序 chip 與成員頭像疊（A16 / A23） */
+.ov-chip-move, .ov-av-move { transition: transform var(--t-base) var(--ease); }
+.ov-chip-enter-active, .ov-chip-leave-active,
+.ov-av-enter-active, .ov-av-leave-active { transition: opacity var(--t-base) var(--ease), transform var(--t-base) var(--ease); }
+.ov-chip-enter-from, .ov-chip-leave-to,
+.ov-av-enter-from, .ov-av-leave-to { opacity: 0; transform: scale(0.9); }

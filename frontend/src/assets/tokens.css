@@ -179,6 +179,10 @@
   --modal-w: min(1280px, 96vw);
   --modal-h: min(880px, 93vh);
   --modal-left-pane: 392px;
+  /* 多專案總覽專用的控制項尺寸（取自 B2-pm-lanes 247–263 的提議，可讀性底線）。
+     Dashboard 的下拉仍是 26 ~ 30px / 選項 28px，不引用這兩個。 */
+  --ctrl-h: 32px; /* 頂欄下拉觸發、面板標題列按鈕的高度 */
+  --dd-item-h: 36px; /* 下拉選項列高 */
 
   /* radius */
   --r-badge: 5px;

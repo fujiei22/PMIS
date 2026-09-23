@@ -62,4 +62,9 @@ describe('tokens.css', () => {
     ])
       expect(css).toContain(t + ':')
   })
+
+  it('多專案總覽的控制項尺寸 token 齊備（B2 可讀性底線）', () => {
+    expect(css).toMatch(/--ctrl-h:\s*32px/)
+    expect(css).toMatch(/--dd-item-h:\s*36px/)
+  })
 })

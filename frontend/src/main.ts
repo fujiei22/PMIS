@@ -1,5 +1,6 @@
 import './assets/tokens.css'
 import './assets/base.css'
+import './assets/overview-motion.css'
 
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
