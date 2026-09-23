@@ -382,3 +382,25 @@ describe('api 進入點', () => {
     await expect(import('@/api')).rejects.toThrow(/VITE_API/)
   })
 })
+
+describe('listProjects', () => {
+  it('回傳 7 個專案；是複本，改了不影響下一次', async () => {
+    const api = createMockApi()
+    const a = await api.listProjects()
+    expect(a.projects).toHaveLength(7)
+    a.projects[1]!.name = '被改掉'
+    expect((await api.listProjects()).projects[1]!.name).toBe('客戶入口網站改版')
+  })
+  it('PMIS 摘要跟著 mock 裡的任務走', async () => {
+    const api = createMockApi()
+    const before = (await api.listProjects()).projects[0]!.taskDone
+    const t = (await api.loadProject()).tasks.find((x) => x.status !== 'done')!
+    await api.updateTask(t.id, { status: 'done', done: '2026-09-22' })
+    expect((await api.listProjects()).projects[0]!.taskDone).toBe(before + 1)
+  })
+  it('failNext 可注入失敗', async () => {
+    const api = createMockApi()
+    api.failNext('listProjects')
+    await expect(api.listProjects()).rejects.toMatchObject({ code: 'network' })
+  })
+})

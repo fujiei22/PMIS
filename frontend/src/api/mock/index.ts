@@ -1,5 +1,7 @@
+import { buildPortfolio } from '@/api/mock/portfolio'
 import { createMockStore } from '@/api/mock/store'
 import { ApiError, type MockApi, type ProjectApi, type ProjectEvent } from '@/api/types'
+import { isoFromIndex, todayIndex } from '@/lib/date'
 import { sampleProject } from '@/mocks/sampleProject'
 import type {
   Comment,
@@ -94,6 +96,11 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
 
   return {
     loadProject: () => call('loadProject', () => store.snapshot()),
+
+    // PMIS 摘要從 store 目前的資料即時彙整，Dashboard 的改動回總覽就看得到（spec 7b）。
+    // 今天取系統時鐘：e2e 用 page.clock 固定，單元測試改呼叫 buildPortfolio 直接給日期。
+    listProjects: () =>
+      call('listProjects', () => buildPortfolio(store.snapshot(), isoFromIndex(todayIndex(Date.now())))),
 
     createTask: (task: Task) =>
       call('createTask', () => {

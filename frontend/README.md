@@ -248,18 +248,22 @@ store 分三層，依賴**只能由上往下**：
    | `Comment.at` | `'YYYY-MM-DDTHH:mm'`（**本地**時間、到分鐘） | ISO 8601 含 offset | adapter 兩邊轉，前端不做時區運算 |
    | `Attachment.at` | `'YYYY-MM-DD'`（本地日） | ISO 8601 | adapter |
    | `Group` | 只有 `id` / `name` | 後端若存了收合狀態要忽略 | 收合是畫面狀態，在 `ui.collapsedGroups`，不上 wire |
-   | `ProjectData.currentUserId` | 必填字串 | 登入還沒做 | adapter 從 session / token 填；沒有登入就先填一個固定成員 id |
+   | `ProjectData.currentUserId`、`PortfolioData.currentUserId` | 必填字串 | 登入還沒做 | adapter 從 session / token 填；沒有登入就先填一個固定成員 id |
+   | `ProjectSummary.taskPlanned` | 「照排程今天之前就該完成」的任務數 | 後端依伺服器當日算 | 後端；前端只拿它算理論 %，跨日差一天可接受 |
+   | `ProjectSummary.upcoming` | 最多 3 筆、依到期日升冪、含已逾期 | 後端篩選排序 | 後端；前端原樣顯示 |
+   | `ProjectSummary` 的不變式 | `taskDone === taskCounts.done`、`taskTotal === taskCounts` 加總 | — | adapter 驗；實際 / 理論 %、落後百分點、需注意由前端 `lib/portfolio.ts` 算，**後端不給** |
    | `Attachment.id` | `'<commentId>:<index>'`（`downloadAttachment` 的鍵） | 後端自己的附件主鍵 | adapter；只要 `loadProject` 與 `createComment` 回的 id 能餵回 `downloadAttachment` 就行 |
 
 4. **跑測試**：`npm run test:unit -- --run` 全綠、`PLAYWRIGHT_PORT=5174 npm run test:e2e` 全綠（靠 mock 的兩條會自動跳過，見下）。
 
 ### 端點對照表
 
-路徑是建議值；後端不同就在 adapter 對應，**介面的參數 / 回傳 / 錯誤碼才是契約**。單一專案、不分頁。
+路徑是建議值；後端不同就在 adapter 對應，**介面的參數 / 回傳 / 錯誤碼才是契約**。都不分頁：`loadProject()` 回單一專案整包，`listProjects()` 回所有專案的摘要。彙整規則寫在 `src/api/types.ts` 檔頭，參考實作是 `src/api/mock/portfolio.ts` 的 `summarizeProject()`。
 
 | 方法 | HTTP | 路徑 | request | response |
 |---|---|---|---|---|
 | `loadProject()` | GET | `/api/project` | — | `ProjectData`（整包；`tasks` / `groups` 的陣列順序就是顯示順序） |
+| `listProjects()` | GET | `/api/projects` | — | `PortfolioData`（所有專案的 `ProjectSummary` ＋ 成員名錄 ＋ `currentUserId`；`projects` 順序無意義，`members` 順序就是顯示順序） |
 | `createTask()` | POST | `/api/tasks` | `Task`（含 client 產的 `id`） | `Task` |
 | `updateTask()` | PATCH | `/api/tasks/:id` | `Partial<Task>`（JSON merge patch） | `Task` |
 | `updateTasks()` | PATCH | `/api/tasks` | `Task[]`（**語意是整批 PUT**：body 是整筆 `Task[]`，不是 patch；已含 cascade 後的下游） | `Task[]`（server 最終狀態，client 直接套回） |
@@ -306,6 +310,8 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 
 `subscribe(handler)` 是後端推變更的唯一入口，前端只有 `src/stores/_sync.ts` 的 `useProjectSync()` 訂閱它（`DashboardView` 掛載時 `start()`、卸載時 `stop()`），再依 `type` 前綴路由到各資料 store 的 `applyEvent`。
 
+總覽頁（`/`）**不訂閱事件**：進頁時 `listProjects()` 載入一次，之後每次回到總覽都在背景重載（畫面不切回載入中），所以在 Dashboard 做的改動回總覽就看得到。
+
 三種實作都可以，介面不變：
 
 | 做法 | 怎麼接 | 取捨 |
@@ -339,7 +345,7 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 
 ### e2e 與 mock 把手
 
-dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (import.meta.env.DEV)`），e2e 用它注入延遲與失敗（`failNext` / `setLatency` / `reset` / `emit`）。
+dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (import.meta.env.DEV)`），e2e 用它注入延遲與失敗（`failNext` / `setLatency` / `reset` / `emit`）。總覽的載入失敗用 `failNext('listProjects')`。
 
 接上真後端之後 `window.__mockApi` 會是 `undefined`，`e2e/interactions.spec.ts` 裡**那兩條**（api 失敗後還原並顯示錯誤條、載入失敗後重試）開頭就是 `test.skip(!__mockApi)`，會自動跳過，其餘照跑。要在真後端上也測失敗路徑，就換成在 `page.route()` 攔 HTTP 回錯誤碼。
 
