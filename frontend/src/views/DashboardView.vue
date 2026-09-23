@@ -43,7 +43,11 @@ onMounted(() => {
   void boot.reload()
 })
 
-onBeforeUnmount(() => boot.stop())
+// 離開頁面時停掉訂閱，並清掉浮層；否則從總覽回來時上次開著的視窗會自己跳出來
+onBeforeUnmount(() => {
+  boot.stop()
+  ui.resetTransient()
+})
 </script>
 
 <template>

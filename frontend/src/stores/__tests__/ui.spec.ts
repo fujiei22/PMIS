@@ -311,4 +311,43 @@ describe('uiStore', () => {
       expect(ui.errors).toHaveLength(1)
     })
   })
+
+  it('resetTransient 清掉所有暫態浮層，保留版面偏好', () => {
+    const ui = useUiStore()
+    const task = useTaskStore().tasks[0]!
+    ui.openDetail(task.id, 'task')
+    ui.confirm = { kind: 'task', id: task.id, step: 1 }
+    ui.depEditFor = task.id
+    ui.optionMenu = { id: task.id, kind: 'status', left: 0, top: 0 }
+    ui.taskDatePicker = { id: task.id, target: 'start', month: '2026-09', left: 0, top: 0 }
+    ui.issueDatePicker = { id: 'x', field: 'due', kind: 'issue', month: '2026-09', left: 0, top: 0 }
+    ui.lightbox = { url: 'u', name: 'n', size: '1 KB' }
+    ui.openDropdown = 'status'
+    ui.memberPickerOpen = true
+    ui.filterCalendarOpen = true
+    ui.pickerFor = task.id
+    ui.editing = { kind: 't', id: task.id }
+    ui.panelOff.gantt = true
+    ui.setDayWidth(20)
+    ui.toggleGroup('g1')
+
+    ui.resetTransient()
+
+    expect(ui.detail).toBeNull()
+    expect(ui.confirm).toBeNull()
+    expect(ui.depEditFor).toBeNull()
+    expect(ui.optionMenu).toBeNull()
+    expect(ui.taskDatePicker).toBeNull()
+    expect(ui.issueDatePicker).toBeNull()
+    expect(ui.lightbox).toBeNull()
+    expect(ui.openDropdown).toBeNull()
+    expect(ui.memberPickerOpen).toBe(false)
+    expect(ui.filterCalendarOpen).toBe(false)
+    expect(ui.pickerFor).toBeNull()
+    expect(ui.editing).toBeNull()
+    // 版面偏好不動
+    expect(ui.panelOff.gantt).toBe(true)
+    expect(ui.dayWidth).toBe(20)
+    expect(ui.collapsedGroups.has('g1')).toBe(true)
+  })
 })

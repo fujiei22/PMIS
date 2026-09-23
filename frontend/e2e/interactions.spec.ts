@@ -297,7 +297,7 @@ test('載入失敗顯示重試，按下後載入成功', async ({ page }) => {
     })
   })
 
-  await page.goto('/')
+  await page.goto('/projects/pmis')
   // eslint-disable-next-line playwright/no-skipped-test -- 條件式跳過，不是暫時關掉的測試
   test.skip(!(await page.evaluate(() => !!window.__mockApi)))
 

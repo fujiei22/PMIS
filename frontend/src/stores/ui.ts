@@ -311,6 +311,30 @@ export const useUiStore = defineStore('ui', () => {
     useSelectionStore().taskId = from
   }
 
+  /**
+   * 離開 Dashboard 時清掉所有暫態浮層：詳細視窗、確認框、相依編輯器、選單、
+   * 日期選擇器、Lightbox、下拉、就地編輯。
+   *
+   * store 活得比頁面久，不清的話從總覽回來，上次開著的詳細視窗會自己跳出來。
+   * `panelOff`、`collapsedGroups`、`dayWidth` 是使用者的版面偏好，刻意保留。
+   */
+  function resetTransient(): void {
+    detail.value = null
+    lastDetail.value = null
+    navAnim.value = null
+    clearTimeout(navTimer)
+    clearTimeout(holdTimer)
+    confirm.value = null
+    depEditFor.value = null
+    optionMenu.value = null
+    taskDatePicker.value = null
+    issueDatePicker.value = null
+    lightbox.value = null
+    closeAllPopups()
+    pickerFor.value = null
+    editing.value = null
+  }
+
   // ── 懸空 id 清理（契約 E）──────────────────────────────────────────────────
 
   /** 這個 kind / id 的實體還在嗎。 */
@@ -398,6 +422,7 @@ export const useUiStore = defineStore('ui', () => {
     openDetail,
     closeDetail,
     detailBack,
+    resetTransient,
     confirm,
     depEditFor,
     optionMenu,

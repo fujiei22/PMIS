@@ -2,6 +2,7 @@
 // 頂部固定列：專案名、面板捷徑、成員篩選、七個篩選 pill、日期範圍、清除篩選、只顯示篩選結果。
 // legacy 對照：模板 :56-292、各 pill 的 label / options :3657-3764。
 import { computed, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import ErrorBar from '@/components/common/ErrorBar.vue'
 import FilterCalendar from '@/components/layout/FilterCalendar.vue'
 import FilterDropdown, { type FilterOption } from '@/components/layout/FilterDropdown.vue'
@@ -134,7 +135,10 @@ function clearFilters(): void {
 <template>
   <header ref="rootEl" class="top-bar">
     <div class="top-row">
-      <div class="burger"><i></i><i></i><i></i></div>
+      <!-- 左上角三條線：回所有專案總覽 -->
+      <RouterLink to="/" class="burger" title="所有專案" aria-label="所有專案">
+        <i></i><i></i><i></i>
+      </RouterLink>
       <h1 class="project">My Project</h1>
 
       <nav class="boards">
@@ -301,17 +305,37 @@ function clearFilters(): void {
   flex-wrap: nowrap;
 }
 
+/* 回總覽的連結；幾何照原本的 div（compare.spec 比 ±1px），只補掉 a 的預設外觀 */
 .burger {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
   width: 18px;
+  color: inherit;
+  text-decoration: none;
+}
+
+/* 蓋掉 base.css 的 a:hover（改色 + 底線）；hover 回饋只放在三條線上 */
+.burger:hover {
+  color: inherit;
+  text-decoration: none;
+}
+
+.burger:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+  border-radius: var(--r-control);
 }
 
 .burger i {
   height: 2px;
   background: var(--text-3);
   border-radius: var(--r-2);
+  transition: background var(--t-fast) var(--ease);
+}
+
+.burger:hover i {
+  background: var(--text-2);
 }
 
 .project {

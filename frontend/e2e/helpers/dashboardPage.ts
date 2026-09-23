@@ -11,10 +11,10 @@ export type PanelKey = 'gantt' | 'kanban' | 'issues'
 export class DashboardPage {
   constructor(readonly page: Page) {}
 
-  /** 固定時鐘後開首頁，等到甘特左欄畫出來才回。 */
+  /** 固定時鐘後開 Dashboard（/projects/pmis），等到甘特左欄畫出來才回。 */
   async goto(): Promise<void> {
     await setFixedTime(this.page)
-    await this.page.goto('/')
+    await this.page.goto('/projects/pmis')
     await this.page.locator('[data-rowtask]').first().waitFor()
   }
 

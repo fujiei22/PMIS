@@ -9,7 +9,7 @@ export type PageKind = 'legacy' | 'vue'
 
 const URL_OF: Record<PageKind, string> = {
   legacy: '/legacy/Dashboard.html',
-  vue: '/',
+  vue: '/projects/pmis',
 }
 
 /**
