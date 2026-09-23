@@ -1,0 +1,450 @@
+<script setup lang="ts">
+// 時間軸檢視：面板外殼 + sticky 尺規（月份 / 日或週刻度）+ 可橫捲的畫布（週末與今天底色、今天線、PM 群組）。
+// 左欄與畫布放在同一個水平捲動容器裡（左欄 sticky left），速覽才能緊接在選取列下方、橫跨左欄 + 畫布。
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import OvEmpty from '@/components/overview/OvEmpty.vue'
+import OvPanel from '@/components/overview/OvPanel.vue'
+import OvSortControls from '@/components/overview/OvSortControls.vue'
+import TimelineGroup from '@/components/overview/TimelineGroup.vue'
+import { freezeLeave } from '@/composables/freezeLeave'
+import { TIMELINE_DAY_W, TIMELINE_LEFT_W } from '@/constants/overview'
+import { dayFraction } from '@/lib/date'
+import { useClockStore } from '@/stores/clock'
+import { useOverviewStore } from '@/stores/overview'
+
+const overview = useOverviewStore()
+const clock = useClockStore()
+
+const DW = TIMELINE_DAY_W
+/** 一天夠寬才逐日寫日期；不夠寬時改週刻度（只寫週一），也不畫週末灰底（B2 1956 / 2053）。 */
+const DAILY_MIN_DW = 22
+const daily = DW >= DAILY_MIN_DW
+
+const WEEKDAY = ['日', '一', '二', '三', '四', '五', '六'] as const
+
+const range = computed(() => overview.range)
+const groups = computed(() => overview.groups)
+
+/** 刻度與底層共用的日清單；d 是相對範圍起點的偏移，idx 是絕對日索引。 */
+const days = computed(() =>
+  range.value.dayList.map((x) => ({
+    ...x,
+    d: x.idx - range.value.startIdx,
+    dnum: String(x.date).padStart(2, '0'),
+    wd: WEEKDAY[x.weekday],
+    isToday: x.idx === clock.todayIdx,
+  })),
+)
+
+const todayOffset = computed(() => clock.todayIdx - range.value.startIdx)
+const todayInRange = computed(() => todayOffset.value >= 0 && todayOffset.value < range.value.days)
+/** 今天線的 x（相對畫布起點）：整數日 + 當天已過的工作時間比例，公式同 GanttBars。 */
+const todayX = computed(() => (todayOffset.value + dayFraction(new Date(clock.now))) * DW)
+
+const viewW = ref(0)
+
+const rootStyle = computed(() => ({
+  '--gantt-left': `${TIMELINE_LEFT_W}px`,
+  '--dw': `${DW}px`,
+  '--tl-days': String(range.value.days),
+  '--view-w': viewW.value ? `${viewW.value}px` : undefined,
+}))
+
+const body = ref<HTMLElement | null>(null)
+const ruler = ref<HTMLElement | null>(null)
+
+/** 尺規在捲動容器外（才能 sticky top），所以手動同步水平位置。 */
+function onBodyScroll(): void {
+  if (ruler.value && body.value) ruler.value.scrollLeft = body.value.scrollLeft
+}
+
+/** 把今天置中到畫布可見區（扣掉左欄）；smooth 給按鈕（A14），auto 給初次掛載。 */
+function scrollToToday(behavior: ScrollBehavior): void {
+  const el = body.value
+  if (!el || !todayInRange.value) return
+  const left = Math.max(0, todayX.value - (el.clientWidth - TIMELINE_LEFT_W) / 2)
+  el.scrollTo({ left, behavior })
+}
+
+function measure(): void {
+  if (body.value) viewW.value = body.value.clientWidth
+}
+
+let ro: ResizeObserver | undefined
+
+/**
+ * 捲動容器會重建（面板收合後再展開、空狀態切回來），每次拿到新的元素就重新觀察寬度並捲到今天。
+ * 新元素的 scrollLeft 一定是 0，停在範圍起點沒意義，所以不只第一次。
+ */
+watch(
+  body,
+  (el) => {
+    ro?.disconnect()
+    ro = undefined
+    if (!el) return
+    measure()
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => measure())
+      ro.observe(el)
+    }
+    scrollToToday('auto')
+  },
+  { flush: 'post' },
+)
+
+onBeforeUnmount(() => ro?.disconnect())
+</script>
+
+<template>
+  <OvPanel title="專案時程" view="timeline" :style="rootStyle">
+    <template #head>
+      <OvSortControls />
+    </template>
+    <template #head-extra>
+      <button
+        type="button"
+        class="today-btn"
+        data-testid="overview-today"
+        :disabled="!todayInRange"
+        @click="scrollToToday('smooth')"
+      >
+        今天
+      </button>
+    </template>
+
+    <Transition name="ov-fade" mode="out-in">
+      <OvEmpty v-if="!groups.length" key="empty" class="tl-empty" />
+      <div v-else key="timeline" class="tl">
+        <!-- sticky 尺規：左欄標題 + 月份列 / 日（週）刻度；在 isolated 的 .tl-chart 之外，速覽才蓋不到它 -->
+        <div class="tl-ruler-row">
+          <div class="tl-left-head">
+            PM / 專案
+            <span class="spacer"></span>
+            <span class="col-lbl c-pct">進度</span>
+            <span class="col-lbl c-gap">落後</span>
+          </div>
+          <div ref="ruler" class="tl-ruler">
+            <div class="tl-track">
+              <div class="tl-months">
+                <div
+                  v-for="m in range.months"
+                  :key="m.iso"
+                  class="tl-month"
+                  :style="{ '--md': m.days }"
+                >
+                  {{ m.iso }}
+                </div>
+              </div>
+              <div class="tl-days" :class="{ daily }">
+                <div
+                  v-for="x in days"
+                  :key="x.idx"
+                  class="tl-day"
+                  :class="{ weekend: x.isWeekend, mon: x.isMonday }"
+                  :style="{ '--d': x.d }"
+                >
+                  <span class="dnum">{{ x.dnum }}</span><span class="wd">{{ x.wd }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div ref="body" class="tl-body" @scroll="onBodyScroll">
+          <div class="tl-chart" :class="{ daily }">
+            <div class="tl-bg" aria-hidden="true">
+              <i
+                v-for="x in days"
+                :key="x.idx"
+                class="day-bg"
+                :class="{ weekend: x.isWeekend, mon: x.isMonday, today: x.isToday }"
+                :style="{ '--d': x.d }"
+              ></i>
+            </div>
+            <template v-if="todayInRange">
+              <div class="today-line" :style="{ '--x': `${todayX}px` }"></div>
+              <div class="today-tag" :style="{ '--x': `${todayX}px` }">今天</div>
+            </template>
+
+            <TransitionGroup name="ov-group" tag="div" class="tl-groups" @before-leave="freezeLeave">
+              <TimelineGroup
+                v-for="g in groups"
+                :key="g.pm.id"
+                :group="g"
+                :start-idx="range.startIdx"
+                :dw="DW"
+              />
+            </TransitionGroup>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </OvPanel>
+</template>
+
+<style scoped>
+/* 「今天」按鈕（照 GanttPanel） */
+.today-btn {
+  height: var(--ctrl-h);
+  padding: 0 var(--sp-6);
+  border: 1px solid var(--danger-bd);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  border-radius: var(--r-control);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-medium);
+  line-height: 1;
+  transition:
+    filter var(--t-fast) var(--ease),
+    box-shadow var(--t-fast) var(--ease);
+}
+
+.today-btn:hover:not(:disabled) {
+  filter: var(--hover-dim);
+}
+
+.today-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+}
+
+.today-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.tl-empty {
+  margin: var(--sp-6);
+}
+
+/* 尺規列：sticky 在面板標題列下方 */
+.tl-ruler-row {
+  position: sticky;
+  top: calc(var(--ov-top, 0px) + var(--ov-head, 0px));
+  z-index: 26;
+  display: flex;
+  align-items: stretch;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-1);
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.tl-left-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: var(--gantt-left);
+  flex: 0 0 var(--gantt-left);
+  height: var(--gantt-head);
+  padding: 0 var(--sp-4) 0 var(--sp-6);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-bold);
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  border-right: 1px solid var(--border-1);
+  background: var(--surface-2);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.tl-left-head .col-lbl {
+  flex: 0 0 auto;
+  font-size: var(--fs-date);
+  letter-spacing: 0;
+  text-align: right;
+}
+
+/* 欄寬同 TimelineProjectRow 的 .c-pct / .c-gap */
+.c-pct {
+  width: 78px;
+}
+
+.c-gap {
+  width: 50px;
+}
+
+.tl-ruler {
+  flex: 1;
+  min-width: 0;
+  height: var(--gantt-head);
+  overflow: hidden;
+}
+
+.tl-track {
+  position: relative;
+  width: calc(var(--tl-days) * var(--dw));
+  height: var(--gantt-head);
+}
+
+.tl-months {
+  display: flex;
+  height: 26px;
+  border-bottom: 1px solid var(--border-1);
+}
+
+.tl-month {
+  flex: 0 0 calc(var(--md) * var(--dw));
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding-left: var(--sp-4);
+  border-right: 1px solid var(--border-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-bold);
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.tl-days {
+  position: relative;
+  height: 28px;
+}
+
+.tl-day {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--d) * var(--dw));
+  width: var(--dw);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-date);
+  line-height: 1;
+  color: var(--text-2);
+}
+
+.tl-day.weekend {
+  background: var(--bg-weekend-head);
+}
+
+.tl-day .wd {
+  color: var(--text-3);
+}
+
+.tl-days.daily .tl-day {
+  align-items: center;
+  border-right: 1px solid var(--bg-page);
+}
+
+.tl-days.daily .tl-day.weekend {
+  color: var(--text-1);
+  font-weight: var(--fw-bold);
+}
+
+.tl-days:not(.daily) .tl-day .wd,
+.tl-days:not(.daily) .tl-day:not(.mon) .dnum {
+  display: none;
+}
+
+.tl-days:not(.daily) .tl-day.mon {
+  z-index: 1;
+  overflow: visible;
+  padding-left: var(--sp-2);
+  border-left: 1px solid var(--border-control);
+}
+
+/* 捲動容器：左欄與畫布一起水平捲 */
+.tl-body {
+  position: relative;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-radius: 0 0 var(--r-panel) var(--r-panel);
+}
+
+/* isolation：速覽的 z-index 31 只在畫布內比，不會蓋過畫布外的 sticky 尺規 */
+.tl-chart {
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
+  width: calc(var(--gantt-left) + var(--tl-days) * var(--dw));
+  min-height: 120px;
+}
+
+/* 畫布底層：週末、今天；列的 PM 淡色疊在它上面 */
+.tl-bg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--gantt-left);
+  width: calc(var(--tl-days) * var(--dw));
+  z-index: -1;
+  pointer-events: none;
+}
+
+.day-bg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--d) * var(--dw));
+  width: var(--dw);
+}
+
+.day-bg.weekend {
+  background: var(--bg-weekend);
+}
+
+.day-bg.today {
+  background: var(--bg-today);
+}
+
+/* 週刻度時不畫週末灰底：一週一格已看不出單日，灰條只會變成條碼 */
+.tl-chart:not(.daily) .day-bg.weekend,
+.tl-days:not(.daily) .tl-day.weekend {
+  background: transparent;
+}
+
+.tl-chart:not(.daily) .day-bg.today {
+  background: var(--bg-today);
+}
+
+.tl-chart.daily .day-bg {
+  border-right: 1px solid var(--border-hair);
+}
+
+.tl-chart:not(.daily) .day-bg.mon {
+  box-shadow: inset 1px 0 var(--border-1);
+}
+
+/* 今天線在 bar 之下（同 z-index、DOM 在前）；標籤在 bar 之上、sticky 左欄（30）之下 */
+.today-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--gantt-left) + var(--x) - 1px);
+  width: 2px;
+  background: var(--today);
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* 標籤底用 --danger 才有 4.5:1（B2 2083） */
+.today-tag {
+  position: absolute;
+  top: var(--sp-3);
+  left: calc(var(--gantt-left) + var(--x) + var(--r-badge));
+  z-index: 26;
+  padding: var(--r-2) var(--sp-3);
+  border-radius: var(--r-badge);
+  background: var(--danger);
+  color: var(--surface-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-pill);
+  font-weight: var(--fw-bold);
+  pointer-events: none;
+}
+
+/* 離場群組由 freezeLeave 釘成 absolute，以這層為基準（A20） */
+.tl-groups {
+  position: relative;
+}
+</style>
