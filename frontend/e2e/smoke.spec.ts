@@ -48,3 +48,13 @@ test('Dashboard 開著詳細視窗時離開，回來不會自己打開', async (
   await expect(page.locator('[data-panel="gantt"]')).toBeVisible()
   await expect(page.locator('.detail-modal')).toHaveCount(0)
 })
+
+test('總覽頁載入後有 7 張卡片', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('[data-view-panel="cards"] [data-project]')).toHaveCount(7)
+})
+
+test('總覽頁 #timeline 直接開時間軸', async ({ page }) => {
+  await page.goto('/#timeline')
+  await expect(page.locator('[data-view-panel="timeline"] [data-project]')).toHaveCount(7)
+})
