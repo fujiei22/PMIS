@@ -1,6 +1,6 @@
 # PMIS 前端
 
-專案管理資訊系統（Project Management Information System）前端。單一頁面 Dashboard（`/`），內含四張摘要卡、專案時程（甘特圖）、任務看板、Issue 看板與詳細視窗。
+專案管理資訊系統（Project Management Information System）前端。單一頁面 Dashboard（`/`），內含五張摘要卡、專案時程（甘特圖）、任務看板、Issue 看板與詳細視窗。
 
 技術棧與使用慣例見 [`docs/reference/tech-stack.md`](../docs/reference/tech-stack.md)；設計語言區塊地圖見 [`docs/reference/design-map.md`](../docs/reference/design-map.md)。
 
@@ -33,7 +33,7 @@
 | 畫面區塊 | 元件 |
 |---|---|
 | 頂部篩選列與錯誤條 | `layout/TopBar`（FilterDropdown、FilterCalendar、MemberPicker、common/ErrorBar） |
-| 四張摘要卡 | `summary/SummaryCards` |
+| 五張摘要卡（總時長、進度、任務狀態、Issue 統計、預算 vs. 支出） | `summary/SummaryCards` |
 | 甘特圖 | `gantt/GanttPanel`（GanttTimeline、GanttGroupRow、GanttTaskRow、GanttBars → GanttBar、DependencyLines） |
 | 任務看板 | `kanban/KanbanPanel`（KanbanHeader、TaskCard） |
 | Issue 看板 | `issues/IssuePanel`（IssuePanelHeader、IssueCard） |
@@ -108,7 +108,7 @@ frontend/
 │   ├── router/            路由
 │   ├── stores/            Pinia store（三層，見下）
 │   │   ├── clock.ts                           時鐘層
-│   │   ├── task / issue / comment / member.ts   資料層
+│   │   ├── task / issue / comment / member / budget.ts   資料層
 │   │   ├── _optimistic.ts                     樂觀更新的共用機制（tracker / runOptimistic / error sink）
 │   │   ├── _sync.ts                           api.subscribe 的唯一訂閱點，把事件路由到各資料 store
 │   │   └── rows / filter / selection / ui.ts  派生層
@@ -164,6 +164,7 @@ COMPARE_DUMP=node_modules/.tmp/cmp npm run test:e2e -- e2e/compare.spec.ts
 - **檔案多選跨任務殘留**：legacy 的 `fileSel` 不會在換任務時清掉（`:3901`），計數會沿用上一個任務。新頁在 `openDetail` 時清空。
 - **附件同日的相對順序**：`filesForTarget` 對同一天的附件沒有定義先後，兩邊可能不同，對照不比這個。
 - **重排節流的時間來源**：legacy 用 `Date.now()`，被 e2e 的 `page.clock.setFixedTime` 凍住之後，一次拖曳裡除了第一次以外的 `dragTick` 全部被節流擋掉；新頁用 `performance.now()`，不受固定時鐘影響。這是測試環境造成的差異，不是行為差異——對照測試的重排只送一次 `mousemove`，比第一次落點。
+- **第五張摘要卡「預算 vs. 支出」**：legacy 只有四張，這張是新頁才有的。`e2e/helpers/compare.ts` 取摘要卡文字時排除 `summary-budget`，其餘四張照比。
 - **文字之間的空白**：兩頁的文字節點切法不同（legacy 把每個 `{{ }}` 包成一層元素、元素之間留著模板縮排的空白節點），比對前會把文字裡的空白全部去掉。字級與間距的差異改由幾何量測把關。
 
 ## lib 與 store 的分工
@@ -183,7 +184,7 @@ store 分三層，依賴**只能由上往下**：
 | 層 | 檔 | 職責 | 可以 import 誰 |
 |---|---|---|---|
 | 時鐘層 | `clock.ts` | `now` / `todayIdx` / `todayIso`（60 秒 tick） | 誰都不用 |
-| 資料層 | `task.ts`、`issue.ts`、`comment.ts`、`member.ts`（＋共用的 `_optimistic.ts`、`_sync.ts`） | 專案資料的唯一擁有者；所有寫入都經 `@/api` | `@/api/*`、`@/lib/*`、`@/types/*`、`@/stores/clock`、其他資料 store、`_optimistic` / `_sync` |
+| 資料層 | `task.ts`、`issue.ts`、`comment.ts`、`member.ts`、`budget.ts`（＋共用的 `_optimistic.ts`、`_sync.ts`） | 專案資料的唯一擁有者；所有寫入都經 `@/api` | `@/api/*`、`@/lib/*`、`@/types/*`、`@/stores/clock`、其他資料 store、`_optimistic` / `_sync` |
 | 派生層 | `rows.ts`、`filter.ts`、`selection.ts`、`ui.ts` | 從資料層算出畫面要的東西（可見列、篩選、選取、浮層 / 錯誤條 / 收合） | 所有層 |
 
 **資料層不知道派生層存在**，所以三件原本會反向依賴的事改成這樣：
@@ -227,7 +228,7 @@ store 分三層，依賴**只能由上往下**：
 | `data-rel` | 任務卡 | `up` / `down` / `group` / 空 | ✗ |
 | `data-status` | 甘特條 / 任務卡 / Issue 卡 | 狀態 key，或 `delayed` | ✗ |
 | `data-panel` | 面板外殼 | `gantt` / `kanban` / `issues` | ✗ |
-| `data-testid` | 摘要卡 `summary-duration` / `summary-progress` / `summary-tasks` / `summary-issues`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count` | 固定字串 | ✗ |
+| `data-testid` | 摘要卡 `summary-duration` / `summary-progress` / `summary-tasks` / `summary-issues` / `summary-budget`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count` | 固定字串 | ✗ |
 
 ## 怎麼接後端
 
@@ -249,7 +250,8 @@ store 分三層，依賴**只能由上往下**：
    | `Attachment.at` | `'YYYY-MM-DD'`（本地日） | ISO 8601 | adapter |
    | `Group` | 只有 `id` / `name` | 後端若存了收合狀態要忽略 | 收合是畫面狀態，在 `ui.collapsedGroups`，不上 wire |
    | `ProjectData.currentUserId` | 必填字串 | 登入還沒做 | adapter 從 session / token 填；沒有登入就先填一個固定成員 id |
-   | `Attachment.id` | `'<commentId>:<index>'`（`downloadAttachment` 的鍵） | 後端自己的附件主鍵 | adapter；只要 `loadProject` 與 `createComment` 回的 id 能餵回 `downloadAttachment` 就行 |
+   | `ProjectData.budget` | `{ total, actual }`（數字，只讀；剩餘與使用率由 `lib/budget.ts` 算） | 後端的預算欄位 | adapter 填進 `loadProject()` 與 `project.reloaded` 的 payload；目前沒有寫入端點 |
+| `Attachment.id` | `'<commentId>:<index>'`（`downloadAttachment` 的鍵） | 後端自己的附件主鍵 | adapter；只要 `loadProject` 與 `createComment` 回的 id 能餵回 `downloadAttachment` 就行 |
 
 4. **跑測試**：`npm run test:unit -- --run` 全綠、`PLAYWRIGHT_PORT=5174 npm run test:e2e` 全綠（靠 mock 的兩條會自動跳過，見下）。
 

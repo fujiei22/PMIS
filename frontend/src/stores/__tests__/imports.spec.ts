@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
  * 三層，只能由上往下依賴：
  *
  * 1. **時鐘層** `clock` —— 所有層都可以讀。
- * 2. **資料層** `member / task / issue / comment`（加上它們共用的
+ * 2. **資料層** `member / budget / task / issue / comment`（加上它們共用的
  *    `_optimistic` 與事件入口 `_sync`）—— 專案資料的唯一擁有者。
  * 3. **派生層** `rows / filter / selection / ui` —— 讀資料層算出畫面要的東西。
  *
@@ -28,6 +28,7 @@ import { describe, expect, it } from 'vitest'
 /** 受檢查的檔（資料層 + 它們的共用機制）。 */
 const DATA_LAYER = [
   'member.ts',
+  'budget.ts',
   'task.ts',
   'issue.ts',
   'comment.ts',
@@ -41,7 +42,7 @@ const ALLOWED = [
   /^@\/lib\/.*$/,
   /^@\/types\/.*$/,
   /^@\/stores\/clock$/,
-  /^@\/stores\/(member|task|issue|comment)$/,
+  /^@\/stores\/(member|budget|task|issue|comment)$/,
   /^@\/stores\/_optimistic$/,
   /^@\/stores\/_sync$/,
 ]

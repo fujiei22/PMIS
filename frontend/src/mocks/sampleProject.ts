@@ -724,6 +724,7 @@ export const sampleProject: ProjectData = {
   deps,
   issues,
   comments,
+  budget: { total: 50000, actual: 32500 },
   /** 目前登入者；留言與新建 Issue 的預設作者 */
   currentUserId: 'm1',
 }

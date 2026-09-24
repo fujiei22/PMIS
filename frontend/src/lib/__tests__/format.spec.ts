@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { EMPTY_LABEL, fileSize, fmtDate, shortDate, stripYear, visualLen } from '@/lib/format'
+import { EMPTY_LABEL, fileSize, fmtDate, fmtMoney, fmtMoneyShort, shortDate, stripYear, visualLen } from '@/lib/format'
 
 describe('format', () => {
   it('fmtDate 空字串回「選擇日期」', () => {
@@ -44,5 +44,29 @@ describe('format', () => {
       pickDate: '選擇日期',
       unassigned: '未指派',
     })
+  })
+})
+
+describe('fmtMoney', () => {
+  it('加 $ 與千分位', () => {
+    expect(fmtMoney(50000)).toBe('$50,000')
+    expect(fmtMoney(0)).toBe('$0')
+  })
+
+  it('負數的負號放在 $ 前面', () => {
+    expect(fmtMoney(-2500)).toBe('-$2,500')
+  })
+})
+
+describe('fmtMoneyShort', () => {
+  it('未滿 10 億跟 fmtMoney 一樣', () => {
+    expect(fmtMoneyShort(50000)).toBe('$50,000')
+    expect(fmtMoneyShort(999999999)).toBe('$999,999,999')
+  })
+
+  it('10 億以上改縮寫，負數負號在 $ 前', () => {
+    expect(fmtMoneyShort(1_000_000_000)).toBe('$1B')
+    expect(fmtMoneyShort(123_456_789_012)).toBe('$123.5B')
+    expect(fmtMoneyShort(-2_500_000_000_000)).toBe('-$2.5T')
   })
 })

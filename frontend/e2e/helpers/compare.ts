@@ -178,7 +178,9 @@ export function domSnapshot(page: Page): Promise<DomSnapshot> {
       let out = ''
       const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
         acceptNode: (n) =>
-          SKIP_TAGS.has(n.parentElement?.tagName ?? '')
+          SKIP_TAGS.has(n.parentElement?.tagName ?? '') ||
+          // 預算卡是新頁才有的第五張摘要卡，legacy 沒有（README〈刻意保留的差異〉）
+          n.parentElement?.closest('[data-testid="summary-budget"]')
             ? NodeFilter.FILTER_REJECT
             : NodeFilter.FILTER_ACCEPT,
       })

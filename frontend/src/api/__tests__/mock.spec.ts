@@ -343,7 +343,7 @@ describe('mock api', () => {
   })
 
   it('reset(data) 換成指定的資料', async () => {
-    api.reset({ groups: [], members: [], tasks: [], deps: [], issues: [], comments: [], currentUserId: 'm1' })
+    api.reset({ groups: [], members: [], tasks: [], deps: [], issues: [], comments: [], budget: { total: 0, actual: 0 }, currentUserId: 'm1' })
     expect((await api.loadProject()).tasks).toHaveLength(0)
   })
 })
