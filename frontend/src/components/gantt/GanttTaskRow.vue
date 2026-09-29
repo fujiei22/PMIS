@@ -10,6 +10,7 @@ import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { DELAYED, TASK_STATUS } from '@/constants/dashboard'
 import { lengthOf } from '@/lib/date'
 import { fmtDate, stripYear } from '@/lib/format'
+import { isImeComposing } from '@/lib/keyboard'
 import { isLate } from '@/lib/schedule'
 import { useClockStore } from '@/stores/clock'
 import { useSelectionStore } from '@/stores/selection'
@@ -114,7 +115,9 @@ function endEdit(): void {
   if (editing.value) ui.editing = null
 }
 
+/** Enter 結束編輯、Esc 收框；輸入法選字的 Enter 是確定選字，不結束編輯。 */
 function onEditKey(e: KeyboardEvent): void {
+  if (isImeComposing(e)) return
   if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
   if (e.key === 'Escape') {
     void nameDraft.flush()

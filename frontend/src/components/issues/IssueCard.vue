@@ -12,6 +12,7 @@ import { useMenus } from '@/composables/useMenus'
 import { DELAYED, ISSUE_ITEM, ISSUE_LEVEL, ISSUE_STATUS } from '@/constants/dashboard'
 import { initialOf } from '@/lib/color'
 import { EMPTY_LABEL, fmtDate } from '@/lib/format'
+import { isImeComposing } from '@/lib/keyboard'
 import { isLateIssue } from '@/lib/schedule'
 import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
@@ -118,7 +119,9 @@ function endEdit(): void {
   if (editing.value) ui.editing = null
 }
 
+/** Enter 結束編輯、Esc 收框；輸入法選字的 Enter 是確定選字，不結束編輯。 */
 function onEditKey(e: KeyboardEvent): void {
+  if (isImeComposing(e)) return
   if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
   if (e.key === 'Escape') {
     void titleDraft.flush()

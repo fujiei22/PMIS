@@ -239,7 +239,7 @@ COMPARE_DUMP=node_modules/.tmp/cmp npm run test:e2e -- e2e/compare.spec.ts
 - **檔案多選跨任務殘留**：legacy 的 `fileSel` 不會在換任務時清掉（`:3901`），計數會沿用上一個任務。新頁在 `openDetail` 時清空。
 - **附件同日的相對順序**：`filesForTarget` 對同一天的附件沒有定義先後，兩邊可能不同，對照不比這個。
 - **重排節流的時間來源**：legacy 用 `Date.now()`，被 e2e 的 `page.clock.setFixedTime` 凍住之後，一次拖曳裡除了第一次以外的 `dragTick` 全部被節流擋掉；新頁用 `performance.now()`，不受固定時鐘影響。這是測試環境造成的差異，不是行為差異——對照測試的重排只送一次 `mousemove`，比第一次落點。
-- **理論進度的判準**：legacy 把「今天到期」的任務算進理論進度（`end <= 今天`，`Dashboard.html:3604-3620`）。新頁要到期日**隔天**才算（`end < 今天`），和總覽的 `taskPlanned`、「已延遲」的 `isLate` 同一個定義，兩頁同一個專案的理論 % 才會一致（user 決定）。對照測試只遮掉摘要卡的差距標籤、理論的 N / 總數與理論 %（`e2e/helpers/compare.ts` 的 `maskPlan`），其餘照比。
+- **理論進度的判準**：legacy 把「今天到期」的任務算進理論進度（`end <= 今天`，`Dashboard.html:3604-3620`）。新頁要到期日**隔天**才算（`end < 今天`），和總覽的 `taskPlanned`、「已延遲」的 `isLate` 同一個定義（都呼叫 `lib/schedule.ts` 的 `isPlannedDone`，改規則只改那裡），兩頁同一個專案的理論 % 才會一致（user 決定）。對照測試只遮掉摘要卡的差距標籤、理論的 N / 總數與理論 %（`e2e/helpers/compare.ts` 的 `maskPlan`），其餘照比。
 - **甘特列的快捷鈕**：legacy 滑鼠移到任務列上會撐開「▲ ▼ ⇄ ✕」並省掉日期的年份；新頁改成列尾一直顯示的「⋮」，動作收在它開的選單（user 決定：只想標記任務時快捷鈕很干擾，▲ ▼ 也看不出是工期 ±1 天）。對照測試比文字時兩邊都拿掉列尾動作字與年份（`e2e/helpers/compare.ts` 的 `maskActs`），情境 8 的相依 / 刪除各走各的路（`compare.spec.ts` 的 `rowAction`）；點任務列的位置改在名稱區 x=70（`ROW_NAME_POS`）。
 - **成員拖曳指派**：legacy 可以把成員篩選面板的列拖到甘特條或任務卡上指派，新頁移除了這個功能（user 決定；平板無法可靠支援原生拖放），指派一律在詳細視窗的「＋指派」。對照測試不比這個。
 - **文字之間的空白**：兩頁的文字節點切法不同（legacy 把每個 `{{ }}` 包成一層元素、元素之間留著模板縮排的空白節點），比對前會把文字裡的空白全部去掉。字級與間距的差異改由幾何量測把關。
@@ -273,7 +273,7 @@ store 分三層，依賴**只能由上往下**：
 **資料層不知道派生層存在**，所以三件原本會反向依賴的事改成這樣：
 
 - 新增的預設值（分類、負責人、起訖日）由 `composables/useTaskActions.ts` 的 `addTaskWithDefaults()` 算好再傳進 `taskStore.addTask()`；建立後的選取也在那裡做。
-- 刪除後的懸空 id 由 `selection.ts` / `ui.ts` 各自的 `watch(..., { flush: 'sync' })` 清（`selection.taskId` / `issueId` / `groupId`、`ui.detail`（含 `detail.from`）、`confirm`、`depEditFor`、`pickerFor`、`expandedIssues[id]`）。
+- 刪除後的懸空 id 由 `selection.ts` / `ui.ts` 各自的 `watch(..., { flush: 'sync' })` 清（`selection.taskId` / `issueId` / `groupId`、`ui.detail`（含 `detail.from`）、`confirm`、`depEditFor`、`pickerFor`、`rowMenu`、`expandedIssues[id]`）。
 - api 失敗的錯誤條不是 import 來的，是**注入**的：`_optimistic.setErrorSink()`，實際接上 `ui.pushError` 的是 `useProjectBoot()`。
 
 白名單由 `src/stores/__tests__/imports.spec.ts` 守著——它直接讀原始碼的 `import` 敘述，資料層引用白名單以外的 `@/` 路徑就紅（`import type` 豁免，因為型別在編譯後就消失；禁 barrel `@/stores`）。派生層之間不做環檢：Pinia 的 `useX()` 是延遲呼叫，`ui ↔ selection` 這種互相引用在執行期沒有問題。

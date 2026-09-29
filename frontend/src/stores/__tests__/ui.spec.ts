@@ -167,17 +167,19 @@ describe('uiStore', () => {
       expect(ui.expandedIssues.i1).toBeUndefined()
     })
 
-    it('任務被刪 → detail / depEditFor / pickerFor / confirm 一起清', () => {
+    it('任務被刪 → detail / depEditFor / pickerFor / confirm / rowMenu 一起清', () => {
       const ui = useUiStore()
       ui.openDetail('t3', 'task')
       ui.depEditFor = 't3'
       ui.pickerFor = 't3'
       ui.confirm = { kind: 'task', id: 't3', step: 2 }
+      ui.rowMenu = { id: 't3', left: 10, top: 20 }
       useTaskStore().applyEvent({ type: 'task.deleted', payload: { id: 't3' } })
       expect(ui.detail).toBeNull()
       expect(ui.depEditFor).toBeNull()
       expect(ui.pickerFor).toBeNull()
       expect(ui.confirm).toBeNull()
+      expect(ui.rowMenu).toBeNull()
     })
 
     it('來源任務被刪 → detail.from 清掉，Issue 詳情本身還開著', () => {

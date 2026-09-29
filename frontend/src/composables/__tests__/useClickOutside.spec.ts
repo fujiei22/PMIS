@@ -138,7 +138,7 @@ describe('useClickOutside 的手指操作', () => {
     const plain = addNode('<div class="plain">x</div>')
     down(plain, 'touch')
     expect(selection.taskId).toBe('t1')
-    plain.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    plain.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
     expect(selection.taskId).toBeNull()
   })
 
@@ -147,7 +147,7 @@ describe('useClickOutside 的手指操作', () => {
     selection.taskId = 't1'
     const bar = addNode('<div data-taskid="t1">bar</div>')
     down(bar, 'touch')
-    bar.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    bar.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
     expect(selection.taskId).toBe('t1')
   })
 
@@ -156,7 +156,17 @@ describe('useClickOutside 的手指操作', () => {
     const bar = addNode('<div data-taskid="t1">bar</div>')
     down(bar)
     selection.taskId = 't1'
-    addNode('<div class="plain">x</div>').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    addNode('<div class="plain">x</div>').dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+    expect(selection.taskId).toBe('t1')
+  })
+
+  it('手指點過之後，鍵盤觸發的 click（detail 0）不當成點到外面', () => {
+    const selection = useSelectionStore()
+    const bar = addNode('<div data-taskid="t1">bar</div>')
+    down(bar, 'touch')
+    bar.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+    selection.taskId = 't1'
+    addNode('<button>x</button>').dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }))
     expect(selection.taskId).toBe('t1')
   })
 })

@@ -10,6 +10,7 @@ import MemberPicker from '@/components/layout/MemberPicker.vue'
 import { DELAYED, ISSUE_LEVEL, ISSUE_STATUS, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
 import { useDomRegistry } from '@/composables/useDomRegistry'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
+import { toggleIn } from '@/lib/filter'
 import { fmtDate } from '@/lib/format'
 import { useFilterStore } from '@/stores/filter'
 import { useTaskStore } from '@/stores/task'
@@ -45,11 +46,6 @@ function jumpPanel(key: 'gantt' | 'kanban' | 'issues'): void {
   if (!el) return
   const top = el.getBoundingClientRect().top + window.scrollY - sticky.panelTop.value - PANEL_JUMP_GAP
   window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-}
-
-/** 多選欄位的共用切換。 */
-function toggleIn<T extends string>(list: T[], key: T): T[] {
-  return list.includes(key) ? list.filter((x) => x !== key) : [...list, key]
 }
 
 // ── 任務：狀態 / 優先度 / 分類 / Issue 有無 ─────────────────────────────────

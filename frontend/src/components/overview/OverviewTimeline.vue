@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 時間軸檢視：面板外殼 + sticky 尺規（月份 / 日或週刻度）+ 可橫捲的畫布（週末與今天底色、今天線、PM 群組）。
+// 時間軸檢視：面板外殼 + sticky 尺規（月份 / 週刻度）+ 可橫捲的畫布（週一分隔線、今天底色、今天線、PM 群組）。
 // 左欄與畫布放在同一個水平捲動容器裡（左欄 sticky left），速覽才能緊接在選取列下方、橫跨左欄 + 畫布。
 // 容器自己的橫捲軸藏起來，底下另放一條只在畫布下方的捲軸；左欄不會橫捲，捲軸不該伸到它下面。
 // 畫布區也能按住拖曳左右平移（useDragPan）。
@@ -20,11 +20,6 @@ const overview = useOverviewStore()
 const clock = useClockStore()
 
 const DW = TIMELINE_DAY_W
-/** 一天夠寬才逐日寫日期；不夠寬時改週刻度（只寫週一），也不畫週末灰底（B2 1956 / 2053）。 */
-const DAILY_MIN_DW = 22
-const daily = DW >= DAILY_MIN_DW
-
-const WEEKDAY = ['日', '一', '二', '三', '四', '五', '六'] as const
 
 const range = computed(() => overview.range)
 const groups = computed(() => overview.groups)
@@ -35,13 +30,18 @@ const days = computed(() =>
     ...x,
     d: x.idx - range.value.startIdx,
     dnum: String(x.date).padStart(2, '0'),
-    wd: WEEKDAY[x.weekday],
     isToday: x.idx === clock.todayIdx,
   })),
 )
+/**
+ * 一天只有約 7px 寬，逐日寫不下：尺規只在週一寫日期，畫布也不畫週末灰底（灰條只會變成條碼，B2 1956 / 2053）。
+ * 所以尺規只要週一那幾天，畫布底層只要週一分隔線與今天底色那幾天。
+ */
+const weekTicks = computed(() => days.value.filter((x) => x.isMonday))
+const bgDays = computed(() => days.value.filter((x) => x.isMonday || x.isToday))
 
+/** 範圍一定涵蓋今天所在的月份（timelineRange），今天線與「今天」按鈕不必再判斷在不在範圍內。 */
 const todayOffset = computed(() => clock.todayIdx - range.value.startIdx)
-const todayInRange = computed(() => todayOffset.value >= 0 && todayOffset.value < range.value.days)
 /** 今天線的 x（相對畫布起點）：整數日 + 當天已過的工作時間比例，公式同 GanttBars。 */
 const todayX = computed(() => (todayOffset.value + dayFraction(new Date(clock.now))) * DW)
 
@@ -89,7 +89,7 @@ function onBarScroll(): void {
 /** 把今天置中到畫布可見區（扣掉左欄）；smooth 給按鈕（A14），auto 給初次掛載。 */
 function scrollToToday(behavior: ScrollBehavior): void {
   const el = body.value
-  if (!el || !todayInRange.value) return
+  if (!el) return
   const left = Math.max(0, todayX.value - (el.clientWidth - leftW.value) / 2)
   el.scrollTo({ left, behavior })
 }
@@ -133,7 +133,6 @@ onBeforeUnmount(() => ro?.disconnect())
         type="button"
         class="today-btn"
         data-testid="overview-today"
-        :disabled="!todayInRange"
         @click="scrollToToday('smooth')"
       >
         今天
@@ -143,7 +142,7 @@ onBeforeUnmount(() => ro?.disconnect())
     <Transition name="ov-fade" mode="out-in">
       <OvEmpty v-if="!groups.length" key="empty" class="tl-empty" />
       <div v-else key="timeline" class="tl">
-        <!-- sticky 尺規：左欄標題 + 月份列 / 日（週）刻度；在 isolated 的 .tl-chart 之外，速覽才蓋不到它 -->
+        <!-- sticky 尺規：左欄標題 + 月份列 / 週刻度；在 isolated 的 .tl-chart 之外，速覽才蓋不到它 -->
         <div class="tl-ruler-row">
           <div class="tl-left-head">
             PM / 專案
@@ -163,15 +162,9 @@ onBeforeUnmount(() => ro?.disconnect())
                   {{ m.iso }}
                 </div>
               </div>
-              <div class="tl-days" :class="{ daily }">
-                <div
-                  v-for="x in days"
-                  :key="x.idx"
-                  class="tl-day"
-                  :class="{ weekend: x.isWeekend, mon: x.isMonday }"
-                  :style="{ '--d': x.d }"
-                >
-                  <span class="dnum">{{ x.dnum }}</span><span class="wd">{{ x.wd }}</span>
+              <div class="tl-days">
+                <div v-for="x in weekTicks" :key="x.idx" class="tl-day" :style="{ '--d': x.d }">
+                  {{ x.dnum }}
                 </div>
               </div>
             </div>
@@ -185,20 +178,18 @@ onBeforeUnmount(() => ro?.disconnect())
           @scroll="onBodyScroll"
           @pointerdown="pan.onPointerDown"
         >
-          <div class="tl-chart" :class="{ daily }">
+          <div class="tl-chart">
             <div class="tl-bg" aria-hidden="true">
               <i
-                v-for="x in days"
+                v-for="x in bgDays"
                 :key="x.idx"
                 class="day-bg"
-                :class="{ weekend: x.isWeekend, mon: x.isMonday, today: x.isToday }"
+                :class="{ mon: x.isMonday, today: x.isToday }"
                 :style="{ '--d': x.d }"
               ></i>
             </div>
-            <template v-if="todayInRange">
-              <div class="today-line" :style="{ '--x': `${todayX}px` }"></div>
-              <div class="today-tag" :style="{ '--x': `${todayX}px` }">今天</div>
-            </template>
+            <div class="today-line" :style="{ '--x': `${todayX}px` }"></div>
+            <div class="today-tag" :style="{ '--x': `${todayX}px` }">今天</div>
 
             <TransitionGroup name="ov-group" tag="div" class="tl-groups" @before-leave="freezeLeave">
               <TimelineGroup
@@ -242,7 +233,7 @@ onBeforeUnmount(() => ro?.disconnect())
 
 /* hover 只給有滑鼠的裝置：觸控點一下後 :hover 會一直黏著，直到點別的地方（本檔其他 hover 同理） */
 @media (hover: hover) {
-  .today-btn:hover:not(:disabled) {
+  .today-btn:hover {
     filter: var(--hover-dim);
   }
 }
@@ -250,11 +241,6 @@ onBeforeUnmount(() => ro?.disconnect())
 .today-btn:focus-visible {
   outline: none;
   box-shadow: var(--ring-focus);
-}
-
-.today-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 .tl-empty {
@@ -359,50 +345,22 @@ onBeforeUnmount(() => ro?.disconnect())
   height: 28px;
 }
 
+/* 週刻度：只有週一，日期從分隔線右邊寫出去（寬度照內容，不受一天的寬度限制） */
 .tl-day {
   position: absolute;
   top: 0;
   bottom: 0;
   left: calc(var(--d) * var(--dw));
-  width: var(--dw);
+  z-index: 1;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 1px;
+  align-items: center;
+  padding-left: var(--sp-2);
+  border-left: 1px solid var(--border-control);
   font-family: var(--font-mono);
   font-size: var(--fs-date);
   line-height: 1;
   color: var(--text-2);
-}
-
-.tl-day.weekend {
-  background: var(--bg-weekend-head);
-}
-
-.tl-day .wd {
-  color: var(--text-3);
-}
-
-.tl-days.daily .tl-day {
-  align-items: center;
-  border-right: 1px solid var(--bg-page);
-}
-
-.tl-days.daily .tl-day.weekend {
-  color: var(--text-1);
-  font-weight: var(--fw-bold);
-}
-
-.tl-days:not(.daily) .tl-day .wd,
-.tl-days:not(.daily) .tl-day:not(.mon) .dnum {
-  display: none;
-}
-
-.tl-days:not(.daily) .tl-day.mon {
-  z-index: 1;
-  overflow: visible;
-  padding-left: var(--sp-2);
-  border-left: 1px solid var(--border-control);
+  white-space: nowrap;
 }
 
 /* 捲動容器：左欄與畫布一起水平捲；原生捲軸藏起來，改用下方的 .tl-hbar（觸控板 / Shift+滾輪照樣能捲） */
@@ -451,7 +409,7 @@ onBeforeUnmount(() => ro?.disconnect())
   min-height: 120px;
 }
 
-/* 畫布底層：週末、今天；列的 PM 淡色疊在它上面 */
+/* 畫布底層：週一分隔線、今天底色；列的 PM 淡色疊在它上面 */
 .tl-bg {
   position: absolute;
   top: 0;
@@ -470,29 +428,11 @@ onBeforeUnmount(() => ro?.disconnect())
   width: var(--dw);
 }
 
-.day-bg.weekend {
-  background: var(--bg-weekend);
-}
-
 .day-bg.today {
   background: var(--bg-today);
 }
 
-/* 週刻度時不畫週末灰底：一週一格已看不出單日，灰條只會變成條碼 */
-.tl-chart:not(.daily) .day-bg.weekend,
-.tl-days:not(.daily) .tl-day.weekend {
-  background: transparent;
-}
-
-.tl-chart:not(.daily) .day-bg.today {
-  background: var(--bg-today);
-}
-
-.tl-chart.daily .day-bg {
-  border-right: 1px solid var(--border-hair);
-}
-
-.tl-chart:not(.daily) .day-bg.mon {
+.day-bg.mon {
   box-shadow: inset 1px 0 var(--border-1);
 }
 

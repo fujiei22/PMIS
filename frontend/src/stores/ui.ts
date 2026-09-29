@@ -74,6 +74,7 @@ const GONE_FROM = 2
 const GONE_CONFIRM = 4
 const GONE_DEP_EDIT = 8
 const GONE_PICKER = 16
+const GONE_ROW_MENU = 32
 
 /** api 載入的四個狀態；定義搬到 types/ui.ts，這裡轉出去給既有的 import 用。 */
 export type { LoadState } from '@/types/ui'
@@ -376,7 +377,7 @@ export const useUiStore = defineStore('ui', () => {
    * 資料層不再回頭清 ui（契約 E）：不管刪除是本地發起、樂觀還原，還是別的
    * client 推來的事件，都由這條 watch 收尾。`flush: 'sync'` 讓畫面不會有任何
    * 一個 tick 停在不存在的 id 上（review M7）。
-   * 清理清單：`detail`（含 `detail.from`）、`confirm`、`depEditFor`、`pickerFor`。
+   * 清理清單：`detail`（含 `detail.from`）、`confirm`、`depEditFor`、`pickerFor`、`rowMenu`。
    *
    * review F8：getter 回位元遮罩（同 `selection.ts`）。原本回一個每次都重建的
    * 物件，等於**每一次資料變動**（連改個名字都算）都要跑一次 callback。
@@ -390,7 +391,8 @@ export const useUiStore = defineStore('ui', () => {
         (d?.from && !exists('task', d.from) ? GONE_FROM : 0) |
         (c && !exists(c.kind, c.id) ? GONE_CONFIRM : 0) |
         (depEditFor.value && !exists('task', depEditFor.value) ? GONE_DEP_EDIT : 0) |
-        (pickerFor.value && !exists('task', pickerFor.value) ? GONE_PICKER : 0)
+        (pickerFor.value && !exists('task', pickerFor.value) ? GONE_PICKER : 0) |
+        (rowMenu.value && !exists('task', rowMenu.value.id) ? GONE_ROW_MENU : 0)
       )
     },
     (gone) => {
@@ -399,6 +401,7 @@ export const useUiStore = defineStore('ui', () => {
       if (gone & GONE_CONFIRM) confirm.value = null
       if (gone & GONE_DEP_EDIT) depEditFor.value = null
       if (gone & GONE_PICKER) pickerFor.value = null
+      if (gone & GONE_ROW_MENU) rowMenu.value = null
     },
     { flush: 'sync' },
   )

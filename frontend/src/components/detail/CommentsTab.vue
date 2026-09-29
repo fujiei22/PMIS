@@ -6,6 +6,7 @@ import Avatar from '@/components/common/Avatar.vue'
 import { TOUCH_UI_QUERY, useMediaQuery } from '@/composables/useMediaQuery'
 import { fileKind, isImage } from '@/lib/file'
 import { fileSize } from '@/lib/format'
+import { isImeComposing } from '@/lib/keyboard'
 import { useCommentStore } from '@/stores/comment'
 import { useMemberStore } from '@/stores/member'
 import { useUiStore } from '@/stores/ui'
@@ -41,9 +42,9 @@ function send(): void {
   comment.send(props.targetId, props.targetKind)
 }
 
-/** Enter 送出、Shift+Enter 換行（觸控裝置一律換行）。legacy `onDraftKey` :3941 */
+/** Enter 送出、Shift+Enter 換行（觸控裝置一律換行）；輸入法選字的 Enter 不送出。legacy `onDraftKey` :3941 */
 function onKey(e: KeyboardEvent): void {
-  if (touchUi.value) return
+  if (touchUi.value || isImeComposing(e)) return
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     send()

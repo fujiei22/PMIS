@@ -3,8 +3,8 @@
 // legacy 對照：模板 :298-385，數值 :3522-3633。
 import { computed } from 'vue'
 import { DELAYED, ISSUE_LEVEL, ISSUE_STATUS, TASK_STATUS } from '@/constants/dashboard'
-import { dayIndex, isoFromIndex } from '@/lib/date'
-import { isLate, isLateIssue } from '@/lib/schedule'
+import { isoFromIndex } from '@/lib/date'
+import { isLate, isLateIssue, isPlannedDone } from '@/lib/schedule'
 import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'
@@ -27,13 +27,10 @@ const rangeEnd = computed(() => isoFromIndex(taskStore.range.max))
 // ── 卡 2：整體進度（實際 = 已完成數；理論 = 到期日已過的數）legacy :3604-3620 ──
 const doneTasks = computed(() => tasks.value.filter((t) => t.status === 'done').length)
 /**
- * 理論上此刻該完成的任務：到期日**早於今天**。今天到期的任務今天還沒到期，隔天才算。
- * legacy 用 `<=`（今天到期就算），這裡刻意不同（user 決定），也和總覽的 taskPlanned、
- * 「已延遲」的 isLate 同一個定義。對照測試已遮掉這幾個數字，見 README〈刻意保留的差異〉。
+ * 理論上此刻該完成的任務（判準見 isPlannedDone：到期日隔天才算，和 legacy 刻意不同）。
+ * 對照測試已遮掉這幾個數字，見 README〈刻意保留的差異〉。
  */
-const planDone = computed(
-  () => tasks.value.filter((t) => dayIndex(t.end) < clock.todayIdx).length,
-)
+const planDone = computed(() => tasks.value.filter((t) => isPlannedDone(t, clock.todayIdx)).length)
 const actualPct = computed(() => (total.value ? Math.round((doneTasks.value / total.value) * 100) : 0))
 const planPct = computed(() => (total.value ? Math.round((planDone.value / total.value) * 100) : 0))
 const gap = computed(() => actualPct.value - planPct.value)

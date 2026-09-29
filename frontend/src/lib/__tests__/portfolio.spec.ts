@@ -168,7 +168,8 @@ describe('timelineRange', () => {
     expect(r.months.map((x) => x.iso)).toEqual(['2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12', '2027-01'])
     expect(r.days).toBe(245)
     expect(r.dayList).toHaveLength(245)
-    expect(r.dayList[0]).toMatchObject({ date: 1, weekday: 1, isMonday: true, isWeekend: false }) // 2026-06-01 是週一
+    expect(r.dayList[0]).toMatchObject({ date: 1, isMonday: true }) // 2026-06-01 是週一
+    expect(r.dayList[1]).toMatchObject({ date: 2, isMonday: false })
   })
   it('今天在所有專案之外時，範圍延伸到今天所在月份', () => {
     const r = timelineRange([proj({ startDate: '2026-10-12', dueDate: '2026-11-20' })], '2026-09-22')

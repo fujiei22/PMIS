@@ -101,9 +101,6 @@ export interface TimelineDay {
   idx: number
   /** 當月第幾日（1 起） */
   date: number
-  /** 0 = 週日 … 6 = 週六 */
-  weekday: number
-  isWeekend: boolean
   isMonday: boolean
 }
 
@@ -284,13 +281,10 @@ export function timelineRange(projects: ProjectSummary[], todayIso: ISODate): Ti
     const days = daysInMonth(y, month)
     months.push({ iso, days })
     for (let date = 1; date <= days; date++) {
-      const weekday = new Date(Date.UTC(y, month - 1, date)).getUTCDay()
       dayList.push({
         idx: startIdx + dayList.length,
         date,
-        weekday,
-        isWeekend: weekday === 0 || weekday === 6,
-        isMonday: weekday === 1,
+        isMonday: new Date(Date.UTC(y, month - 1, date)).getUTCDay() === 1,
       })
     }
   }

@@ -17,9 +17,12 @@ export const usePortfolioStore = defineStore('portfolio', () => {
   const currentUserId = ref('')
   /**
    * 請求序號：進出總覽很快時，背景重載可能同時有好幾發在飛、回來的順序也不一定。
-   * 只套用最後發出的那一發，較早的回應晚到就丟掉，舊資料才不會蓋掉新資料。
+   * 回應比畫面上現有資料的那一發還舊才丟掉，舊資料才不會蓋掉新資料。
+   * 較早的一發先回來則照樣套用：不只認最後一發，後發的那一發之後失敗時，畫面上仍有這份資料。
    */
   let loadSeq = 0
+  /** 畫面上的資料來自第幾發；0 表示還沒套用過。 */
+  let appliedSeq = 0
 
   /**
    * 載入整份摘要。給 `data` 就直接套用（測試用，比照 `taskStore.load(data?)`），
@@ -28,7 +31,8 @@ export const usePortfolioStore = defineStore('portfolio', () => {
   async function load(data?: PortfolioData): Promise<void> {
     const ticket = ++loadSeq
     const next = data ?? (await api.listProjects())
-    if (ticket !== loadSeq) return
+    if (ticket < appliedSeq) return
+    appliedSeq = ticket
     projects.value = next.projects
     members.value = next.members
     currentUserId.value = next.currentUserId
@@ -39,10 +43,5 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     return members.value.find((m) => m.id === id)
   }
 
-  /** 依 id 取專案摘要，查不到回 undefined。 */
-  function projectById(id: string): ProjectSummary | undefined {
-    return projects.value.find((p) => p.id === id)
-  }
-
-  return { projects, members, currentUserId, load, byId, projectById }
+  return { projects, members, currentUserId, load, byId }
 })

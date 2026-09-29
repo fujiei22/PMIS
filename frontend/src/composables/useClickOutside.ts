@@ -47,7 +47,9 @@ export function useClickOutside(): void {
   }
 
   function onClick(e: MouseEvent): void {
-    if (!lastWasTouch) return
+    // detail 0 是鍵盤（Enter / 空白鍵）或程式觸發的 click，不是手指點一下：
+    // 手指點過後 lastWasTouch 會一直留著，iPad 接鍵盤時按按鈕不該被當成點到外面
+    if (!lastWasTouch || e.detail === 0) return
     clearSelectionIfOutside(e.target instanceof Element ? e.target : null)
   }
 

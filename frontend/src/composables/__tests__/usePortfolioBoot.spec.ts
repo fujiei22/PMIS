@@ -4,7 +4,10 @@ import { api } from '@/api'
 import { usePortfolioBoot } from '@/composables/usePortfolioBoot'
 import { API_ERROR_TEXT } from '@/constants/api'
 import { ApiError } from '@/api/types'
+import { buildPortfolio } from '@/api/mock/portfolio'
+import { sampleProject } from '@/mocks/sampleProject'
 import { useOverviewStore } from '@/stores/overview'
+import { usePortfolioStore } from '@/stores/portfolio'
 
 /**
  * 總覽啟動層：第一次載入顯示 loading；已 ready 再重載時全程維持 ready（回總覽不閃，spec 7b），
@@ -65,5 +68,27 @@ describe('usePortfolioBoot', () => {
     await first
     expect(ov.loadState).toBe('ready')
     expect(ov.loadError).toBeNull()
+  })
+
+  it('第一次載入中離開又回來：較早那發成功、後發失敗 → 維持 ready，資料還在', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const ov = useOverviewStore()
+    const pf = usePortfolioStore()
+    let okOld!: (v: Awaited<ReturnType<typeof api.listProjects>>) => void
+    let failNew!: (e: unknown) => void
+    vi.spyOn(api, 'listProjects')
+      .mockImplementationOnce(() => new Promise((r) => { okOld = r }))
+      .mockImplementationOnce(() => new Promise((_, rej) => { failNew = rej }))
+    const first = usePortfolioBoot().reload()
+    const second = usePortfolioBoot().reload()
+    expect(ov.loadState).toBe('loading')
+    okOld(buildPortfolio(sampleProject, '2026-09-22'))
+    await first
+    expect(ov.loadState).toBe('ready')
+    failNew(new ApiError('network', 'x'))
+    await second
+    expect(ov.loadState).toBe('ready')
+    expect(ov.loadError).toBeNull()
+    expect(pf.projects).toHaveLength(7)
   })
 })

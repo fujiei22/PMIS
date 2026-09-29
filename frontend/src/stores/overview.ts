@@ -13,6 +13,7 @@ import {
   type OverviewSortKey,
   type ProjectRow,
 } from '@/lib/portfolio'
+import { toggleIn } from '@/lib/filter'
 import { useClockStore } from '@/stores/clock'
 import { usePortfolioStore } from '@/stores/portfolio'
 import type { LoadState } from '@/types/ui'
@@ -22,11 +23,6 @@ import type { Member, ProjectAlert, ProjectStatus } from '@/types/models'
 export type OverviewView = 'cards' | 'timeline'
 /** 總覽頁上的浮層；同時只會開一個。排序選單在兩種檢視共用一個 key（同時只顯示一個面板）。 */
 export type OverviewDropdown = 'pm' | 'status' | 'alert' | 'sort'
-
-/** 陣列裡有就拿掉、沒有就加上（多選篩選的切換）。 */
-function toggleIn<T>(list: T[], v: T): T[] {
-  return list.includes(v) ? list.filter((x) => x !== v) : [...list, v]
-}
 
 /**
  * 派生層：多專案總覽畫面要的所有狀態與派生值（契約 E）。
@@ -102,7 +98,6 @@ export const useOverviewStore = defineStore('overview', () => {
   const anyFilter = computed(
     () => pmIds.value.length > 0 || statuses.value.length > 0 || alerts.value.length > 0,
   )
-  const hasProjects = computed(() => pf.projects.length > 0)
   /** 時間軸範圍：用全部專案算，篩選時時間軸不會跳動。 */
   const range = computed(() => timelineRange(pf.projects, clock.todayIso))
 
@@ -201,7 +196,6 @@ export const useOverviewStore = defineStore('overview', () => {
     pmOptionList,
     counts,
     anyFilter,
-    hasProjects,
     range,
     togglePm,
     clearPms,

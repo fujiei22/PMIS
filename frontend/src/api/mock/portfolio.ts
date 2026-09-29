@@ -1,5 +1,5 @@
 import { dayIndex } from '@/lib/date'
-import { isLate } from '@/lib/schedule'
+import { isLate, isPlannedDone } from '@/lib/schedule'
 import {
   PMIS_META,
   PORTFOLIO_CURRENT_USER,
@@ -24,7 +24,7 @@ const UPCOMING_LIMIT = 3
  * 規則同 `api/types.ts` 檔頭的 wire 約定：
  *
  * - 起訖日：任務 start 的最小值 / end 的最大值；沒有任務時兩者都是今天。
- * - taskPlanned：`end` 在今天之前的任務數（照排程今天之前就該完成）。
+ * - taskPlanned：`isPlannedDone` 為真的任務數（end 在今天之前），與 Dashboard 理論進度同一個定義。
  * - delayedTasks：`isLate` 為真的任務數，與 Dashboard「已延遲」同一個定義；和 taskCounts 重疊計數。
  * - openIssues：未結 Issue 依等級計數；memberIds：至少被指派一個任務的成員，順序照 data.members。
  * - upcoming：未完成任務依 end 升冪取前 3，**含已逾期**（逾期的最該被看到）。
@@ -61,7 +61,7 @@ export function summarizeProject(
     dueDate: ends[ends.length - 1] ?? todayIso,
     taskTotal: tasks.length,
     taskDone: taskCounts.done,
-    taskPlanned: tasks.filter((t) => t.end && dayIndex(t.end) < todayIdx).length,
+    taskPlanned: tasks.filter((t) => isPlannedDone(t, todayIdx)).length,
     taskCounts,
     delayedTasks: tasks.filter((t) => isLate(t, todayIdx)).length,
     openIssues,
