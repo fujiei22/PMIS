@@ -33,6 +33,9 @@ const OPTION_PAD = 12
 const OPTION_MAX_ROWS = 9
 /** 日曆浮層的預留寬度（legacy :2665 的 266）。 */
 const CALENDAR_W = 266
+/** 甘特列「⋮」動作選單的寬與估高（RowActionMenu：標題、工期列、兩個動作）。新頁自己的浮層，legacy 沒有。 */
+export const ROW_MENU_W = 220
+const ROW_MENU_H = 150
 
 /**
  * 選項選單的位置：靠左對齊觸發元素，下方放得下就往下開，否則往上翻。
@@ -73,6 +76,20 @@ export function anchorCalendar(
   return {
     left: Math.max(EDGE, Math.min(rect.left, vp.width - CALENDAR_W)),
     top: vp.height - rect.bottom > need ? rect.bottom + 6 : Math.max(EDGE, rect.top - up),
+  }
+}
+
+/**
+ * 甘特列「⋮」動作選單的位置：右緣對齊「⋮」（選單往左長，不會蓋到時間軸以外的地方），
+ * 下方放得下就往下開，否則往上翻；左右都不超出視窗。
+ *
+ * @param rect 「⋮」的 bounding rect（要 right）
+ * @param vp 視窗大小
+ */
+export function anchorRowMenu(rect: AnchorRect & { right: number }, vp: Viewport): AnchorPosition {
+  return {
+    left: Math.max(EDGE, Math.min(rect.right - ROW_MENU_W, vp.width - ROW_MENU_W - EDGE)),
+    top: vp.height - rect.bottom > ROW_MENU_H + 10 ? rect.bottom + 4 : Math.max(EDGE, rect.top - ROW_MENU_H - 4),
   }
 }
 

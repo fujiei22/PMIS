@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { stepDrag } from './helpers/dashboardPage'
 import {
   DD,
@@ -8,6 +8,7 @@ import {
   markFloating,
   openDashboard,
   pickDropdownOption,
+  ROW_NAME_POS,
   settle,
   toggleDropdown,
   type Scenario,
@@ -194,7 +195,7 @@ const structure: Scenario = async (page, capture) => {
 /** 6. 改名、改狀態、改工期、改完成日期。 */
 const editing: Scenario = async (page, capture) => {
   const row = page.locator('[data-rowtask="t2"]')
-  await row.dblclick({ position: { x: 120, y: 17 } })
+  await row.dblclick({ position: ROW_NAME_POS })
   await row.locator('input').fill('對照測試改名')
   await page.keyboard.press('Enter')
   await settle(page)
@@ -242,21 +243,33 @@ const detail: Scenario = async (page, capture) => {
   await capture('關閉 Issue 詳細視窗')
 }
 
+/**
+ * 任務列上的「⇄ 相依 / ✕ 刪除」。刻意保留的差異：legacy 是 hover 撐開的快捷鈕，
+ * 新頁收在列尾「⋮」開的選單（user 決定，只想標記任務時快捷鈕很干擾）。兩頁都先 hover 列，再各走各的路。
+ */
+async function rowAction(page: Page, row: Locator, glyph: '⇄' | '✕'): Promise<void> {
+  await row.hover()
+  await settle(page, 300)
+  const more = row.locator('[data-rowmore]')
+  if (await more.count()) {
+    await more.click()
+    await page.locator('[data-rowmenu]').getByText(glyph, { exact: true }).click()
+  } else {
+    await row.getByText(glyph, { exact: true }).click()
+  }
+}
+
 /** 8. 四種刪除確認之一（任務）與相依編輯器。 */
 const deletion: Scenario = async (page, capture) => {
   const row = page.locator('[data-rowtask="t5"]')
-  await row.hover()
-  await settle(page, 300)
-  await row.getByText('⇄', { exact: true }).click()
+  await rowAction(page, row, '⇄')
   await settle(page)
   await capture('開啟相依編輯器')
 
   await clickFloat(page, '完成')
   await capture('關閉相依編輯器')
 
-  await row.hover()
-  await settle(page, 300)
-  await row.getByText('✕', { exact: true }).click()
+  await rowAction(page, row, '✕')
   await settle(page)
   await capture('刪除任務確認第一步')
 

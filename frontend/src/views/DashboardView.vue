@@ -9,6 +9,7 @@ import DetailModal from '@/components/detail/DetailModal.vue'
 import ImageLightbox from '@/components/detail/ImageLightbox.vue'
 import DependencyEditor from '@/components/dialogs/DependencyEditor.vue'
 import GanttPanel from '@/components/gantt/GanttPanel.vue'
+import RowActionMenu from '@/components/gantt/RowActionMenu.vue'
 import IssuePanel from '@/components/issues/IssuePanel.vue'
 import KanbanPanel from '@/components/kanban/KanbanPanel.vue'
 import TopBar from '@/components/layout/TopBar.vue'
@@ -74,6 +75,7 @@ onBeforeUnmount(() => {
     <!-- 全域浮層；由下往上疊：詳細視窗 170/180 → 選單與對話框 190/200 → Lightbox 300 -->
     <DetailModal />
     <OptionMenu />
+    <RowActionMenu />
     <DatePicker />
     <DependencyEditor />
     <ConfirmDialog v-if="confirmView" v-bind="confirmView" />

@@ -763,10 +763,13 @@ function openDetail(): void {
   min-width: var(--sp-2);
 }
 
+/* 空間不夠時先縮它（截成 …），右側的 Issue 數與「開啟詳細」才不會被擠出卡片外框 */
 .created {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--fs-caption);
   font-family: var(--font-mono);
   color: var(--text-placeholder);
@@ -984,5 +987,37 @@ function openDetail(): void {
   border-radius: var(--r-input);
   min-height: 78px;
   resize: vertical;
+}
+
+/*
+ * 手指操作（pointer: coarse）：✕ / ⤢ / ▼ 約 20px、等級與狀態膠囊 18px 高，手指點不準。
+ * 圖示鈕用看不見的外擴熱區（外觀不變）；膠囊直接加大。
+ */
+@media (pointer: coarse) {
+  .del::after {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--sp-3));
+  }
+
+  /* ⤢ 與 ▼ 緊鄰，左右只外擴一點，免得兩個熱區重疊 */
+  .act::after {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--sp-3)) calc(-1 * var(--r-2));
+  }
+
+  .act {
+    position: relative;
+  }
+
+  .st,
+  .cls {
+    padding: var(--sp-2) var(--sp-4);
+  }
+
+  .field-pill {
+    padding: var(--sp-3) var(--sp-5);
+  }
 }
 </style>

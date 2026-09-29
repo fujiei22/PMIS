@@ -1,4 +1,4 @@
-import { anchorCalendar, anchorOptionMenu, viewport } from '@/lib/anchor'
+import { anchorCalendar, anchorOptionMenu, anchorRowMenu, viewport } from '@/lib/anchor'
 import { useClockStore } from '@/stores/clock'
 import { useMemberStore } from '@/stores/member'
 import { useTaskStore } from '@/stores/task'
@@ -10,6 +10,8 @@ export interface Menus {
   openOptionMenu: (e: MouseEvent, id: string, kind: OptionMenuKind) => void
   /** 開任務的起訖日期選擇器（一定從 start 端開始填）。 */
   openTaskDatePicker: (e: MouseEvent, taskId: string) => void
+  /** 開甘特任務列「⋮」的動作選單；再點同一列的「⋮」就關掉。 */
+  toggleRowMenu: (e: MouseEvent, taskId: string) => void
   /** 開單一日期選擇器；kind='task' 時改的是任務的完成日。 */
   openIssueDatePicker: (
     e: MouseEvent,
@@ -75,6 +77,14 @@ export function useMenus(): Menus {
     }
   }
 
+  function toggleRowMenu(e: MouseEvent, taskId: string): void {
+    if (ui.rowMenu?.id === taskId) {
+      ui.rowMenu = null
+      return
+    }
+    ui.rowMenu = { id: taskId, ...anchorRowMenu(rectOf(e), viewport()) }
+  }
+
   function openIssueDatePicker(
     e: MouseEvent,
     id: string,
@@ -92,5 +102,5 @@ export function useMenus(): Menus {
     }
   }
 
-  return { openOptionMenu, openTaskDatePicker, openIssueDatePicker }
+  return { openOptionMenu, openTaskDatePicker, toggleRowMenu, openIssueDatePicker }
 }

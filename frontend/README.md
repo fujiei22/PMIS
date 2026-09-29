@@ -45,11 +45,11 @@
 |---|---|
 | 頂部篩選列與錯誤條 | `layout/TopBar`（FilterDropdown、FilterCalendar、MemberPicker、common/ErrorBar） |
 | 四張摘要卡 | `summary/SummaryCards` |
-| 甘特圖 | `gantt/GanttPanel`（GanttTimeline、GanttGroupRow、GanttTaskRow、GanttBars → GanttBar、DependencyLines） |
+| 甘特圖 | `gantt/GanttPanel`（GanttTimeline、GanttGroupRow、GanttTaskRow、GanttBars → GanttBar、DependencyLines）；任務列「⋮」的動作選單 `gantt/RowActionMenu` |
 | 任務看板 | `kanban/KanbanPanel`（KanbanHeader、TaskCard） |
 | Issue 看板 | `issues/IssuePanel`（IssuePanelHeader、IssueCard） |
 | 詳細視窗 | `detail/DetailModal`（DetailHeader、TaskProperties、IssueProperties、CommentsTab、FilesTab、ActivityToolbar）、`detail/ImageLightbox` |
-| 浮層 | `common/OptionMenu`、`common/DatePicker`、`common/ConfirmDialog`、`dialogs/DependencyEditor` |
+| 浮層 | `common/OptionMenu`、`common/DatePicker`、`common/ConfirmDialog`、`dialogs/DependencyEditor`、`gantt/RowActionMenu` |
 | 三個面板共用 | `common/PanelShell`、`common/SortChips`、`common/SortMenu` |
 
 `views/ProjectsOverviewView.vue`（總覽）掛的東西，都在 `src/components/overview/`：
@@ -57,7 +57,7 @@
 | 畫面區塊 | 元件 |
 |---|---|
 | 頂欄：檢視切換、篩選、登入者 | `OverviewTopBar`（PmFilter、OvDropdown） |
-| 卡片檢視 | `CardBoard`（PmColumn → ProjectCard → QuickView、EnterLink） |
+| 卡片檢視 | `CardBoard`（PmLane → ProjectCard、LaneDrawer → QuickView、EnterLink；泳道標頭與時間軸群組共用 PmCountPill） |
 | 時間軸檢視 | `OverviewTimeline`（TimelineGroup → TimelineProjectRow → QuickView） |
 | 兩種檢視共用 | `OvPanel`（面板外殼與計數）、`OvSortControls`（排序 chip 與選單）、`ProjectBadge`（狀態 pill）、`OvEmpty`（空狀態） |
 
@@ -83,6 +83,33 @@
 | 改總覽的畫面狀態（篩選、排序、展開、檢視） | `stores/overview.ts`；純邏輯（派生值、篩選、排序、分組）在 `lib/portfolio.ts` |
 | 改總覽的範例專案 | `mocks/samplePortfolio.ts` ＋ `mocks/__tests__/portfolio.spec.ts`（數字要對得上設計稿）；PMIS 摘要改 `api/mock/portfolio.ts` |
 | 加總覽的互動或 UI 變化 | 元件 ＋ `assets/overview-motion.css`（過渡 class 唯一定義處）＋ `e2e/overview-motion.spec.ts`（在 spec〈動畫清單〉加一項，就在這裡補一條守衛） |
+| 改 Dashboard 或總覽在平板上的版面或手指操作 | 見下方〈平板與觸控〉；`e2e/tablet.spec.ts`（Dashboard）、`e2e/overview-tablet.spec.ts`（總覽），都是 768×1024 觸控；Dashboard 1200px 以上不要動（`compare.spec.ts` 在 1440 / 1920 對照 legacy 幾何） |
+
+### 平板與觸控
+
+Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<style scoped>` 裡寫：
+
+| 條件 | 寫在哪 | 做什麼 |
+|---|---|---|
+| `@media (max-width: 1199px)` | `TopBar` | 篩選器換到第二列、每組「標籤 + 下拉」整組換行（`.fgroup` 桌機是 `display: contents`） |
+| `@media (max-width: 899px)`（JS 端 `NARROW_QUERY`） | `SummaryCards`、`KanbanPanel`、`IssuePanel`、`GanttPanel`、`GanttTaskRow` | 摘要卡與兩個看板改 2 欄；甘特左欄 250px，日期膠囊只寫工期（點了照樣開日期選擇器）；欄頭右端多一顆展開鈕（» / «，`ui.ganttLeftExpanded`），展開後左欄回到完整寬度。列的寫法另由 `ui.ganttLeftDates` 控制：展開時等寬度過渡跑完才換成起訖日，收合時先換回工期再縮 |
+| 同上 | `OvPanel`、`OvSortControls`、`OverviewTimeline`、`TimelineProjectRow` | 總覽面板標題列維持一行：計數短寫（「7 專案 · 3 需注意 · 4 PM」）、排序 chips 不換行，放不下時原地左右滑；時間軸左欄 260px（`TIMELINE_LEFT_W_NARROW`），進度欄只留實際 % |
+| `@container board (max-width: 841px)`（容器是 `CardBoard` 的 `.board`） | `PmLane` | 左側標頭放不下兩欄卡片時（約視窗 900px 以下），PM 標頭改放在卡片上方成一列（照樣黏在面板標題列下方），卡片排兩欄，速覽抽屜橫跨整列 |
+| `@media (pointer: coarse)`（JS 端 `TOUCH_UI_QUERY` 另加 `hover: none`） | 各個小按鈕所在的元件（含總覽排序 chip 的 ✕）、`base.css` 的縮放滑桿 | 加大可點範圍：能外擴的用看不見的 `::after` 熱區（外觀不變），在 `overflow: hidden` 裡的直接加大本體 |
+| `@media (hover: hover)` | 總覽各元件的 `:hover` 規則 | hover 樣式只給有滑鼠的裝置：觸控點一下後 `:hover` 會一直黏著，收合的卡片還是浮起、時間軸列還在發光，看起來像沒收合 |
+
+手指操作的約定：
+
+- 會開始拖曳的元素（選取中的甘特條、左右把手、相依圓點、排序把手 ⠿）要宣告 `touch-action: none`，否則手指一動瀏覽器就當成捲動、送 `pointercancel`，拖曳被中止。沒選取的條不宣告，手指照常能在上面滑動捲動。
+- 觸控裝置沒有 hover：原本 hover 才出現的相依圓點改成「選取中」就出現。
+- 甘特任務列的動作（工期 −1天 / +1天、相依設定、刪除任務）一律收在列尾一直顯示的「⋮」開的選單（`RowActionMenu`，位置 `anchorRowMenu`）；點任務只標記，hover 與選取都不會撐開東西（桌機與平板同一套）。開選單不選取任務（不捲動時間軸、不淡化其他列）；遮罩與選單帶 `data-keep-selection`，點外面只關選單、不清標記。
+- 空白處的平移交給瀏覽器原生捲動（`usePointerDrag` 的 pan 在觸控時 `native: true`，不改 `scrollLeft`）。
+- 「點到外面清選取」（`useClickOutside`）在觸控時延到 `click`：`pointerdown` 時分不出點一下還是開始捲動，捲動不會有 `click`。
+- 看板卡片拖到甘特列（HTML5 原生拖放）在觸控裝置的支援度不一，刻意沒有處理。
+- 總覽的排序選單往右開會超出視窗時（直向時排序鈕在標題列右半），改成對齊按鈕右緣往左開（`OvSortControls` 的 `alignEnd`）。
+- 時間軸 bar 的名稱是 sticky：bar 起點捲到左欄底下時，名稱停在左欄右緣。`.bar` 因此用 `overflow: clip`，用 `hidden` 的話 bar 自己會變成捲動容器，sticky 跟不上橫捲。
+
+`e2e/tablet.spec.ts` 除了〈DOM 鉤子〉的屬性，還依賴這些 class，**改名時要同步改測試**：`.top-bar` `.col` `.foot` `.caret` `.detail-layer` `.detail-close` `.draft-input` `.name` `.date` `.date-range` `.date-days` `.rm-days` `.gantt-left` `.gantt-scroller`。`e2e/overview-tablet.spec.ts` 用到的 class 列在〈DOM 鉤子〉最後的總覽 class 表。
 
 ### 守衛測試
 
@@ -144,7 +171,10 @@ frontend/
 │   │   └── …                    usePointerDrag / useGanttScroll / useAutoScroll / useClickOutside /
 │   │                            useMenus / useFocusScroll / useNow / useStickyOffsets / useDelayedUnmount /
 │   │                            useDismiss（總覽浮層的點外面與 Esc）/ freezeLeave（TransitionGroup 離場釘在原位）/
-│   │                            useRelativeFlip（巢狀清單的重排動畫，以容器為基準量位移）
+│   │                            useRelativeFlip（巢狀清單的重排動畫，以容器為基準量位移）/
+│   │                            useMediaQuery（全站共用的 media query ref；TOUCH_UI_QUERY 觸控裝置、NARROW_QUERY 平板直向）/
+│   │                            useGridColumns（量 grid 實際排幾欄，總覽泳道的列下展開用）/
+│   │                            useDragPan（總覽時間軸按住拖曳平移）
 │   ├── constants/         畫面用常數（dashboard.ts：狀態 / 優先度 / 等級的標籤與顏色；overview.ts：總覽的排序鍵、標籤、尺寸；api.ts：API_ERROR_TEXT）
 │   ├── lib/               純函式（日期、月曆格、排程連動、篩選、排序、格式化、id…）
 │   ├── mocks/             範例資料
@@ -210,6 +240,8 @@ COMPARE_DUMP=node_modules/.tmp/cmp npm run test:e2e -- e2e/compare.spec.ts
 - **附件同日的相對順序**：`filesForTarget` 對同一天的附件沒有定義先後，兩邊可能不同，對照不比這個。
 - **重排節流的時間來源**：legacy 用 `Date.now()`，被 e2e 的 `page.clock.setFixedTime` 凍住之後，一次拖曳裡除了第一次以外的 `dragTick` 全部被節流擋掉；新頁用 `performance.now()`，不受固定時鐘影響。這是測試環境造成的差異，不是行為差異——對照測試的重排只送一次 `mousemove`，比第一次落點。
 - **理論進度的判準**：legacy 把「今天到期」的任務算進理論進度（`end <= 今天`，`Dashboard.html:3604-3620`）。新頁要到期日**隔天**才算（`end < 今天`），和總覽的 `taskPlanned`、「已延遲」的 `isLate` 同一個定義，兩頁同一個專案的理論 % 才會一致（user 決定）。對照測試只遮掉摘要卡的差距標籤、理論的 N / 總數與理論 %（`e2e/helpers/compare.ts` 的 `maskPlan`），其餘照比。
+- **甘特列的快捷鈕**：legacy 滑鼠移到任務列上會撐開「▲ ▼ ⇄ ✕」並省掉日期的年份；新頁改成列尾一直顯示的「⋮」，動作收在它開的選單（user 決定：只想標記任務時快捷鈕很干擾，▲ ▼ 也看不出是工期 ±1 天）。對照測試比文字時兩邊都拿掉列尾動作字與年份（`e2e/helpers/compare.ts` 的 `maskActs`），情境 8 的相依 / 刪除各走各的路（`compare.spec.ts` 的 `rowAction`）；點任務列的位置改在名稱區 x=70（`ROW_NAME_POS`）。
+- **成員拖曳指派**：legacy 可以把成員篩選面板的列拖到甘特條或任務卡上指派，新頁移除了這個功能（user 決定；平板無法可靠支援原生拖放），指派一律在詳細視窗的「＋指派」。對照測試不比這個。
 - **文字之間的空白**：兩頁的文字節點切法不同（legacy 把每個 `{{ }}` 包成一層元素、元素之間留著模板縮排的空白節點），比對前會把文字裡的空白全部去掉。字級與間距的差異改由幾何量測把關。
 
 ## lib 與 store 的分工
@@ -261,7 +293,7 @@ store 分三層，依賴**只能由上往下**：
 
 執行期的元素定位不走這裡：需要量測或命中判定的元素由元件自己登錄進 `composables/useDomRegistry.ts` 的登錄表（`rows` / `groups` / `bars` / `linkDots` / `cards` / `cols` / `issueRows` / `panels`），`usePointerDrag`、面板捲動與捷徑都查那張表。`src/__tests__/no-query-selector.spec.ts` 守著這條：`src/**`（不含 `__tests__`）不得出現 `querySelector` / `querySelectorAll` / `getElementById` / `elementFromPoint`。
 
-**唯一例外**：`composables/useClickOutside.ts`。它做的是「這一下點在哪」的 hit-test，對象是任意祖先而不是某個登錄過的元素，所以仍用 `Element.closest`——`KEEP_SELECTION`（`[data-card],[data-taskid],[data-rowtask],[data-rowgroup],[data-issuerow],[data-dd],[data-errorbar],input,textarea,select,label`，逐字取自 legacy）與 `KEEP_POPUP`（`[data-dd],[data-errorbar]`）。改動這些屬性名會弄壞「點外面清選取 / 關浮層」，不是只有測試變紅。它也是 `no-query-selector.spec.ts` 的白名單唯一一筆。
+**唯一例外**：`composables/useClickOutside.ts`。它做的是「這一下點在哪」的 hit-test，對象是任意祖先而不是某個登錄過的元素，所以仍用 `Element.closest`——`KEEP_SELECTION`（`[data-card],[data-taskid],[data-rowtask],[data-rowgroup],[data-issuerow],[data-dd],[data-errorbar],input,textarea,select,label` 逐字取自 legacy，另加新頁的 `[data-keep-selection]`）與 `KEEP_POPUP`（`[data-dd],[data-errorbar]`）。改動這些屬性名會弄壞「點外面清選取 / 關浮層」，不是只有測試變紅。它也是 `no-query-selector.spec.ts` 的白名單唯一一筆。
 
 | 屬性 | 掛在 | 值 | legacy 也有 |
 |---|---|---|---|
@@ -269,18 +301,21 @@ store 分三層，依賴**只能由上往下**：
 | `data-rowgroup` | 甘特左欄分類列 | groupId | ✓ |
 | `data-taskid` | 甘特條（收合分類的摘要條為 `sum-<groupId>`） | taskId | ✓ |
 | `data-linkfor` | 甘特條兩側的連線圓點 | taskId | ✓ |
+| `data-rowmore` | 甘特任務列尾的「⋮」 | taskId | ✗ |
+| `data-rowmenu` | 「⋮」開的動作選單（全域只會有一個） | taskId | ✗ |
 | `data-card` | 看板任務卡 | taskId | ✓（legacy 值固定為 `1`，對照時只比存在性） |
 | `data-issuerow` | Issue 卡 | issueId | ✓ |
 | `data-col` | 看板欄內容區 | 狀態 key | ✓ |
 | `data-dd` | 所有下拉的觸發器與面板 | `1` | ✓ |
 | `data-zoom` | 甘特縮放滑桿 | `1` | ✓ |
 | `data-errorbar` | 錯誤條容器（同一元素帶 `role="alert"`） | 空值 | ✗ |
+| `data-keep-selection` | 只改怎麼看、點了不清選取的控制項（平板甘特左欄的展開鈕） | 空值 | ✗ |
 | `data-loadstate` / `data-load-error` | 載入中 / 失敗畫面的容器與錯誤訊息（Dashboard 與總覽共用 `LoadingState`） | 空值 | ✗ |
 | `data-selected` | 甘特任務列 / 任務卡 / Issue 卡 / 總覽時間軸的專案列 `.p-row` | `true` / `false` | ✗ |
 | `data-rel` | 任務卡 | `up` / `down` / `group` / 空 | ✗ |
 | `data-status` | 甘特條 / 任務卡 / Issue 卡 | 狀態 key，或 `delayed` | ✗ |
 | `data-panel` | 面板外殼 | `gantt` / `kanban` / `issues` | ✗ |
-| `data-testid` | 摘要卡 `summary-duration` / `summary-progress` / `summary-tasks` / `summary-issues`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count` | 固定字串 | ✗ |
+| `data-testid` | 摘要卡 `summary-duration` / `summary-progress` / `summary-tasks` / `summary-issues`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count`；甘特左欄的展開鈕 `gantt-left-toggle`（只在 < 900px 出現） | 固定字串 | ✗ |
 
 總覽頁的屬性。legacy 沒有這一頁，所以下表全部都不能用在新舊對照測試：
 
@@ -290,7 +325,8 @@ store 分三層，依賴**只能由上往下**：
 | `data-view-panel` | 兩種檢視的面板外殼（`OvPanel`） | `cards` / `timeline` |
 | `data-view-switch` | 頂欄的檢視切換鈕（帶 `aria-pressed`） | `cards` / `timeline` |
 | `data-project` | 專案卡；時間軸的 `.p-block`（同時包住 `.p-row` 與 `.qv`） | projectId |
-| `data-pm-col` | 卡片檢視的 PM 欄 | 成員 id |
+| `data-drawer` | 卡片檢視的速覽抽屜（每條泳道一個，是卡片的兄弟元素，插在展開那張卡所在列下方；`id` 是 `lane-qv-<成員 id>`，對應卡片的 `aria-controls`） | 正在顯示的 projectId（沒展開時沒有這個屬性） |
+| `data-pm-col` | 卡片檢視的 PM 泳道 | 成員 id |
 | `data-pm-group` | 時間軸的 PM 群組列 `.g-row` | 成員 id |
 | `data-pm-option` | 成員篩選面板的一列（帶 `aria-pressed`） | 成員 id |
 | `data-ov-dd` | 總覽頂欄的下拉根元素（見表下說明） | `pm` / `status` / `alert` |
@@ -298,15 +334,15 @@ store 分三層，依賴**只能由上往下**：
 
 `data-ov-dd` 刻意和 Dashboard 的 `data-dd` 分開：它不在 `useClickOutside` 的保留清單裡，總覽的浮層改由 `useDismiss` 關閉。
 
-總覽 e2e 還依賴下表這些 class，**改名時要同步改測試**。用到的檔是 `e2e/overview.spec.ts`、`e2e/overview-motion.spec.ts`、`e2e/helpers/overviewPage.ts`：
+總覽 e2e 還依賴下表這些 class，**改名時要同步改測試**。用到的檔是 `e2e/overview.spec.ts`、`e2e/overview-motion.spec.ts`、`e2e/overview-tablet.spec.ts`、`e2e/helpers/overviewPage.ts`：
 
 | 用途 | class |
 |---|---|
 | 頂欄與下拉 | `.dd-trigger` `.dd-menu` `.alert-dot` |
-| 排序 | `.sort-trigger` `.chip-x` `.chip-arrow` |
-| 面板 | `.panel-head` `.panel-body` `.panel-caret` |
-| 卡片 | `.card-name` `.card-caret` `.hero` `.fill-actual` `.quick-wrap` `.qb-title` |
-| 時間軸 | `.tl-body` `.today-tag` `.p-row` `.p-left` `.c-pct` `.c-gap` `.bar` `.g-caret` `.g-sum` `.qv` `.qv-head` `.btn-quick` |
+| 排序 | `.sort-trigger` `.sort-menu` `.sort-chip` `.chip-label` `.chip-x` `.chip-arrow` |
+| 面板 | `.panel-head` `.panel-title` `.panel-toggle` `.panel-body` `.panel-caret` |
+| 卡片 | `.lane-head` `.card-name` `.card-caret` `.hero` `.pa-bar` `.fill` `.qb-title` `.btn-quick` `.pm-count` |
+| 時間軸 | `.tl-body` `.tl-left-head` `.today-tag` `.p-row` `.p-left` `.p-name` `.c-pct` `.c-gap` `.pct-plan` `.bar` `.bar-label` `.g-caret` `.g-sum` `.qv` `.qv-head` `.btn-quick` |
 | 過渡（Vue 自動加上的 class） | `ov-pop-*` `ov-fade-*` `ov-view-*` `ov-card-*` `ov-col-*` `ov-row-*` `ov-chip-*` `ov-av-*`（定義在 `assets/overview-motion.css`）；切頁的 `page-view-*`（定義在 `assets/base.css`）；時間軸連接框 `.qv-cap` |
 
 ## 怎麼接後端

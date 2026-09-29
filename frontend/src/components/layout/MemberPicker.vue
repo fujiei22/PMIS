@@ -1,15 +1,12 @@
 <script setup lang="ts">
 // 頂部列的成員篩選器：疊起來的頭像觸發鈕 + 成員清單面板。
 // legacy 對照：模板 :72-112、memberRows :2736-2760。
+// legacy 可以把成員列拖到甘特條 / 任務卡上指派，新版不提供（user 決定移除，指派改在詳細視窗的「＋指派」）。
 import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
-import { initialOf } from '@/lib/color'
 import { useFilterStore } from '@/stores/filter'
 import { useMemberStore } from '@/stores/member'
 import { useUiStore } from '@/stores/ui'
-
-/** 拖曳時被收起的列往來源列靠攏的間距（px）。legacy `(fromIdx - idx) * 46`（:2745） */
-const ROW_PITCH = 46
 
 const ui = useUiStore()
 const filter = useFilterStore()
@@ -27,89 +24,10 @@ const avatars = computed(() =>
 )
 const moreMembers = computed(() => !hasSel.value && memberStore.members.length > 3)
 
-/** 拖曳來源在清單裡的位置，用來算被收起的列要往哪飛。S5 才會填 memberDrag。 */
-const fromIdx = computed(() =>
-  ui.memberDrag ? memberStore.members.findIndex((m) => m.id === ui.memberDrag!.from) : -1,
-)
-
-/** 每一列的 transform / opacity / z-index，legacy :2740-2747。 */
-function rowStyle(id: string, idx: number): Record<string, string | number> {
-  const drag = ui.memberDrag
-  const inDrag = !!drag?.ids.includes(id)
-  const isSrc = drag?.from === id
-  const collapsing = inDrag && !isSrc
-  return {
-    transform: collapsing
-      ? `translateY(${(fromIdx.value - idx) * ROW_PITCH}px) scale(.72)`
-      : isSrc
-        ? 'scale(1.02)'
-        : 'none',
-    opacity: collapsing ? 0 : drag && !inDrag ? 0.4 : 1,
-    zIndex: isSrc ? 3 : 1,
-  }
-}
-
-/** 多選拖曳時來源列右上角的「＋N」。legacy `m.badge`（:2748） */
-function badgeOf(id: string): string {
-  const drag = ui.memberDrag
-  if (!drag || drag.from !== id || drag.ids.length <= 1) return ''
-  return '＋' + (drag.ids.length - 1)
-}
-
 function toggle(id: string): void {
   filter.memberIds = selected.value.includes(id)
     ? selected.value.filter((x) => x !== id)
     : [...selected.value, id]
-}
-
-/**
- * 臨時做一顆「頭像 + 說明」的深色膠囊當拖曳縮圖。legacy `dragGhost`（:1856）。
- * 瀏覽器會在 dragstart 當下把它畫成點陣圖，所以下一個 tick 就能從 DOM 移掉。
- * 這是動態產生的浮動元素、不進版面，值取自 legacy 的行內樣式。
- */
-function buildDragGhost(e: DragEvent, ids: string[]): void {
-  const box = document.createElement('div')
-  box.style.cssText =
-    'position:fixed;top:-2000px;left:-2000px;display:flex;align-items:center;' +
-    'padding:6px 14px 6px 8px;background:var(--drag-ghost);color:#fff;border-radius:var(--r-6);' +
-    'font-family:var(--font-sans);font-size:var(--fs-control);font-weight:500'
-  for (const id of ids.slice(0, 3)) {
-    const m = memberStore.byId(id)
-    if (!m) continue
-    const a = document.createElement('div')
-    a.textContent = initialOf(m)
-    a.style.cssText =
-      'width:22px;height:22px;border-radius:50%;background:' +
-      m.color +
-      ';color:#fff;display:flex;align-items:center;justify-content:center;' +
-      'font-size:var(--fs-meta);font-weight:700;border:2px solid var(--drag-ghost);margin-right:-9px'
-    box.appendChild(a)
-  }
-  const label = document.createElement('span')
-  const first = memberStore.byId(ids[0] ?? '')
-  label.textContent = ids.length > 1 ? `指派 ${ids.length} 位成員` : (first?.name ?? '')
-  label.style.cssText = 'margin-left:16px;white-space:nowrap'
-  box.appendChild(label)
-  document.body.appendChild(box)
-  try {
-    e.dataTransfer?.setDragImage(box, 26, 18)
-  } catch {
-    // 某些環境不支援自訂拖曳縮圖，用預設的就好
-  }
-  setTimeout(() => box.remove(), 0)
-}
-
-/** 勾了人就整組拖，沒勾就只拖這一位。legacy `onDragStart`（:2752） */
-function onDragStart(e: DragEvent, id: string): void {
-  const ids = selected.value.includes(id) && selected.value.length ? [...selected.value] : [id]
-  e.dataTransfer?.setData('text/plain', ids.join(','))
-  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy'
-  buildDragGhost(e, ids)
-  ui.memberDrag = { from: id, ids }
-}
-
-function onDragEnd(): void {
-  ui.memberDrag = null
 }
 </script>
 
@@ -136,16 +54,12 @@ function onDragEnd(): void {
       </div>
       <div class="mp-list">
         <div
-          v-for="(m, idx) in memberStore.members"
+          v-for="m in memberStore.members"
           :key="m.id"
           class="mp-row"
           :class="{ on: selected.includes(m.id) }"
-          :style="rowStyle(m.id, idx)"
-          draggable="true"
           role="button"
           @click="toggle(m.id)"
-          @dragstart="onDragStart($event, m.id)"
-          @dragend="onDragEnd"
         >
           <Avatar :member="m" :size="28" />
           <div class="mp-info">
@@ -153,7 +67,6 @@ function onDragEnd(): void {
             <div class="mp-role" :title="m.role">{{ m.role }}</div>
           </div>
           <span class="mp-box">{{ selected.includes(m.id) ? '✓' : '' }}</span>
-          <span v-if="badgeOf(m.id)" class="mp-badge">{{ badgeOf(m.id) }}</span>
         </div>
       </div>
       <button v-if="hasSel" class="mp-clear" @click="filter.memberIds = []">清除勾選</button>
@@ -253,7 +166,6 @@ function onDragEnd(): void {
 }
 
 .mp-row {
-  position: relative;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -262,18 +174,11 @@ function onDragEnd(): void {
   cursor: pointer;
   border: 1px solid var(--border-hair);
   background: var(--surface-1);
-  transition:
-    transform var(--t-panel) var(--ease),
-    opacity var(--t-hover) ease;
 }
 
 .mp-row.on {
   border-color: var(--accent);
   background: var(--accent-tint-1);
-}
-
-.mp-row:active {
-  cursor: grabbing;
 }
 
 .mp-info {
@@ -312,19 +217,6 @@ function onDragEnd(): void {
 .mp-row.on .mp-box {
   border-color: var(--accent);
   background: var(--accent);
-}
-
-.mp-badge {
-  position: absolute;
-  right: -6px;
-  top: -6px;
-  background: var(--text-1);
-  color: var(--surface-1);
-  font-size: var(--fs-pill);
-  font-weight: var(--fw-bold);
-  padding: var(--r-2) 7px;
-  border-radius: var(--r-999);
-  box-shadow: var(--shadow-badge);
 }
 
 .mp-clear {

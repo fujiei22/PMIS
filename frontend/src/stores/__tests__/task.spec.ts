@@ -251,14 +251,6 @@ describe('taskStore', () => {
     expect(s.taskById('t1')!.done).toBe('')
   })
 
-  it('assign 是聯集、不重複', async () => {
-    const s = useTaskStore()
-    await s.assign('t1', ['m3', 'm7'])
-    expect(s.taskById('t1')!.assigneeIds).toEqual(['m3', 'm5', 'm7'])
-    await s.assign('t1', [])
-    expect(s.taskById('t1')!.assigneeIds).toEqual(['m3', 'm5', 'm7'])
-  })
-
   it('removeTask 清 ui.detail 與 selection.taskId', async () => {
     const s = useTaskStore()
     const issues = useIssueStore()

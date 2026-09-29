@@ -99,7 +99,8 @@ const columns = computed<Column[]>(() => {
   return defs.map((d) => ({ k: d.k, label: d.label, color: d.color, items: buckets.get(d.k) ?? [] }))
 })
 
-const gridCols = computed(() => `repeat(${columns.value.length}, minmax(0, 1fr))`)
+/** 欄數交給 CSS（--cols）：桌機一欄一組並排，平板直向由 media query 改兩欄。 */
+const colCount = computed(() => columns.value.length)
 
 /** 「共 N 筆 Issue」／「已篩選 N/M 筆 Issue」。legacy `issueCountLabel` :3533 */
 const issueCountLabel = computed(() => {
@@ -178,7 +179,7 @@ useFocusRequest((req) => {
       <button class="mini" @click="addIssueTop()">＋ 新增 Issue</button>
     </template>
 
-    <div class="board" :style="{ gridTemplateColumns: gridCols }">
+    <div class="board" :style="{ '--cols': colCount }">
       <div v-for="c in columns" :key="c.k" class="col">
         <IssuePanelHeader :label="c.label" :color="c.color" :count="c.items.length" />
         <div class="col-body">
@@ -313,6 +314,7 @@ useFocusRequest((req) => {
 
 .board {
   display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
   gap: var(--sp-5);
   padding: var(--sp-6);
   background: var(--surface-2);
@@ -334,5 +336,12 @@ useFocusRequest((req) => {
   flex-direction: column;
   gap: 9px;
   min-height: 90px;
+}
+
+/* 平板直向（< 900px）：四欄並排每欄只剩 170px，卡片底部的圖示被擠出外框、點不到；改 2×2（欄位標題仍 sticky） */
+@media (max-width: 899px) {
+  .board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 </style>

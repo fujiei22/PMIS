@@ -38,6 +38,7 @@ describe('uiStore', () => {
     expect(ui.confirm).toBeNull()
     expect(ui.depEditFor).toBeNull()
     expect(ui.optionMenu).toBeNull()
+    expect(ui.rowMenu).toBeNull()
     expect(ui.taskDatePicker).toBeNull()
     expect(ui.issueDatePicker).toBeNull()
     expect(ui.lightbox).toBeNull()
@@ -46,8 +47,6 @@ describe('uiStore', () => {
     expect(ui.linkLine).toBeNull()
     expect(ui.nearTaskId).toBeNull()
     expect(ui.hoverTaskId).toBeNull()
-    expect(ui.rowHoverId).toBeNull()
-    expect(ui.memberDrag).toBeNull()
   })
 
   // 時鐘在 clock store（契約 C / E），ui 不再轉接——見 clock.spec
@@ -330,8 +329,7 @@ describe('uiStore', () => {
     ui.linkLine = { x1: 0, y1: 0, x2: 1, y2: 1 }
     ui.nearTaskId = task.id
     ui.hoverTaskId = task.id
-    ui.rowHoverId = task.id
-    ui.memberDrag = { from: 'm1', ids: ['m1'] }
+    ui.rowMenu = { id: task.id, left: 0, top: 0 }
     ui.zooming = true
     ui.pushError({ label: '更新任務', error: new Error('x') })
     ui.panelOff.gantt = true
@@ -352,7 +350,7 @@ describe('uiStore', () => {
     expect(ui.filterCalendarOpen).toBe(false)
     expect(ui.pickerFor).toBeNull()
     expect(ui.editing).toBeNull()
-    expect([ui.linkLine, ui.nearTaskId, ui.hoverTaskId, ui.rowHoverId, ui.memberDrag]).toEqual([null, null, null, null, null])
+    expect([ui.linkLine, ui.nearTaskId, ui.hoverTaskId, ui.rowMenu]).toEqual([null, null, null, null])
     expect(ui.drag).toBeNull()
     expect(ui.zooming).toBe(false)
     expect(ui.errors).toEqual([])

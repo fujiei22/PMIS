@@ -54,6 +54,16 @@ export class DashboardPage {
     return this.page.locator(`[data-rowtask="${taskId}"]`)
   }
 
+  /** 任務列尾一直顯示的「⋮」，點了開動作選單。 */
+  rowMore(taskId: string): Locator {
+    return this.row(taskId).locator(`[data-rowmore="${taskId}"]`)
+  }
+
+  /** 「⋮」開的動作選單（工期 ±1 天、相依設定、刪除任務；全域只會有一個）。 */
+  get rowMenu(): Locator {
+    return this.page.locator('[data-rowmenu]')
+  }
+
   /** 甘特左欄的分類列。 */
   groupRow(groupId: string): Locator {
     return this.page.locator(`[data-rowgroup="${groupId}"]`)

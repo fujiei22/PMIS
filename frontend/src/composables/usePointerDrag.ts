@@ -242,6 +242,8 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     const dx = p.x - d.x0
     const dy = p.y - d.y0
     d.moved = Math.max(d.moved, Math.abs(dx) + Math.abs(dy))
+    // 手指平移由瀏覽器原生捲動（有慣性、不跟原生捲動搶）；這裡再改 scrollLeft 會兩邊打架
+    if (d.native) return
     const sc = els.gantt.value
     const vs = els.vscroll.value
     if (sc) sc.scrollLeft = d.sl - dx
@@ -327,6 +329,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
         sl: els.gantt.value?.scrollLeft ?? 0,
         st: els.vscroll.value?.scrollTop ?? 0,
         moved: 0,
+        native: e.pointerType === 'touch',
       },
       e,
     )

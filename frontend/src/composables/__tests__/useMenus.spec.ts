@@ -1,7 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useMenus } from '@/composables/useMenus'
-import { anchorCalendar, anchorOptionMenu } from '@/lib/anchor'
+import { anchorCalendar, anchorOptionMenu, anchorRowMenu } from '@/lib/anchor'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
 import { useTaskStore } from '@/stores/task'
@@ -67,6 +67,21 @@ describe('useMenus', () => {
       month: taskStore.taskById('t1')!.start.slice(0, 7),
       ...anchorCalendar(rect, VP, 'task'),
     })
+  })
+
+  it('toggleRowMenu 開在「⋮」旁邊；同一列再點一次就關掉，換一列就換過去', () => {
+    const ui = useUiStore()
+    const menus = useMenus()
+    const rect = { left: 330, top: 100, bottom: 124, right: 370 }
+
+    menus.toggleRowMenu(triggerAt(rect.left, rect.top, rect.bottom), 't1')
+    expect(ui.rowMenu).toEqual({ id: 't1', ...anchorRowMenu(rect, VP) })
+
+    menus.toggleRowMenu(triggerAt(rect.left, rect.top, rect.bottom), 't2')
+    expect(ui.rowMenu?.id).toBe('t2')
+
+    menus.toggleRowMenu(triggerAt(rect.left, rect.top, rect.bottom), 't2')
+    expect(ui.rowMenu).toBeNull()
   })
 
   it('openTaskDatePicker 對不存在的任務不開', () => {

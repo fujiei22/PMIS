@@ -32,9 +32,19 @@ const boardLinks = [
   { key: 'issues', label: 'Issue', icon: '◉' },
 ] as const
 
-/** 面板元素由 `PanelShell` 登錄進 `panels`（契約 F），不再用 `data-panel` 反查。 */
+/** 跳到面板時，面板頂端離頂部列下緣的距離（legacy `jumpPanel` 的 `- 12`）。 */
+const PANEL_JUMP_GAP = 12
+
+/**
+ * 捲到面板，讓面板頂端停在 sticky 頂部列下方 12px（legacy :2223-2227）。
+ * 不用 `scrollIntoView({ block: 'start' })`：它把面板頂端對齊視窗頂端，會被 sticky 頂部列蓋住標題列。
+ * 面板元素由 `PanelShell` 登錄進 `panels`（契約 F），不再用 `data-panel` 反查。
+ */
 function jumpPanel(key: 'gantt' | 'kanban' | 'issues'): void {
-  registry.panels.get(key)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const el = registry.panels.get(key)
+  if (!el) return
+  const top = el.getBoundingClientRect().top + window.scrollY - sticky.panelTop.value - PANEL_JUMP_GAP
+  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
 }
 
 /** 多選欄位的共用切換。 */
@@ -153,81 +163,90 @@ function clearFilters(): void {
         </div>
       </nav>
 
+      <!-- .fgroup 是「標籤 + 它的下拉」一組：桌機 display: contents（不影響版面），平板時整組一起換行 -->
       <div class="filters">
-        <span class="section">成員</span>
-        <MemberPicker />
+        <span class="fgroup">
+          <span class="section">成員</span>
+          <MemberPicker />
+        </span>
         <span class="grow"></span>
 
         <span class="divider"></span>
-        <span class="section">任務</span>
-        <FilterDropdown
-          dd-key="status"
-          :label="filter.statuses.length ? `狀態 ${filter.statuses.length}` : '狀態'"
-          :active="filter.statuses.length > 0"
-          :options="statusOptions"
-          @pick="filter.statuses = toggleIn(filter.statuses, $event as TaskStatus | 'delayed')"
-        />
-        <FilterDropdown
-          dd-key="prio"
-          :label="filter.priorities.length ? `優先度 ${filter.priorities.length}` : '優先度'"
-          :active="filter.priorities.length > 0"
-          :options="prioOptions"
-          @pick="filter.priorities = toggleIn(filter.priorities, $event as Priority)"
-        />
-        <FilterDropdown
-          dd-key="group"
-          :label="filter.groupIds.length ? `分類 ${filter.groupIds.length}` : '分類'"
-          :active="filter.groupIds.length > 0"
-          :options="groupOptions"
-          :menu-width="168"
-          :menu-max-height="300"
-          ellipsis
-          @pick="filter.groupIds = toggleIn(filter.groupIds, $event)"
-        />
-        <FilterDropdown
-          dd-key="issue"
-          :label="{ all: 'Issue', has: '有 Issue', none: '無 Issue' }[filter.issueMode]"
-          :active="filter.issueMode !== 'all'"
-          :options="issueModeOptions"
-          @pick="pickIssueMode"
-        />
+        <span class="fgroup">
+          <span class="section">任務</span>
+          <FilterDropdown
+            dd-key="status"
+            :label="filter.statuses.length ? `狀態 ${filter.statuses.length}` : '狀態'"
+            :active="filter.statuses.length > 0"
+            :options="statusOptions"
+            @pick="filter.statuses = toggleIn(filter.statuses, $event as TaskStatus | 'delayed')"
+          />
+          <FilterDropdown
+            dd-key="prio"
+            :label="filter.priorities.length ? `優先度 ${filter.priorities.length}` : '優先度'"
+            :active="filter.priorities.length > 0"
+            :options="prioOptions"
+            @pick="filter.priorities = toggleIn(filter.priorities, $event as Priority)"
+          />
+          <FilterDropdown
+            dd-key="group"
+            :label="filter.groupIds.length ? `分類 ${filter.groupIds.length}` : '分類'"
+            :active="filter.groupIds.length > 0"
+            :options="groupOptions"
+            :menu-width="168"
+            :menu-max-height="300"
+            ellipsis
+            @pick="filter.groupIds = toggleIn(filter.groupIds, $event)"
+          />
+          <FilterDropdown
+            dd-key="issue"
+            :label="{ all: 'Issue', has: '有 Issue', none: '無 Issue' }[filter.issueMode]"
+            :active="filter.issueMode !== 'all'"
+            :options="issueModeOptions"
+            @pick="pickIssueMode"
+          />
+        </span>
 
         <span class="divider"></span>
-        <span class="section">Issue</span>
-        <FilterDropdown
-          dd-key="icls"
-          :label="filter.issueLevels.length ? `等級 ${filter.issueLevels.length}` : '等級'"
-          :active="filter.issueLevels.length > 0"
-          :options="levelOptions"
-          @pick="filter.issueLevels = toggleIn(filter.issueLevels, $event as IssueLevel)"
-        />
-        <FilterDropdown
-          dd-key="ist"
-          :label="filter.issueStatuses.length ? `狀態 ${filter.issueStatuses.length}` : '狀態'"
-          :active="filter.issueStatuses.length > 0"
-          :options="issueStatusOptions"
-          @pick="
-            filter.issueStatuses = toggleIn(filter.issueStatuses, $event as IssueStatus | 'delayed')
-          "
-        />
+        <span class="fgroup">
+          <span class="section">Issue</span>
+          <FilterDropdown
+            dd-key="icls"
+            :label="filter.issueLevels.length ? `等級 ${filter.issueLevels.length}` : '等級'"
+            :active="filter.issueLevels.length > 0"
+            :options="levelOptions"
+            @pick="filter.issueLevels = toggleIn(filter.issueLevels, $event as IssueLevel)"
+          />
+          <FilterDropdown
+            dd-key="ist"
+            :label="filter.issueStatuses.length ? `狀態 ${filter.issueStatuses.length}` : '狀態'"
+            :active="filter.issueStatuses.length > 0"
+            :options="issueStatusOptions"
+            @pick="
+              filter.issueStatuses = toggleIn(filter.issueStatuses, $event as IssueStatus | 'delayed')
+            "
+          />
+        </span>
 
         <span class="divider"></span>
-        <span class="section">日期</span>
-        <FilterDropdown
-          dd-key="fmode"
-          :label="DATE_MODE_LABEL[filter.dateMode]"
-          :active="filter.dateMode !== 'off'"
-          :options="dateModeOptions"
-          :menu-width="128"
-          @pick="pickDateMode"
-        />
-        <div v-if="showD1" class="date-pill" role="button" @click="openCalendar('d1')">
-          {{ fmtDate(filter.d1) }}
-        </div>
-        <span v-if="showD2" class="tilde">～</span>
-        <div v-if="showD2" class="date-pill" role="button" @click="openCalendar('d2')">
-          {{ fmtDate(filter.d2) }}
-        </div>
+        <span class="fgroup">
+          <span class="section">日期</span>
+          <FilterDropdown
+            dd-key="fmode"
+            :label="DATE_MODE_LABEL[filter.dateMode]"
+            :active="filter.dateMode !== 'off'"
+            :options="dateModeOptions"
+            :menu-width="128"
+            @pick="pickDateMode"
+          />
+          <div v-if="showD1" class="date-pill" role="button" @click="openCalendar('d1')">
+            {{ fmtDate(filter.d1) }}
+          </div>
+          <span v-if="showD2" class="tilde">～</span>
+          <div v-if="showD2" class="date-pill" role="button" @click="openCalendar('d2')">
+            {{ fmtDate(filter.d2) }}
+          </div>
+        </span>
 
         <div
           class="clear"
@@ -405,6 +424,10 @@ function clearFilters(): void {
   flex: 1;
 }
 
+.fgroup {
+  display: contents;
+}
+
 .divider {
   width: 1px;
   height: 18px;
@@ -504,5 +527,59 @@ function clearFilters(): void {
   font-size: var(--fs-control);
   font-weight: var(--fw-bold);
   color: var(--text-3);
+}
+/*
+ * 平板寬度（< 1200px）：篩選器原本擠在標題與右端之間，會被壓成好幾行的窄欄，
+ * 直向時頂欄高到 233px（sticky，吃掉近四分之一螢幕）。改成篩選器獨立成滿寬的第二列、靠左排、放不下再換行。
+ * 1200 以上維持原樣（compare.spec 在 1440 / 1920 對照 legacy 的幾何）。
+ */
+@media (max-width: 1199px) {
+  .top-row {
+    flex-wrap: wrap;
+    row-gap: var(--sp-4);
+    padding: var(--sp-4) var(--sp-8);
+  }
+
+  .filters {
+    order: 3;
+    flex: 1 0 100%;
+    justify-content: flex-start;
+    margin-left: 0;
+    gap: var(--sp-3) var(--sp-6);
+  }
+
+  .fgroup {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex: 0 0 auto;
+  }
+
+  /* 換行後分隔線可能落在行首，改由組間距區隔 */
+  .divider {
+    display: none;
+  }
+
+  /* 把成員推到最左、其餘推到右邊的彈性空白；換行後會把後面的篩選器擠到下一行 */
+  .grow {
+    display: none;
+  }
+
+  .tail {
+    margin-left: auto;
+  }
+}
+
+/* 手指操作：☰ 只有 18×12px，用看不見的外擴熱區 */
+@media (pointer: coarse) {
+  .burger {
+    position: relative;
+  }
+
+  .burger::after {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--sp-5)) calc(-1 * var(--sp-4));
+  }
 }
 </style>

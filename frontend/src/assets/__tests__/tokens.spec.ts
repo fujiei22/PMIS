@@ -54,7 +54,6 @@ describe('tokens.css', () => {
       '--backdrop-lightbox',
       '--shadow-left-col',
       '--shadow-bar',
-      '--drag-ghost',
       '--t-bar',
       '--t-progress',
       '--t-hover',
