@@ -34,6 +34,7 @@ function toggleIn<T>(list: T[], v: T): T[] {
  * - 篩選：成員照 Dashboard MemberPicker 的語意——沒勾＝不篩；三組條件之間 AND、組內 OR。
  * - 排序：多鍵，預設 ① 落後百分點↓ ② 到期日↑；欄序跟著排序結果走。
  * - `expandedIds` 與 `panelOpen` 由卡片與時間軸兩種檢視共用，是刻意的：切換檢視時展開狀態延續。
+ *   `expandedIds` 依展開先後排列；卡片檢視每條泳道只展開一張（toggleExpandedInLane / keepLastExpandedInLane），時間軸不限。
  * - 整個 store 跨路由保留（spec 7b）：從 Dashboard 回來時篩選、排序、展開、檢視都還在。
  */
 export const useOverviewStore = defineStore('overview', () => {
@@ -153,6 +154,25 @@ export const useOverviewStore = defineStore('overview', () => {
   function isExpanded(id: string): boolean {
     return expandedIds.value.includes(id)
   }
+  /**
+   * 卡片檢視：同一條泳道（同一位 PM）同時只展開一張，照 iTunes 專輯網格的列下展開——
+   * 速覽抽屜只有一個箭頭，兩張同時展開時第二個抽屜對不回自己的卡片。
+   * 展開新的一張時收起 laneIds 裡的其他張；已展開的再點一次就收合。
+   */
+  function toggleExpandedInLane(id: string, laneIds: readonly string[]): void {
+    if (isExpanded(id)) {
+      expandedIds.value = expandedIds.value.filter((x) => x !== id)
+      return
+    }
+    expandedIds.value = [...expandedIds.value.filter((x) => !laneIds.includes(x)), id]
+  }
+  /** 從時間軸（可多張展開）切回卡片時，同泳道若有多張展開，只留最後展開的那張。 */
+  function keepLastExpandedInLane(laneIds: readonly string[]): void {
+    const open = expandedIds.value.filter((x) => laneIds.includes(x))
+    if (open.length < 2) return
+    const last = open[open.length - 1]
+    expandedIds.value = expandedIds.value.filter((x) => !laneIds.includes(x) || x === last)
+  }
 
   function toggleGroup(pmId: string): void {
     collapsedPmIds.value = toggleIn(collapsedPmIds.value, pmId)
@@ -196,6 +216,8 @@ export const useOverviewStore = defineStore('overview', () => {
     closeDropdown,
     toggleExpanded,
     isExpanded,
+    toggleExpandedInLane,
+    keepLastExpandedInLane,
     toggleGroup,
     isCollapsed,
   }

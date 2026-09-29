@@ -27,9 +27,9 @@ test.describe('總覽 動畫清單', () => {
   test('A1 卡片 / A2 速覽外殼與 caret / A11 檢視鈕 / A15 清除 / A24 面板收合鈕 / A30 進度條', async ({ page }) => {
     const ov = new OverviewPage(page); await ov.goto()
     expect(await hasMotion(ov.card('pmis'))).toBe(true)
-    expect(await hasMotion(ov.card('pmis').locator('.quick-wrap'))).toBe(true)
+    expect(await hasMotion(page.locator('[data-view-panel="cards"] [data-pm-col="m5"] .drawer'))).toBe(true)
     expect(await hasMotion(ov.card('pmis').locator('.card-caret'))).toBe(true)
-    expect(await hasMotion(ov.card('pmis').locator('.fill-actual'))).toBe(true)
+    expect(await hasMotion(ov.card('pmis').locator('.pa-bar .fill'))).toBe(true)
     expect(await hasMotion(page.locator('[data-view-switch="cards"]'))).toBe(true)
     expect(await hasMotion(page.getByTestId('overview-clear'))).toBe(true)
     expect(await hasMotion(page.locator('[data-view-panel="cards"] .panel-caret'))).toBe(true)
@@ -123,9 +123,9 @@ test.describe('總覽 動畫清單', () => {
     await card.evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - (window.innerHeight - 140)))
     await card.locator('.card-name').click()
     const vh = page.viewportSize()!.height
-    const wrap = card.locator('.quick-wrap')
+    const wrap = ov.drawer('vendor')
     // 先等速覽完全展開（剛點下去時高度還是 0，底邊一定在畫面內，會假綠）
-    await expect.poll(async () => (await wrap.boundingBox())!.height).toBeGreaterThan(300)
+    await expect.poll(async () => (await wrap.boundingBox())!.height).toBeGreaterThan(200)
     await expect
       .poll(async () => {
         const box = (await wrap.boundingBox())!
@@ -183,7 +183,7 @@ function moveReport(dist: number[]): { start: number; hasMidFrame: boolean; maxD
 }
 
 test.describe('總覽 重排動畫（A8 / A9 / A20）', () => {
-  test('卡片檢視：移掉「落後」排序，欄換位置時卡片平順移動、不回彈', async ({ page }) => {
+  test('卡片檢視：移掉「落後」排序，泳道換位置時卡片平順移動、不回彈', async ({ page }) => {
     const ov = new OverviewPage(page); await ov.goto()
     const dist = await trackMove(page, '[data-view-panel="cards"] [data-project="wiki"]', () =>
       page.locator('[data-view-panel="cards"] .chip-x').first().click(),
@@ -195,7 +195,7 @@ test.describe('總覽 重排動畫（A8 / A9 / A20）', () => {
     expect(r.maxDist).toBeLessThanOrEqual(r.start + 2)
   })
 
-  test('卡片檢視：欄換位置、同時欄內順序也變（金流介接移到 PMIS 前面），卡片平順移動、不回彈', async ({ page }) => {
+  test('卡片檢視：泳道換位置、同時泳道內順序也變（金流介接移到 PMIS 前面），卡片平順移動、不回彈', async ({ page }) => {
     const ov = new OverviewPage(page); await ov.goto()
     const dist = await trackMove(page, '[data-view-panel="cards"] [data-project="payment"]', () =>
       page.locator('[data-view-panel="cards"] .chip-x').first().click(),
@@ -207,12 +207,15 @@ test.describe('總覽 重排動畫（A8 / A9 / A20）', () => {
     expect(r.maxDist).toBeLessThanOrEqual(r.start + 2)
   })
 
-  test('卡片檢視：欄的 index 不變但整欄上移（前一列變矮），卡片不會位移兩倍', async ({ page }) => {
-    // 只看成員8 / 5 / 9：兩欄 grid 的第一列是成員8、成員5（各 2 張），第二列是成員9。
-    // 再篩「需注意＝無」：成員8、成員5 各剩 1 張、第一列變矮，成員9 整欄上移，index 仍是 2。
-    // 用 index 猜「欄有沒有動」的舊做法在這裡會把欄的位移算兩次（review 抓到的情境）。
+  test('卡片檢視：泳道的 index 不變但整條上移（前面的泳道變矮），卡片不會位移兩倍', async ({ page }) => {
+    // 640px 寬時泳道一列只放一張卡。只看成員8 / 5 / 9：成員8、成員5 各 2 張（各兩列），成員9 在最下面。
+    // 再篩「需注意＝無」：成員8、成員5 各剩 1 張、泳道變矮，成員9 整條上移，index 仍是 2。
+    // 用 index 猜「泳道有沒有動」的做法在這裡會把泳道的位移算兩次（review 抓到的情境）。
+    await page.setViewportSize({ width: 640, height: 900 })
     const ov = new OverviewPage(page); await ov.goto()
     await ov.pickPm('m8', 'm5', 'm9')
+    // 篩掉成員10 的泳道離場、其餘泳道重排都跑完才開始量，否則第一幀就在半途
+    await page.waitForFunction(() => document.getAnimations().length === 0)
     const dist = await trackMove(page, '[data-view-panel="cards"] [data-project="dw"]', () =>
       ov.pick('alert', '無'),
     )

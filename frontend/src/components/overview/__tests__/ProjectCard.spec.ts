@@ -2,9 +2,9 @@
  * 總覽專案卡 ProjectCard 的測試（用 mock 的範例專案組合，取「客戶入口網站改版」）。
  *
  * 測什麼：名稱、狀態 pill 與卡片色系、實際進度、meta 的落後色調與到期日；
- * 速覽外殼常駐 DOM 並以 grid-template-rows 0fr / 1fr 切換；點擊與 Enter / Space 切換展開；
- * 「進入」連結的網址，以及點「進入」或速覽內部都不會切換展開。
- * 為什麼：整張卡是 role="button"，裡面又包了「進入」連結與速覽，
+ * 展開時的外框狀態與 aria-controls 指向速覽抽屜；點擊與 Enter / Space 切換展開；
+ * 「進入」連結的網址，以及點「進入」不會切換展開；同泳道只展開一張。速覽抽屜本身見 LaneDrawer.spec。
+ * 為什麼：整張卡是 role="button"，裡面又包了「進入」連結，
  * 冒泡與鍵盤事件很容易互相干擾；落後色調與卡片色系是依門檻派生的，寫死時鐘才驗得出來。
  */
 import { mount } from '@vue/test-utils'
@@ -28,7 +28,7 @@ async function setup() {
   const data = buildPortfolio(sampleProject, '2026-09-22')
   await usePortfolioStore().load(data)
   const p = data.projects.find((x) => x.id === 'portal')!
-  const w = mount(ProjectCard, { props: { row: { p, d: deriveProject(p, '2026-09-22') } },
+  const w = mount(ProjectCard, { props: { row: { p, d: deriveProject(p, '2026-09-22') }, laneIds: ['portal', 'app'] },
     global: { plugins: [router] }, attachTo: document.body })
   return { w }
 }
@@ -42,18 +42,20 @@ describe('ProjectCard', () => {
     expect(w.find('article').classes()).toContain('card-paused')
     expect(w.find('.pill').text()).toContain('需注意')
     expect(w.find('.hero').text().replace(/\s/g, '')).toBe('62%')
-    expect(w.find('.meta-gap').text()).toBe('落後 13 個百分點')
+    expect(w.find('.meta-gap').text()).toBe('落後 13%')
     expect(w.find('.meta-gap').classes()).toContain('warn')
     expect(w.find('.card-meta').text()).toContain('2026-10-16')
     w.unmount()
   })
 
-  it('速覽外殼一直在 DOM；收合時 0fr、展開時 1fr', async () => {
+  it('速覽不在卡片裡；展開時加 is-open，aria-controls 指向泳道的抽屜 lane-qv-m8', async () => {
     const { w } = await setup()
-    expect(w.find('.quick-wrap').exists()).toBe(true)
-    expect(w.find('.quick-wrap').attributes('style')).toContain('0fr')
-    await w.find('article').trigger('click')
-    expect(w.find('.quick-wrap').attributes('style')).toContain('1fr')
+    const card = w.find('article')
+    expect(w.find('.quick-view').exists()).toBe(false)
+    expect(card.attributes('aria-controls')).toBe('lane-qv-m8')
+    expect(card.classes()).not.toContain('is-open')
+    await card.trigger('click')
+    expect(card.classes()).toContain('is-open')
     w.unmount()
   })
 
@@ -70,6 +72,16 @@ describe('ProjectCard', () => {
     w.unmount()
   })
 
+  it('同泳道只展開一張：展開這張時收起同泳道的 app，別的泳道不動', async () => {
+    const { w } = await setup()
+    const ov = useOverviewStore()
+    ov.toggleExpanded('app')
+    ov.toggleExpanded('pmis')
+    await w.find('article').trigger('click')
+    expect(ov.expandedIds).toEqual(['pmis', 'portal'])
+    w.unmount()
+  })
+
   it('點「進入」或在「進入」上按 Enter 都不切換展開；連結指向 /projects/portal', async () => {
     const { w } = await setup()
     const ov = useOverviewStore()
@@ -78,16 +90,6 @@ describe('ProjectCard', () => {
     await link.trigger('click')
     await link.trigger('keydown', { key: 'Enter' })
     expect(ov.isExpanded('portal')).toBe(false)
-    w.unmount()
-  })
-
-  it('點速覽內部不收合', async () => {
-    const { w } = await setup()
-    const ov = useOverviewStore()
-    ov.toggleExpanded('portal')
-    await w.vm.$nextTick()
-    await w.find('.quick-wrap').trigger('click')
-    expect(ov.isExpanded('portal')).toBe(true)
     w.unmount()
   })
 })

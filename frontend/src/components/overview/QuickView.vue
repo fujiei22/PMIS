@@ -4,7 +4,9 @@
 import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import EnterLink from '@/components/overview/EnterLink.vue'
+import PlanActualBar from '@/components/overview/PlanActualBar.vue'
 import ProjectBadge from '@/components/overview/ProjectBadge.vue'
+import { ISSUE_LEVEL } from '@/constants/dashboard'
 import { BADGE_CLASS } from '@/constants/overview'
 import { dueSoon, gapTone, type ProjectRow } from '@/lib/portfolio'
 import { useClockStore } from '@/stores/clock'
@@ -26,6 +28,7 @@ const p = computed(() => props.row.p)
 const d = computed(() => props.row.d)
 
 const pm = computed(() => portfolio.byId(p.value.pmId))
+
 
 const LEVELS: readonly IssueLevel[] = ['A', 'B', 'C', 'D']
 /** 只列有未結 Issue 的等級；全為 0 時整列換成空值文案。 */
@@ -89,29 +92,11 @@ const upcoming = computed(() =>
     <div class="quick">
       <div class="qb">
         <div class="qb-title">進度與任務數</div>
-        <div class="bars">
-          <div>
-            <div class="bar-head">
-              <span>實際進度</span>
-              <span class="bar-frac mono">{{ p.taskDone }} / {{ p.taskTotal }}</span>
-              <span class="bar-pct mono">{{ d.actualPct }}%</span>
-            </div>
-            <div class="track">
-              <div class="fill fill-actual" :class="'fill-' + BADGE_CLASS[d.badge]" :style="{ width: d.actualPct + '%' }"></div>
-            </div>
-          </div>
-          <div>
-            <div class="bar-head">
-              <span>理論進度</span>
-              <span class="bar-frac mono">{{ p.taskPlanned }} / {{ p.taskTotal }}</span>
-              <span class="bar-pct mono">{{ d.plannedPct }}%</span>
-            </div>
-            <div class="track">
-              <div class="fill fill-plan" :style="{ width: d.plannedPct + '%' }"></div>
-            </div>
-          </div>
+        <PlanActualBar :actual="d.actualPct" :planned="d.plannedPct" :tone="BADGE_CLASS[d.badge]" />
+        <div class="progress-foot">
+          <span class="bar-frac mono">{{ p.taskDone }} / {{ p.taskTotal }}</span>
+          <span class="gap-note" :class="gapTone(d.gap)">{{ d.gap > 0 ? `落後 ${d.gap}%` : '進度正常' }}</span>
         </div>
-        <div class="gap-note" :class="gapTone(d.gap)">落後 {{ d.gap }} 個百分點</div>
         <ul class="counts">
           <li><i class="dot dot-done"></i>完成<b>{{ p.taskCounts.done }}</b></li>
           <li><i class="dot dot-doing"></i>進行中<b>{{ p.taskCounts.doing }}</b></li>
@@ -122,7 +107,7 @@ const upcoming = computed(() =>
 
       <div class="qb">
         <div class="qb-title">時程</div>
-        <div class="range">{{ p.startDate }}<span class="range-arrow">→</span>{{ p.dueDate }}</div>
+        <div class="range"><span>{{ p.startDate }}</span><span class="range-arrow">→</span><span>{{ p.dueDate }}</span></div>
         <div class="track time-track">
           <div class="fill fill-time" :style="{ width: d.timePct + '%' }"></div>
         </div>
@@ -147,7 +132,7 @@ const upcoming = computed(() =>
         </dl>
         <div v-if="levels.length" class="levels">
           <span v-for="l in levels" :key="l.lv" class="lv" :class="'lv-' + l.lv.toLowerCase()">
-            {{ l.lv }} 級<b>{{ l.n }}</b>
+            {{ ISSUE_LEVEL[l.lv].label }}<b>{{ l.n }}</b>
           </span>
         </div>
         <p v-else class="empty">無未結 Issue</p>
@@ -253,8 +238,11 @@ const upcoming = computed(() =>
   color: var(--text-1);
 }
 
-.btn-quick:hover {
-  border-color: var(--text-placeholder);
+/* hover 只給有滑鼠的裝置：觸控點一下後 :hover 會一直黏著，直到點別的地方（本檔其他 hover 同理） */
+@media (hover: hover) {
+  .btn-quick:hover {
+    border-color: var(--text-placeholder);
+  }
 }
 
 .btn:focus-visible {
@@ -271,7 +259,11 @@ const upcoming = computed(() =>
   transform: rotate(180deg);
 }
 
-/* ── 四組內容：卡片內 2×2，時間軸（withHead）4 欄橫排 ── */
+/* ── 四組內容：卡片內 2×2，時間軸（withHead）4 欄橫排；依速覽本身的寬度（不是視窗）收欄 ── */
+.quick-view {
+  container-type: inline-size;
+}
+
 .quick {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -284,6 +276,20 @@ const upcoming = computed(() =>
   grid-template-columns: repeat(4, minmax(0, 1fr));
   padding: var(--sp-6) var(--sp-7) var(--sp-7);
   border-top: 0;
+}
+
+/* 平板直向：時間軸速覽 4 欄擠不下（日期、單位、任務名都會斷），改 2×2 */
+@container (max-width: 900px) {
+  .with-head .quick {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 平板直向的專案卡：一格只剩 150px 左右，改單欄 */
+@container (max-width: 400px) {
+  .quick {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .qb {
@@ -304,32 +310,19 @@ const upcoming = computed(() =>
   letter-spacing: var(--tracking-overline);
 }
 
-/* 速覽 1：實際 / 理論雙進度條 + 四種狀態數 */
-.bars {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
-}
-
-.bar-head {
+/* 速覽 1：實際 / 理論合一進度條（PlanActualBar）+ 四種狀態數 */
+.progress-foot {
   display: flex;
   align-items: baseline;
-  gap: var(--sp-3);
-  margin-bottom: var(--sp-2);
   font-size: var(--fs-meta);
-  color: var(--text-3);
 }
 
 .bar-frac {
-  margin-left: auto;
   color: var(--text-muted);
 }
 
-.bar-pct {
-  font-weight: var(--fw-bold);
-  color: var(--text-1);
-  min-width: 3ch;
-  text-align: right;
+.progress-foot .gap-note {
+  margin-left: auto;
 }
 
 .track {
@@ -346,28 +339,6 @@ const upcoming = computed(() =>
   transition: width var(--t-progress) var(--ease);
 }
 
-/* 實際進度條色跟著狀態徽章走（同 B2 .card-* .fill-actual） */
-.fill-late {
-  background: var(--st-delayed-bar);
-}
-
-.fill-paused {
-  background: var(--st-paused-bar);
-}
-
-.fill-doing {
-  background: var(--st-doing-bar);
-}
-
-.fill-todo {
-  background: var(--st-todo-bar);
-}
-
-.fill-done {
-  background: var(--st-done-bar);
-}
-
-.fill-plan,
 .fill-time {
   background: var(--text-muted);
 }
@@ -441,12 +412,18 @@ const upcoming = computed(() =>
 /* 速覽 2：時程 */
 .range {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-3);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-14);
   color: var(--text-2);
+}
+
+/* 日期本身不斷行（連字號會被當斷點），放不下時只在箭頭處換行 */
+.range > span {
+  white-space: nowrap;
 }
 
 .range-arrow {

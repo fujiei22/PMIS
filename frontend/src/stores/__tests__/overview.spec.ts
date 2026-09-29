@@ -86,6 +86,26 @@ describe('overview store', () => {
     expect(ov.openDropdown).toBe(null)
   })
 
+  it('卡片泳道：同泳道展開新的一張會收起其他張，別條泳道不受影響；再點一次收合', () => {
+    const ov = useOverviewStore()
+    const m8 = ['portal', 'app']
+    ov.toggleExpanded('pmis')
+    ov.toggleExpandedInLane('portal', m8)
+    ov.toggleExpandedInLane('app', m8)
+    expect(ov.expandedIds).toEqual(['pmis', 'app'])
+    ov.toggleExpandedInLane('app', m8)
+    expect(ov.expandedIds).toEqual(['pmis'])
+  })
+
+  it('從時間軸切回卡片：同泳道多張展開時只留最後展開的那張', () => {
+    const ov = useOverviewStore()
+    ov.toggleExpanded('app'); ov.toggleExpanded('pmis'); ov.toggleExpanded('portal')
+    ov.keepLastExpandedInLane(['portal', 'app'])
+    expect(ov.expandedIds).toEqual(['pmis', 'portal'])
+    ov.keepLastExpandedInLane(['pmis', 'payment'])
+    expect(ov.expandedIds).toEqual(['pmis', 'portal'])
+  })
+
   it('setView 切換檢視並關掉下拉', () => {
     const ov = useOverviewStore()
     ov.toggleDropdown('sort')

@@ -2,6 +2,7 @@
 // 時間軸的一位 PM：可收合的群組列（收合時畫摘要 bar）＋ 底下的專案列；PM 色系變數由根元素 .g 提供給列與速覽。
 import { computed, ref, type ComponentPublicInstance } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
+import PmCountPill from '@/components/overview/PmCountPill.vue'
 import TimelineProjectRow from '@/components/overview/TimelineProjectRow.vue'
 import { freezeLeave } from '@/composables/freezeLeave'
 import { useRelativeFlip } from '@/composables/useRelativeFlip'
@@ -22,7 +23,7 @@ const props = defineProps<{
 /*
  * 巢狀 FLIP：群組本身有重排動畫（OverviewTimeline 的 ov-group），組內專案列若也用 TransitionGroup
  * 內建的 move，會用頁面上的絕對位置算位移、把群組的位移再算一次。所以列的重排改用相對於 .g-list 的位移
- * （useRelativeFlip），內建 move 以不存在的 class `ov-row-still` 停用；列的進出場照舊。做法同 PmColumn。
+ * （useRelativeFlip），內建 move 以不存在的 class `ov-row-still` 停用；列的進出場照舊。做法同 PmLane。
  */
 const list = ref<ComponentPublicInstance | null>(null)
 useRelativeFlip(
@@ -79,11 +80,7 @@ function onKey(e: KeyboardEvent): void {
         <span class="g-caret" aria-hidden="true">▼</span>
         <Avatar :member="group.pm" :size="22" />
         <span class="g-name">{{ group.pm.name }}</span>
-        <span class="g-counts">
-          <span><b>{{ group.rows.length }}</b> 個專案</span>
-          <span>·</span>
-          <span :class="{ 'is-danger': group.alertCount > 0 }"><b>{{ group.alertCount }}</b> 個需要注意</span>
-        </span>
+        <PmCountPill :count="group.rows.length" />
       </div>
       <div class="g-canvas">
         <Transition name="ov-fade"><i v-if="collapsed" class="g-sum" :style="sumStyle"></i></Transition>
@@ -179,8 +176,11 @@ function onKey(e: KeyboardEvent): void {
   border-bottom: 1px solid var(--pm-line);
 }
 
-.g-row:hover .g-left {
-  background: color-mix(in srgb, var(--pm) 16%, var(--surface-1));
+/* hover 只給有滑鼠的裝置：觸控點一下後 :hover 會一直黏著，直到點別的地方（本檔其他 hover 同理） */
+@media (hover: hover) {
+  .g-row:hover .g-left {
+    background: color-mix(in srgb, var(--pm) 16%, var(--surface-1));
+  }
 }
 
 /* 單一圖示旋轉，不換字元（A13 / A24） */
@@ -205,28 +205,6 @@ function onKey(e: KeyboardEvent): void {
   white-space: nowrap;
 }
 
-.g-counts {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  margin-left: auto;
-  font-size: var(--fs-date);
-  color: var(--text-3);
-  white-space: nowrap;
-}
-
-.g-counts b {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-weight: var(--fw-medium);
-  color: var(--text-1);
-}
-
-.g-counts .is-danger,
-.g-counts .is-danger b {
-  color: var(--danger-text);
-  font-weight: var(--fw-bold);
-}
 
 /* 收合摘要條（照 GanttBar .summary） */
 .g-sum {

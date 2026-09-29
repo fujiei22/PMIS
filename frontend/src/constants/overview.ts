@@ -29,6 +29,8 @@ export const BADGE_CLASS: Record<ProjectBadgeKind, string> = {
 export const TIMELINE_DAY_W = 32 * 0.22
 /** 時間軸左欄寬（px），CSS 端以 --gantt-left 同值。 */
 export const TIMELINE_LEFT_W = 320
+/** 平板直向（< 900px）的時間軸左欄寬：進度欄只留實際 %（理論 % 在速覽裡），把寬度讓給畫布。 */
+export const TIMELINE_LEFT_W_NARROW = 260
 /** 延遲卸載的毫秒數：對應 tokens.css --t-panel（.26s）再多留一點，比照 PanelShell 的 320。 */
 export const PANEL_UNMOUNT_MS = 320
 /** 狀態下拉的選項順序（照 B2）。 */

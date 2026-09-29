@@ -186,8 +186,11 @@ function onWrapTransitionEnd(e: TransitionEvent): void {
   transition: background var(--t-fast) var(--ease);
 }
 
-.p-row:hover .p-left {
-  background: var(--pm-row-hover);
+/* hover 只給有滑鼠的裝置：觸控點一下後 :hover 會一直黏著，直到點別的地方（本檔其他 hover 同理） */
+@media (hover: hover) {
+  .p-row:hover .p-left {
+    background: var(--pm-row-hover);
+  }
 }
 
 .p-row:focus-visible .p-left {
@@ -265,6 +268,21 @@ function onWrapTransitionEnd(e: TransitionEvent): void {
   font-weight: var(--fw-regular);
 }
 
+/* 平板直向：左欄縮成 260px（OverviewTimeline 的 TIMELINE_LEFT_W_NARROW），只留實際 %；理論 % 在速覽裡看得到 */
+@media (max-width: 899px) {
+  .c-pct {
+    width: 40px;
+  }
+
+  .c-gap {
+    width: 40px;
+  }
+
+  .pct-plan {
+    display: none;
+  }
+}
+
 .p-num.behind {
   color: var(--danger-text);
   font-weight: var(--fw-bold);
@@ -275,7 +293,10 @@ function onWrapTransitionEnd(e: TransitionEvent): void {
   font-weight: var(--fw-bold);
 }
 
-/* bar：實色、條內只放白字專案名；進度看左欄的 % 欄 */
+/*
+ * bar：實色、條內只放白字專案名；進度看左欄的 % 欄。
+ * overflow 用 clip 不用 hidden：hidden 會讓 bar 自己變成捲動容器，名稱的 sticky 就只對 bar 生效、跟不上橫捲。
+ */
 .bar {
   position: absolute;
   top: 6px;
@@ -286,14 +307,23 @@ function onWrapTransitionEnd(e: TransitionEvent): void {
   border-radius: var(--r-6);
   background: var(--bar);
   box-shadow: var(--shadow-bar);
-  overflow: hidden;
+  overflow: clip;
   z-index: 2;
   transition: box-shadow var(--t-fast) var(--ease);
 }
 
+/*
+ * Noto Sans TC 的行框上方留白比下方多，flex 置中後字形實測偏下約 1.5px。
+ * 字的基線會對齊裝置像素，底部內距 1～2px 在 1x / 1.25x / 1.5x / 2x 實測結果都相同且最接近置中，取中間值；
+ * 3px 以上在 2x 反而偏上。不用 text-box：cap 會切掉漢字上下緣，ideographic 目前 Chromium 不支援。
+ * 左邊只留 .bar 的 7px 內距。
+ * sticky：bar 的起點捲到左欄底下時，名稱停在左欄右緣再 7px（相對 .tl-body 捲動），直到被 bar 的右端推走。
+ */
 .bar-label {
+  position: sticky;
+  left: calc(var(--gantt-left) + 7px);
   min-width: 0;
-  padding-left: var(--sp-3);
+  padding-bottom: 1.5px;
   font-size: var(--fs-date);
   font-weight: var(--fw-medium);
   color: var(--surface-1);
@@ -302,13 +332,22 @@ function onWrapTransitionEnd(e: TransitionEvent): void {
   text-overflow: ellipsis;
 }
 
-/* hover 與選取時的光暈（A25）；不用 filter: brightness */
-.p-row:hover .bar,
-.p-row[data-selected='true'] .bar {
-  box-shadow:
+/* hover 與選取時的光暈（A25）；不用 filter: brightness。hover 只給有滑鼠的裝置 */
+.p-row {
+  --bar-glow:
     0 0 0 1px color-mix(in srgb, var(--bar) 55%, transparent),
     0 0 6px 1.5px color-mix(in srgb, var(--bar) 50%, transparent),
     0 0 12px 4px color-mix(in srgb, var(--bar) 20%, transparent);
+}
+
+.p-row[data-selected='true'] .bar {
+  box-shadow: var(--bar-glow);
+}
+
+@media (hover: hover) {
+  .p-row:hover .bar {
+    box-shadow: var(--bar-glow);
+  }
 }
 
 /* 速覽：緊接在選取列下方，寬 = 可見寬度（sticky left:0，橫跨左欄 + 畫布）。

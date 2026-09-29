@@ -67,90 +67,97 @@ const me = computed(() => portfolio.byId(portfolio.currentUserId))
       </button>
     </nav>
 
-    <div class="filters" role="group" aria-label="篩選">
-      <span class="section">成員</span>
-      <PmFilter :disabled="notReady" />
+    <!-- 右半組：篩選 + 登入者。窄螢幕放不下時整組換行、組內再換行，都靠右 -->
+    <div class="top-right">
+      <div class="filters" role="group" aria-label="篩選">
+        <span class="section">成員</span>
+        <PmFilter :disabled="notReady" />
 
-      <span class="divider"></span>
-      <span class="section">專案</span>
-      <OvDropdown
-        data-ov-dd="status"
-        :label="ddLabel('狀態', overview.statuses.length)"
-        :active="overview.statuses.length > 0"
-        :open="overview.openDropdown === 'status'"
-        :disabled="notReady"
-        @toggle="overview.toggleDropdown('status')"
-        @close="overview.closeDropdown()"
-      >
-        <button
-          v-for="s in PROJECT_STATUS_ORDER"
-          :key="s"
-          type="button"
-          class="dd-item"
-          :aria-pressed="overview.statuses.includes(s)"
-          @click="overview.toggleStatus(s)"
+        <span class="divider"></span>
+        <span class="section">專案</span>
+        <OvDropdown
+          data-ov-dd="status"
+          :label="ddLabel('狀態', overview.statuses.length)"
+          :active="overview.statuses.length > 0"
+          :open="overview.openDropdown === 'status'"
+          :disabled="notReady"
+          @toggle="overview.toggleDropdown('status')"
+          @close="overview.closeDropdown()"
         >
-          <span class="dd-dot" :style="{ background: STATUS_DOT[s] }"></span>
-          <span class="dd-label">{{ PROJECT_STATUS_LABEL[s] }}</span>
-          <span class="dd-check" aria-hidden="true">✓</span>
-        </button>
-      </OvDropdown>
-      <OvDropdown
-        data-ov-dd="alert"
-        :label="ddLabel('需注意', overview.alerts.length)"
-        :active="overview.alerts.length > 0"
-        :open="overview.openDropdown === 'alert'"
-        :disabled="notReady"
-        @toggle="overview.toggleDropdown('alert')"
-        @close="overview.closeDropdown()"
-      >
-        <button
-          v-for="a in ALERT_ORDER"
-          :key="a"
-          type="button"
-          class="dd-item"
-          :aria-pressed="overview.alerts.includes(a)"
-          @click="overview.toggleAlert(a)"
+          <button
+            v-for="s in PROJECT_STATUS_ORDER"
+            :key="s"
+            type="button"
+            class="dd-item"
+            :aria-pressed="overview.statuses.includes(s)"
+            @click="overview.toggleStatus(s)"
+          >
+            <span class="dd-dot" :style="{ background: STATUS_DOT[s] }"></span>
+            <span class="dd-label">{{ PROJECT_STATUS_LABEL[s] }}</span>
+            <span class="dd-check" aria-hidden="true">✓</span>
+          </button>
+        </OvDropdown>
+        <OvDropdown
+          data-ov-dd="alert"
+          :label="ddLabel('需注意', overview.alerts.length)"
+          :active="overview.alerts.length > 0"
+          :open="overview.openDropdown === 'alert'"
+          :disabled="notReady"
+          @toggle="overview.toggleDropdown('alert')"
+          @close="overview.closeDropdown()"
         >
-          <span class="dd-dot" :style="{ background: ALERT_DOT[a] }"></span>
-          <span class="dd-label">{{ PROJECT_ALERT_LABEL[a] }}</span>
-          <span class="dd-check" aria-hidden="true">✓</span>
+          <button
+            v-for="a in ALERT_ORDER"
+            :key="a"
+            type="button"
+            class="dd-item"
+            :aria-pressed="overview.alerts.includes(a)"
+            @click="overview.toggleAlert(a)"
+          >
+            <span class="dd-dot" :style="{ background: ALERT_DOT[a] }"></span>
+            <span class="dd-label">{{ PROJECT_ALERT_LABEL[a] }}</span>
+            <span class="dd-check" aria-hidden="true">✓</span>
+          </button>
+        </OvDropdown>
+
+        <button
+          type="button"
+          class="clear"
+          :class="{ on: overview.anyFilter }"
+          :disabled="!overview.anyFilter"
+          data-testid="overview-clear"
+          @click="overview.clearFilters()"
+        >
+          <span class="clear-x" aria-hidden="true">✕</span><span>清除篩選</span>
         </button>
-      </OvDropdown>
+      </div>
 
-      <button
-        type="button"
-        class="clear"
-        :class="{ on: overview.anyFilter }"
-        :disabled="!overview.anyFilter"
-        data-testid="overview-clear"
-        @click="overview.clearFilters()"
-      >
-        <span class="clear-x" aria-hidden="true">✕</span><span>清除篩選</span>
-      </button>
-    </div>
-
-    <div class="tail">
-      <template v-if="me">
-        <span class="me-name">{{ me.name }}</span>
-        <span class="me-role">{{ me.role }}</span>
-        <Avatar class="me-av" :member="me" :size="30" />
-      </template>
+      <div class="tail">
+        <template v-if="me">
+          <span class="me-name">{{ me.name }}</span>
+          <span class="me-role">{{ me.role }}</span>
+          <Avatar class="me-av" :member="me" :size="30" />
+        </template>
+      </div>
     </div>
   </header>
 </template>
 
 <style scoped>
-/* 單列頂欄；高度由 Task 10 量給面板標題列的 sticky 用 */
+/*
+ * 頂欄；高度由 Task 10 量給面板標題列的 sticky 用（ResizeObserver，換行後的高度也會跟上）。
+ * 平板直向放不下一列時篩選區整組換到第二列，不然篩選會往左溢出蓋住檢視切換鈕。
+ */
 .top-row {
   position: sticky;
   top: 0;
   z-index: 40;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--sp-5);
+  gap: var(--sp-4) var(--sp-5);
   min-height: calc(var(--ctrl-h) + var(--sp-12));
-  padding: 0 var(--sp-10);
+  padding: var(--sp-4) var(--sp-10);
   background: var(--surface-1);
   border-bottom: 1px solid var(--border-1);
   /* 同 Dashboard TopBar，避免 sticky 列在捲動時閃爍 */
@@ -213,9 +220,12 @@ const me = computed(() => portfolio.byId(portfolio.currentUserId))
     box-shadow var(--t-fast) var(--ease);
 }
 
-.view-link:hover {
-  background: var(--surface-3);
-  color: var(--text-1);
+/* hover 只給有滑鼠的裝置：觸控點一下後 :hover 會一直黏著，直到點別的地方（本檔其他 hover 同理） */
+@media (hover: hover) {
+  .view-link:hover {
+    background: var(--surface-3);
+    color: var(--text-1);
+  }
 }
 
 .view-link[aria-pressed='true'] {
@@ -234,6 +244,17 @@ const me = computed(() => portfolio.byId(portfolio.currentUserId))
   opacity: 0.75;
 }
 
+.top-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-4) var(--sp-5);
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+
 .filters {
   position: relative;
   display: flex;
@@ -242,7 +263,6 @@ const me = computed(() => portfolio.byId(portfolio.currentUserId))
   gap: var(--sp-3);
   flex: 0 1 auto;
   min-width: 0;
-  margin-left: auto;
 }
 
 .section {

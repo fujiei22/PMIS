@@ -1,13 +1,17 @@
 <script setup lang="ts">
 // 時間軸檢視：面板外殼 + sticky 尺規（月份 / 日或週刻度）+ 可橫捲的畫布（週末與今天底色、今天線、PM 群組）。
 // 左欄與畫布放在同一個水平捲動容器裡（左欄 sticky left），速覽才能緊接在選取列下方、橫跨左欄 + 畫布。
+// 容器自己的橫捲軸藏起來，底下另放一條只在畫布下方的捲軸；左欄不會橫捲，捲軸不該伸到它下面。
+// 畫布區也能按住拖曳左右平移（useDragPan）。
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import OvEmpty from '@/components/overview/OvEmpty.vue'
 import OvPanel from '@/components/overview/OvPanel.vue'
 import OvSortControls from '@/components/overview/OvSortControls.vue'
 import TimelineGroup from '@/components/overview/TimelineGroup.vue'
 import { freezeLeave } from '@/composables/freezeLeave'
-import { TIMELINE_DAY_W, TIMELINE_LEFT_W } from '@/constants/overview'
+import { useDragPan } from '@/composables/useDragPan'
+import { NARROW_QUERY, useMediaQuery } from '@/composables/useMediaQuery'
+import { TIMELINE_DAY_W, TIMELINE_LEFT_W, TIMELINE_LEFT_W_NARROW } from '@/constants/overview'
 import { dayFraction } from '@/lib/date'
 import { useClockStore } from '@/stores/clock'
 import { useOverviewStore } from '@/stores/overview'
@@ -43,8 +47,12 @@ const todayX = computed(() => (todayOffset.value + dayFraction(new Date(clock.no
 
 const viewW = ref(0)
 
+/** 左欄寬；窄版的欄位縮減在 TimelineProjectRow 與下方尺規的 CSS（同一個 899px 門檻）。 */
+const narrow = useMediaQuery(NARROW_QUERY)
+const leftW = computed(() => (narrow.value ? TIMELINE_LEFT_W_NARROW : TIMELINE_LEFT_W))
+
 const rootStyle = computed(() => ({
-  '--gantt-left': `${TIMELINE_LEFT_W}px`,
+  '--gantt-left': `${leftW.value}px`,
   '--dw': `${DW}px`,
   '--tl-days': String(range.value.days),
   '--view-w': viewW.value ? `${viewW.value}px` : undefined,
@@ -52,17 +60,37 @@ const rootStyle = computed(() => ({
 
 const body = ref<HTMLElement | null>(null)
 const ruler = ref<HTMLElement | null>(null)
+const hbar = ref<HTMLElement | null>(null)
+const pan = useDragPan(body)
+/** 上次由容器同步給捲軸的位置；捲軸因此發出的 scroll 事件是回音，要略過。 */
+let barEcho = -1
 
-/** 尺規在捲動容器外（才能 sticky top），所以手動同步水平位置。 */
+/** 尺規與底下的捲軸都在捲動容器外（尺規要 sticky top），所以手動同步水平位置。 */
 function onBodyScroll(): void {
-  if (ruler.value && body.value) ruler.value.scrollLeft = body.value.scrollLeft
+  if (!body.value) return
+  const left = body.value.scrollLeft
+  if (ruler.value) ruler.value.scrollLeft = left
+  if (hbar.value) {
+    hbar.value.scrollLeft = left
+    barEcho = hbar.value.scrollLeft
+  }
+}
+
+/**
+ * 拖底下的捲軸時帶動捲動容器。
+ * 回音一定要略過：「今天」按鈕平滑捲動途中，回寫 scrollLeft 會打斷容器的平滑捲動。
+ */
+function onBarScroll(): void {
+  if (!hbar.value || !body.value) return
+  if (Math.abs(hbar.value.scrollLeft - barEcho) < 1) return
+  body.value.scrollLeft = hbar.value.scrollLeft
 }
 
 /** 把今天置中到畫布可見區（扣掉左欄）；smooth 給按鈕（A14），auto 給初次掛載。 */
 function scrollToToday(behavior: ScrollBehavior): void {
   const el = body.value
   if (!el || !todayInRange.value) return
-  const left = Math.max(0, todayX.value - (el.clientWidth - TIMELINE_LEFT_W) / 2)
+  const left = Math.max(0, todayX.value - (el.clientWidth - leftW.value) / 2)
   el.scrollTo({ left, behavior })
 }
 
@@ -150,7 +178,13 @@ onBeforeUnmount(() => ro?.disconnect())
           </div>
         </div>
 
-        <div ref="body" class="tl-body" @scroll="onBodyScroll">
+        <div
+          ref="body"
+          class="tl-body"
+          :class="{ panning: pan.panning.value }"
+          @scroll="onBodyScroll"
+          @pointerdown="pan.onPointerDown"
+        >
           <div class="tl-chart" :class="{ daily }">
             <div class="tl-bg" aria-hidden="true">
               <i
@@ -177,6 +211,11 @@ onBeforeUnmount(() => ro?.disconnect())
             </TransitionGroup>
           </div>
         </div>
+
+        <!-- 畫布專用的橫捲軸：從左欄右緣開始，內容寬 = 畫布寬，捲動範圍與 .tl-body 相同 -->
+        <div ref="hbar" class="tl-hbar" @scroll="onBarScroll">
+          <div class="tl-hbar-track"></div>
+        </div>
       </div>
     </Transition>
   </OvPanel>
@@ -201,8 +240,11 @@ onBeforeUnmount(() => ro?.disconnect())
     box-shadow var(--t-fast) var(--ease);
 }
 
-.today-btn:hover:not(:disabled) {
-  filter: var(--hover-dim);
+/* hover 只給有滑鼠的裝置：觸控點一下後 :hover 會一直黏著，直到點別的地方（本檔其他 hover 同理） */
+@media (hover: hover) {
+  .today-btn:hover:not(:disabled) {
+    filter: var(--hover-dim);
+  }
 }
 
 .today-btn:focus-visible {
@@ -266,6 +308,16 @@ onBeforeUnmount(() => ro?.disconnect())
 
 .c-gap {
   width: 50px;
+}
+
+@media (max-width: 899px) {
+  .c-pct {
+    width: 40px;
+  }
+
+  .c-gap {
+    width: 40px;
+  }
 }
 
 .tl-ruler {
@@ -353,12 +405,41 @@ onBeforeUnmount(() => ro?.disconnect())
   border-left: 1px solid var(--border-control);
 }
 
-/* 捲動容器：左欄與畫布一起水平捲 */
+/* 捲動容器：左欄與畫布一起水平捲；原生捲軸藏起來，改用下方的 .tl-hbar（觸控板 / Shift+滾輪照樣能捲） */
 .tl-body {
   position: relative;
   overflow-x: auto;
   overflow-y: hidden;
-  border-radius: 0 0 var(--r-panel) var(--r-panel);
+  scrollbar-width: none;
+}
+
+.tl-body::-webkit-scrollbar {
+  display: none;
+}
+
+/* 畫布區可按住拖曳平移（左欄、速覽不行）；拖曳中不選字 */
+.tl-body :deep(.p-canvas),
+.tl-body :deep(.g-canvas) {
+  cursor: grab;
+  user-select: none;
+}
+
+.tl-body.panning,
+.tl-body.panning :deep(*) {
+  cursor: grabbing;
+}
+
+/* 只在畫布下方的捲軸：左邊讓出左欄寬 */
+.tl-hbar {
+  margin-left: var(--gantt-left);
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-radius: 0 0 var(--r-panel) 0;
+}
+
+.tl-hbar-track {
+  width: calc(var(--tl-days) * var(--dw));
+  height: 1px;
 }
 
 /* isolation：速覽的 z-index 31 只在畫布內比，不會蓋過畫布外的 sticky 尺規 */

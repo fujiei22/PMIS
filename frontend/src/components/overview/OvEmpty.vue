@@ -54,9 +54,12 @@ const overview = useOverviewStore()
     box-shadow var(--t-fast) var(--ease);
 }
 
-.btn:hover {
-  background: var(--surface-3);
-  color: var(--text-1);
+/* hover 只給有滑鼠的裝置：觸控點一下後 :hover 會一直黏著，直到點別的地方（本檔其他 hover 同理） */
+@media (hover: hover) {
+  .btn:hover {
+    background: var(--surface-3);
+    color: var(--text-1);
+  }
 }
 
 .btn:focus-visible {

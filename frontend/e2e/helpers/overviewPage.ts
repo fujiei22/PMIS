@@ -11,6 +11,8 @@ export class OverviewPage {
     else await setFixedTime(this.page)
     await this.page.goto('/' + hash)
     await this.page.locator('[data-view="overview"] [data-view-panel]').first().waitFor()
+    // 等進場動畫（ov-view 等）跑完：動畫中點擊，Playwright 會因元素不穩定而重試並捲動頁面，之後的位置量測就不準
+    await this.page.waitForFunction(() => document.getAnimations().length === 0)
   }
   count(): Locator { return this.page.getByTestId('overview-count') }
   dropdown(key: 'pm' | 'status' | 'alert'): Locator { return this.page.locator(`[data-ov-dd="${key}"]`) }
@@ -27,6 +29,8 @@ export class OverviewPage {
     await this.page.keyboard.press('Escape')
   }
   card(id: string): Locator { return this.page.locator(`[data-view-panel="cards"] [data-project="${id}"]`) }
+  /** 卡片檢視的速覽抽屜（每條泳道一個）正在顯示 id 這張卡時；不在卡片裡，是插在卡片所在列下方的兄弟元素。 */
+  drawer(id: string): Locator { return this.page.locator(`[data-view-panel="cards"] [data-drawer="${id}"]`) }
   cardIds(): Promise<string[]> {
     return this.page.locator('[data-view-panel="cards"] [data-project]').evaluateAll((els) => els.map((e) => e.getAttribute('data-project')!))
   }

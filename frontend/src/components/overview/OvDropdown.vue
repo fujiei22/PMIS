@@ -86,8 +86,11 @@ useDismiss(
     box-shadow var(--t-fast) var(--ease);
 }
 
-.dd-trigger:hover:not(:disabled) {
-  background: var(--surface-3);
+/* hover 只給有滑鼠的裝置：觸控點一下後 :hover 會一直黏著，直到點別的地方（本檔其他 hover 同理） */
+@media (hover: hover) {
+  .dd-trigger:hover:not(:disabled) {
+    background: var(--surface-3);
+  }
 }
 
 .dd-trigger.active {
@@ -158,13 +161,15 @@ useDismiss(
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-.dd-menu :deep(.dd-item:hover) {
-  background: var(--surface-3);
-}
+@media (hover: hover) {
+  .dd-menu :deep(.dd-item:hover) {
+    background: var(--surface-3);
+  }
 
-.dd-menu :deep(.dd-item.on:hover),
-.dd-menu :deep(.dd-item[aria-pressed='true']:hover) {
-  background: var(--accent-tint-2);
+  .dd-menu :deep(.dd-item.on:hover),
+  .dd-menu :deep(.dd-item[aria-pressed='true']:hover) {
+    background: var(--accent-tint-2);
+  }
 }
 
 .dd-menu :deep(.dd-item:focus-visible) {

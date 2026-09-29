@@ -186,8 +186,11 @@ const morePms = computed(() => !hasSel.value && overview.pms.length > 3)
     box-shadow var(--t-fast) var(--ease);
 }
 
-.mp-row:hover {
-  background: var(--surface-3);
+/* hover 只給有滑鼠的裝置：觸控點一下後 :hover 會一直黏著，直到點別的地方（本檔其他 hover 同理） */
+@media (hover: hover) {
+  .mp-row:hover {
+    background: var(--surface-3);
+  }
 }
 
 .mp-row.on {
@@ -295,8 +298,10 @@ const morePms = computed(() => !hasSel.value && overview.pms.length > 3)
     box-shadow var(--t-fast) var(--ease);
 }
 
-.mp-btn:hover {
-  background: var(--surface-3);
+@media (hover: hover) {
+  .mp-btn:hover {
+    background: var(--surface-3);
+  }
 }
 
 .mp-btn:focus-visible {

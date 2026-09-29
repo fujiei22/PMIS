@@ -1,7 +1,7 @@
 /**
  * 專案速覽 QuickView 的測試（用 mock 的範例專案組合）。
  *
- * 測什麼：四組標題、近期任務的快到期標記、落後色調、三種空值文案，
+ * 測什麼：四組標題、近期任務的快到期標記、落後色調、進度條下方的落後文字、三種空值文案，
  * 以及 withHead 時的標頭（專案名、狀態 pill、PM、收合鈕、進入連結）。
  * 為什麼：卡片與時間軸共用這份速覽；快到期與落後色調是依今天日期與門檻派生的，
  * 寫死時鐘才驗得出邊界（09-23 算快到期、09-30 不算）。收合鈕要切 overview store 的展開狀態。
@@ -41,6 +41,17 @@ describe('QuickView', () => {
     expect(dates[0]!.classes()).toContain('due-soon')
     expect(dates[2]!.classes()).not.toContain('due-soon')
     expect(w.find('.gap-note').classes()).toContain('warn')
+  })
+
+  it('進度條下方：落後顯示「落後 N%」，沒落後顯示「進度正常」', async () => {
+    const w = await setup('portal')
+    const p = w.props('row').p
+    const d = deriveProject(p, '2026-09-22')
+    await w.setProps({ row: { p, d: { ...d, actualPct: 40, plannedPct: 70, gap: 30 } } })
+    expect(w.find('.gap-note').text()).toBe('落後 30%')
+    await w.setProps({ row: { p, d: { ...d, actualPct: 80, plannedPct: 60, gap: 0 } } })
+    expect(w.find('.gap-note').text()).toBe('進度正常')
+    expect(w.find('.pin-act').text()).toBe('實際 80%')
   })
 
   it('空值文案：報表資料倉儲沒有近期任務、沒有未結 Issue', async () => {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 總覽面板標題列的排序控制：已套用的排序 chips ＋「⇅ 排序」選單，讀寫 overview store 的 sorts。
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { freezeLeave } from '@/composables/freezeLeave'
 import { useDismiss } from '@/composables/useDismiss'
 import { OVERVIEW_SORT_KEYS } from '@/constants/overview'
@@ -56,6 +56,26 @@ function reset(): void {
 
 const menuRoot = ref<HTMLElement | null>(null)
 const trigger = ref<HTMLElement | null>(null)
+const menu = ref<HTMLElement | null>(null)
+
+/** 選單離視窗右緣至少留這麼多。 */
+const MENU_EDGE = 8
+/**
+ * 往右展開會超出視窗時（平板直向時排序鈕在標題列右半），改成對齊按鈕右緣、往左展開。
+ * post：選單掛上後才量得到寬度；改對齊會在同一輪更新裡重畫，畫面上看不到先超出再縮回。
+ */
+const alignEnd = ref(false)
+watch(
+  open,
+  (isOpen) => {
+    if (!isOpen || !trigger.value || !menu.value) return
+    const left = trigger.value.getBoundingClientRect().left
+    alignEnd.value =
+      left + menu.value.offsetWidth > document.documentElement.clientWidth - MENU_EDGE
+  },
+  { flush: 'post' },
+)
+
 useDismiss(
   menuRoot,
   () => open.value,
@@ -96,7 +116,7 @@ useDismiss(
         <span class="sort-icon" aria-hidden="true">⇅</span><span>排序</span>
       </button>
       <Transition name="ov-pop">
-        <div v-if="open" class="sort-menu">
+        <div v-if="open" ref="menu" class="sort-menu" :class="{ 'align-end': alignEnd }">
           <div class="sort-hint">依序點選排序層級，再點一次翻方向</div>
           <button
             v-for="o in options"
@@ -138,6 +158,30 @@ useDismiss(
   min-width: 0;
 }
 
+/*
+ * 平板直向：標題列要維持一行，chips 不換行，放不下時在原地左右滑。
+ * flex-basis 0：標題列是 flex-wrap，basis 照內容寬的話整組會先被擠到下一行，輪不到縮小。
+ * 捲動容器會裁掉 focus 光圈，四周用 padding 留出光圈的位置、再用負 margin 抵掉。
+ */
+@media (max-width: 899px) {
+  .sort-bar {
+    flex: 1 1 0;
+    flex-wrap: nowrap;
+  }
+
+  .sorts {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: var(--sp-1);
+    margin: calc(-1 * var(--sp-1));
+    scrollbar-width: none;
+  }
+
+  .sorts::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 /* chip 與 ✕ 是兄弟按鈕（按鈕不能巢狀）；✕ 疊在 chip 右端，外觀同 B2 的單一 chip */
 .sort-chip-wrap {
   position: relative;
@@ -167,8 +211,11 @@ useDismiss(
     box-shadow var(--t-fast) var(--ease);
 }
 
-.sort-chip-wrap:hover .sort-chip {
-  background: var(--accent-tint-2);
+/* hover 只給有滑鼠的裝置：觸控點一下後 :hover 會一直黏著，直到點別的地方（本檔其他 hover 同理） */
+@media (hover: hover) {
+  .sort-chip-wrap:hover .sort-chip {
+    background: var(--accent-tint-2);
+  }
 }
 
 .sort-chip:focus-visible,
@@ -232,9 +279,20 @@ useDismiss(
     box-shadow var(--t-fast) var(--ease);
 }
 
-.chip-x:hover {
-  background: var(--accent);
-  color: var(--surface-1);
+@media (hover: hover) {
+  .chip-x:hover {
+    background: var(--accent);
+    color: var(--surface-1);
+  }
+}
+
+/* 手指操作：✕ 只有 18px，緊貼著點了會翻方向的 chip 本體；用看不見的外擴熱區（同 SortChips） */
+@media (pointer: coarse) {
+  .chip-x::after {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--sp-3));
+  }
 }
 
 .sort-dd {
@@ -263,10 +321,16 @@ useDismiss(
     box-shadow var(--t-fast) var(--ease);
 }
 
-.sort-trigger:hover,
 .sort-dd.is-open .sort-trigger {
   border-color: var(--text-placeholder);
   color: var(--text-2);
+}
+
+@media (hover: hover) {
+  .sort-trigger:hover {
+    border-color: var(--text-placeholder);
+    color: var(--text-2);
+  }
 }
 
 .sort-icon {
@@ -284,6 +348,11 @@ useDismiss(
   border: 1px solid var(--border-1);
   border-radius: var(--r-card);
   box-shadow: var(--shadow-menu);
+}
+
+.sort-menu.align-end {
+  left: auto;
+  right: 0;
 }
 
 .sort-hint {
@@ -320,8 +389,10 @@ useDismiss(
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-.sort-option:hover {
-  background: var(--surface-3);
+@media (hover: hover) {
+  .sort-option:hover {
+    background: var(--surface-3);
+  }
 }
 
 .sort-option-label {
@@ -360,7 +431,9 @@ useDismiss(
     box-shadow var(--t-fast) var(--ease);
 }
 
-.sort-clear:hover {
-  color: var(--danger-text);
+@media (hover: hover) {
+  .sort-clear:hover {
+    color: var(--danger-text);
+  }
 }
 </style>

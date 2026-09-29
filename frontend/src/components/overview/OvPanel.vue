@@ -2,6 +2,7 @@
 // 總覽兩種檢視共用的面板外殼：sticky 標題列（標題、計數、排序、收合鈕）＋ 可收合的內容區。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDelayedUnmount } from '@/composables/useDelayedUnmount'
+import { NARROW_QUERY, useMediaQuery } from '@/composables/useMediaQuery'
 import { PANEL_UNMOUNT_MS } from '@/constants/overview'
 import type { OverviewView } from '@/stores/overview'
 import { useOverviewStore } from '@/stores/overview'
@@ -18,10 +19,14 @@ const overview = useOverviewStore()
 const root = ref<HTMLElement | null>(null)
 const head = ref<HTMLElement | null>(null)
 
-const countText = computed(
-  () =>
-    `${overview.counts.projects} 個專案 · ${overview.counts.alerts} 個需要注意 · ${overview.counts.pms} 位 PM`,
-)
+/** 平板直向（< 900px）標題列擺不下完整句，改短寫，標題列才能維持一行。 */
+const narrow = useMediaQuery(NARROW_QUERY)
+const countText = computed(() => {
+  const c = overview.counts
+  return narrow.value
+    ? `${c.projects} 專案 · ${c.alerts} 需注意 · ${c.pms} PM`
+    : `${c.projects} 個專案 · ${c.alerts} 個需要注意 · ${c.pms} 位 PM`
+})
 
 // 兩個面板共用 panelOpen（刻意）：切換檢視時收合狀態延續
 const open = computed(() => overview.panelOpen)
@@ -87,18 +92,20 @@ onBeforeUnmount(() => {
       <h2 class="panel-title">{{ title }}</h2>
       <span class="panel-count" data-testid="overview-count">{{ countText }}</span>
       <slot name="head" />
-      <span class="spacer"></span>
-      <slot name="head-extra" />
-      <button
-        type="button"
-        class="panel-toggle"
-        :aria-expanded="open"
-        :aria-label="open ? '收合面板' : '展開面板'"
-        :title="open ? '收合面板' : '展開面板'"
-        @click="toggle"
-      >
-        <span class="panel-caret" aria-hidden="true">▲</span>
-      </button>
+      <!-- 右端一組：窄螢幕換行時整組仍靠右（spacer 會留在上一行，推不動換行後的按鈕） -->
+      <div class="panel-tail">
+        <slot name="head-extra" />
+        <button
+          type="button"
+          class="panel-toggle"
+          :aria-expanded="open"
+          :aria-label="open ? '收合面板' : '展開面板'"
+          :title="open ? '收合面板' : '展開面板'"
+          @click="toggle"
+        >
+          <span class="panel-caret" aria-hidden="true">▲</span>
+        </button>
+      </div>
     </div>
     <div
       class="panel-body"
@@ -155,8 +162,11 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.spacer {
-  flex: 1;
+.panel-tail {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  margin-left: auto;
 }
 
 .panel-toggle {
@@ -180,9 +190,12 @@ onBeforeUnmount(() => {
     box-shadow var(--t-fast) var(--ease);
 }
 
-.panel-toggle:hover {
-  background: var(--surface-3);
-  color: var(--text-1);
+/* hover 只給有滑鼠的裝置：觸控點一下後 :hover 會一直黏著，直到點別的地方（本檔其他 hover 同理） */
+@media (hover: hover) {
+  .panel-toggle:hover {
+    background: var(--surface-3);
+    color: var(--text-1);
+  }
 }
 
 .panel-toggle:focus-visible {
