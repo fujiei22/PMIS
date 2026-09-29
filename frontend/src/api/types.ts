@@ -20,6 +20,8 @@ import type {
  *   - 不變式：taskDone === taskCounts.done、taskTotal === taskCounts 各項加總；adapter 負責驗。
  *   - 實際 / 理論 %、落後百分點、需注意（alert）**不由後端給**：門檻只存在前端 lib/portfolio.ts。
  *   - 參考實作：api/mock/portfolio.ts 的 summarizeProject()。
+ * - Member.color 必須是合法的 CSS 顏色值（例 '#2563eb'），adapter 建議驗證格式。前端目前只經 Vue 的
+ *   `:style` 物件綁定寫進 CSS 變數，無法跳脫成其他規則；但日後若有地方改用字串拼接組 CSS，就沒有這層保護。
  * - id 一律由 client 產（UUID v4）；create 帶 id，重複回 409 conflict。
  * - patch = JSON merge patch（只送有變的欄位）；'' 是有效值（空日期），不是「未設」。adapter 負責 null ↔ ''。
  *   後端收到 patch 要用 schema 白名單逐欄位驗，不可整包 merge（mass-assignment / __proto__）。

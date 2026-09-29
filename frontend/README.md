@@ -330,6 +330,7 @@ store 分三層，依賴**只能由上往下**：
    | `Group` | 只有 `id` / `name` | 後端若存了收合狀態要忽略 | 收合是畫面狀態，在 `ui.collapsedGroups`，不上 wire |
    | `ProjectData.currentUserId`、`PortfolioData.currentUserId` | 必填字串 | 登入還沒做 | adapter 從 session / token 填；沒有登入就先填一個固定成員 id |
    | `ProjectSummary.taskPlanned` | 「照排程今天之前就該完成」的任務數 | 後端依伺服器當日算 | 後端；前端只拿它算理論 %，跨日差一天可接受 |
+   | `Member.color` | 合法的 CSS 顏色值（例 `#2563eb`），經 `:style` 寫進 CSS 變數 | 後端存的顏色字串 | adapter 驗格式；前端沒有用字串拼接組 CSS，但格式錯會讓頭像與 PM 泳道沒有顏色 |
    | `ProjectSummary.upcoming` | 最多 3 筆、依到期日升冪、含已逾期 | 後端篩選排序 | 後端；前端原樣顯示 |
    | `ProjectSummary` 的不變式 | `taskDone === taskCounts.done`、`taskTotal === taskCounts` 加總 | — | adapter 驗；實際 / 理論 %、落後百分點、需注意由前端 `lib/portfolio.ts` 算，**後端不給** |
    | `Attachment.id` | `'<commentId>:<index>'`（`downloadAttachment` 的鍵） | 後端自己的附件主鍵 | adapter；只要 `loadProject` 與 `createComment` 回的 id 能餵回 `downloadAttachment` 就行 |
