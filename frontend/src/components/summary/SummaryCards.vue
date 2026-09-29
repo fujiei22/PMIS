@@ -3,8 +3,8 @@
 // legacy 對照：模板 :298-385，數值 :3522-3633。
 import { computed } from 'vue'
 import { DELAYED, ISSUE_LEVEL, ISSUE_STATUS, TASK_STATUS } from '@/constants/dashboard'
-import { dayIndex, isoFromIndex } from '@/lib/date'
-import { isLate, isLateIssue } from '@/lib/schedule'
+import { isoFromIndex } from '@/lib/date'
+import { isLate, isLateIssue, isPlannedDone } from '@/lib/schedule'
 import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'
@@ -20,15 +20,17 @@ const total = computed(() => tasks.value.length)
 
 // ── 卡 1：專案總時長 ───────────────────────────────────────────────────────
 const totalDays = computed(() => taskStore.range.max - taskStore.range.min + 1)
-const rangeLabel = computed(
-  () => `${isoFromIndex(taskStore.range.min)} ~ ${isoFromIndex(taskStore.range.max)}`,
-)
+/** 起訖日各自不斷行（連字號會被當斷點），卡片窄時只在「~」處換行。 */
+const rangeStart = computed(() => isoFromIndex(taskStore.range.min))
+const rangeEnd = computed(() => isoFromIndex(taskStore.range.max))
 
-// ── 卡 2：整體進度（實際 = 已完成數；理論 = end 已過今天的數）legacy :3604-3620 ──
+// ── 卡 2：整體進度（實際 = 已完成數；理論 = 到期日已過的數）legacy :3604-3620 ──
 const doneTasks = computed(() => tasks.value.filter((t) => t.status === 'done').length)
-const planDone = computed(
-  () => tasks.value.filter((t) => dayIndex(t.end) <= clock.todayIdx).length,
-)
+/**
+ * 理論上此刻該完成的任務（判準見 isPlannedDone：到期日隔天才算，和 legacy 刻意不同）。
+ * 對照測試已遮掉這幾個數字，見 README〈刻意保留的差異〉。
+ */
+const planDone = computed(() => tasks.value.filter((t) => isPlannedDone(t, clock.todayIdx)).length)
 const actualPct = computed(() => (total.value ? Math.round((doneTasks.value / total.value) * 100) : 0))
 const planPct = computed(() => (total.value ? Math.round((planDone.value / total.value) * 100) : 0))
 const gap = computed(() => actualPct.value - planPct.value)
@@ -89,7 +91,9 @@ const delayedIssues = computed(() => issues.value.filter((i) => isLateIssue(i, c
     <div class="card" data-testid="summary-duration">
       <div class="card-title">專案總時長</div>
       <div class="hero">{{ totalDays }} <span class="hero-unit">天</span></div>
-      <div class="range">{{ rangeLabel }}</div>
+      <div class="range">
+        <span>{{ rangeStart }}</span> ~ <span>{{ rangeEnd }}</span>
+      </div>
     </div>
 
     <!-- 2. 整體進度 -->
@@ -246,6 +250,10 @@ const delayedIssues = computed(() => issues.value.filter((i) => isLateIssue(i, c
   color: var(--text-muted);
   font-family: var(--font-mono);
   margin-top: auto;
+}
+
+.range span {
+  white-space: nowrap;
 }
 
 .gap {
@@ -460,5 +468,12 @@ const delayedIssues = computed(() => issues.value.filter((i) => isLateIssue(i, c
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 平板直向（< 900px）：四張擠一列時每張只剩 170px，Issue 統計被擠成很長一條、其他卡空一大塊；改 2×2 */
+@media (max-width: 899px) {
+  .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 </style>

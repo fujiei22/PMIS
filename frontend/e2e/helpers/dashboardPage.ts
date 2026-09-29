@@ -11,10 +11,10 @@ export type PanelKey = 'gantt' | 'kanban' | 'issues'
 export class DashboardPage {
   constructor(readonly page: Page) {}
 
-  /** 固定時鐘後開首頁，等到甘特左欄畫出來才回。 */
+  /** 固定時鐘後開 Dashboard（/projects/pmis），等到甘特左欄畫出來才回。 */
   async goto(): Promise<void> {
     await setFixedTime(this.page)
-    await this.page.goto('/')
+    await this.page.goto('/projects/pmis')
     await this.page.locator('[data-rowtask]').first().waitFor()
   }
 
@@ -52,6 +52,16 @@ export class DashboardPage {
   /** 甘特左欄的任務列。 */
   row(taskId: string): Locator {
     return this.page.locator(`[data-rowtask="${taskId}"]`)
+  }
+
+  /** 任務列尾一直顯示的「⋮」，點了開動作選單。 */
+  rowMore(taskId: string): Locator {
+    return this.row(taskId).locator(`[data-rowmore="${taskId}"]`)
+  }
+
+  /** 「⋮」開的動作選單（工期 ±1 天、相依設定、刪除任務；全域只會有一個）。 */
+  get rowMenu(): Locator {
+    return this.page.locator('[data-rowmenu]')
   }
 
   /** 甘特左欄的分類列。 */

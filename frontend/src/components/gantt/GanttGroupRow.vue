@@ -6,6 +6,7 @@ import { useDomRegistry, registerEl } from '@/composables/useDomRegistry'
 import { useEditDraft } from '@/composables/useEditDraft'
 import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { dayIndex } from '@/lib/date'
+import { isImeComposing } from '@/lib/keyboard'
 import { useFilterStore } from '@/stores/filter'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
@@ -92,7 +93,9 @@ function endEdit(): void {
   if (editing.value) ui.editing = null
 }
 
+/** Enter 結束編輯、Esc 收框；輸入法選字的 Enter 是確定選字，不結束編輯。 */
 function onEditKey(e: KeyboardEvent): void {
+  if (isImeComposing(e)) return
   if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
   if (e.key === 'Escape') {
     void nameDraft.flush()
@@ -199,6 +202,8 @@ function onDrop(e: DragEvent): void {
   font-size: var(--fs-meta);
   line-height: 1;
   letter-spacing: 1px;
+  /* 觸控拖曳排序：不宣告的話手指一動瀏覽器就當成捲動、送 pointercancel，拖曳被中止 */
+  touch-action: none;
 }
 
 .grip.grabbing {
@@ -261,5 +266,28 @@ function onDrop(e: DragEvent): void {
 
 .del:hover {
   color: var(--danger);
+}
+
+/* 手指操作：排序把手加大；收合箭頭與刪除鈕（14px）用看不見的外擴熱區 */
+@media (pointer: coarse) {
+  .caret,
+  .del {
+    position: relative;
+  }
+
+  .caret::after,
+  .del::after {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--sp-4));
+  }
+
+  .grip {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    padding: 0 var(--sp-3);
+    margin-left: calc(-1 * var(--sp-3));
+  }
 }
 </style>

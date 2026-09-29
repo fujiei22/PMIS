@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 專案時程面板：尺規、左欄任務 / 分類列、右側甘特條與相依線。
 // legacy 對照：模板 :387-531，days / months :2716-2733，stripes :2882，sticky :3634-3637。
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import PanelShell from '@/components/common/PanelShell.vue'
 import DependencyLines from '@/components/gantt/DependencyLines.vue'
 import GanttBars from '@/components/gantt/GanttBars.vue'
@@ -10,6 +10,7 @@ import GanttTaskRow from '@/components/gantt/GanttTaskRow.vue'
 import GanttTimeline, { type RulerDay, type RulerMonth } from '@/components/gantt/GanttTimeline.vue'
 import { useFocusRequest } from '@/composables/useFocusScroll'
 import { useGanttScroll } from '@/composables/useGanttScroll'
+import { NARROW_QUERY, useMediaQuery } from '@/composables/useMediaQuery'
 import { usePointerDrag } from '@/composables/usePointerDrag'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
 import { useTaskActions } from '@/composables/useTaskActions'
@@ -132,6 +133,47 @@ const zoomPct = computed(() => Math.round((ui.dayWidth / 32) * 100))
 const zoomFill = computed(() => Math.round(((ui.dayWidth - 14) / 18) * 100))
 const allCollapsed = computed(() => taskStore.groups.every((g) => ui.collapsedGroups.has(g.id)))
 
+/** 平板直向：左欄是只寫工期的窄版，欄頭右端多一顆展開鈕切回完整左欄（桌機左欄一直是完整的，不需要）。 */
+const narrow = useMediaQuery(NARROW_QUERY)
+
+/*
+ * 左欄的寬度（ganttLeftExpanded）與列的寫法（ganttLeftDates）分開切：
+ * 展開時先撐開寬度，寬度過渡跑完才換成起訖日——同時換的話，寬的日期膠囊會先出現、在還沒撐開的欄裡蓋住任務名；
+ * 收合時反過來，先換回只寫工期的窄膠囊，再縮寬度。
+ */
+
+/**
+ * transitionend 沒來時（過渡被打斷、沒有過渡）的保險。平常由 transitionend 切；
+ * 這裡比寬度過渡（--t-layout .24s）多留不少，裝置卡頓時才不會在寬度還沒撐開前就換成起訖日。
+ */
+const LEFT_WIDTH_MS = 400
+let datesTimer: ReturnType<typeof setTimeout> | undefined
+watch(
+  () => ui.ganttLeftExpanded,
+  (on, was) => {
+    clearTimeout(datesTimer)
+    // 收合，或頁面剛掛上（was 是 undefined，沒有過渡）：直接對齊
+    if (!on || was === undefined) {
+      ui.ganttLeftDates = on
+      return
+    }
+    datesTimer = setTimeout(() => {
+      ui.ganttLeftDates = true
+    }, LEFT_WIDTH_MS)
+  },
+  { immediate: true },
+)
+
+function onLeftTransitionEnd(e: TransitionEvent): void {
+  // 列裡面的過渡也會冒泡上來，只認左欄自己的寬度
+  if (e.target !== e.currentTarget || e.propertyName !== 'flex-basis') return
+  if (!ui.ganttLeftExpanded) return
+  clearTimeout(datesTimer)
+  ui.ganttLeftDates = true
+}
+
+onBeforeUnmount(() => clearTimeout(datesTimer))
+
 /**
  * 全部收合 / 全部展開。legacy `toggleAllGroups` :4110。
  * 分類清單在資料層，收合狀態在 ui——由這裡把 id 交給 ui（契約 E）。
@@ -142,7 +184,7 @@ function toggleAllGroups(): void {
 </script>
 
 <template>
-  <PanelShell panel="gantt">
+  <PanelShell panel="gantt" :class="{ 'left-expanded': ui.ganttLeftExpanded }">
     <template #head>
       <h2 class="panel-title">專案時程</h2>
       <!-- 計數字樣在 filterStore，與看板共用一份（legacy :3532；review m4） -->
@@ -170,7 +212,7 @@ function toggleAllGroups(): void {
     <!-- sticky 尺規：左欄標題 + 月 / 日刻度 -->
     <div class="gantt-ruler-row" :style="{ top: `${sticky.innerTop('gantt')}px` }">
       <div class="gantt-left-head">
-        任務 / 分類
+        <span class="left-title">任務 / 分類</span>
         <span class="spacer"></span>
         <span class="head-actions">
           <button class="mini" @click="toggleAllGroups()">
@@ -180,6 +222,32 @@ function toggleAllGroups(): void {
           <button class="mini" @click="taskStore.addGroup()">＋ 分類</button>
           <button class="mini" @click="actions.addTaskWithDefaults()">＋ 任務</button>
         </span>
+        <!--
+          窄版左欄的展開鈕：放在欄頭右端、貼著要展開的那條邊，» 朝右＝往右展開，展開後轉成 « 朝左＝收回。
+          在欄頭裡照一般排版順序排（不跨在分隔線上），不會疊到尺規。點了只改怎麼看，不清選取。
+        -->
+        <button
+          v-if="narrow"
+          type="button"
+          class="mini left-toggle"
+          data-testid="gantt-left-toggle"
+          data-keep-selection
+          :aria-expanded="ui.ganttLeftExpanded"
+          :aria-label="ui.ganttLeftExpanded ? '收合左欄' : '展開左欄，顯示起訖日'"
+          :title="ui.ganttLeftExpanded ? '收合左欄' : '展開左欄，顯示起訖日'"
+          @click="ui.ganttLeftExpanded = !ui.ganttLeftExpanded"
+        >
+          <svg class="left-toggle-icon" viewBox="0 0 12 12" aria-hidden="true">
+            <path
+              d="M2.5 2.5 6 6 2.5 9.5M6.5 2.5 10 6 6.5 9.5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
       </div>
       <div ref="rulerEl" class="gantt-ruler">
         <GanttTimeline :days="days" :months="months" :chart-width="chartWidth" />
@@ -189,7 +257,7 @@ function toggleAllGroups(): void {
     <div ref="bodyEl" class="gantt-body">
       <div class="gantt-rows">
         <!-- 左欄：平鋪 visibleRows，TransitionGroup 負責收合 / 重排的 FLIP -->
-        <div class="gantt-left">
+        <div class="gantt-left" @transitionend="onLeftTransitionEnd">
           <TransitionGroup tag="div" move-class="row-move" class="gantt-flow">
             <template v-for="v in leftRows" :key="v.key">
               <GanttGroupRow v-if="v.group" :group="v.group" />
@@ -336,10 +404,44 @@ function toggleAllGroups(): void {
     color var(--t-fast) ease;
 }
 
-.mini:hover {
-  background: var(--surface-3);
-  border-color: var(--text-placeholder);
-  color: var(--text-1);
+/* hover 只給有滑鼠的裝置：觸控點一下後 :hover 會黏著，展開鈕按完會一直是灰底 */
+@media (hover: hover) {
+  .mini:hover {
+    background: var(--surface-3);
+    border-color: var(--text-placeholder);
+    color: var(--text-1);
+  }
+}
+
+/* 左欄展開鈕：和欄頭按鈕同一套外框的正方形；單一圖示旋轉表示方向（同其他收合箭頭，A24） */
+.mini.left-toggle {
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--sp-12);
+  padding: 0;
+}
+
+.left-toggle-icon {
+  width: var(--sp-6);
+  height: var(--sp-6);
+  transition: transform var(--t-layout) var(--ease);
+}
+
+.left-expanded .left-toggle-icon {
+  transform: rotate(180deg);
+}
+
+/* 手指操作：按鈕只有 24px，熱區上下撐到 36px（左右不外擴，免得蓋到隔壁的「＋ 任務」） */
+@media (pointer: coarse) {
+  .left-toggle {
+    position: relative;
+  }
+
+  .left-toggle::after {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--sp-3)) 0;
+  }
 }
 
 .gantt-ruler {
@@ -445,5 +547,57 @@ function toggleAllGroups(): void {
 
 .stripe.selected {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/*
+ * 平板直向（< 900px）：左欄 366px 會吃掉一半寬度，時間軸只剩兩週左右。
+ * 改 250px；列內日期膠囊只寫工期（GanttTaskRow 的 slim）。欄頭右端的展開鈕（.left-expanded）切回完整寬度，寬度變化有過渡。
+ */
+@media (max-width: 899px) {
+  .gantt-left-head,
+  .gantt-left {
+    width: 250px;
+    flex-basis: 250px;
+    transition:
+      width var(--t-layout) var(--ease),
+      flex-basis var(--t-layout) var(--ease);
+  }
+
+  .left-expanded .gantt-left-head,
+  .left-expanded .gantt-left {
+    width: var(--gantt-left);
+    flex-basis: var(--gantt-left);
+  }
+
+  /* 250px 的欄頭要多放一顆展開鈕：內距、間距與三顆按鈕的左右內距各收一點；標題自己吃剩下的空間，不另放 spacer */
+  .gantt-left-head {
+    gap: var(--sp-3);
+    padding: 0 var(--sp-3) 0 var(--sp-4);
+  }
+
+  .gantt-left-head .spacer {
+    display: none;
+  }
+
+  .mini {
+    padding: 0 var(--sp-3);
+  }
+
+  /*
+   * 標題：收合時沒有位置（寬度被擠到 0、透明），展開時淡入。
+   * 不換行、放不下就裁掉：寬度過渡的途中空間還不夠，允許換行的話漢字會被擠成一字一行、把欄頭撐亂。
+   */
+  .left-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity var(--t-layout) var(--ease);
+  }
+
+  .left-expanded .left-title {
+    opacity: 1;
+  }
 }
 </style>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 整包專案資料還沒到（或載入失敗）時，佔住 `.column` 的位置（契約 C、review M11）。
 // TopBar 兩種狀態都留著，畫面不會整頁跳掉。
-import type { LoadState } from '@/stores/ui'
+import type { LoadState } from '@/types/ui'
 
 defineProps<{ state: LoadState; error: string | null }>()
 const emit = defineEmits<{ retry: [] }>()

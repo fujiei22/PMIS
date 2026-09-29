@@ -68,4 +68,11 @@ withDefaults(
   color: var(--text-placeholder);
   flex: 0 0 auto;
 }
+
+/* 手指操作：膠囊加高到手指點得到 */
+@media (pointer: coarse) {
+  .pill {
+    height: 28px;
+  }
+}
 </style>

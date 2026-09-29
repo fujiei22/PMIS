@@ -17,6 +17,24 @@ async function chipTexts(chips: Locator): Promise<string[]> {
   )
 }
 
+test('頂部列的面板捷徑：捲到面板頂端停在頂部列下方 12px，標題列不被蓋住', async ({ page }) => {
+  const app = new DashboardPage(page)
+  await app.goto()
+  const topBar = page.locator('header').first()
+  for (const [label, key] of [['專案時程', 'gantt'], ['任務', 'kanban'], ['Issue', 'issues']] as const) {
+    // 從頁尾往回跳，確定真的有捲動
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+    await page.locator('.board-link', { hasText: label }).click()
+    await expect
+      .poll(async () => {
+        const panel = (await app.panel(key).boundingBox())!
+        const bar = (await topBar.boundingBox())!
+        return Math.round(panel.y - (bar.y + bar.height))
+      })
+      .toBe(12)
+  }
+})
+
 test('點任務後三面板同步高亮並在卡片標前置/後續', async ({ page }) => {
   const app = new DashboardPage(page)
   await app.goto()
@@ -152,9 +170,11 @@ test('刪除任務兩步確認後任務、其 Issue、相依都消失且選取�
   await app.row('t3').locator('.name').click()
   await expect(app.card('t3')).toHaveAttribute('data-selected', 'true')
 
-  // 列上的快捷鈕要 hover 才撐開
+  // 動作收在列尾的「⋮」選單（hover 才看得到「⋮」）
   await app.row('t3').hover()
-  await app.row('t3').locator('.act-del').click()
+  await app.rowMore('t3').click()
+  await app.rowMenu.getByRole('menuitem', { name: /刪除任務/ }).click()
+  await expect(app.rowMenu).toHaveCount(0)
 
   await expect(app.confirmDialog).toContainText('刪除任務？')
   await app.confirmDialog.getByRole('button', { name: '繼續刪除' }).click()
@@ -297,7 +317,7 @@ test('載入失敗顯示重試，按下後載入成功', async ({ page }) => {
     })
   })
 
-  await page.goto('/')
+  await page.goto('/projects/pmis')
   // eslint-disable-next-line playwright/no-skipped-test -- 條件式跳過，不是暫時關掉的測試
   test.skip(!(await page.evaluate(() => !!window.__mockApi)))
 

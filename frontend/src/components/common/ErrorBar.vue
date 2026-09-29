@@ -2,7 +2,7 @@
 // 寫入失敗的提示條：掛在 TopBar 的 <header> 第二列（契約 C、review M11）。
 // 主文是操作名稱、副文是錯誤碼對應的固定中文；server 原文只進 console（review M2）。
 import { computed } from 'vue'
-import { API_ERROR_TEXT } from '@/constants/dashboard'
+import { API_ERROR_TEXT } from '@/constants/api'
 import { useUiStore } from '@/stores/ui'
 
 /** 畫面最多列幾筆，其餘收成「還有 N 筆」。契約 C */

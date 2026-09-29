@@ -149,6 +149,27 @@ input[type='range'][data-zoom]::-moz-range-thumb {
   cursor: grab;
 }
 
+/* 手指操作：縮放滑桿的可拖範圍加高（軌道漸層畫在 content-box，視覺仍是 4px 細線），把手放大 */
+@media (pointer: coarse) {
+  input[type='range'][data-zoom] {
+    height: 28px;
+    padding: 12px 0;
+    box-sizing: border-box;
+    background-clip: content-box !important;
+  }
+
+  input[type='range'][data-zoom]::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+    margin-top: -10px;
+  }
+
+  input[type='range'][data-zoom]::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+  }
+}
+
 /* 可點的東西不要被選取；輸入框例外。
    原型是用 [style*="cursor: pointer"] 這類選擇器湊出來的，新頁沒有行內 cursor，
    所以只留 button / role=button；拖曳期間的防選取由拖曳 composable 直接改 body 樣式。 */
@@ -178,6 +199,16 @@ select {
   background: var(--danger-bg);
   color: var(--danger);
   font-weight: var(--fw-medium);
+}
+
+/* ---------- 切頁過渡（App.vue，A29）：舊頁淡出、新頁淡入 ---------- */
+
+.page-view-enter-active {
+  animation: fadeIn var(--t-base) var(--ease);
+}
+
+.page-view-leave-active {
+  animation: fadeOut var(--t-fast) var(--ease);
 }
 
 /* ---------- keyframes ---------- */

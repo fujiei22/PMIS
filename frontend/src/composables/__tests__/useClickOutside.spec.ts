@@ -11,6 +11,7 @@ import { useUiStore } from '@/stores/ui'
 /**
  * 全域 pointerdown（capture）：浮層開著時點 `[data-dd]` 之外就全關，
  * 點在 KEEP_SELECTION 清單之外才清選取。legacy `_docDown` :1905-1913。
+ * 手指例外：pointerdown 時分不出「點一下」還是「開始捲動」，清選取延到 click（捲動不會有 click）。
  */
 
 let wrapper: VueWrapper
@@ -34,8 +35,11 @@ function addNode(html: string): HTMLElement {
   return el
 }
 
-function down(el: Element): void {
-  el.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+function down(el: Element, pointerType = 'mouse'): void {
+  // jsdom 沒有 PointerEvent，用 MouseEvent 補上 pointerType
+  const e = new MouseEvent('pointerdown', { bubbles: true })
+  Object.defineProperty(e, 'pointerType', { value: pointerType })
+  el.dispatchEvent(e)
 }
 
 beforeEach(() => {
@@ -101,6 +105,13 @@ describe('useClickOutside 的選取', () => {
     expect(selection.taskId).toBe('t1')
   })
 
+  it('點在 [data-keep-selection]（只改怎麼看的控制項）上不清選取', () => {
+    const selection = useSelectionStore()
+    selection.taskId = 't1'
+    down(addNode('<button data-keep-selection>展開左欄</button>'))
+    expect(selection.taskId).toBe('t1')
+  })
+
   it('詳細視窗開著時完全不動選取', () => {
     const ui = useUiStore()
     const selection = useSelectionStore()
@@ -117,5 +128,45 @@ describe('useClickOutside 的選取', () => {
     down(addNode('<div class="plain">x</div>'))
     expect(selection.taskId).toBe('t1')
     mountHost() // afterEach 還要 unmount 一次
+  })
+})
+
+describe('useClickOutside 的手指操作', () => {
+  it('手指按下（可能是開始捲動）不清選取，點一下（click）才清', () => {
+    const selection = useSelectionStore()
+    selection.taskId = 't1'
+    const plain = addNode('<div class="plain">x</div>')
+    down(plain, 'touch')
+    expect(selection.taskId).toBe('t1')
+    plain.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+    expect(selection.taskId).toBeNull()
+  })
+
+  it('手指點在保留清單裡（任務條）不清選取', () => {
+    const selection = useSelectionStore()
+    selection.taskId = 't1'
+    const bar = addNode('<div data-taskid="t1">bar</div>')
+    down(bar, 'touch')
+    bar.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+    expect(selection.taskId).toBe('t1')
+  })
+
+  it('滑鼠的 click 不會再清一次（滑鼠在 pointerdown 就決定了）', () => {
+    const selection = useSelectionStore()
+    const bar = addNode('<div data-taskid="t1">bar</div>')
+    down(bar)
+    selection.taskId = 't1'
+    addNode('<div class="plain">x</div>').dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+    expect(selection.taskId).toBe('t1')
+  })
+
+  it('手指點過之後，鍵盤觸發的 click（detail 0）不當成點到外面', () => {
+    const selection = useSelectionStore()
+    const bar = addNode('<div data-taskid="t1">bar</div>')
+    down(bar, 'touch')
+    bar.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+    selection.taskId = 't1'
+    addNode('<button>x</button>').dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }))
+    expect(selection.taskId).toBe('t1')
   })
 })

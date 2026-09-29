@@ -169,4 +169,11 @@ useFocusRequest((req) => {
   gap: 9px;
   min-height: 90px;
 }
+
+/* 平板直向（< 900px）：四欄並排每欄只剩 170px，卡片底部的圖示被擠出外框、點不到；改 2×2（欄位標題仍 sticky） */
+@media (max-width: 899px) {
+  .board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 </style>

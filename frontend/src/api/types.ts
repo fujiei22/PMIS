@@ -3,12 +3,25 @@ import type {
   Dependency,
   Group,
   Issue,
+  PortfolioData,
   ProjectData,
   Task,
 } from '@/types/models'
 
 /** ===== wire 約定（後端 / adapter 必讀）=====
- * - 單專案、不分頁：loadProject() 回整包；tasks / groups 陣列順序 = 顯示順序（後端自存排序鍵）。
+ * - 讀取兩支、都不分頁：
+ *   - loadProject() 回單一專案整包；tasks / groups 陣列順序 = 顯示順序（後端自存排序鍵）。
+ *   - listProjects() 回所有專案的摘要（總覽頁）；projects 順序無意義（前端自己排），members 順序 = 顯示順序。
+ * - ProjectSummary 由後端彙整，規則：
+ *   - startDate / dueDate = 任務 start 最小值 / end 最大值；taskPlanned = end 早於伺服器當日的任務數。
+ *     前端的已過 / 剩餘天數用前端 clock 算，跨日時可能差一天，可接受。
+ *   - delayedTasks = 未完成且 end 已過的任務數（與 Dashboard「已延遲」同定義，和 taskCounts 重疊計數）。
+ *   - upcoming = 未完成任務依 end 升冪取前 3（含已逾期），memberId = 第一位負責人，沒有就 ''。
+ *   - 不變式：taskDone === taskCounts.done、taskTotal === taskCounts 各項加總；adapter 負責驗。
+ *   - 實際 / 理論 %、落後百分點、需注意（alert）**不由後端給**：門檻只存在前端 lib/portfolio.ts。
+ *   - 參考實作：api/mock/portfolio.ts 的 summarizeProject()。
+ * - Member.color 必須是合法的 CSS 顏色值（例 '#2563eb'），adapter 建議驗證格式。前端目前只經 Vue 的
+ *   `:style` 物件綁定寫進 CSS 變數，無法跳脫成其他規則；但日後若有地方改用字串拼接組 CSS，就沒有這層保護。
  * - id 一律由 client 產（UUID v4）；create 帶 id，重複回 409 conflict。
  * - patch = JSON merge patch（只送有變的欄位）；'' 是有效值（空日期），不是「未設」。adapter 負責 null ↔ ''。
  *   後端收到 patch 要用 schema 白名單逐欄位驗，不可整包 merge（mass-assignment / __proto__）。
@@ -73,6 +86,8 @@ export class ApiError extends Error {
 export interface ProjectApi {
   /** 整包專案資料；陣列順序就是顯示順序。 */
   loadProject(): Promise<ProjectData> //                                     GET    /api/project
+  /** 所有專案的摘要清單與成員名錄；總覽頁用。 */
+  listProjects(): Promise<PortfolioData> //                                  GET    /api/projects
 
   createTask(task: Task): Promise<Task> //                                   POST   /api/tasks
   updateTask(id: string, patch: Partial<Task>): Promise<Task> //             PATCH  /api/tasks/:id

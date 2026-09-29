@@ -3,8 +3,10 @@
 // legacy 對照：模板 :1161-1228，commentRows :3871-3888、draft :3932-3962。
 import { computed, ref } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
+import { TOUCH_UI_QUERY, useMediaQuery } from '@/composables/useMediaQuery'
 import { fileKind, isImage } from '@/lib/file'
 import { fileSize } from '@/lib/format'
+import { isImeComposing } from '@/lib/keyboard'
 import { useCommentStore } from '@/stores/comment'
 import { useMemberStore } from '@/stores/member'
 import { useUiStore } from '@/stores/ui'
@@ -20,6 +22,17 @@ const rows = computed(() => comment.forTarget(props.targetId))
 const dropOver = ref(false)
 const canSend = computed(() => !!comment.draft.trim() || comment.draftFiles.length > 0)
 
+/**
+ * 平板 / 手機：沒有實體鍵盤與拖放，提示不提 Enter 與拖檔；
+ * 螢幕鍵盤的換行鍵照一般輸入框的習慣換行，送出改按「送出」。
+ */
+const touchUi = useMediaQuery(TOUCH_UI_QUERY)
+const placeholder = computed(() =>
+  touchUi.value
+    ? '留言，或按「附件」加入檔案'
+    : '留言、貼上圖片，或把檔案拖進來（Enter 送出、Shift+Enter 換行）',
+)
+
 /** 'YYYY-MM-DDTHH:mm' → 'YYYY/MM/DD HH:mm'。legacy `when` :3875 */
 function whenOf(at: string): string {
   return at.replace('T', ' ').replace(/-/g, '/')
@@ -29,8 +42,9 @@ function send(): void {
   comment.send(props.targetId, props.targetKind)
 }
 
-/** Enter 送出、Shift+Enter 換行。legacy `onDraftKey` :3941 */
+/** Enter 送出、Shift+Enter 換行（觸控裝置一律換行）；輸入法選字的 Enter 不送出。legacy `onDraftKey` :3941 */
 function onKey(e: KeyboardEvent): void {
+  if (touchUi.value || isImeComposing(e)) return
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     send()
@@ -133,7 +147,7 @@ function openLightbox(name: string, size: number, url: string): void {
         v-model="comment.draft"
         class="draft-input"
         rows="2"
-        placeholder="留言、貼上圖片，或把檔案拖進來（Enter 送出、Shift+Enter 換行）"
+        :placeholder="placeholder"
         @keydown="onKey"
         @paste="onPaste"
       ></textarea>

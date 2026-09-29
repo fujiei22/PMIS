@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import type { LoadState } from '@/types/ui'
 import { ref, watch } from 'vue'
 import { ApiError, type ApiErrorCode } from '@/api/types'
 import { newId } from '@/lib/id'
@@ -26,7 +27,8 @@ export type DragState =
   | { kind: 'link'; id: string; side: 'L' | 'R'; ax: number; ay: number }
   | { kind: 'reorder'; id: string; over: DropTarget | null; lastAt: number; lastY: number }
   | { kind: 'greorder'; id: string; lastAt: number }
-  | { kind: 'pan'; x0: number; y0: number; sl: number; st: number; moved: number }
+  /** native：手指觸發的平移交給瀏覽器原生捲動，這裡只記位移、判斷是不是「點一下空白處」。 */
+  | { kind: 'pan'; x0: number; y0: number; sl: number; st: number; moved: number; native: boolean }
 
 /** 頂部與面板上所有互斥下拉的 key。legacy `ddOpen` :1573 */
 export type DropdownKey =
@@ -72,9 +74,10 @@ const GONE_FROM = 2
 const GONE_CONFIRM = 4
 const GONE_DEP_EDIT = 8
 const GONE_PICKER = 16
+const GONE_ROW_MENU = 32
 
-/** api 載入的四個狀態（契約 C）。 */
-export type LoadState = 'idle' | 'loading' | 'ready' | 'error'
+/** api 載入的四個狀態；定義搬到 types/ui.ts，這裡轉出去給既有的 import 用。 */
+export type { LoadState } from '@/types/ui'
 
 /** 錯誤條上的一筆；`message` 是 server 原文，只進 console，不上畫面（review M2）。 */
 export interface UiError {
@@ -144,6 +147,16 @@ export const useUiStore = defineStore('ui', () => {
   const zooming = ref(false)
   /** 三個面板的收合狀態。legacy `panelOff` :1579 */
   const panelOff = ref({ gantt: false, kanban: false, issues: false })
+  /**
+   * 甘特左欄展開：平板直向（< 900px）左欄平常縮成只寫工期的窄版，展開就回到完整寬度（起訖日＋工期）。
+   * 900px 以上左欄一律完整，不看這個值。
+   */
+  const ganttLeftExpanded = ref(false)
+  /**
+   * 左欄的列用完整寫法（起訖日＋工期）。跟著 ganttLeftExpanded 走但會晚一步：
+   * 展開時等寬度過渡跑完才切（GanttPanel 負責），不然寬的日期膠囊會先出現、在還沒撐開的欄裡蓋住任務名。
+   */
+  const ganttLeftDates = ref(false)
 
   /**
    * 收合中的分類 id。review C5：這是純畫面狀態，不是專案資料——
@@ -200,6 +213,11 @@ export const useUiStore = defineStore('ui', () => {
     left: number
     top: number
   } | null>(null)
+  /**
+   * 甘特任務列「⋮」開的動作選單（工期 ±1 天、相依設定、刪除）。新頁自己的：legacy 是 hover 撐開快捷鈕，
+   * 點任務只想標記時很干擾，改成動作都收進這個選單（user 選的 L 稿提案 A）。
+   */
+  const rowMenu = ref<{ id: string; left: number; top: number } | null>(null)
   /** 甘特列上的起訖日期選擇器。legacy `dCal` :1587 */
   const taskDatePicker = ref<{
     id: string
@@ -226,8 +244,6 @@ export const useUiStore = defineStore('ui', () => {
   const linkLine = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   const nearTaskId = ref<string | null>(null)
   const hoverTaskId = ref<string | null>(null)
-  const rowHoverId = ref<string | null>(null)
-  const memberDrag = ref<{ from: string; ids: string[] } | null>(null)
 
   let navTimer: ReturnType<typeof setTimeout> | undefined
   let holdTimer: ReturnType<typeof setTimeout> | undefined
@@ -311,6 +327,39 @@ export const useUiStore = defineStore('ui', () => {
     useSelectionStore().taskId = from
   }
 
+  /**
+   * 離開 Dashboard 時清掉所有暫態浮層：詳細視窗、確認框、相依編輯器、選單、
+   * 日期選擇器、Lightbox、下拉、就地編輯。
+   *
+   * store 活得比頁面久，不清的話從總覽回來，上次開著的詳細視窗會自己跳出來。
+   * `panelOff`、`collapsedGroups`、`dayWidth`、`ganttLeftExpanded` 是使用者的版面偏好，刻意保留。
+   */
+  function resetTransient(): void {
+    detail.value = null
+    lastDetail.value = null
+    navAnim.value = null
+    clearTimeout(navTimer)
+    clearTimeout(holdTimer)
+    confirm.value = null
+    depEditFor.value = null
+    optionMenu.value = null
+    rowMenu.value = null
+    taskDatePicker.value = null
+    issueDatePicker.value = null
+    lightbox.value = null
+    closeAllPopups()
+    pickerFor.value = null
+    editing.value = null
+    // 拖曳 / hover / 連線這些跟著指標事件走的暫態：離開頁面時沒有 pointerup / mouseleave，要手動清
+    drag.value = null
+    linkLine.value = null
+    nearTaskId.value = null
+    hoverTaskId.value = null
+    zooming.value = false
+    // 錯誤條是這一趟操作的結果，回來時不該再出現
+    errors.value = []
+  }
+
   // ── 懸空 id 清理（契約 E）──────────────────────────────────────────────────
 
   /** 這個 kind / id 的實體還在嗎。 */
@@ -328,7 +377,7 @@ export const useUiStore = defineStore('ui', () => {
    * 資料層不再回頭清 ui（契約 E）：不管刪除是本地發起、樂觀還原，還是別的
    * client 推來的事件，都由這條 watch 收尾。`flush: 'sync'` 讓畫面不會有任何
    * 一個 tick 停在不存在的 id 上（review M7）。
-   * 清理清單：`detail`（含 `detail.from`）、`confirm`、`depEditFor`、`pickerFor`。
+   * 清理清單：`detail`（含 `detail.from`）、`confirm`、`depEditFor`、`pickerFor`、`rowMenu`。
    *
    * review F8：getter 回位元遮罩（同 `selection.ts`）。原本回一個每次都重建的
    * 物件，等於**每一次資料變動**（連改個名字都算）都要跑一次 callback。
@@ -342,7 +391,8 @@ export const useUiStore = defineStore('ui', () => {
         (d?.from && !exists('task', d.from) ? GONE_FROM : 0) |
         (c && !exists(c.kind, c.id) ? GONE_CONFIRM : 0) |
         (depEditFor.value && !exists('task', depEditFor.value) ? GONE_DEP_EDIT : 0) |
-        (pickerFor.value && !exists('task', pickerFor.value) ? GONE_PICKER : 0)
+        (pickerFor.value && !exists('task', pickerFor.value) ? GONE_PICKER : 0) |
+        (rowMenu.value && !exists('task', rowMenu.value.id) ? GONE_ROW_MENU : 0)
       )
     },
     (gone) => {
@@ -351,6 +401,7 @@ export const useUiStore = defineStore('ui', () => {
       if (gone & GONE_CONFIRM) confirm.value = null
       if (gone & GONE_DEP_EDIT) depEditFor.value = null
       if (gone & GONE_PICKER) pickerFor.value = null
+      if (gone & GONE_ROW_MENU) rowMenu.value = null
     },
     { flush: 'sync' },
   )
@@ -381,6 +432,8 @@ export const useUiStore = defineStore('ui', () => {
     setDayWidth,
     zooming,
     panelOff,
+    ganttLeftExpanded,
+    ganttLeftDates,
     collapsedGroups,
     toggleGroup,
     setAllCollapsed,
@@ -398,9 +451,11 @@ export const useUiStore = defineStore('ui', () => {
     openDetail,
     closeDetail,
     detailBack,
+    resetTransient,
     confirm,
     depEditFor,
     optionMenu,
+    rowMenu,
     taskDatePicker,
     issueDatePicker,
     lightbox,
@@ -409,7 +464,5 @@ export const useUiStore = defineStore('ui', () => {
     linkLine,
     nearTaskId,
     hoverTaskId,
-    rowHoverId,
-    memberDrag,
   }
 })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { dayIndex } from '@/lib/date'
-import { anyTaskFilter, matchTask, type TaskFilter } from '@/lib/filter'
+import { anyTaskFilter, matchTask, toggleIn, type TaskFilter } from '@/lib/filter'
 import type { Task } from '@/types/models'
 
 const base: TaskFilter = {
@@ -99,5 +99,14 @@ describe('anyTaskFilter', () => {
     expect(anyTaskFilter({ ...base, groupIds: ['g1'] })).toBe(true)
     expect(anyTaskFilter({ ...base, issueMode: 'has' })).toBe(true)
     expect(anyTaskFilter({ ...base, dateMode: 'gt' })).toBe(true)
+  })
+})
+
+describe('toggleIn', () => {
+  it('沒有就加在最後、有就拿掉；不改原陣列', () => {
+    const list = ['a', 'b']
+    expect(toggleIn(list, 'c')).toEqual(['a', 'b', 'c'])
+    expect(toggleIn(list, 'a')).toEqual(['b'])
+    expect(list).toEqual(['a', 'b'])
   })
 })

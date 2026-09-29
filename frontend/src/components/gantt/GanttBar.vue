@@ -7,6 +7,7 @@
 // 樣式全部拆成回傳 primitive 的小 computed——一條 hover 不會讓別條重畫。
 import { computed } from 'vue'
 import { registerEl, registerPair, useDomRegistry } from '@/composables/useDomRegistry'
+import { TOUCH_UI_QUERY, useMediaQuery } from '@/composables/useMediaQuery'
 import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex, lengthOf } from '@/lib/date'
@@ -79,12 +80,15 @@ const dimmed = computed(
   () => props.kind === 'task' && selection.hasSelection && !selected.value && !ringKind.value,
 )
 
+const touchUi = useMediaQuery(TOUCH_UI_QUERY)
+
 /**
  * 滑鼠停在自己身上（才要亮圓點）。legacy :2942-2948。
+ * 觸控裝置沒有 hover：選取中就亮，手指才拉得到相依線。
  * `selected` 放前面短路：沒被選取的條根本不會去讀 `hoverTaskId`，
  * 別條 hover 時這裡就不會被通知重算（契約 G）。
  */
-const hovered = computed(() => selected.value && ui.hoverTaskId === id.value)
+const hovered = computed(() => selected.value && (touchUi.value || ui.hoverTaskId === id.value))
 
 /** 正在拉相依線時的拖曳狀態；不是拉線就是 null。legacy `linking` :2912 */
 const linkDrag = computed(() => (ui.drag?.kind === 'link' ? ui.drag : null))
@@ -158,17 +162,6 @@ function onDown(e: PointerEvent): void {
   if (props.kind !== 'task' || !selected.value) return
   drag.startBar(e, props.task.id, 'move')
 }
-
-/** 成員拖到條上 → 指派給這個任務。legacy `onDrop` :2958 */
-function onDrop(e: DragEvent): void {
-  e.preventDefault()
-  e.stopPropagation()
-  if (props.kind !== 'task') return
-  const raw = e.dataTransfer?.getData('text/plain') ?? ''
-  // 只接成員；卡片拖曳（`task:` 前綴）落在條上不做事（legacy :2958）
-  if (!raw || raw.startsWith('task:')) return
-  taskStore.assign(props.task.id, raw.split(',').filter(Boolean))
-}
 </script>
 
 <template>
@@ -191,8 +184,6 @@ function onDrop(e: DragEvent): void {
     @pointerdown="onDown($event)"
     @pointerenter="drag.setHover(id)"
     @pointerleave="drag.clearHover(id)"
-    @dragover.prevent
-    @drop="onDrop($event)"
   >
     <template v-if="kind === 'task'">
       <div
@@ -304,6 +295,8 @@ function onDrop(e: DragEvent): void {
 
 .bar.selected {
   cursor: grab;
+  /* 觸控拖曳：選取中的條不讓瀏覽器當成捲動（否則送 pointercancel、拖曳被中止）；沒選取的條照常可以滑動捲動 */
+  touch-action: none;
   z-index: 18;
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--bar) 55%, transparent),
@@ -343,6 +336,7 @@ function onDrop(e: DragEvent): void {
 
 .handle.live {
   pointer-events: auto;
+  touch-action: none;
 }
 
 .handle-l {
@@ -387,6 +381,7 @@ function onDrop(e: DragEvent): void {
 
 .dot-zone {
   position: absolute;
+  touch-action: none;
   width: 32px;
   height: 40px;
   display: flex;
@@ -427,5 +422,12 @@ function onDrop(e: DragEvent): void {
 
 .dot.near {
   transform: scale(1.2);
+}
+
+/* 手指操作：把手加寬（條是 overflow: hidden，只能往內長）；上限是條寬的 30%，一天的短條中間仍留得到移動的位置 */
+@media (pointer: coarse) {
+  .handle {
+    width: clamp(var(--sp-5), 30%, 20px);
+  }
 }
 </style>

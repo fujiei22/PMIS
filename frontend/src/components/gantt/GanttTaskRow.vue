@@ -1,14 +1,16 @@
 <script setup lang="ts">
-// 甘特左欄的任務列：把手、狀態點、任務名、起訖日期 + 工期、hover 才出現的快捷鈕。
+// 甘特左欄的任務列：把手、狀態點、任務名、起訖日期 + 工期、列尾的「⋮」（動作選單 RowActionMenu）。
 // legacy 對照：模板 :442-466，groupRows[].tasks :2814-2877。
 import { computed, nextTick, ref, watch } from 'vue'
 import { useDomRegistry, registerEl } from '@/composables/useDomRegistry'
 import { useEditDraft } from '@/composables/useEditDraft'
+import { NARROW_QUERY, useMediaQuery } from '@/composables/useMediaQuery'
 import { useMenus } from '@/composables/useMenus'
 import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { DELAYED, TASK_STATUS } from '@/constants/dashboard'
-import { dayIndex, isoFromIndex, lengthOf } from '@/lib/date'
+import { lengthOf } from '@/lib/date'
 import { fmtDate, stripYear } from '@/lib/format'
+import { isImeComposing } from '@/lib/keyboard'
 import { isLate } from '@/lib/schedule'
 import { useClockStore } from '@/stores/clock'
 import { useSelectionStore } from '@/stores/selection'
@@ -22,7 +24,7 @@ const clock = useClockStore()
 const ui = useUiStore()
 const selection = useSelectionStore()
 const taskStore = useTaskStore()
-const { openTaskDatePicker } = useMenus()
+const { openTaskDatePicker, toggleRowMenu } = useMenus()
 const drag = usePointerDragContext()
 const registry = useDomRegistry()
 
@@ -44,15 +46,27 @@ const lifted = computed(() => ui.drag?.kind === 'reorder' && ui.drag.id === prop
 const othersLifted = computed(() => ui.drag?.kind === 'reorder' && ui.drag.id !== props.task.id)
 const dropOver = computed(() => ui.drag?.kind === 'reorder' && ui.drag.over?.id === props.task.id)
 
-const hovered = computed(() => ui.rowHoverId === props.task.id)
-/** hover 時省掉年份，讓快捷鈕擠得進來。legacy `rangeRow` :2825 */
+/**
+ * 動作（工期 ±1 天、相依、刪除）收在列尾「⋮」開的選單；點列本身只標記（選取）。
+ * legacy 是 hover 撐開快捷鈕、平板是選取就撐開，只想標記任務時很干擾（user 選的 L 稿提案 A）。
+ * 開選單不選取任務：選取會捲動時間軸、淡化其他列，開個選單不該有這些副作用。
+ */
+const menuOpen = computed(() => ui.rowMenu?.id === props.task.id)
+const narrow = useMediaQuery(NARROW_QUERY)
+/**
+ * 窄版左欄（平板直向、左欄沒展開）只有 250px，起訖日放不下：膠囊只寫工期，點了一樣開日期選擇器，
+ * 後面的工期格就不重複顯示。左欄展開、寬度撐開之後（ui.ganttLeftDates）才照一般寫法。
+ */
+const slim = computed(() => narrow.value && !ui.ganttLeftDates)
+const days = computed(() => lengthOf(props.task))
+/** 窄版展開後的左欄（平板直向）省掉年份。legacy `rangeRow` :2825 */
 const rangeText = computed(() => {
+  if (slim.value) return `${days.value} 天`
   const a = fmtDate(props.task.start)
   const b = fmtDate(props.task.end)
-  return hovered.value ? `${stripYear(a)} → ${stripYear(b)}` : `${a} → ${b}`
+  return narrow.value ? `${stripYear(a)} → ${stripYear(b)}` : `${a} → ${b}`
 })
 const rangeTitle = computed(() => `${fmtDate(props.task.start)} → ${fmtDate(props.task.end)}`)
-const days = computed(() => lengthOf(props.task))
 /** 這一列正在開日期選擇器 → 日期膠囊亮起來。legacy `dateBd` :2844 */
 const calOpen = computed(() => ui.taskDatePicker?.id === props.task.id)
 
@@ -101,33 +115,14 @@ function endEdit(): void {
   if (editing.value) ui.editing = null
 }
 
+/** Enter 結束編輯、Esc 收框；輸入法選字的 Enter 是確定選字，不結束編輯。 */
 function onEditKey(e: KeyboardEvent): void {
+  if (isImeComposing(e)) return
   if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
   if (e.key === 'Escape') {
     void nameDraft.flush()
     ui.editing = null
   }
-}
-
-/** 工期加一天。legacy `onDaysUp` :2846 */
-function daysUp(): void {
-  taskStore.updateTask(props.task.id, { end: isoFromIndex(dayIndex(props.task.end) + 1) })
-}
-
-/** 工期減一天；至少留一天。legacy `onDaysDown` :2847 */
-function daysDown(): void {
-  if (dayIndex(props.task.end) <= dayIndex(props.task.start)) return
-  taskStore.updateTask(props.task.id, { end: isoFromIndex(dayIndex(props.task.end) - 1) })
-}
-
-/** 開相依編輯器（本體 S6 做，這裡只設 store）。legacy `onOpenDeps` :2873 */
-function openDeps(): void {
-  ui.depEditFor = props.task.id
-}
-
-/** 刪除任務走兩步確認。legacy `onAskDelete` :2891 */
-function askDelete(): void {
-  ui.confirm = { kind: 'task', id: props.task.id, step: 1 }
 }
 
 /** 看板卡片拖到這一列 → 插在這個任務後面（或前面，由 moveTaskTo 依原順序決定）。legacy `onDrop` :2886 */
@@ -144,7 +139,14 @@ function onDrop(e: DragEvent): void {
 <template>
   <div
     class="task-row"
-    :class="{ selected, dimmed, lifted, 'others-lifted': othersLifted, 'drop-over': dropOver }"
+    :class="{
+      selected,
+      dimmed,
+      lifted,
+      'others-lifted': othersLifted,
+      'drop-over': dropOver,
+      'menu-open': menuOpen,
+    }"
     :ref="registerEl(registry.rows, task.id)"
     :data-rowtask="task.id"
     :data-selected="String(selected)"
@@ -152,8 +154,6 @@ function onDrop(e: DragEvent): void {
     :data-rel="rel ?? ''"
     role="button"
     @click="onSelect"
-    @mouseenter="ui.rowHoverId = task.id"
-    @mouseleave="ui.rowHoverId === task.id && (ui.rowHoverId = null)"
     @dragover.prevent
     @drop="onDrop"
   >
@@ -177,7 +177,8 @@ function onDrop(e: DragEvent): void {
       @blur="endEdit"
       @keydown="onEditKey"
     />
-    <div class="date" :class="{ open: calOpen }">
+    <!-- key：窄膠囊 ↔ 完整日期切換時重掛，窄版用淡入帶過（見樣式） -->
+    <div :key="slim ? 'slim' : 'full'" class="date" :class="{ open: calOpen, slim }">
       <div
         class="date-range"
         :title="rangeTitle"
@@ -186,17 +187,24 @@ function onDrop(e: DragEvent): void {
       >
         <span class="date-text" :class="{ late }">{{ rangeText }}</span>
       </div>
-      <span class="date-sep"></span>
-      <div class="date-days" title="工期（天）" @click.stop>
-        <span class="days-num">{{ days }}</span>
-      </div>
+      <template v-if="!slim">
+        <span class="date-sep"></span>
+        <div class="date-days" title="工期（天）" @click.stop>
+          <span class="days-num">{{ days }}</span>
+        </div>
+      </template>
     </div>
-    <div class="actions" :class="{ shown: hovered }" @click.stop>
-      <span class="act act-step" role="button" title="工期加一天" @click="daysUp()">▲</span>
-      <span class="act act-step" role="button" title="工期減一天" @click="daysDown()">▼</span>
-      <span class="act act-dep" role="button" title="相依設定" @click="openDeps()">⇄</span>
-      <span class="act act-del" role="button" title="刪除任務" @click="askDelete()">✕</span>
-    </div>
+    <span
+      class="more"
+      :class="{ open: menuOpen }"
+      role="button"
+      title="更多動作"
+      aria-label="更多動作"
+      aria-haspopup="menu"
+      :aria-expanded="menuOpen"
+      :data-rowmore="task.id"
+      @click.stop="toggleRowMenu($event, task.id)"
+    >⋮</span>
   </div>
 </template>
 
@@ -228,6 +236,11 @@ function onDrop(e: DragEvent): void {
   background: var(--surface-3);
 }
 
+/* 「⋮」選單開著的那一列：淡底標出選單是哪一列的，也不跟著其他列淡化 */
+.task-row.menu-open {
+  background: var(--surface-3);
+}
+
 .task-row[data-rel='up'],
 .task-row[data-rel='down'],
 .task-row[data-rel='group'] {
@@ -242,6 +255,10 @@ function onDrop(e: DragEvent): void {
 
 .task-row.dimmed {
   opacity: 0.45;
+}
+
+.task-row.menu-open.dimmed {
+  opacity: 1;
 }
 
 .task-row.others-lifted {
@@ -259,6 +276,8 @@ function onDrop(e: DragEvent): void {
 .grip {
   flex: 0 0 auto;
   cursor: grab;
+  /* 觸控拖曳排序：不宣告的話手指一動瀏覽器就當成捲動、送 pointercancel，拖曳被中止 */
+  touch-action: none;
   color: var(--glyph-disabled);
   font-size: var(--fs-meta);
   line-height: 1;
@@ -378,63 +397,86 @@ function onDrop(e: DragEvent): void {
   box-sizing: border-box;
 }
 
-/* hover 才把快捷鈕撐開（legacy actW / actOp / actPE :2837） */
-.actions {
-  display: flex;
-  align-items: center;
-  gap: var(--r-2);
-  flex: 0 0 auto;
-  max-width: 0;
-  opacity: 0;
-  pointer-events: none;
-  overflow: hidden;
-  transition:
-    max-width var(--t-bar) var(--ease),
-    opacity var(--t-fast) ease;
-}
-
-.actions.shown {
-  max-width: 80px;
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.act {
+/*
+ * 列尾「⋮」：動作（工期 ±1 天、相依、刪除）都收在它開的選單（RowActionMenu）。
+ * 一直顯示，直的只佔 16px：比 hover 才出現的橫「⋯」省空間，也不會在列尾空一格（user 要求）。
+ */
+.more {
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  border-radius: var(--r-4);
-}
-
-.act-step {
-  width: 15px;
-  height: 16px;
-  font-size: var(--fs-7);
-  color: var(--text-placeholder);
+  flex: 0 0 auto;
+  width: var(--sp-8);
+  height: var(--sp-12);
+  margin-right: calc(-1 * var(--sp-2));
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  font-size: var(--fs-control);
+  font-weight: var(--fw-bold);
   line-height: 1;
+  color: var(--text-placeholder);
+  cursor: pointer;
+  transition:
+    background var(--t-fast) ease,
+    border-color var(--t-fast) ease,
+    color var(--t-fast) ease;
 }
 
-.act-step:hover {
-  background: var(--border-1);
-  color: var(--text-2);
-}
-
-.act-dep,
-.act-del {
-  width: 17px;
-  height: 18px;
-  font-size: var(--fs-meta);
-  color: var(--glyph-disabled);
-}
-
-.act-dep:hover {
-  color: var(--accent);
+.more.open {
   background: var(--surface-3);
+  border-color: var(--border-control);
+  color: var(--text-1);
 }
 
-.act-del:hover {
-  color: var(--danger);
-  background: var(--danger-bg);
+@media (hover: hover) {
+  .more:hover {
+    background: var(--surface-3);
+    color: var(--text-1);
+  }
+}
+
+/* 窄版的膠囊只剩工期一段（後面沒有分隔線與工期格），左右內距對稱 */
+.date.slim .date-range {
+  padding-right: 7px;
+}
+
+/* 平板直向展開 / 收合左欄時，膠囊換寫法淡入，不要一下子跳出來 */
+@media (max-width: 899px) {
+  .date {
+    animation: fadeIn var(--t-base) var(--ease);
+  }
+}
+
+/* 手指操作：「⋮」與排序把手加大到手指點得到 */
+@media (pointer: coarse) {
+  .grip {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    padding: 0 var(--sp-3);
+    margin-left: calc(-1 * var(--sp-3));
+  }
+
+  /* 「⋮」外觀只有 16px 寬：熱區上下撐滿整列、往右吃掉列尾內距，左邊不外擴（免得蓋到日期膠囊） */
+  .more {
+    position: relative;
+  }
+
+  .more::after {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--sp-2)) calc(-1 * var(--sp-4)) calc(-1 * var(--sp-2)) 0;
+  }
+
+  /* 日期膠囊只有 20px 高：熱區上下撐滿整列（34px），外觀不變 */
+  .date-range {
+    position: relative;
+  }
+
+  .date-range::after {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--sp-3)) 0;
+  }
 }
 </style>

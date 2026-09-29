@@ -4,7 +4,7 @@ import { DashboardPage, html5Drag, stepDrag } from './helpers/dashboardPage'
 /**
  * spec §目標行為 4、5 的拖曳部分：
  * 甘特條移動 / 縮放、拖曳建立相依（含防循環）、列與分類重排、
- * 看板卡片與成員的 HTML5 拖放。
+ * 看板卡片的 HTML5 拖放（成員拖到卡片指派已移除，只驗成員列不能拖）。
  *
  * 指標拖曳一律用 `page.mouse` 分步 move，因為實作是 document 層的 pointermove；
  * HTML5 拖放用 helper 的 `html5Drag`（理由見 helper 的註解）。
@@ -132,17 +132,12 @@ test('分類拖曳交換順序', async ({ page }) => {
   expect((await app.rowOrder()).slice(0, 2)).toEqual(['G:g2', 'G:g1'])
 })
 
-test('成員從面板拖到卡片指派', async ({ page }) => {
+test('成員面板的列不能拖（拖曳指派已移除，改在詳細視窗指派）', async ({ page }) => {
   const app = new DashboardPage(page)
   await app.goto()
-  await expect(app.card('t3').locator('.avatar')).toHaveCount(1)
-
   await app.memberPickerTrigger.click()
   await expect(app.memberRow(1)).toBeVisible()
-  await html5Drag(page, '.mp-panel .mp-row:nth-child(2)', '[data-card="t3"]')
-
-  await expect(app.card('t3').locator('.avatar')).toHaveCount(2)
-  await expect(app.card('t3').locator('.avatar').nth(1)).toContainText('2')
+  await expect(app.memberRow(1)).not.toHaveAttribute('draggable', 'true')
 })
 
 test('卡片拖到別欄不改狀態', async ({ page }) => {

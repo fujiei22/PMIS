@@ -176,9 +176,18 @@ export function applyTaskPatch(
   return changed.length ? { tasks: out, changed } : { tasks, changed }
 }
 
-/** 任務是否已延遲：還沒完成而且 end 已經過去。legacy `isLate` :2277 */
+/**
+ * 照排程此刻該完成了嗎：end **早於今天**（今天到期的任務今天還沒到期，隔天才算）。
+ * legacy 用 `<=`，這裡刻意不同（user 決定）。Dashboard 的理論進度、總覽的 taskPlanned
+ * 與「已延遲」的 isLate 都用這一個判準，改規則只改這裡。沒填 end 的任務不算。
+ */
+export function isPlannedDone(t: Task, todayIdx: number): boolean {
+  return !!t.end && dayIndex(t.end) < todayIdx
+}
+
+/** 任務是否已延遲：還沒完成而且照排程該完成了。legacy `isLate` :2277 */
 export function isLate(t: Task, todayIdx: number): boolean {
-  return !!t && t.status !== 'done' && !!t.end && dayIndex(t.end) < todayIdx
+  return !!t && t.status !== 'done' && isPlannedDone(t, todayIdx)
 }
 
 /** Issue 是否已延遲：還沒結案而且期限已經過去。legacy `isLateIssue` :2278 */

@@ -3,6 +3,7 @@
 // legacy 對照：模板 :865-881，titleEdit / titleKey :3796-3803。
 import { computed, nextTick, ref, watch } from 'vue'
 import { visualLen } from '@/lib/format'
+import { isImeComposing } from '@/lib/keyboard'
 import { useUiStore } from '@/stores/ui'
 
 const props = defineProps<{
@@ -56,8 +57,9 @@ function endEdit(): void {
   if (ui.editing?.kind === 'dt') ui.editing = null
 }
 
-/** Enter 結束編輯、Shift+Enter 換行（沿用 legacy 的 textarea 行為 :3800）；Esc 也只是關框。 */
+/** Enter 結束編輯、Shift+Enter 換行（沿用 legacy 的 textarea 行為 :3800）；Esc 也只是關框。輸入法選字的按鍵不處理。 */
 function onKey(e: KeyboardEvent): void {
+  if (isImeComposing(e)) return
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     ;(e.target as HTMLTextAreaElement).blur()

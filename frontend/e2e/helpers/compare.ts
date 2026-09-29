@@ -9,7 +9,7 @@ export type PageKind = 'legacy' | 'vue'
 
 const URL_OF: Record<PageKind, string> = {
   legacy: '/legacy/Dashboard.html',
-  vue: '/',
+  vue: '/projects/pmis',
 }
 
 /**
@@ -93,9 +93,15 @@ export async function pickDropdownOption(page: Page, index: number, label: strin
   await settle(page, 250)
 }
 
-/** 甘特左欄任務列；點在名稱區（x=120）而不是把手或日期膠囊上。 */
+/**
+ * 點任務列時的位置：名稱區，不是把手或日期膠囊。
+ * 新頁列尾多了「⋮」、名稱比 legacy 窄一點，70 在兩頁都落在名稱上（原本的 120 在新頁會點到日期膠囊）。
+ */
+export const ROW_NAME_POS = { x: 70, y: 17 }
+
+/** 甘特左欄任務列；點在名稱區（ROW_NAME_POS）。 */
 export async function clickRow(page: Page, taskId: string): Promise<void> {
-  await page.locator(`[data-rowtask="${taskId}"]`).click({ position: { x: 120, y: 17 } })
+  await page.locator(`[data-rowtask="${taskId}"]`).click({ position: ROW_NAME_POS })
   await settle(page, 400)
 }
 
@@ -211,8 +217,25 @@ export function domSnapshot(page: Page): Promise<DomSnapshot> {
       .filter((e) => /^共\s*\d+\s*(個任務|筆\s*Issue)$/.test(norm(e.textContent)))
       .map((e) => textOf(headOf(e)))
 
+    /**
+     * 刻意保留的差異：理論進度的判準。legacy 把今天到期的任務算進理論（`<=`），
+     * 新頁要隔天才算（`<`，與總覽和「已延遲」一致）。只遮掉受影響的三個數字：
+     * 差距標籤、理論的 N / 總數、理論 %，其餘摘要卡內容照比。
+     */
+    const maskPlan = (s: string): string =>
+      s
+        .replace(/整體進度(落後\d+%|超前\d+%|與時程相符)/, '整體進度<gap>')
+        .replace(/理論進度\d+\/\d+\d+%/, '理論進度<plan>')
+
+    /**
+     * 刻意保留的差異：任務列的動作（user 決定）。legacy hover 時列尾撐開「▲▼⇄✕」、日期省掉年份；
+     * 新頁動作收在列尾一直顯示的「⋮」選單，日期不因 hover 改變。兩邊都拿掉這三樣再比。
+     */
+    const maskActs = (s: string): string =>
+      s.replace(/▲▼⇄✕/g, '').replace(/⋮/g, '').replace(/\d{4}\//g, '')
+
     return {
-      summary: textOf(region),
+      summary: maskPlan(textOf(region)),
       heads,
       order: all('[data-rowtask],[data-rowgroup]').map(
         (el) => el.getAttribute('data-rowtask') ?? `G:${el.getAttribute('data-rowgroup')}`,
@@ -221,7 +244,7 @@ export function domSnapshot(page: Page): Promise<DomSnapshot> {
         (el) => `${el.getAttribute('data-rowgroup')}|${textOf(el)}`,
       ),
       rows: all('[data-rowtask]').map(
-        (el) => `${el.getAttribute('data-rowtask')}|${op(el)}|${textOf(el)}`,
+        (el) => `${el.getAttribute('data-rowtask')}|${op(el)}|${maskActs(textOf(el))}`,
       ),
       bars: all('[data-taskid]').map(
         (el) => `${el.getAttribute('data-taskid')}|${op(el)}|${textOf(el)}`,
@@ -236,7 +259,7 @@ export function domSnapshot(page: Page): Promise<DomSnapshot> {
       ),
       dd: all('[data-dd]').map((el) => textOf(el)),
       float: all('[data-e2e-float]').map((el) => textOf(el)),
-      body: textOf(document.body),
+      body: maskActs(maskPlan(textOf(document.body))),
       fields: [...document.querySelectorAll('input,textarea,select')].map((el, i) => {
         const f = el as HTMLInputElement
         return `${i}|${f.tagName}|${f.type}|${norm(f.value)}`

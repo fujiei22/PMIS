@@ -624,16 +624,6 @@ export const useTaskStore = defineStore('task', () => {
     await commitTaskOrder()
   }
 
-  /** 指派成員：跟現有的取聯集，不重複。legacy `assign` :2422 */
-  async function assign(taskId: string, memberIds: string[]): Promise<void> {
-    if (!memberIds.length) return
-    const t = taskById(taskId)
-    if (!t) return
-    const who = t.assigneeIds.slice()
-    for (const id of memberIds) if (!who.includes(id)) who.push(id)
-    await updateTask(taskId, { assigneeIds: who })
-  }
-
   // ── 相依 ─────────────────────────────────────────────────────────────────
 
   /**
@@ -780,7 +770,6 @@ export const useTaskStore = defineStore('task', () => {
     removeTask,
     moveTaskTo,
     moveTaskToLocal,
-    assign,
     addDep,
     removeDep,
     predecessors,

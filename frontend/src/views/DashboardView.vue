@@ -9,6 +9,7 @@ import DetailModal from '@/components/detail/DetailModal.vue'
 import ImageLightbox from '@/components/detail/ImageLightbox.vue'
 import DependencyEditor from '@/components/dialogs/DependencyEditor.vue'
 import GanttPanel from '@/components/gantt/GanttPanel.vue'
+import RowActionMenu from '@/components/gantt/RowActionMenu.vue'
 import IssuePanel from '@/components/issues/IssuePanel.vue'
 import KanbanPanel from '@/components/kanban/KanbanPanel.vue'
 import TopBar from '@/components/layout/TopBar.vue'
@@ -43,7 +44,11 @@ onMounted(() => {
   void boot.reload()
 })
 
-onBeforeUnmount(() => boot.stop())
+// 離開頁面時停掉訂閱，並清掉浮層；否則從總覽回來時上次開著的視窗會自己跳出來
+onBeforeUnmount(() => {
+  boot.stop()
+  ui.resetTransient()
+})
 </script>
 
 <template>
@@ -70,6 +75,7 @@ onBeforeUnmount(() => boot.stop())
     <!-- 全域浮層；由下往上疊：詳細視窗 170/180 → 選單與對話框 190/200 → Lightbox 300 -->
     <DetailModal />
     <OptionMenu />
+    <RowActionMenu />
     <DatePicker />
     <DependencyEditor />
     <ConfirmDialog v-if="confirmView" v-bind="confirmView" />

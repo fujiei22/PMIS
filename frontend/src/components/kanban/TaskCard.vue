@@ -85,15 +85,6 @@ function onDragStart(e: DragEvent): void {
   if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
 }
 
-/** 成員拖到卡片上 → 指派；卡片拖到卡片上不做事。legacy `onDrop` :3088 */
-function onDrop(e: DragEvent): void {
-  e.preventDefault()
-  e.stopPropagation()
-  const raw = e.dataTransfer?.getData('text/plain') ?? ''
-  if (!raw || raw.startsWith('task:')) return
-  taskStore.assign(props.task.id, raw.split(',').filter(Boolean))
-}
-
 /** ⤢ 開 / 關任務詳情（視窗本體由 S6 做）。legacy `onToggleExpand` :3064 */
 function toggleDetail(): void {
   if (ui.detail?.kind === 'task' && ui.detail.id === props.task.id) ui.closeDetail()
@@ -114,8 +105,6 @@ function toggleDetail(): void {
     role="button"
     @click.stop="selection.toggleTask(task.id, 'card')"
     @dragstart="onDragStart"
-    @dragover.prevent
-    @drop="onDrop"
   >
     <div class="del" role="button" title="刪除任務" @click.stop="askDelete()">✕</div>
     <div class="group" :title="groupName">{{ groupName }}</div>
@@ -520,10 +509,13 @@ function toggleDetail(): void {
   min-width: var(--sp-2);
 }
 
+/* 空間不夠時先縮它（截成 …），右側的 Issue 數與「開啟詳細」才不會被擠出卡片外框 */
 .created {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--fs-caption);
   font-family: var(--font-mono);
   color: var(--text-placeholder);
@@ -564,5 +556,49 @@ function toggleDetail(): void {
 .caret:hover {
   background: var(--surface-3);
   color: var(--text-2);
+}
+
+/*
+ * 手指操作（pointer: coarse）：原本的 ✕ / ⤢ 20px、工期 ▲▼ 13×9px、狀態膠囊 18px 高，手指點不準。
+ * ✕ / ⤢ 用看不見的外擴熱區（外觀不變）；▲▼ 與膠囊在 overflow: hidden 的日期膠囊裡，只能把本體加大。
+ */
+@media (pointer: coarse) {
+  .del::after,
+  .caret::after {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--sp-3));
+  }
+
+  .caret {
+    position: relative;
+  }
+
+  .st {
+    padding: var(--sp-2) var(--sp-4);
+  }
+
+  .range-pill,
+  .range-main {
+    height: 28px;
+  }
+
+  /* ▲▼ 維持上下疊（橫向四欄時卡片只有約 215px，左右並排放不下），各加大到 24×14 */
+  .step {
+    width: 24px;
+    height: 14px;
+    font-size: var(--fs-7);
+  }
+}
+
+/* 平板直向是兩欄、卡片夠寬：▲▼ 改左右並排，各佔滿膠囊高度（24×28） */
+@media (pointer: coarse) and (max-width: 899px) {
+  .days-step {
+    flex-direction: row;
+  }
+
+  .step {
+    height: 28px;
+  }
 }
 </style>

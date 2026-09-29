@@ -5,6 +5,7 @@ import {
   cascade,
   isLate,
   isLateIssue,
+  isPlannedDone,
   needsCascade,
   projectRange,
   reachable,
@@ -234,6 +235,13 @@ describe('applyTaskPatch 的 identity 與 changed', () => {
 })
 
 describe('isLate / isLateIssue / projectRange', () => {
+  it('isPlannedDone：end 早於今天才算（今天到期隔天才算），不看狀態；沒填 end 不算', () => {
+    expect(isPlannedDone(t('a', '2026-09-01', '2026-09-16'), TODAY)).toBe(true)
+    expect(isPlannedDone({ ...t('a', '2026-09-01', '2026-09-16'), status: 'done' }, TODAY)).toBe(true)
+    expect(isPlannedDone(t('a', '2026-09-01', '2026-09-17'), dayIndex('2026-09-17'))).toBe(false)
+    expect(isPlannedDone({ ...t('a', '2026-09-01', '2026-09-16'), end: '' }, TODAY)).toBe(false)
+  })
+
   it('isLate / isLateIssue', () => {
     expect(isLate(t('a', '2026-09-01', '2026-09-16'), TODAY)).toBe(true)
     expect(isLate(t('a', '2026-09-01', '2026-09-20'), TODAY)).toBe(false)

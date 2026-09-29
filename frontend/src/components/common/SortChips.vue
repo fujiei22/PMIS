@@ -110,4 +110,17 @@ function drop(k: string): void {
   background: var(--accent);
   color: var(--surface-1);
 }
+
+/* 手指操作：✕ 只有 16px，用看不見的外擴熱區 */
+@media (pointer: coarse) {
+  .chip-x {
+    position: relative;
+  }
+
+  .chip-x::after {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--sp-3));
+  }
+}
 </style>

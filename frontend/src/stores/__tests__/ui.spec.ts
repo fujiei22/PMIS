@@ -38,6 +38,7 @@ describe('uiStore', () => {
     expect(ui.confirm).toBeNull()
     expect(ui.depEditFor).toBeNull()
     expect(ui.optionMenu).toBeNull()
+    expect(ui.rowMenu).toBeNull()
     expect(ui.taskDatePicker).toBeNull()
     expect(ui.issueDatePicker).toBeNull()
     expect(ui.lightbox).toBeNull()
@@ -46,8 +47,6 @@ describe('uiStore', () => {
     expect(ui.linkLine).toBeNull()
     expect(ui.nearTaskId).toBeNull()
     expect(ui.hoverTaskId).toBeNull()
-    expect(ui.rowHoverId).toBeNull()
-    expect(ui.memberDrag).toBeNull()
   })
 
   // 時鐘在 clock store（契約 C / E），ui 不再轉接——見 clock.spec
@@ -168,17 +167,19 @@ describe('uiStore', () => {
       expect(ui.expandedIssues.i1).toBeUndefined()
     })
 
-    it('任務被刪 → detail / depEditFor / pickerFor / confirm 一起清', () => {
+    it('任務被刪 → detail / depEditFor / pickerFor / confirm / rowMenu 一起清', () => {
       const ui = useUiStore()
       ui.openDetail('t3', 'task')
       ui.depEditFor = 't3'
       ui.pickerFor = 't3'
       ui.confirm = { kind: 'task', id: 't3', step: 2 }
+      ui.rowMenu = { id: 't3', left: 10, top: 20 }
       useTaskStore().applyEvent({ type: 'task.deleted', payload: { id: 't3' } })
       expect(ui.detail).toBeNull()
       expect(ui.depEditFor).toBeNull()
       expect(ui.pickerFor).toBeNull()
       expect(ui.confirm).toBeNull()
+      expect(ui.rowMenu).toBeNull()
     })
 
     it('來源任務被刪 → detail.from 清掉，Issue 詳情本身還開著', () => {
@@ -310,5 +311,54 @@ describe('uiStore', () => {
       ui.dismissError('nope')
       expect(ui.errors).toHaveLength(1)
     })
+  })
+
+  it('resetTransient 清掉所有暫態浮層，保留版面偏好', () => {
+    const ui = useUiStore()
+    const task = useTaskStore().tasks[0]!
+    ui.openDetail(task.id, 'task')
+    ui.confirm = { kind: 'task', id: task.id, step: 1 }
+    ui.depEditFor = task.id
+    ui.optionMenu = { id: task.id, kind: 'status', left: 0, top: 0 }
+    ui.taskDatePicker = { id: task.id, target: 'start', month: '2026-09', left: 0, top: 0 }
+    ui.issueDatePicker = { id: 'x', field: 'due', kind: 'issue', month: '2026-09', left: 0, top: 0 }
+    ui.lightbox = { url: 'u', name: 'n', size: '1 KB' }
+    ui.openDropdown = 'status'
+    ui.memberPickerOpen = true
+    ui.filterCalendarOpen = true
+    ui.pickerFor = task.id
+    ui.editing = { kind: 't', id: task.id }
+    ui.linkLine = { x1: 0, y1: 0, x2: 1, y2: 1 }
+    ui.nearTaskId = task.id
+    ui.hoverTaskId = task.id
+    ui.rowMenu = { id: task.id, left: 0, top: 0 }
+    ui.zooming = true
+    ui.pushError({ label: '更新任務', error: new Error('x') })
+    ui.panelOff.gantt = true
+    ui.setDayWidth(20)
+    ui.toggleGroup('g1')
+
+    ui.resetTransient()
+
+    expect(ui.detail).toBeNull()
+    expect(ui.confirm).toBeNull()
+    expect(ui.depEditFor).toBeNull()
+    expect(ui.optionMenu).toBeNull()
+    expect(ui.taskDatePicker).toBeNull()
+    expect(ui.issueDatePicker).toBeNull()
+    expect(ui.lightbox).toBeNull()
+    expect(ui.openDropdown).toBeNull()
+    expect(ui.memberPickerOpen).toBe(false)
+    expect(ui.filterCalendarOpen).toBe(false)
+    expect(ui.pickerFor).toBeNull()
+    expect(ui.editing).toBeNull()
+    expect([ui.linkLine, ui.nearTaskId, ui.hoverTaskId, ui.rowMenu]).toEqual([null, null, null, null])
+    expect(ui.drag).toBeNull()
+    expect(ui.zooming).toBe(false)
+    expect(ui.errors).toEqual([])
+    // 版面偏好不動
+    expect(ui.panelOff.gantt).toBe(true)
+    expect(ui.dayWidth).toBe(20)
+    expect(ui.collapsedGroups.has('g1')).toBe(true)
   })
 })

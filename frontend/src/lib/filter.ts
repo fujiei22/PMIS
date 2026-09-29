@@ -80,6 +80,11 @@ export function matchTask(t: Task, f: TaskFilter, ctx: MatchCtx): boolean {
   )
 }
 
+/** 陣列裡有就拿掉、沒有就加上；回新陣列。Dashboard 與總覽的多選篩選、總覽的展開 / 收合清單共用。 */
+export function toggleIn<T>(list: readonly T[], v: T): T[] {
+  return list.includes(v) ? list.filter((x) => x !== v) : [...list, v]
+}
+
 /** 任務篩選是否有任何一欄被動過。legacy `softFilter` 的條件式 :2703 */
 export function anyTaskFilter(f: TaskFilter): boolean {
   return (

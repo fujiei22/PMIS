@@ -1,0 +1,63 @@
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { buildPortfolio } from '@/api/mock/portfolio'
+import { sampleProject } from '@/mocks/sampleProject'
+import { usePortfolioStore } from '@/stores/portfolio'
+import { api } from '@/api'
+
+/** 總覽資料層：load(data) 直接套用、load() 走 api；失敗 throw 且不清舊資料。 */
+
+describe('portfolio store', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('load(data) 直接套用；byId 查不到回 undefined', async () => {
+    const pf = usePortfolioStore()
+    await pf.load(buildPortfolio(sampleProject, '2026-09-22'))
+    expect(pf.projects).toHaveLength(7)
+    expect(pf.byId('m8')?.name).toBe('成員8')
+    expect(pf.byId('nope')).toBeUndefined()
+  })
+
+  it('load() 走 api；失敗時 throw 而且不清掉舊資料', async () => {
+    const pf = usePortfolioStore()
+    await pf.load()
+    expect(pf.projects).toHaveLength(7)
+    vi.spyOn(api, 'listProjects').mockRejectedValueOnce(new Error('boom'))
+    await expect(pf.load()).rejects.toThrow('boom')
+    expect(pf.projects).toHaveLength(7)
+    vi.restoreAllMocks()
+  })
+
+  it('兩發交錯：先發的晚回來不會蓋掉新資料', async () => {
+    const pf = usePortfolioStore()
+    const newer = buildPortfolio(sampleProject, '2026-09-22')
+    newer.projects[1]!.name = '新的'
+    let releaseOld!: (v: Awaited<ReturnType<typeof api.listProjects>>) => void
+    vi.spyOn(api, 'listProjects')
+      .mockImplementationOnce(() => new Promise((r) => { releaseOld = r }))
+      .mockResolvedValueOnce(newer)
+    const first = pf.load()
+    await pf.load()
+    expect(pf.projects[1]!.name).toBe('新的')
+    releaseOld(buildPortfolio(sampleProject, '2026-09-22'))
+    await first
+    expect(pf.projects[1]!.name).toBe('新的')
+    vi.restoreAllMocks()
+  })
+
+  it('兩發交錯：先發的先回來照樣套用，後發的失敗也不會把它丟掉', async () => {
+    const pf = usePortfolioStore()
+    let failNew!: (e: unknown) => void
+    vi.spyOn(api, 'listProjects')
+      .mockResolvedValueOnce(buildPortfolio(sampleProject, '2026-09-22'))
+      .mockImplementationOnce(() => new Promise((_, rej) => { failNew = rej }))
+    const first = pf.load()
+    const second = pf.load()
+    await first
+    expect(pf.projects).toHaveLength(7)
+    failNew(new Error('boom'))
+    await expect(second).rejects.toThrow('boom')
+    expect(pf.projects).toHaveLength(7)
+    vi.restoreAllMocks()
+  })
+})
