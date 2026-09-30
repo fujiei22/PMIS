@@ -176,7 +176,9 @@ frontend/
 │   │                            useRowMotion（甘特列上下位移補間：左欄列、橫紋、條、圓點同一個時鐘）/
 │   │                            useMediaQuery（全站共用的 media query ref；TOUCH_UI_QUERY 觸控裝置、NARROW_QUERY 平板直向）/
 │   │                            useGridColumns（量 grid 實際排幾欄，總覽泳道的列下展開用）/
-│   │                            useDragPan（總覽時間軸按住拖曳平移）
+│   │                            useDragPan（總覽時間軸按住拖曳平移）/
+│   │                            useScrollLock（鎖頁面捲動：先停平滑捲動、補捲軸寬、參考計數）/
+│   │                            useCloseOnScroll（fixed 浮層的觸發元素被捲走時關閉）
 │   ├── constants/         畫面用常數（dashboard.ts：狀態 / 優先度 / 等級的標籤與顏色；overview.ts：總覽的排序鍵、標籤、尺寸；api.ts：API_ERROR_TEXT）
 │   ├── lib/               純函式（日期、月曆格、排程連動、篩選、排序、格式化、id、CSS 時長 / 曲線 token 轉 JS（easing.ts）…）
 │   ├── mocks/             範例資料
