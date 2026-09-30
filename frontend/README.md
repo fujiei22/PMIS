@@ -172,11 +172,12 @@ frontend/
 │   │                            useMenus / useFocusScroll / useNow / useStickyOffsets / useDelayedUnmount /
 │   │                            useDismiss（總覽浮層的點外面與 Esc）/ freezeLeave（TransitionGroup 離場釘在原位）/
 │   │                            useRelativeFlip（巢狀清單的重排動畫，以容器為基準量位移）/
+│   │                            useRowMotion（甘特列上下位移補間：左欄列、橫紋、條、圓點同一個時鐘）/
 │   │                            useMediaQuery（全站共用的 media query ref；TOUCH_UI_QUERY 觸控裝置、NARROW_QUERY 平板直向）/
 │   │                            useGridColumns（量 grid 實際排幾欄，總覽泳道的列下展開用）/
 │   │                            useDragPan（總覽時間軸按住拖曳平移）
 │   ├── constants/         畫面用常數（dashboard.ts：狀態 / 優先度 / 等級的標籤與顏色；overview.ts：總覽的排序鍵、標籤、尺寸；api.ts：API_ERROR_TEXT）
-│   ├── lib/               純函式（日期、月曆格、排程連動、篩選、排序、格式化、id…）
+│   ├── lib/               純函式（日期、月曆格、排程連動、篩選、排序、格式化、id、CSS 時長 / 曲線 token 轉 JS（easing.ts）…）
 │   ├── mocks/             範例資料
 │   ├── router/            路由（pageSwap.ts：切頁過渡結束後才還原捲動位置）
 │   ├── stores/            Pinia store（三層，見下）

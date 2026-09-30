@@ -47,7 +47,7 @@ const rulerEl = ref<HTMLElement | null>(null)
 const chartEl = ref<HTMLElement | null>(null)
 const bodyEl = ref<HTMLElement | null>(null)
 // scrollX / viewW 由 composable 繼續維護，S5 的拖曳要用；S3 的畫面本身用不到
-const { onScroll, jumpToday, onZoom, scrollTo } = useGanttScroll(scrollerEl, rulerEl)
+const { onScroll, jumpToday, onZoom, scrollTo, shift } = useGanttScroll(scrollerEl, rulerEl)
 
 // 拖曳的容器在這一層，API 往下 provide 給列與條（GanttGroupRow / GanttTaskRow / GanttBars）
 const drag = usePointerDrag({ gantt: scrollerEl, chart: chartEl, vscroll: bodyEl })
@@ -71,11 +71,10 @@ watch(
 watch(
   () => taskStore.range.a,
   (a, was) => {
-    const sc = scrollerEl.value
     const dx = (was - a) * ui.dayWidth
-    if (sc && dx) {
-      sc.scrollLeft += dx
-      onScroll()
+    if (dx) {
+      // 面板收合中（沒有 scroller）也要補記住的位置，展開時才不會捲回舊的 px
+      shift(dx)
       drag.rebase(dx)
     }
     // 至少一次樣式計算帶著 rebasing 之後（兩幀）才恢復補間

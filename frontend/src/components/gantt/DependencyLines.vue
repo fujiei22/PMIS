@@ -3,6 +3,7 @@
 // legacy 對照：模板 :481-500，depPaths :2961-2987。
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { useDomRegistry } from '@/composables/useDomRegistry'
+import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { tokenTiming, useRowMotionContext } from '@/composables/useRowMotion'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex } from '@/lib/date'
@@ -27,6 +28,7 @@ const taskStore = useTaskStore()
 const selection = useSelectionStore()
 const registry = useDomRegistry()
 const motion = useRowMotionContext()
+const drag = usePointerDragContext()
 
 interface DepPath {
   id: string
@@ -139,7 +141,7 @@ let raf: number | undefined
 function tick(): void {
   raf = undefined
   measure()
-  if (performance.now() < followUntil || motion.offsets.value.size) {
+  if (performance.now() < followUntil || motion.offsets.value.size || drag.nudging.value) {
     raf = requestAnimationFrame(tick)
   } else {
     live.value = null
@@ -164,6 +166,16 @@ const endpoints = computed(() => {
   return `${taskStore.range.a}|${ui.dayWidth}|${parts.join(';')}`
 })
 watch(endpoints, follow)
+
+// 拖曳自動捲動時條用 transform 補未滿一天的差，這不改資料：補償與放開回彈的期間一直照條的位置畫，
+// 結束後再跟一段（回彈動畫從下一幀才開始算，尾巴比計時器晚一點）
+watch(
+  () => drag.nudging.value,
+  (on) => {
+    if (!on) follow()
+    else if (raf === undefined) raf = requestAnimationFrame(tick)
+  },
+)
 
 // 列的上下位移每一幀寫完 translate 才換 offsets：這時量，量到的就是這一幀條的位置
 // （自己的 rAF 可能排在 useRowMotion 前面，量到上一幀的位置）

@@ -1,4 +1,4 @@
-import { inject, onBeforeUnmount, onMounted, provide, type InjectionKey, type Ref } from 'vue'
+import { inject, onBeforeUnmount, onMounted, provide, ref, type InjectionKey, type Ref } from 'vue'
 import { useAutoScroll } from '@/composables/useAutoScroll'
 import { useDomRegistry } from '@/composables/useDomRegistry'
 import { ROW_HEIGHT } from '@/constants/dashboard'
@@ -63,6 +63,11 @@ export interface PointerDrag {
    * 拖曳的捲動基準跟著補，日期才不會多算（動畫稽核 D13）。
    */
   rebase: (dx: number) => void
+  /**
+   * 被拖的條正在用 transform 補償自動捲動（拖曳中），或補償正在回彈（放開後 --t-bar 內）。
+   * 補償不改資料：相依線這段期間要一直照條的實際位置畫，資料沒變它不會自己跟。
+   */
+  nudging: Readonly<Ref<boolean>>
 }
 
 const NOOP: PointerDrag = {
@@ -74,6 +79,7 @@ const NOOP: PointerDrag = {
   setHover: () => {},
   clearHover: () => {},
   rebase: () => {},
+  nudging: ref(false),
 }
 
 const DRAG_KEY: InjectionKey<PointerDrag> = Symbol('pointer-drag')
@@ -161,8 +167,15 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     }
   }
 
-  /** 被拖的條（與它兩側的連線圓點）此刻的補償位移；放開時從這裡吸附回 0。 */
+  /**
+   * 這一段拖曳的補償：被拖的條（與它兩側的連線圓點）此刻的位移。補償過就一直留著（位移可能回到 0），
+   * 放開時從這裡吸附回整天的位置。
+   */
   let nudged: { id: string; px: number } | null = null
+  /** 見 PointerDrag.nudging。 */
+  const nudging = ref(false)
+  /** 放開後的回彈動畫；回彈途中又拖同一條要先停掉，不然動畫會蓋住新的補償。 */
+  let rebound: { id: string; anims: Animation[] } | null = null
 
   /** 條與圓點一起平移 px（`transform`，跟列上下位移用的 `translate` 是不同屬性，不互相蓋掉）。 */
   function nudgeEls(id: string): HTMLElement[] {
@@ -173,7 +186,14 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   function nudge(id: string, px: number): void {
     const v = Math.round(px * 100) / 100
     if (!v && !nudged) return
-    nudged = v ? { id, px: v } : null
+    if (v) {
+      nudging.value = true
+      if (rebound?.id === id) {
+        for (const a of rebound.anims) a.cancel()
+        rebound = null
+      }
+    }
+    nudged = { id, px: v }
     for (const el of nudgeEls(id)) el.style.transform = v ? `translateX(${v}px)` : ''
   }
 
@@ -187,13 +207,22 @@ export function usePointerDrag(els: DragElements): PointerDrag {
       duration: parseDuration(cs.getPropertyValue('--t-bar')),
       easing: cs.getPropertyValue('--ease').trim() || 'ease',
     }
+    const anims: Animation[] = []
     for (const el of nudgeEls(id)) {
       el.style.transform = ''
       // jsdom 沒有 Web Animations
-      if (typeof el.animate === 'function' && timing.duration > 0) {
-        el.animate([{ transform: `translateX(${px}px)` }, { transform: 'none' }], timing)
+      if (px && typeof el.animate === 'function' && timing.duration > 0) {
+        anims.push(el.animate([{ transform: `translateX(${px}px)` }, { transform: 'none' }], timing))
       }
     }
+    rebound = anims.length ? { id, anims } : null
+    // 回彈跑完才算結束；這段期間又開了新的補償（又拖了一條）就留給它，不能清掉
+    setTimeout(
+      () => {
+        if (!nudged) nudging.value = false
+      },
+      px ? timing.duration : 0,
+    )
   }
 
   /** 記下這一段拖曳改到的任務（review F2）。 */
@@ -569,6 +598,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     setHover,
     clearHover,
     rebase,
+    nudging,
   }
   provide(DRAG_KEY, api)
   return api

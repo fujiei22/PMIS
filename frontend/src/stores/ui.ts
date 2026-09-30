@@ -153,8 +153,9 @@ export const useUiStore = defineStore('ui', () => {
    */
   const ganttLeftExpanded = ref(false)
   /**
-   * 左欄的列用完整寫法（起訖日＋工期）。跟著 ganttLeftExpanded 走但會晚一步：
-   * 展開時等寬度過渡跑完才切（GanttPanel 負責），不然寬的日期膠囊會先出現、在還沒撐開的欄裡蓋住任務名。
+   * 左欄的列用完整寫法（起訖日＋工期）。GanttPanel 讓它跟 ganttLeftExpanded 同時切；
+   * 膠囊寬度從舊寫法補間到新寫法（跟左欄寬度同一組時長與曲線）由 GanttTaskRow 負責，
+   * 補間途中裁掉超出的字，不會蓋住任務名、任務名寬度也一路單調。
    */
   const ganttLeftDates = ref(false)
 

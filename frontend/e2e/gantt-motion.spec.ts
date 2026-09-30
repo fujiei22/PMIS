@@ -806,6 +806,45 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
     await expect(app.bar('t3')).toHaveCSS('transform', 'none')
   })
 
+  // review：自動捲動的補償（transform）不改資料，相依線原本只在資料變後跟一段——
+  // 捲動停住（游標離開邊緣）或放開後回彈時，線彈回資料位置、跟被補償的條差到一天寬
+  test('拖條自動捲動、停住、放開回彈期間：t3 → t4 相依線兩端每一幀都貼著條', async ({ page }) => {
+    const app = await openGantt(page)
+    await tagDeps(page, [['t3', 't4']])
+    await app.row('t3').locator('.name').click()
+    await pause(page, 1300)
+    await app.freezeGanttScroll(0)
+    const sc = (await app.ganttScroller.boundingBox())!
+    const b = (await app.bar('t3').boundingBox())!
+    const y = b.y + b.height / 2
+    const grabX = b.x + 24
+    const edgeX = sc.x + sc.width - 20
+    await page.mouse.move(grabX, y)
+    await page.mouse.down()
+    for (let i = 1; i <= 8; i++) {
+      await page.mouse.move(grabX + ((edgeX - grabX) * i) / 8, y)
+      await pause(page, 16)
+    }
+    const tr = await trace(
+      page,
+      { 'dep:t3-t4': '[data-probe-dep="t3-t4"]', 'bar:t3': bar('t3'), 'bar:t4': bar('t4') },
+      async () => {
+        // 右緣自動捲動 → 游標往內移、捲動停住（補償留著）→ 再回右緣……放開時補償回彈到整天
+        for (let i = 0; i < 3; i++) {
+          await pause(page, 300)
+          await page.mouse.move(edgeX - 150, y)
+          await pause(page, 400)
+          await page.mouse.move(edgeX, y)
+        }
+        await pause(page, 300)
+        await page.mouse.up()
+      },
+      { markOn: 'pointerup', ms: 500 },
+    )
+    expect(tr.marks, '有放開').toHaveLength(1)
+    expect(depGap(tr, 't3', 't4', 0), 't3 → t4 兩端與條').toBeLessThanOrEqual(4)
+  })
+
   test('拖條超出專案起點（日期格往左長）：同一天的日期格與別的條每一幀都對齊', async ({ page }) => {
     const app = await openGantt(page)
     // t28 是最早開始、沒有前置的任務；往左拖會讓專案起點外移

@@ -226,4 +226,42 @@ describe('useGanttScroll：面板收合再展開保留水平捲動位置（D12�
     expect(secondRuler.scrollLeft).toBe(640)
     expect(api.scrollX.value).toBe(640)
   })
+
+  // review：收合期間專案起點變了（看板把最早的任務往前移），重新展開會捲回舊的 px——整片跳好幾天
+  it('scroller 卸載時 shift 更新記住的位置，重掛後捲到補過的位置', async () => {
+    const first = scrollerEl(4000, 800)
+    const scroller = ref<HTMLElement | null>(first)
+    const ruler = ref<HTMLElement | null>(rulerEl())
+    const api = mountScroll(scroller, ruler)
+    first.scrollLeft = 640
+    api.onScroll()
+
+    scroller.value = null
+    ruler.value = null
+    await nextTick()
+    // 收合中專案起點往前 5 天：座標右移 5 × 32px
+    api.shift(160)
+    expect(api.scrollX.value).toBe(800)
+
+    const second = scrollerEl(4000, 800)
+    const secondRuler = rulerEl()
+    scroller.value = second
+    ruler.value = secondRuler
+    await nextTick()
+    expect(second.scrollLeft).toBe(800)
+    expect(secondRuler.scrollLeft).toBe(800)
+  })
+
+  it('scroller 在的時候 shift 直接補捲動位置，尺規與 scrollX 跟著', () => {
+    const sc = scrollerEl(4000, 800)
+    const ru = rulerEl()
+    const api = mountScroll(ref(sc), ref(ru))
+    sc.scrollLeft = 300
+    api.onScroll()
+
+    api.shift(64)
+    expect(sc.scrollLeft).toBe(364)
+    expect(ru.scrollLeft).toBe(364)
+    expect(api.scrollX.value).toBe(364)
+  })
 })

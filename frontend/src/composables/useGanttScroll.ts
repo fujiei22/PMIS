@@ -22,6 +22,11 @@ export interface GanttScroll {
   jumpToday: (animated?: boolean) => void
   /** 縮放滑桿的 input handler：改 dayWidth 並在 160ms 內關掉條的補間。legacy `onDayW`（:3582） */
   onZoom: (value: number | string) => void
+  /**
+   * 畫布座標換了基準（專案起點外移 / 內縮，所有東西右移 dx px）：捲動位置跟著補 dx，畫面停在原地。
+   * 面板收合、scroller 不在時只補記住的位置，重新展開才捲回對的地方。
+   */
+  shift: (dx: number) => void
 }
 
 /**
@@ -117,6 +122,17 @@ export function useGanttScroll(
     scrollTo(offset * ui.dayWidth - sc.clientWidth / 2, animated)
   }
 
+  function shift(dx: number): void {
+    const sc = scroller.value
+    if (sc) {
+      sc.scrollLeft += dx
+      syncRuler()
+    } else {
+      // 動畫稽核 review：收合期間專案起點變了，重新展開時才不會捲回舊的 px（整片跳好幾天）
+      scrollX.value = Math.max(0, scrollX.value + dx)
+    }
+  }
+
   function onZoom(value: number | string): void {
     const v = typeof value === 'number' ? value : parseFloat(value)
     if (Number.isNaN(v)) return
@@ -178,5 +194,5 @@ export function useGanttScroll(
     window.removeEventListener('resize', measure)
   })
 
-  return { scrollX, viewW, onScroll: syncRuler, scrollTo, jumpToday, onZoom }
+  return { scrollX, viewW, onScroll: syncRuler, scrollTo, jumpToday, onZoom, shift }
 }

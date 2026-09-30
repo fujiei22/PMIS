@@ -481,6 +481,48 @@ describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）',
     unmount()
   })
 
+  // review：補償（nudge）不改資料，相依線只在資料變後跟一段；要有旗標讓它在補償與放開回彈期間一直跟著條
+  it('nudging 在補償與回彈期間為 true、結束後 false；回彈中又開新的拖曳不會被清掉', () => {
+    vi.useFakeTimers()
+    // 回彈時長讀 --t-bar；jsdom 沒有 tokens.css，這裡給 0.2s
+    vi.spyOn(window, 'getComputedStyle').mockImplementation(
+      () => ({ getPropertyValue: (p: string) => (p === '--t-bar' ? '0.2s' : '') }) as unknown as CSSStyleDeclaration,
+    )
+    const { api: drag, registry, scroller, unmount } = mountWithScroller()
+    registerEl(registry.bars, 't1')(document.createElement('div'))
+    expect(drag.nudging.value).toBe(false)
+
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't1', 'move')
+    document.dispatchEvent(pointer('pointermove', 500, 0))
+    // 還沒捲動：沒有補償
+    expect(drag.nudging.value).toBe(false)
+    scroller.scrollLeft = 10
+    document.dispatchEvent(pointer('pointermove', 500, 0))
+    expect(drag.nudging.value).toBe(true)
+
+    // 放開：回彈（--t-bar）跑完才算結束
+    document.dispatchEvent(pointer('pointerup', 500, 0))
+    expect(drag.nudging.value).toBe(true)
+    vi.advanceTimersByTime(150)
+    expect(drag.nudging.value).toBe(true)
+
+    // 回彈途中又拖一次、又有補償：舊回彈的計時器到了也不能清掉
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't1', 'move')
+    scroller.scrollLeft = 20
+    document.dispatchEvent(pointer('pointermove', 500, 0))
+    vi.advanceTimersByTime(100)
+    expect(drag.nudging.value).toBe(true)
+
+    document.dispatchEvent(pointer('pointerup', 500, 0))
+    vi.advanceTimersByTime(199)
+    expect(drag.nudging.value).toBe(true)
+    vi.advanceTimersByTime(2)
+    expect(drag.nudging.value).toBe(false)
+    unmount()
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
   it('rebase：捲動位置補回 N px 時，拖曳的基準跟著補，日期不會多算', () => {
     const tasks = useTaskStore()
     const { api: drag, scroller, unmount } = mountWithScroller()
