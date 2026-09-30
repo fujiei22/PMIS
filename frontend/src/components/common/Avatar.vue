@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 成員頭像：圓形色塊 + 名字縮寫；hover 可展開成「縮寫 + 姓名」的膠囊。
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { initialOf } from '@/lib/color'
 import type { Member } from '@/types/models'
 
@@ -25,10 +25,24 @@ const initial = computed(() => initialOf(props.member))
 const color = computed(() => props.member?.color ?? 'var(--text-placeholder)')
 const name = computed(() => props.member?.name ?? '')
 
+const glyphEl = ref<HTMLElement | null>(null)
+const nameEl = ref<HTMLElement | null>(null)
+/**
+ * hover 展開的目標寬：縮寫 + 姓名的實際寬（上限 160px 同 legacy :623）。
+ * 目標若寫死 160px 而內容只有約 50px：展開時可見的變化擠在過渡的前三成（像一下衝完），
+ * 收合時前四成都在縮看不見的部分（像空等）（G14）。進入時才量：姓名可能改過。
+ */
+const openWidth = ref<number | null>(null)
+function measureOpen(): void {
+  if (!props.expandable || !glyphEl.value || !nameEl.value) return
+  openWidth.value = glyphEl.value.offsetWidth + nameEl.value.offsetWidth
+}
+
 const style = computed(() => ({
   '--av-size': `${props.size}px`,
   '--av-color': color.value,
   '--av-ring': `${props.ring}px`,
+  '--av-open': openWidth.value === null ? undefined : `${openWidth.value}px`,
   marginRight: props.overlap ? `${-props.overlap}px` : undefined,
 }))
 </script>
@@ -39,9 +53,10 @@ const style = computed(() => ({
     :class="{ expandable }"
     :style="style"
     :title="expandable ? undefined : name"
+    @mouseenter="measureOpen"
   >
-    <span class="glyph">{{ initial }}</span>
-    <span v-if="expandable" class="name">{{ name }}</span>
+    <span ref="glyphEl" class="glyph">{{ initial }}</span>
+    <span v-if="expandable" ref="nameEl" class="name">{{ name }}</span>
   </span>
 </template>
 
@@ -92,7 +107,9 @@ const style = computed(() => ({
   padding-left: var(--sp-1);
 }
 
-/* legacy 是用 max-width 從 20px 撐到 160px 做展開（:623），且那裡是 content-box */
+/* 用 max-width 過渡做展開，同 legacy（:623，content-box）；legacy 是撐到 160px，
+   這裡撐到 mouseenter 量到的縮寫 + 姓名寬（--av-open，上限一樣 160px），
+   寬度變化才會平均分布在整段過渡裡（G14）。還沒量過時退回 160px。 */
 .expandable {
   box-sizing: content-box;
   max-width: var(--av-size);
@@ -102,7 +119,7 @@ const style = computed(() => ({
 }
 
 .expandable:hover {
-  max-width: 160px;
+  max-width: min(var(--av-open, 160px), 160px);
   padding-right: var(--sp-4);
   z-index: 3;
 }
