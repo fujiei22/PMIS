@@ -76,15 +76,27 @@ describe('alertOf', () => {
 })
 
 describe('matchProject', () => {
-  const r = row({ pmId: 'm5', status: 'doing', delayedTasks: 3 })
+  const r = row({ name: '行動 App v2', pmId: 'm5', status: 'doing', delayedTasks: 3 })
+  const none = { pmIds: [], statuses: [], alerts: [], query: '' }
   it('空條件＝全部通過', () => {
-    expect(matchProject(r, { pmIds: [], statuses: [], alerts: [] })).toBe(true)
+    expect(matchProject(r, none)).toBe(true)
   })
   it('三組條件之間是 AND、組內是 OR', () => {
-    expect(matchProject(r, { pmIds: ['m5', 'm8'], statuses: ['doing'], alerts: ['late'] })).toBe(true)
-    expect(matchProject(r, { pmIds: ['m8'], statuses: [], alerts: [] })).toBe(false)
-    expect(matchProject(r, { pmIds: [], statuses: ['todo'], alerts: [] })).toBe(false)
-    expect(matchProject(r, { pmIds: [], statuses: [], alerts: ['none'] })).toBe(false)
+    expect(matchProject(r, { ...none, pmIds: ['m5', 'm8'], statuses: ['doing'], alerts: ['late'] })).toBe(true)
+    expect(matchProject(r, { ...none, pmIds: ['m8'] })).toBe(false)
+    expect(matchProject(r, { ...none, statuses: ['todo'] })).toBe(false)
+    expect(matchProject(r, { ...none, alerts: ['none'] })).toBe(false)
+  })
+  it('搜尋字：名稱包含即通過，不分大小寫、前後空白不算；只有空白＝沒搜尋', () => {
+    expect(matchProject(r, { ...none, query: '行動' })).toBe(true)
+    expect(matchProject(r, { ...none, query: 'app' })).toBe(true)
+    expect(matchProject(r, { ...none, query: '  APP V2 ' })).toBe(true)
+    expect(matchProject(r, { ...none, query: '   ' })).toBe(true)
+    expect(matchProject(r, { ...none, query: '金流' })).toBe(false)
+  })
+  it('搜尋字和其他條件是 AND', () => {
+    expect(matchProject(r, { ...none, query: 'app', pmIds: ['m8'] })).toBe(false)
+    expect(matchProject(r, { ...none, query: 'app', pmIds: ['m5'] })).toBe(true)
   })
 })
 

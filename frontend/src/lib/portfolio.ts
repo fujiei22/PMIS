@@ -72,6 +72,8 @@ export interface OverviewFilter {
   pmIds: string[]
   statuses: ProjectStatus[]
   alerts: ProjectAlert[]
+  /** 專案名稱搜尋字；空字串（或只有空白）代表不篩。 */
+  query: string
 }
 
 /** 一位 PM 底下的專案列；alertCount 是落後＋需注意的專案數。 */
@@ -166,11 +168,16 @@ export function deriveProject(p: ProjectSummary, todayIso: ISODate): ProjectDeri
   }
 }
 
-/** 篩選：三組條件之間是 AND、組內是 OR；空陣列代表該組不篩。 */
+/**
+ * 篩選：各組條件之間是 AND、組內是 OR；空陣列代表該組不篩。
+ * 搜尋字比對專案名稱：名稱包含即通過，不分大小寫（英文專案名如「App」），前後空白不算。
+ */
 export function matchProject(row: ProjectRow, f: OverviewFilter): boolean {
   if (f.pmIds.length && !f.pmIds.includes(row.p.pmId)) return false
   if (f.statuses.length && !f.statuses.includes(row.p.status)) return false
   if (f.alerts.length && !f.alerts.includes(row.d.alert)) return false
+  const q = f.query.trim().toLowerCase()
+  if (q && !row.p.name.toLowerCase().includes(q)) return false
   return true
 }
 

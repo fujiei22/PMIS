@@ -55,7 +55,7 @@ export const useOverviewStore = defineStore('overview', () => {
   )
 
   const visibleRows = computed(() => {
-    const f = { pmIds: pmIds.value, statuses: statuses.value, alerts: alerts.value }
+    const f = { pmIds: pmIds.value, statuses: statuses.value, alerts: alerts.value, query: '' }
     return sortRows(
       rows.value.filter((r) => matchProject(r, f)),
       sorts.value,
