@@ -719,3 +719,48 @@ test.describe('窄版左欄（< 900px）：日期膠囊不重播淡入、任務�
     await expect(page.locator(`${row('t3')} .date-days`)).toHaveCount(0)
   })
 })
+
+test.describe('甘特面板收合 / 展開（D3 / D12）', () => {
+  test('展開途中甘特的內容不蓋住下方看板（overflow 等過渡跑完才放行）', async ({ page }) => {
+    const app = await openGantt(page)
+    await app.panelToggle('gantt').click()
+    await expect(page.locator('[data-rowtask]')).toHaveCount(0)
+    await idle(page)
+    // 每一幀取看板卡片區（標題列下方 100px，避開 sticky 的欄標題）的兩點，看最上層的元素屬於哪個面板
+    const hits = page.evaluate(
+      () =>
+        new Promise<string[]>((resolve) => {
+          const out: string[] = []
+          const t0 = performance.now()
+          const tick = (): void => {
+            const kb = document.querySelector('[data-panel="kanban"]')!
+            const head = kb.querySelector('.panel-head')!.getBoundingClientRect()
+            const y = head.bottom + 100
+            for (const x of [head.left + 200, head.left + 900]) {
+              if (y > innerHeight - 2) continue
+              const el = document.elementFromPoint(x, y)
+              out.push(el?.closest('[data-panel]')?.getAttribute('data-panel') ?? 'none')
+            }
+            if (performance.now() - t0 < 600) requestAnimationFrame(tick)
+            else resolve(out)
+          }
+          requestAnimationFrame(tick)
+        }),
+    )
+    await app.panelToggle('gantt').click()
+    const seen = await hits
+    expect(seen.filter((p) => p === 'gantt'), `每幀命中的面板：${seen.join(',')}`).toHaveLength(0)
+    await expect(page.locator('[data-rowtask]')).toHaveCount(30)
+  })
+
+  test('收合再展開：水平捲動位置不變，尺規跟著', async ({ page }) => {
+    const app = await openGantt(page)
+    await app.freezeGanttScroll(500)
+    await app.panelToggle('gantt').click()
+    await expect(page.locator('[data-rowtask]')).toHaveCount(0)
+    await app.panelToggle('gantt').click()
+    await expect(page.locator('[data-rowtask]')).toHaveCount(30)
+    await expect.poll(() => app.scrollLeftOf(app.ganttScroller)).toBe(500)
+    expect(await app.scrollSyncDelta()).toBeLessThan(1)
+  })
+})

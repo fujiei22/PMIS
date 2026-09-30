@@ -200,3 +200,30 @@ describe('useGanttScroll 的捲動補間讓位給使用者（D7）', () => {
     expect(second.scrollLeft).toBe(mid)
   })
 })
+
+// 動畫稽核 D12：甘特面板收合 320ms 後卸載內容，再展開時 scroller 是新的一顆、從 0 開始（捲回專案起點、看不到今天）
+describe('useGanttScroll：面板收合再展開保留水平捲動位置（D12）', () => {
+  it('scroller 換了一顆：捲到上一顆最後的位置，尺規跟著', async () => {
+    const first = scrollerEl(4000, 800)
+    const scroller = ref<HTMLElement | null>(first)
+    const ruler = ref<HTMLElement | null>(rulerEl())
+    const api = mountScroll(scroller, ruler)
+    first.scrollLeft = 640
+    api.onScroll()
+
+    // 收合：內容卸載
+    scroller.value = null
+    ruler.value = null
+    await nextTick()
+    // 展開：新的一顆 scroller / 尺規
+    const second = scrollerEl(4000, 800)
+    const secondRuler = rulerEl()
+    scroller.value = second
+    ruler.value = secondRuler
+    await nextTick()
+
+    expect(second.scrollLeft).toBe(640)
+    expect(secondRuler.scrollLeft).toBe(640)
+    expect(api.scrollX.value).toBe(640)
+  })
+})

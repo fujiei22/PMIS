@@ -159,6 +159,11 @@ export function useGanttScroll(
   watch(scroller, (el) => {
     listen(el)
     if (!el) return
+    // 新的一顆從 0 開始：捲回收合前最後的位置（動畫稽核 D12；scrollX 在舊的一顆卸載後仍是最後的值）
+    if (scrollX.value) {
+      el.scrollLeft = scrollX.value
+      syncRuler()
+    }
     ro?.disconnect()
     ro?.observe(el)
     measure()
