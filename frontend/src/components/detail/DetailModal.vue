@@ -20,10 +20,28 @@ const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 const comment = useCommentStore()
 
-/** 關閉動畫的 320ms 內 detail 已是 null，改畫 lastDetail 的快照。legacy :3795 */
-const shown = computed(() => ui.detail ?? ui.lastDetail ?? null)
-/** 真的開著（false = 正在播關閉動畫）。 */
-const open = computed(() => !!ui.detail)
+/**
+ * 開著的詳情。關閉動畫交給 <Transition>：離場中的 DOM 停在關閉前最後一次畫出的樣子
+ * （子元件已卸載、不再更新），刪除後的淡出、從任務點進的 Issue 的返回膠囊都不會先變（G3 / G4），
+ * 不用另外保存快照（legacy 用 `_lastDetail` :3066）。
+ */
+const shown = computed(() => ui.detail)
+
+/** 畫面上有詳情（含關閉動畫還在跑）：鎖捲動撐到離場結束，遮罩還深色時捲軸不先冒回來。 */
+const present = ref(!!ui.detail)
+watch(
+  () => !!ui.detail,
+  (v) => {
+    if (v) present.value = true
+  },
+  { flush: 'sync' },
+)
+useScrollLock(present)
+
+/** 離場動畫結束（或被「關閉途中又開」提早結束）時才放開；又開了就繼續鎖。 */
+function onAfterLeave(): void {
+  present.value = !!ui.detail
+}
 
 const task = computed(() =>
   shown.value?.kind === 'task' ? taskStore.taskById(shown.value.id) : undefined,
@@ -73,16 +91,15 @@ const titleDraft = useEditDraft({
 function rename(v: string): void {
   titleDraft.onInput(v)
 }
-
-// 鎖到關閉動畫播完（shown 在 hold 結束才清）：遮罩還深色時捲軸不先冒回來，Modal 淡出途中也不橫移（G1）
-useScrollLock(() => !!shown.value)
 </script>
 
 <template>
-  <template v-if="shown">
-    <div class="detail-backdrop" :class="{ closing: !open }" @click="ui.closeDetail()"></div>
-    <div class="detail-layer">
-      <div class="detail-modal" :class="{ closing: !open }" role="dialog" aria-modal="true">
+  <Transition name="detail-fade">
+    <div v-if="shown" class="detail-backdrop" @click="ui.closeDetail()"></div>
+  </Transition>
+  <Transition name="detail-pop" @after-leave="onAfterLeave">
+    <div v-if="shown" class="detail-layer">
+      <div class="detail-modal" role="dialog" aria-modal="true">
         <DetailHeader
           :name="headerName"
           :edit-id="shown.id"
@@ -110,7 +127,7 @@ useScrollLock(() => !!shown.value)
         </div>
       </div>
     </div>
-  </template>
+  </Transition>
 </template>
 
 <style scoped>
@@ -119,11 +136,6 @@ useScrollLock(() => !!shown.value)
   inset: 0;
   background: var(--backdrop-modal);
   z-index: 170;
-  animation: fadeIn var(--t-modal) ease-out;
-}
-
-.detail-backdrop.closing {
-  animation: fadeOut var(--t-modal) ease-out forwards;
 }
 
 /* 外層只負責置中；pointer-events 關掉讓遮罩仍吃得到點擊（legacy :862） */
@@ -149,11 +161,46 @@ useScrollLock(() => !!shown.value)
   border-radius: var(--r-modal);
   box-shadow: var(--shadow-modal);
   overflow: hidden;
-  animation: popIn var(--t-modal) var(--ease);
 }
 
-.detail-modal.closing {
-  animation: popOut var(--t-modal) var(--ease) forwards;
+/*
+ * 開關用 <Transition> 的 class（不是 keyframes）：開到一半就關時從當下的值往回走，keyframes 會從頭（全亮）重播（G10）。
+ * 外觀同 popIn / popOut；Modal 的淡入淡出寫在外層 layer（Transition 的根元素，Vue 量它的過渡長度），位移縮放寫在 Modal。
+ */
+.detail-fade-enter-active,
+.detail-fade-leave-active {
+  transition: opacity var(--t-modal) ease-out;
+}
+
+.detail-pop-enter-active,
+.detail-pop-leave-active {
+  transition: opacity var(--t-modal) var(--ease);
+}
+
+.detail-fade-enter-from,
+.detail-fade-leave-to,
+.detail-pop-enter-from,
+.detail-pop-leave-to {
+  opacity: 0;
+}
+
+.detail-pop-enter-active .detail-modal,
+.detail-pop-leave-active .detail-modal {
+  transition: transform var(--t-modal) var(--ease);
+}
+
+.detail-pop-enter-from .detail-modal {
+  transform: var(--pop-from);
+}
+
+.detail-pop-leave-to .detail-modal {
+  transform: var(--pop-to);
+}
+
+/* 離場中不攔點擊（G2）：Modal 自己寫了 pointer-events: auto，要一起壓掉 */
+.detail-fade-leave-active,
+.detail-pop-leave-active .detail-modal {
+  pointer-events: none;
 }
 
 .detail-body {

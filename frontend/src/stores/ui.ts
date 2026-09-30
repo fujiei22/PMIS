@@ -60,8 +60,6 @@ export type OptionMenuKind =
   | 'icreator'
   | 'iowner'
 
-/** 詳細視窗關閉動畫的長度（ms）。legacy `hold()` :1741 */
-const DETAIL_HOLD_MS = 320
 /** 任務 ↔ Issue 切換動畫的長度（ms）。legacy `navAnim()` :2270 */
 const NAV_ANIM_MS = 280
 /** 錯誤條最多留幾筆、同 label 多久內算同一筆（契約 C）。 */
@@ -192,8 +190,6 @@ export const useUiStore = defineStore('ui', () => {
   const pickerFor = ref<string | null>(null)
 
   const detail = ref<{ id: string; kind: 'task' | 'issue'; from: string | null } | null>(null)
-  /** 關閉動畫期間還要畫的快照。legacy `_lastDetail` :3066 */
-  const lastDetail = ref<{ id: string; kind: 'task' | 'issue' } | null>(null)
   /** 任務 ↔ Issue 切換的方向動畫。legacy `_nav` :2270 */
   const navAnim = ref<'in' | 'back' | null>(null)
 
@@ -247,7 +243,6 @@ export const useUiStore = defineStore('ui', () => {
   const hoverTaskId = ref<string | null>(null)
 
   let navTimer: ReturnType<typeof setTimeout> | undefined
-  let holdTimer: ReturnType<typeof setTimeout> | undefined
 
   /** 夾在 14-32 之間並吸附到 0.25 的倍數。legacy `dayW()` :1898 */
   function setDayWidth(v: number): void {
@@ -302,17 +297,16 @@ export const useUiStore = defineStore('ui', () => {
     if (from) playNavAnim('in')
   }
 
-  /** 關詳細視窗；lastDetail 留著讓關閉動畫有東西可畫。legacy `detailClose` :3810 */
+  /**
+   * 關詳細視窗。legacy `detailClose` :3810。
+   * 關閉動畫由 DetailModal 的 <Transition> 負責（離場中的畫面停在關閉前的樣子），store 不再留快照。
+   */
   function closeDetail(): void {
-    if (detail.value) lastDetail.value = { id: detail.value.id, kind: detail.value.kind }
+    if (!detail.value) return
     detail.value = null
     pickerFor.value = null
     editing.value = null
     openDropdown.value = null
-    clearTimeout(holdTimer)
-    holdTimer = setTimeout(() => {
-      lastDetail.value = null
-    }, DETAIL_HOLD_MS)
   }
 
   /** 從 Issue 詳情返回它的任務詳情；沒有來源就等同關閉。legacy `detailBack` :3807 */
@@ -337,10 +331,8 @@ export const useUiStore = defineStore('ui', () => {
    */
   function resetTransient(): void {
     detail.value = null
-    lastDetail.value = null
     navAnim.value = null
     clearTimeout(navTimer)
-    clearTimeout(holdTimer)
     confirm.value = null
     depEditFor.value = null
     optionMenu.value = null
@@ -447,7 +439,6 @@ export const useUiStore = defineStore('ui', () => {
     editing,
     pickerFor,
     detail,
-    lastDetail,
     navAnim,
     openDetail,
     closeDetail,
