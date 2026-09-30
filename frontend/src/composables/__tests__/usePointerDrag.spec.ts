@@ -397,3 +397,106 @@ describe('排序拖曳放手後的 click（D16）', () => {
     unmount()
   })
 })
+
+// 動畫稽核 D6 / D13：自動捲動時條以整天吸附、scrollLeft 卻連續變 → 條在游標下鋸齒抖動；
+// 專案起點外移時所有座標換基準，捲動位置補回之後，拖曳的基準也要跟著補，否則多算好幾天
+describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mockApi.reset(structuredClone(sampleProject))
+    useTaskStore().load(structuredClone(sampleProject))
+  })
+
+  afterEach(() => {
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+  })
+
+  /** 掛拖曳，並給它一顆 scrollLeft 由測試控制的甘特捲動容器。 */
+  function mountWithScroller(): {
+    api: PointerDrag
+    registry: DomRegistry
+    scroller: HTMLElement
+    unmount: () => void
+  } {
+    let api!: PointerDrag
+    let registry!: DomRegistry
+    const scroller = document.createElement('div')
+    let sl = 0
+    Object.defineProperty(scroller, 'scrollLeft', { get: () => sl, set: (v: number) => void (sl = v) })
+    const Inner = defineComponent({
+      setup() {
+        api = usePointerDrag({ gantt: ref(scroller), chart: ref(null), vscroll: ref(null) })
+        return () => h('div')
+      },
+    })
+    const Host = defineComponent({
+      setup() {
+        registry = provideDomRegistry()
+        return () => h(Inner)
+      },
+    })
+    const wrapper = mount(Host, { attachTo: document.body })
+    return { api, registry, scroller, unmount: () => wrapper.unmount() }
+  }
+
+  it('游標不動、畫面自動捲動：條用 transform 補上還沒湊滿一天的捲動量，湊滿才改日期', () => {
+    const tasks = useTaskStore()
+    const { api: drag, registry, scroller, unmount } = mountWithScroller()
+    const bar = document.createElement('div')
+    registerEl(registry.bars, 't1')(bar)
+    const s0 = dayIndex(tasks.taskById('t1')!.start)
+
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't1', 'move')
+    scroller.scrollLeft = 10
+    document.dispatchEvent(pointer('pointermove', 500, 0))
+    // 捲了 10px、日期還沒動：條往右補 10px，畫面上還在游標下
+    expect(bar.style.transform).toBe('translateX(10px)')
+    expect(dayIndex(tasks.taskById('t1')!.start)).toBe(s0)
+
+    scroller.scrollLeft = 20
+    document.dispatchEvent(pointer('pointermove', 500, 0))
+    // 捲了 20px：四捨五入成 1 天，條往左補回 12px
+    expect(dayIndex(tasks.taskById('t1')!.start)).toBe(s0 + 1)
+    expect(bar.style.transform).toBe('translateX(-12px)')
+
+    // 放開：補償拿掉，條落在整天的位置
+    document.dispatchEvent(pointer('pointerup', 500, 0))
+    expect(bar.style.transform).toBe('')
+    unmount()
+  })
+
+  it('沒有自動捲動時照舊整天吸附，不加 transform', () => {
+    const tasks = useTaskStore()
+    const { api: drag, registry, unmount } = mountWithScroller()
+    const bar = document.createElement('div')
+    registerEl(registry.bars, 't1')(bar)
+    const s0 = dayIndex(tasks.taskById('t1')!.start)
+
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't1', 'move')
+    document.dispatchEvent(pointer('pointermove', 540, 0))
+    expect(dayIndex(tasks.taskById('t1')!.start)).toBe(s0 + 1)
+    expect(bar.style.transform).toBe('')
+    document.dispatchEvent(pointer('pointerup', 540, 0))
+    unmount()
+  })
+
+  it('rebase：捲動位置補回 N px 時，拖曳的基準跟著補，日期不會多算', () => {
+    const tasks = useTaskStore()
+    const { api: drag, scroller, unmount } = mountWithScroller()
+    // t28 沒有前置，可以往前拖（t1 有前置 t28，不能早於它）
+    const s0 = dayIndex(tasks.taskById('t28')!.start)
+
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't28', 'move')
+    document.dispatchEvent(pointer('pointermove', 468, 0))
+    expect(dayIndex(tasks.taskById('t28')!.start)).toBe(s0 - 1)
+
+    // 專案起點外移 2 天：所有座標右移 64px，GanttPanel 把 scrollLeft 補 +64
+    scroller.scrollLeft += 64
+    drag.rebase(64)
+    document.dispatchEvent(pointer('pointermove', 468, 0))
+    expect(dayIndex(tasks.taskById('t28')!.start)).toBe(s0 - 1)
+    document.dispatchEvent(pointer('pointerup', 468, 0))
+    unmount()
+  })
+})

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 專案時程面板：尺規、左欄任務 / 分類列、右側甘特條與相依線。
 // legacy 對照：模板 :387-531，days / months :2716-2733，stripes :2882，sticky :3634-3637。
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import PanelShell from '@/components/common/PanelShell.vue'
 import DependencyLines from '@/components/gantt/DependencyLines.vue'
 import GanttBars from '@/components/gantt/GanttBars.vue'
@@ -51,6 +51,48 @@ const { onScroll, jumpToday, onZoom, scrollTo } = useGanttScroll(scrollerEl, rul
 
 // 拖曳的容器在這一層，API 往下 provide 給列與條（GanttGroupRow / GanttTaskRow / GanttBars）
 const drag = usePointerDrag({ gantt: scrollerEl, chart: chartEl, vscroll: bodyEl })
+
+/*
+ * 專案起點外移 / 內縮（range.a 變）：畫布所有座標換基準（最早的任務被拖到更早、刪掉等）。
+ * 日期格與尺規當幀就換、條與今天線卻用 left 過渡追 0.2 秒，而且整片跳 N 天（動畫稽核 D13）。
+ * 這一幀讓畫布上的東西不補間（rebasing），DOM 更新後把捲動位置補回同樣的 px、拖曳的基準也跟著補，畫面就停在原地。
+ */
+const rebasing = ref(false)
+let rebaseRaf: number | undefined
+
+watch(
+  () => taskStore.range.a,
+  () => {
+    rebasing.value = true
+  },
+  { flush: 'sync' },
+)
+
+watch(
+  () => taskStore.range.a,
+  (a, was) => {
+    const sc = scrollerEl.value
+    const dx = (was - a) * ui.dayWidth
+    if (sc && dx) {
+      sc.scrollLeft += dx
+      onScroll()
+      drag.rebase(dx)
+    }
+    // 至少一次樣式計算帶著 rebasing 之後（兩幀）才恢復補間
+    if (rebaseRaf !== undefined) cancelAnimationFrame(rebaseRaf)
+    rebaseRaf = requestAnimationFrame(() => {
+      rebaseRaf = requestAnimationFrame(() => {
+        rebaseRaf = undefined
+        rebasing.value = false
+      })
+    })
+  },
+  { flush: 'post' },
+)
+
+onBeforeUnmount(() => {
+  if (rebaseRaf !== undefined) cancelAnimationFrame(rebaseRaf)
+})
 
 /** 選到任務就把它的條捲到畫面左側三分之一處。legacy `focus()` :2400-2403 */
 useFocusRequest((req) => {
@@ -280,7 +322,7 @@ function toggleAllGroups(): void {
           <div
             ref="chartEl"
             class="gantt-chart"
-            :class="{ panning: ui.drag?.kind === 'pan' }"
+            :class="{ panning: ui.drag?.kind === 'pan', rebasing }"
             :style="{ width: `${chartWidth}px`, height: `${chartHeight}px` }"
             @pointerdown="drag.startPan($event)"
           >
@@ -511,6 +553,14 @@ function toggleAllGroups(): void {
 /* 平移中：整個畫布的游標換成抓握（body 也同步改，指標跑到畫布外也不會變回來） */
 .gantt-chart.panning {
   cursor: grabbing;
+}
+
+/* 專案起點外移 / 內縮的那一幀：座標換基準、捲動位置同步補回，條、圓點、今天線都不補間（D13） */
+.gantt-chart.rebasing :deep(.bar),
+.gantt-chart.rebasing :deep(.dot-zone),
+.gantt-chart.rebasing :deep(.today-line),
+.gantt-chart.rebasing :deep(.today-tag) {
+  transition: none;
 }
 
 .day-bg {

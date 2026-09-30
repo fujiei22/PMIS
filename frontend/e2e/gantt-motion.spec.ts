@@ -183,6 +183,17 @@ function maxSkew(tr: Trace, a: string, b: string, offset: number, from: number):
   return +max.toFixed(1)
 }
 
+/** 同一幀裡兩個元素左緣（x）的最大落差（兩個都在畫面上的幀才算）。 */
+function maxSkewX(tr: Trace, a: string, b: string): number {
+  let max = 0
+  for (const f of tr.frames) {
+    const pa = f.boxes[a]
+    const pb = f.boxes[b]
+    if (pa && pb) max = Math.max(max, Math.abs(pb.x - pa.x))
+  }
+  return +max.toFixed(1)
+}
+
 /**
  * 在橫紋上打測試用的標記（`data-probe-stripe="<列 key>"`）：橫紋沒有自己的 data 屬性，
  * 靜止時它的 DOM 順序就是列的順序，照左欄的順序對上去。Vue 以 key 重用元素，標記在動畫期間跟著元素走。
@@ -762,5 +773,73 @@ test.describe('甘特面板收合 / 展開（D3 / D12）', () => {
     await expect(page.locator('[data-rowtask]')).toHaveCount(30)
     await expect.poll(() => app.scrollLeftOf(app.ganttScroller)).toBe(500)
     expect(await app.scrollSyncDelta()).toBeLessThan(1)
+  })
+})
+
+test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => {
+  test('拖條到右緣自動捲動：條一直在游標下、不鋸齒抖動；放開才吸附到整天', async ({ page }) => {
+    const app = await openGantt(page)
+    await app.row('t3').locator('.name').click()
+    await pause(page, 1300)
+    await app.freezeGanttScroll(0)
+    const sc = (await app.ganttScroller.boundingBox())!
+    const b = (await app.bar('t3').boundingBox())!
+    const y = b.y + b.height / 2
+    const grabX = b.x + 24
+    const edgeX = sc.x + sc.width - 20
+    await page.mouse.move(grabX, y)
+    await page.mouse.down()
+    for (let i = 1; i <= 8; i++) {
+      await page.mouse.move(grabX + ((edgeX - grabX) * i) / 8, y)
+      await pause(page, 16)
+    }
+    const sl0 = await app.scrollLeftOf(app.ganttScroller)
+    // 游標停在右緣：自動捲動一直跑
+    const tr = await trace(page, { bar: bar('t3') }, () => pause(page, 1), { ms: 700 })
+    const sl1 = await app.scrollLeftOf(app.ganttScroller)
+    await page.mouse.up()
+    expect(sl1 - sl0, '自動捲動有在跑').toBeGreaterThan(100)
+    const xs = tr.frames.filter((f) => f.boxes.bar).map((f) => f.boxes.bar!.x)
+    const back = xs.map((x, i) => (i ? xs[i - 1]! - x : 0))
+    expect(Math.max(...back), `條的左緣逐幀：${xs.map((x) => x.toFixed(0)).join(',')}`).toBeLessThanOrEqual(1.5)
+    // 放開：補償的位移歸零，條落在整天的位置
+    await expect(app.bar('t3')).toHaveCSS('transform', 'none')
+  })
+
+  test('拖條超出專案起點（日期格往左長）：同一天的日期格與別的條每一幀都對齊', async ({ page }) => {
+    const app = await openGantt(page)
+    // t28 是最早開始、沒有前置的任務；往左拖會讓專案起點外移
+    await app.row('t28').locator('.name').click()
+    await pause(page, 1300)
+    await app.freezeGanttScroll(0)
+    // 標出 t7 開始那一天的日期格（日期格以日索引為 key，外移後同一個元素還在）
+    await page.evaluate(() => {
+      const left = (document.querySelector('.bar[data-taskid="t7"]') as HTMLElement).style.left
+      const cell = [...document.querySelectorAll<HTMLElement>('.gantt-chart > .day-bg')].find((d) => d.style.left === left)
+      cell?.setAttribute('data-probe-day', 't7')
+    })
+    const b = (await app.bar('t28').boundingBox())!
+    const y = b.y + b.height / 2
+    // 抓條的右段（避開右把手）往左 5 天：游標一直在畫布裡、離左緣夠遠，不會觸發自動捲動
+    const grabX = b.x + b.width - 30
+    await page.mouse.move(grabX, y)
+    await page.mouse.down()
+    const tr = await trace(
+      page,
+      { day: '[data-probe-day="t7"]', other: bar('t7'), dragged: bar('t28') },
+      async () => {
+        for (let i = 1; i <= 5; i++) {
+          await page.mouse.move(grabX - 32 * i, y)
+          await pause(page, 50)
+        }
+      },
+      { markOn: 'pointermove', ms: 500 },
+    )
+    await page.mouse.up()
+    await expect(app.row('t28').locator('.date-text')).toHaveText(/^2026\/08\/19 → /)
+    expect(maxSkewX(tr, 'day', 'other'), 't7 的條與它開始那一天的日期格').toBeLessThanOrEqual(4)
+    // 被拖的條一直在游標下（畫面沒有因為專案起點外移而整片跳走）
+    const xs = tr.frames.filter((f) => f.t >= tr.marks[0]! && f.boxes.dragged).map((f) => f.boxes.dragged!.x)
+    expect(Math.min(...xs), '被拖的條往左').toBeLessThan(b.x - 100)
   })
 })

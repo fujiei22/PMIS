@@ -3,6 +3,7 @@ import { useAutoScroll } from '@/composables/useAutoScroll'
 import { useDomRegistry } from '@/composables/useDomRegistry'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex, isoFromIndex } from '@/lib/date'
+import { parseDuration } from '@/lib/easing'
 import { useRowsStore } from '@/stores/rows'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
@@ -57,6 +58,11 @@ export interface PointerDrag {
   setHover: (id: string) => void
   /** 滑鼠離開；延遲 280ms 才收圓點，讓指標有時間從條移到圓點上。 */
   clearHover: (id: string) => void
+  /**
+   * 畫布座標換了基準（專案起點外移 / 內縮，所有東西右移 dx px）、捲動位置已補回 dx 之後呼叫：
+   * 拖曳的捲動基準跟著補，日期才不會多算（動畫稽核 D13）。
+   */
+  rebase: (dx: number) => void
 }
 
 const NOOP: PointerDrag = {
@@ -67,6 +73,7 @@ const NOOP: PointerDrag = {
   startPan: () => {},
   setHover: () => {},
   clearHover: () => {},
+  rebase: () => {},
 }
 
 const DRAG_KEY: InjectionKey<PointerDrag> = Symbol('pointer-drag')
@@ -127,9 +134,16 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     d: Extract<DragState, { kind: 'move' | 'resL' | 'resR' }>,
     p: { x: number; y: number },
   ): void {
-    const sl = els.gantt.value?.scrollLeft ?? 0
+    const dw = ui.dayWidth
+    const moved = p.x - d.x0
+    const scrolled = (els.gantt.value?.scrollLeft ?? 0) - d.sl0
     // 加上捲動位移，自動捲動時才不會因為畫面移動而多算幾天（legacy :2489）
-    const delta = Math.round((p.x + sl - (d.x0 + d.sl0)) / ui.dayWidth)
+    const delta = Math.round((moved + scrolled) / dw)
+    if (d.kind === 'move') {
+      // 動畫稽核 D6：自動捲動時 scrollLeft 連續在變、條卻以整天吸附，條在游標下鋸齒抖動。
+      // 補上「捲動造成、還沒湊滿一天」的差，條在畫面上只跟著游標的位移走；放開才吸附（finish）
+      nudge(d.id, scrolled - (delta - Math.round(moved / dw)) * dw)
+    }
     if (delta === d.last) return
     d.last = delta
     if (d.kind === 'move') {
@@ -144,6 +158,41 @@ export function usePointerDrag(els: DragElements): PointerDrag {
       track(taskStore.applyLocalPatch(d.id, { start: isoFromIndex(Math.min(d.s0 + delta, d.e0)) }))
     } else {
       track(taskStore.applyLocalPatch(d.id, { end: isoFromIndex(Math.max(d.e0 + delta, d.s0)) }))
+    }
+  }
+
+  /** 被拖的條（與它兩側的連線圓點）此刻的補償位移；放開時從這裡吸附回 0。 */
+  let nudged: { id: string; px: number } | null = null
+
+  /** 條與圓點一起平移 px（`transform`，跟列上下位移用的 `translate` 是不同屬性，不互相蓋掉）。 */
+  function nudgeEls(id: string): HTMLElement[] {
+    const dots = registry.linkDots.get(id)
+    return [registry.bars.get(id), dots?.L, dots?.R].filter((el): el is HTMLElement => !!el)
+  }
+
+  function nudge(id: string, px: number): void {
+    const v = Math.round(px * 100) / 100
+    if (!v && !nudged) return
+    nudged = v ? { id, px: v } : null
+    for (const el of nudgeEls(id)) el.style.transform = v ? `translateX(${v}px)` : ''
+  }
+
+  /** 放開 / 中止：拿掉補償位移，條從目前的位置補間回整天的位置（--t-bar / --ease）。 */
+  function settleNudge(): void {
+    if (!nudged) return
+    const { id, px } = nudged
+    nudged = null
+    const cs = getComputedStyle(document.documentElement)
+    const timing = {
+      duration: parseDuration(cs.getPropertyValue('--t-bar')),
+      easing: cs.getPropertyValue('--ease').trim() || 'ease',
+    }
+    for (const el of nudgeEls(id)) {
+      el.style.transform = ''
+      // jsdom 沒有 Web Animations
+      if (typeof el.animate === 'function' && timing.duration > 0) {
+        el.animate([{ transform: `translateX(${px}px)` }, { transform: 'none' }], timing)
+      }
     }
   }
 
@@ -341,6 +390,13 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     document.body.style.cursor = 'grabbing'
   }
 
+  function rebase(dx: number): void {
+    const d = ui.drag
+    if (!d) return
+    if (d.kind === 'move' || d.kind === 'resL' || d.kind === 'resR') d.sl0 += dx
+    else if (d.kind === 'pan') d.sl += dx
+  }
+
   function setHover(id: string): void {
     if (ui.drag) return
     clearTimeout(hoverTimer)
@@ -368,6 +424,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     if (!d) return null
     ui.drag = null
     auto.stop()
+    settleNudge()
     document.body.style.userSelect = ''
     if (d.kind === 'pan') document.body.style.cursor = ''
     return d
@@ -511,6 +568,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     startPan,
     setHover,
     clearHover,
+    rebase,
   }
   provide(DRAG_KEY, api)
   return api
