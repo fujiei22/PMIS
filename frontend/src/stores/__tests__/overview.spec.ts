@@ -41,6 +41,24 @@ describe('overview store', () => {
     expect(ov.anyFilter).toBe(false)
   })
 
+  it('搜尋「app」→ 只剩行動 App v2；只有空白不算篩選；清除篩選一併清掉搜尋字', () => {
+    const ov = useOverviewStore()
+    ov.setQuery('app')
+    expect(ov.visibleRows.map((r) => r.p.id)).toEqual(['app'])
+    expect(ov.counts).toEqual({ projects: 1, alerts: 0, pms: 1 })
+    expect(ov.anyFilter).toBe(true)
+    ov.setQuery('   ')
+    expect(ov.visibleRows).toHaveLength(7)
+    expect(ov.anyFilter).toBe(false)
+    ov.setQuery('入口')
+    ov.toggleStatus('doing')
+    expect(ov.visibleRows.map((r) => r.p.id)).toEqual(['portal'])
+    ov.clearFilters()
+    expect(ov.query).toBe('')
+    expect(ov.visibleRows).toHaveLength(7)
+    expect(ov.anyFilter).toBe(false)
+  })
+
   it('成員篩選語意照 Dashboard：沒勾＝全部；pms 只含當 PM 的成員', () => {
     const ov = useOverviewStore()
     expect(ov.pms.map((m) => m.id)).toEqual(['m5', 'm8', 'm9', 'm10'])

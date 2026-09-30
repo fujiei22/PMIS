@@ -40,6 +40,8 @@ export const useOverviewStore = defineStore('overview', () => {
   const pmIds = ref<string[]>([])
   const statuses = ref<ProjectStatus[]>([])
   const alerts = ref<ProjectAlert[]>([])
+  /** 專案名稱搜尋字（原樣保留使用者打的字，比對時才 trim）。 */
+  const query = ref('')
   const sorts = ref<OverviewSort[]>(DEFAULT_OVERVIEW_SORT.map((s) => ({ ...s })))
   const view = ref<OverviewView>('cards')
   const openDropdown = ref<OverviewDropdown | null>(null)
@@ -55,7 +57,7 @@ export const useOverviewStore = defineStore('overview', () => {
   )
 
   const visibleRows = computed(() => {
-    const f = { pmIds: pmIds.value, statuses: statuses.value, alerts: alerts.value }
+    const f = { pmIds: pmIds.value, statuses: statuses.value, alerts: alerts.value, query: query.value }
     return sortRows(
       rows.value.filter((r) => matchProject(r, f)),
       sorts.value,
@@ -95,8 +97,13 @@ export const useOverviewStore = defineStore('overview', () => {
     }
   })
 
+  /** 只打空白不算篩選：matchProject 會 trim，清單不會變，「清除篩選」也不該亮。 */
   const anyFilter = computed(
-    () => pmIds.value.length > 0 || statuses.value.length > 0 || alerts.value.length > 0,
+    () =>
+      pmIds.value.length > 0 ||
+      statuses.value.length > 0 ||
+      alerts.value.length > 0 ||
+      query.value.trim() !== '',
   )
   /** 時間軸範圍：用全部專案算，篩選時時間軸不會跳動。 */
   const range = computed(() => timelineRange(pf.projects, clock.todayIso))
@@ -113,10 +120,15 @@ export const useOverviewStore = defineStore('overview', () => {
   function toggleAlert(a: ProjectAlert): void {
     alerts.value = toggleIn(alerts.value, a)
   }
+  function setQuery(q: string): void {
+    query.value = q
+  }
+  /** 清掉所有篩選條件，含搜尋字。 */
   function clearFilters(): void {
     pmIds.value = []
     statuses.value = []
     alerts.value = []
+    query.value = ''
   }
 
   /** 點排序鍵：沒在清單裡就用預設方向加到最後，已經在就翻方向（OVERVIEW_SORT_DEFAULT_DIR）。 */
@@ -180,6 +192,7 @@ export const useOverviewStore = defineStore('overview', () => {
     pmIds,
     statuses,
     alerts,
+    query,
     sorts,
     view,
     openDropdown,
@@ -201,6 +214,7 @@ export const useOverviewStore = defineStore('overview', () => {
     clearPms,
     toggleStatus,
     toggleAlert,
+    setQuery,
     clearFilters,
     bumpSort,
     dropSort,

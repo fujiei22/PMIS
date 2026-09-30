@@ -36,6 +36,24 @@ test.describe('總覽 頂欄', () => {
     await expect(ov.dropdown('status').locator('.dd-menu')).toHaveCount(0)
     await expect(ov.dropdown('status').locator('button.dd-trigger')).toBeFocused()
   })
+
+  test('搜尋專案名稱：卡片與時間軸只剩符合的專案；搜不到顯示空狀態，清除篩選連搜尋字一起清', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    const search = page.getByTestId('overview-search')
+    await search.fill('app')
+    await expect(ov.count()).toHaveText('1 個專案 · 0 個需要注意 · 1 位 PM')
+    await expect.poll(() => ov.cardIds()).toEqual(['app'])
+    // 切到時間軸：搜尋字保留，同樣只剩一列
+    await page.locator('[data-view-switch="timeline"]').click()
+    await expect(page.locator('[data-view-panel="timeline"] [data-project]')).toHaveCount(1)
+    await expect(ov.row('app')).toBeVisible()
+    await expect(search).toHaveValue('app')
+    await search.fill('不存在的專案')
+    await expect(page.getByTestId('overview-empty')).toBeVisible()
+    await page.getByTestId('overview-empty').getByRole('button', { name: '清除篩選' }).click()
+    await expect(search).toHaveValue('')
+    await expect(page.locator('[data-view-panel="timeline"] [data-project]')).toHaveCount(7)
+  })
 })
 
 test.describe('總覽 卡片檢視', () => {
