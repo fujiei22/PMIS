@@ -29,6 +29,8 @@ export class OverviewPage {
     await this.page.keyboard.press('Escape')
   }
   card(id: string): Locator { return this.page.locator(`[data-view-panel="cards"] [data-project="${id}"]`) }
+  /** 卡片主體（role=button、帶 aria-expanded）：點了展開速覽；右緣直條是「進入」，不在主體裡。 */
+  cardMain(id: string): Locator { return this.card(id).locator('.card-main') }
   /** 卡片檢視的速覽抽屜（每條泳道一個）正在顯示 id 這張卡時；不在卡片裡，是插在卡片所在列下方的兄弟元素。 */
   drawer(id: string): Locator { return this.page.locator(`[data-view-panel="cards"] [data-drawer="${id}"]`) }
   cardIds(): Promise<string[]> {

@@ -54,11 +54,11 @@ test.describe('總覽 卡片檢視', () => {
 
   test('點卡片展開速覽四組；再點收合；點進入到 Dashboard', async ({ page }) => {
     const ov = new OverviewPage(page); await ov.goto()
-    await ov.card('pmis').click()
-    await expect(ov.card('pmis')).toHaveAttribute('aria-expanded', 'true')
+    await ov.cardMain('pmis').click()
+    await expect(ov.cardMain('pmis')).toHaveAttribute('aria-expanded', 'true')
     await expect(ov.drawer('pmis').locator('.qb-title')).toHaveText(['進度與任務數', '時程', '風險項目', '成員與近期任務'])
     await ov.card('pmis').locator('.card-name').click()
-    await expect(ov.card('pmis')).toHaveAttribute('aria-expanded', 'false')
+    await expect(ov.cardMain('pmis')).toHaveAttribute('aria-expanded', 'false')
     await ov.card('pmis').getByRole('link', { name: /進入/ }).click()
     await expect(page).toHaveURL(/\/projects\/pmis$/)
     await expect(page.locator('[data-panel="gantt"]')).toBeVisible()
@@ -84,9 +84,10 @@ test.describe('總覽 卡片檢視', () => {
     // 展開中 hover 卡片不上浮，箭頭才會一直貼著速覽
     await ov.card('portal').hover()
     await expect(ov.card('portal')).toHaveCSS('translate', 'none')
-    // 抽屜標頭的「收合」鈕關掉它
-    await drawer.locator('.btn-quick').click()
-    await expect(ov.card('portal')).toHaveAttribute('aria-expanded', 'false')
+    // 抽屜標頭沒有收合鈕，再點一次卡片關掉它
+    await expect(drawer.locator('.btn-quick')).toHaveCount(0)
+    await ov.card('portal').locator('.card-name').click()
+    await expect(ov.cardMain('portal')).toHaveAttribute('aria-expanded', 'false')
     await expect(drawer).toBeHidden()
     // 再展開一次要照常長出來（抽屜在 TransitionGroup 裡，曾被離場處理釘成 absolute、高度 0）
     await ov.card('portal').locator('.card-name').click()
@@ -117,10 +118,10 @@ test.describe('總覽 卡片檢視', () => {
     await ov.card('app').locator('.card-name').click()
     expect(await minH).toBeGreaterThan(200)
     await expect(ov.drawer('app').locator('.qv-name')).toHaveText('行動 App v2')
-    await expect(ov.card('portal')).toHaveAttribute('aria-expanded', 'false')
-    await expect(ov.card('app')).toHaveAttribute('aria-expanded', 'true')
+    await expect(ov.cardMain('portal')).toHaveAttribute('aria-expanded', 'false')
+    await expect(ov.cardMain('app')).toHaveAttribute('aria-expanded', 'true')
     // 成員5 的泳道照舊展開
-    await expect(ov.card('pmis')).toHaveAttribute('aria-expanded', 'true')
+    await expect(ov.cardMain('pmis')).toHaveAttribute('aria-expanded', 'true')
     await expect(ov.drawer('pmis')).toBeVisible()
   })
 
@@ -136,14 +137,23 @@ test.describe('總覽 卡片檢視', () => {
     const app = (await ov.card('app').boundingBox())!
     const box = (await drawer.boundingBox())!
     expect(box.y).toBeGreaterThan(app.y + app.height)
-    await expect(ov.card('portal')).toHaveAttribute('aria-expanded', 'false')
+    await expect(ov.cardMain('portal')).toHaveAttribute('aria-expanded', 'false')
   })
 
-  test('鍵盤：卡片上按 Enter 展開；在「進入」上按 Enter 只導頁', async ({ page }) => {
+  test('滑到右緣「進入」直條卡片不浮起；滑到主體才浮起', async ({ page }) => {
     const ov = new OverviewPage(page); await ov.goto()
-    await ov.card('wiki').focus()
+    const card = ov.card('app')
+    await card.locator('.enter-edge').hover()
+    await expect(card).toHaveCSS('translate', 'none')
+    await card.locator('.card-name').hover()
+    await expect(card).toHaveCSS('translate', '0px -1px')
+  })
+
+  test('鍵盤：卡片主體上按 Enter 展開；在「進入」上按 Enter 只導頁', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    await ov.cardMain('wiki').focus()
     await page.keyboard.press('Enter')
-    await expect(ov.card('wiki')).toHaveAttribute('aria-expanded', 'true')
+    await expect(ov.cardMain('wiki')).toHaveAttribute('aria-expanded', 'true')
     await ov.card('portal').getByRole('link', { name: /進入/ }).focus()
     await page.keyboard.press('Enter')
     await expect(page).toHaveURL(/\/projects\/portal$/)
@@ -166,10 +176,12 @@ test.describe('總覽 時間軸', () => {
     await expect(page).toHaveURL(/\/projects\/portal$/)
   })
 
-  test('速覽標頭的「收合」收起該列', async ({ page }) => {
+  test('速覽標頭沒有收合鈕，再點一次列收起', async ({ page }) => {
     const ov = new OverviewPage(page); await ov.goto('#timeline')
     await ov.row('wiki').locator('.p-row').click()
-    await ov.row('wiki').locator('.btn-quick').click()
+    await expect(ov.row('wiki').locator('.qv-head')).toBeVisible()
+    await expect(ov.row('wiki').locator('.btn-quick')).toHaveCount(0)
+    await ov.row('wiki').locator('.p-row').click()
     await expect(ov.row('wiki').locator('.p-row')).toHaveAttribute('aria-expanded', 'false')
   })
 
@@ -278,7 +290,7 @@ test.describe('總覽 頁面', () => {
     const ov = new OverviewPage(page); await ov.goto()
     // 展開一張卡讓頁面夠長，捲到底，再把要點的連結捲進畫面。
     // 位置要在點擊「之前」量：Playwright 的 click 會自動捲動讓元素可見，router 存的是點擊當下的位置。
-    await ov.card('wiki').click()
+    await ov.cardMain('wiki').click()
     // 等速覽展開完（高度動畫結束）才量：頁面還在長高時量到的位置，點擊前就會變掉
     await expect.poll(async () => (await ov.drawer('wiki').boundingBox())!.height).toBeGreaterThan(200)
     // 頁面高度連續兩幀不變＝展開動畫結束
