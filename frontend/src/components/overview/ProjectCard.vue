@@ -162,6 +162,18 @@ function onKey(e: KeyboardEvent): void {
     translate var(--t-base) var(--ease);
 }
 
+/*
+ * 進出場（篩選 / 搜尋讓卡片出現或消失）：過渡照 overview-motion.css 的 ov-card-*（淡入淡出＋縮放）。
+ * 上面 .card / .card.is-open 的 transition 是 scoped（特異度較高），會蓋掉全域的 .ov-card-enter-active，所以在這裡明寫一次。
+ * 要放在 .card.is-open 之後：兩者特異度相同，靠順序勝出——展開中的卡被篩掉時也要淡出。
+ */
+.card.ov-card-enter-active,
+.card.ov-card-leave-active {
+  transition:
+    opacity var(--t-panel) var(--ease),
+    transform var(--t-panel) var(--ease);
+}
+
 .card-head {
   display: flex;
   align-items: flex-start;

@@ -19,6 +19,13 @@
 
 /* 卡片、欄、時間軸群組與列：進出與重排（A7 / A8 / A9 / A20） */
 .ov-card-move, .ov-col-move, .ov-row-move, .ov-group-move { transition: transform var(--t-panel) var(--ease); }
+/*
+ * 泳道內卡片 / 群組內列的重排交給 useRelativeFlip，TransitionGroup 的 move-class 指到這兩個 class 來停用內建 move。
+ * 要真的寫出 transition: none，不能是不存在的 class：Vue 判斷要不要跑內建 move 時，會複製第一個子元素（連 inline style）
+ * 加上 move-class 看有沒有 transform 過渡；useRelativeFlip 先寫上的 inline transition 會讓它誤判，
+ * 用絕對位移（含泳道自己的位移）蓋掉相對位移，卡片先跳到終點再折返。!important 才壓得過 inline style。
+ */
+.ov-card-still, .ov-row-still { transition: none !important; }
 .ov-card-enter-active, .ov-card-leave-active,
 .ov-col-enter-active, .ov-col-leave-active,
 .ov-row-enter-active, .ov-row-leave-active,
