@@ -4,8 +4,17 @@ import { hasMid, idle, openDashboard, openDepEditor, peakThenFall, series, trace
 /** 對話框類浮層的進出場（動畫稽核 G12）與相依編輯器位置（G15）。 */
 test.use({ viewport: { width: 1920, height: 1080 } })
 
-const click = (page: Page, sel: string): Promise<void> =>
-  page.evaluate((sel) => (document.querySelector(sel) as HTMLElement).click(), sel)
+/**
+ * 頁內直接點（不等 Playwright 往返），回傳點下去的時間（同 trace 的時間基準）：
+ * trace 的 at 在 Playwright 往返之前就記了，at 到實際點擊之間可能夾著一幀點擊前的畫面，「離場中」要從這個時間算。
+ */
+const click = (page: Page, sel: string): Promise<number> =>
+  page.evaluate((sel) => {
+    const tr = (window as unknown as { __trace?: { t0: number } }).__trace
+    const at = tr ? performance.now() - tr.t0 : 0
+    ;(document.querySelector(sel) as HTMLElement).click()
+    return at
+  }, sel)
 
 /** 甘特列「⋮」→「刪除任務…」開第一步確認框。 */
 async function openConfirm(page: Page): Promise<void> {
@@ -20,12 +29,15 @@ async function openConfirm(page: Page): Promise<void> {
 test('G12 相依編輯器：關閉時連同遮罩淡出，離場不攔點擊', async ({ page }) => {
   await openDashboard(page)
   await openDepEditor(page, 't3')
-  const tr = await trace(page, { backdrop: '.dep-backdrop', box: '.dep-editor' }, () => click(page, '.dep-done'))
+  let clicked = 0
+  const tr = await trace(page, { backdrop: '.dep-backdrop', box: '.dep-editor' }, async () => {
+    clicked = await click(page, '.dep-done')
+  })
   for (const name of ['backdrop', 'box']) {
-    const s = series(tr, name).filter((b) => b.t > tr.at)
+    const s = series(tr, name).filter((b) => b.t > clicked)
     expect(hasMid(s.map((b) => b.o)), `${name} 離場有中間值`).toBe(true)
   }
-  expect(series(tr, 'backdrop').filter((b) => b.t > tr.at).every((b) => b.pe === 'none'), '離場中不攔點擊').toBe(true)
+  expect(series(tr, 'backdrop').filter((b) => b.t > clicked).every((b) => b.pe === 'none'), '離場中不攔點擊').toBe(true)
 })
 
 test('G12 確認框：取消時連同遮罩淡出；快速開關不閃全亮', async ({ page }) => {

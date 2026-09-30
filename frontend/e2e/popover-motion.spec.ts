@@ -4,12 +4,19 @@ import { hasMid, idle, openDashboard, openTaskDetail, pause, peakThenFall, serie
 /** 選單類浮層的進出場（動畫稽核 G12）與捲動處理（G5，Task 5）。 */
 test.use({ viewport: { width: 1920, height: 1080 } })
 
-/** 頁內直接點（不等 Playwright 往返），可選 ms 毫秒後再點第二個。 */
-function clickInPage(page: Page, first: string, then?: { sel: string; ms: number }): Promise<void> {
+/**
+ * 頁內直接點（不等 Playwright 往返），可選 ms 毫秒後再點第二個。
+ * 回傳第一下點下去的時間（同 trace 的時間基準）：trace 的 at 在 Playwright 往返之前就記了，
+ * at 到實際點擊之間可能夾著一幀點擊前的畫面，「離場中」要從這個時間算。
+ */
+function clickInPage(page: Page, first: string, then?: { sel: string; ms: number }): Promise<number> {
   return page.evaluate(
     ({ first, then }) => {
+      const tr = (window as unknown as { __trace?: { t0: number } }).__trace
+      const at = tr ? performance.now() - tr.t0 : 0
       ;(document.querySelector(first) as HTMLElement).click()
       if (then) setTimeout(() => (document.querySelector(then.sel) as HTMLElement | null)?.click(), then.ms)
+      return at
     },
     { first, then },
   )
@@ -31,8 +38,11 @@ for (const m of MENUS) {
     const opening = await trace(page, { pop: m.sel }, () => clickInPage(page, m.open))
     expect(hasMid(series(opening, 'pop').map((b) => b.o)), '進場有中間值').toBe(true)
 
-    const closing = await trace(page, { pop: m.sel }, () => clickInPage(page, m.mask))
-    const leaving = series(closing, 'pop').filter((b) => b.t > closing.at)
+    let clicked = 0
+    const closing = await trace(page, { pop: m.sel }, async () => {
+      clicked = await clickInPage(page, m.mask)
+    })
+    const leaving = series(closing, 'pop').filter((b) => b.t > clicked)
     expect(hasMid(leaving.map((b) => b.o)), '離場有中間值').toBe(true)
     expect(leaving.every((b) => b.pe === 'none'), '離場中不攔點擊').toBe(true)
 
