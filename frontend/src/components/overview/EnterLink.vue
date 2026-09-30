@@ -57,12 +57,12 @@ defineProps<{
   transition: translate var(--t-base) var(--ease);
 }
 
-/* ── edge：卡片右緣直條。--card-bg / --card-bd 由 ProjectCard 給，落後 / 需注意卡的淡底色也搭得上 ── */
+/* ── edge：卡片右緣直條，左側分隔線同卡片框色 ── */
 .enter-edge {
   min-width: 0;
-  /* 平時 PM 色 16%（= 泳道標頭的比例）混在卡片自己的底色上 */
-  background: color-mix(in srgb, var(--pm) 16%, var(--card-bg, var(--surface-1)));
-  border-left: 1px solid var(--card-bd, var(--border-1));
+  /* 平時 PM 色 16%（= 泳道標頭的比例）混在卡片的白底上 */
+  background: color-mix(in srgb, var(--pm) 16%, var(--surface-1));
+  border-left: 1px solid var(--border-1);
   border-radius: 0 calc(var(--r-panel) - 1px) calc(var(--r-panel) - 1px) 0;
   color: var(--pm-ink);
   transition:

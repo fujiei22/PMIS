@@ -149,6 +149,16 @@ test.describe('總覽 卡片檢視', () => {
     await expect(card).toHaveCSS('translate', '0px -1px')
   })
 
+  test('落後 / 需注意的卡片不換底色與框色，狀態只看 pill 與進度條', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    // wiki 落後、portal 需注意、app 進行中：三張卡同樣白底、--border-1 框
+    for (const id of ['wiki', 'portal', 'app']) {
+      await expect(ov.card(id)).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+      await expect(ov.card(id)).toHaveCSS('border-top-color', 'rgb(226, 232, 240)')
+    }
+    await expect(ov.card('wiki').locator('.pill')).toHaveClass(/pill-late/)
+  })
+
   test('鍵盤：卡片主體上按 Enter 展開；在「進入」上按 Enter 只導頁', async ({ page }) => {
     const ov = new OverviewPage(page); await ov.goto()
     await ov.cardMain('wiki').focus()

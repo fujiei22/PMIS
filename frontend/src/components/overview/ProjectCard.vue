@@ -2,6 +2,7 @@
 // 總覽的專案卡：名稱、狀態 pill、排序依據的 meta、實際 / 理論進度；右緣一條「進入」直條（user 選的 D 稿「右緣入口條」）。
 // 卡片拆成兩個並排的點擊區：左邊主體 .card-main 點了展開速覽，右緣直條點了進入 Dashboard；
 // 兩者是兄弟元素，不再把連結包在 role="button" 裡（巢狀互動元素，報讀與鍵盤事件都會互相干擾）。
+// 卡片本身不換底色與框色：狀態只看右上角 pill 與進度條色，整頁顏色才不會太雜（user 決定）。
 // 速覽不在卡片裡：是泳道裡插在這張卡所在列下方的抽屜（LaneDrawer，每條泳道一個），展開時卡片大小不變，只換外框並加一個指向抽屜的箭頭。
 import { computed } from 'vue'
 import EnterLink from '@/components/overview/EnterLink.vue'
@@ -39,7 +40,7 @@ function onKey(e: KeyboardEvent): void {
 <template>
   <article
     class="card"
-    :class="['card-' + BADGE_CLASS[d.badge], { 'is-open': open }]"
+    :class="{ 'is-open': open }"
     :data-project="p.id"
   >
     <div
@@ -88,16 +89,13 @@ function onKey(e: KeyboardEvent): void {
 /*
  * 沿用看板卡：白底、1px 邊框、hover 邊框轉色＋陰影＋上浮 1px（A1，照 TaskCard）。
  * 兩欄：主體 ＋ 右緣 44px 的「進入」直條（觸控下限 44，整張卡高）。
- * --card-bg / --card-bd 是卡片自己的底色與邊框，交給直條混色與分隔線用，落後 / 需注意卡覆寫這兩個。
  */
 .card {
-  --card-bg: var(--surface-1);
-  --card-bd: var(--border-1);
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 44px;
-  background: var(--card-bg);
-  border: 1px solid var(--card-bd);
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
   border-radius: var(--r-panel);
   /*
    * hover 上浮用獨立的 translate 屬性，不用 transform：transform 留給欄內重排（useRelativeFlip），
@@ -107,17 +105,6 @@ function onKey(e: KeyboardEvent): void {
     border-color var(--t-base) var(--ease),
     box-shadow var(--t-base) var(--ease),
     translate var(--t-base) var(--ease);
-}
-
-/* 狀態淡底色：落後 / 需注意（不用左側彩色 border 條） */
-.card-late {
-  --card-bg: var(--bg-late);
-  --card-bd: var(--danger-bd);
-}
-
-.card-paused {
-  --card-bg: var(--ist-paused-bg);
-  --card-bd: var(--ist-paused-bd);
 }
 
 /* 主體：點了展開速覽。右內距 16 → 12：讓出直條寬後，排序鍵那一行在 5 欄時仍放得下一行 */

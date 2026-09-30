@@ -37,10 +37,11 @@ async function setup() {
 describe('ProjectCard', () => {
   beforeEach(() => setActivePinia(createPinia()))
 
-  it('客戶入口：名稱、需注意 pill（paused 色系）、實際 62%、meta 落後 13 用 warn 色', async () => {
+  it('客戶入口：名稱、需注意 pill（paused 色系）、卡片本身不帶狀態色、實際 62%、meta 落後 13 用 warn 色', async () => {
     const { w } = await setup()
     expect(w.find('.card-name').text()).toBe('客戶入口網站改版')
-    expect(w.find('article').classes()).toContain('card-paused')
+    expect(w.find('.pill').classes()).toContain('pill-paused')
+    expect(w.find('article').classes()).toEqual(['card'])
     expect(w.find('.pill').text()).toContain('需注意')
     expect(w.find('.hero').text().replace(/\s/g, '')).toBe('62%')
     expect(w.find('.meta-gap').text()).toBe('落後 13%')
