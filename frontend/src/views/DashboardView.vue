@@ -78,7 +78,10 @@ onBeforeUnmount(() => {
     <RowActionMenu />
     <DatePicker />
     <DependencyEditor />
-    <ConfirmDialog v-if="confirmView" v-bind="confirmView" />
+    <!-- 確認框由這裡的 v-if 卸載，離場過渡要包在這一層（包在元件裡面不會跑） -->
+    <Transition name="dialog">
+      <ConfirmDialog v-if="confirmView" v-bind="confirmView" />
+    </Transition>
     <ImageLightbox />
   </div>
 </template>

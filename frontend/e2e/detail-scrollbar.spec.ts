@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { idle, openDashboard, openTaskDetail, series, trace } from './helpers/motion'
+import { hasMid, idle, openDashboard, openTaskDetail, series, trace } from './helpers/motion'
 
 /**
  * 有實體捲軸時的詳情開關（動畫稽核 G1）。headless 預設隱藏捲軸（寬 0），15px 的橫跳量不到，
@@ -41,4 +41,22 @@ test('G1 開關詳情：背景不左右跳、Modal 中心 x 整段不變', async
   await idle(page)
   expect((await me.boundingBox())!.x, '關閉後頂欄右側不動').toBe(x0)
   expect(await shifts(), 'layout-shift 筆數').toBe(0)
+})
+
+test('詳情內刪任務：確認框淡出期間中心 x 不變，全部關完後 body 解鎖、不留補寬', async ({ page }) => {
+  await openDashboard(page)
+  await openTaskDetail(page, 't3')
+  await page.locator('.delete-task').click()
+  await page.locator('.confirm-dialog .btn-next').click()
+  await expect(page.locator('.confirm-dialog .btn-danger')).toBeVisible()
+  await idle(page)
+  const tr = await trace(page, { box: '.confirm-dialog' }, () =>
+    page.evaluate(() => (document.querySelector('.confirm-dialog .btn-danger') as HTMLElement).click()),
+  )
+  const s = series(tr, 'box')
+  expect(hasMid(s.filter((b) => b.t > tr.at).map((b) => b.o)), '確認框有淡出').toBe(true)
+  expect(Math.max(...s.map((b) => b.cx)) - Math.min(...s.map((b) => b.cx)), '確認框中心 x').toBeLessThanOrEqual(0.5)
+  await expect(page.locator('.detail-modal')).toHaveCount(0)
+  await idle(page)
+  expect(await page.evaluate(() => [document.body.style.overflow, document.body.style.paddingRight])).toEqual(['', ''])
 })

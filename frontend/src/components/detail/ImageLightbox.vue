@@ -6,13 +6,16 @@ const ui = useUiStore()
 </script>
 
 <template>
-  <div v-if="ui.lightbox" class="lightbox" role="button" @click="ui.lightbox = null">
-    <img v-if="ui.lightbox.url" :src="ui.lightbox.url" :alt="ui.lightbox.name" />
-    <div class="caption">
-      <span>{{ ui.lightbox.name }}</span>
-      <span class="size">{{ ui.lightbox.size }}</span>
+  <!-- 只淡入淡出（base.css 的 fade）：整片覆蓋，圖片與說明不位移縮放 -->
+  <Transition name="fade">
+    <div v-if="ui.lightbox" class="lightbox" role="button" @click="ui.lightbox = null">
+      <img v-if="ui.lightbox.url" :src="ui.lightbox.url" :alt="ui.lightbox.name" />
+      <div class="caption">
+        <span>{{ ui.lightbox.name }}</span>
+        <span class="size">{{ ui.lightbox.size }}</span>
+      </div>
     </div>
-  </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -28,7 +31,6 @@ const ui = useUiStore()
   gap: var(--sp-6);
   padding: 32px;
   cursor: zoom-out;
-  animation: fadeIn 0.15s ease-out;
 }
 
 .lightbox img {

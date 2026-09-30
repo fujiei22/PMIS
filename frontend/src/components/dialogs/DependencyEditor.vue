@@ -2,7 +2,7 @@
 // 相依編輯器：列出一個任務的前置與後續，並用 <select> 新增。
 // 候選會排除自己、已建立的那條，以及會造成循環的任務（reachable）。
 // legacy 對照：模板 :1412-1457，depPreds / depPredOptions :4030-4058。
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { reachable } from '@/lib/schedule'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -78,47 +78,72 @@ function addSucc(e: Event): void {
 function close(): void {
   ui.depEditFor = null
 }
+
+/**
+ * 打開時置中、之後上緣固定（user 決定；G15）：增刪前置 / 後續任務會改變高度，一直垂直置中的話
+ * 上下兩端每次都一起跳。打開後、第一次畫出來之前量出置中時的上緣，改成靠上對齊固定在那裡，之後只往下長。
+ */
+const editorEl = ref<HTMLElement | null>(null)
+const pinnedTop = ref<number | null>(null)
+watch(
+  () => !!target.value,
+  (open) => {
+    // offsetTop 不含進場 transform，量到的是置中後的真正位置
+    pinnedTop.value = open && editorEl.value ? editorEl.value.offsetTop : null
+  },
+  { flush: 'post' },
+)
 </script>
 
 <template>
-  <div v-if="target" class="dep-backdrop" @click="close()">
-    <div class="dep-editor" role="dialog" aria-modal="true" @click.stop>
-      <div class="dep-title">相依關係</div>
-      <div class="dep-sub">
-        {{ target.name }}｜可設定多個前置與多個後續任務，下游開始日不會早於上游結束日
-      </div>
-
-      <div class="dep-section">前置任務（必須先完成）</div>
-      <div class="dep-list">
-        <div v-for="p in preds" :key="p.id" class="dep-row dep-pred-row">
-          <div class="dep-name">{{ p.name }}</div>
-          <div class="dep-range">{{ p.range }}</div>
-          <div class="dep-x" role="button" @click="taskStore.removeDep(p.id)">✕</div>
+  <!-- 進出場用 base.css 的 dialog：遮罩淡入淡出，本體跟著位移縮放 -->
+  <Transition name="dialog">
+    <div
+      v-if="target"
+      class="dep-backdrop"
+      :style="
+        pinnedTop === null ? undefined : { alignItems: 'flex-start', paddingTop: `${pinnedTop}px` }
+      "
+      @click="close()"
+    >
+      <div ref="editorEl" class="dep-editor" role="dialog" aria-modal="true" @click.stop>
+        <div class="dep-title">相依關係</div>
+        <div class="dep-sub">
+          {{ target.name }}｜可設定多個前置與多個後續任務，下游開始日不會早於上游結束日
         </div>
-      </div>
-      <select class="dep-select dep-pred-select" @change="addPred">
-        <option value="">＋ 新增前置任務…</option>
-        <option v-for="o in predOptions" :key="o.id" :value="o.id">{{ o.name }}</option>
-      </select>
 
-      <div class="dep-section">後續任務（等待此任務）</div>
-      <div class="dep-list">
-        <div v-for="s in succs" :key="s.id" class="dep-row dep-succ-row">
-          <div class="dep-name">{{ s.name }}</div>
-          <div class="dep-range">{{ s.range }}</div>
-          <div class="dep-x" role="button" @click="taskStore.removeDep(s.id)">✕</div>
+        <div class="dep-section">前置任務（必須先完成）</div>
+        <div class="dep-list">
+          <div v-for="p in preds" :key="p.id" class="dep-row dep-pred-row">
+            <div class="dep-name">{{ p.name }}</div>
+            <div class="dep-range">{{ p.range }}</div>
+            <div class="dep-x" role="button" @click="taskStore.removeDep(p.id)">✕</div>
+          </div>
         </div>
-      </div>
-      <select class="dep-select dep-succ-select" @change="addSucc">
-        <option value="">＋ 新增後續任務…</option>
-        <option v-for="o in succOptions" :key="o.id" :value="o.id">{{ o.name }}</option>
-      </select>
+        <select class="dep-select dep-pred-select" @change="addPred">
+          <option value="">＋ 新增前置任務…</option>
+          <option v-for="o in predOptions" :key="o.id" :value="o.id">{{ o.name }}</option>
+        </select>
 
-      <div class="dep-actions">
-        <button class="dep-done" @click="close()">完成</button>
+        <div class="dep-section">後續任務（等待此任務）</div>
+        <div class="dep-list">
+          <div v-for="s in succs" :key="s.id" class="dep-row dep-succ-row">
+            <div class="dep-name">{{ s.name }}</div>
+            <div class="dep-range">{{ s.range }}</div>
+            <div class="dep-x" role="button" @click="taskStore.removeDep(s.id)">✕</div>
+          </div>
+        </div>
+        <select class="dep-select dep-succ-select" @change="addSucc">
+          <option value="">＋ 新增後續任務…</option>
+          <option v-for="o in succOptions" :key="o.id" :value="o.id">{{ o.name }}</option>
+        </select>
+
+        <div class="dep-actions">
+          <button class="dep-done" @click="close()">完成</button>
+        </div>
       </div>
     </div>
-  </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -131,7 +156,6 @@ function close(): void {
   justify-content: center;
   z-index: 200;
   padding: var(--sp-10);
-  animation: fadeIn var(--t-pop) ease-out;
 }
 
 .dep-editor {
@@ -141,9 +165,9 @@ function close(): void {
   border-radius: var(--r-dialog);
   padding: var(--sp-10);
   box-shadow: var(--shadow-dialog);
-  max-height: 80vh;
+  /* 100% = 遮罩內容高：置中時等於原本的 80vh；上緣固定後到視窗底為止，再高就在框內捲動 */
+  max-height: min(80vh, 100%);
   overflow: auto;
-  animation: popIn var(--t-fast) ease-out;
 }
 
 .dep-title {
