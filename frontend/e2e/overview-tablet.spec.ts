@@ -46,10 +46,14 @@ test('卡片：PM 標頭在卡片上方、卡片一列兩張；展開的速覽�
 
   await ov.card('pmis').locator('.card-name').tap()
   await expect.poll(async () => (await ov.drawer('pmis').boundingBox())?.height ?? 0).toBeGreaterThan(200)
-  const d = (await ov.drawer('pmis').boundingBox())!
+  // 速覽超出畫面時會自動捲進來（A28），捲動前後量的座標不能混著比：卡片與速覽在同一瞬間量
+  const [card, d] = await page.evaluate(() => {
+    const rect = (sel: string) => document.querySelector(sel)!.getBoundingClientRect().toJSON() as DOMRect
+    return [rect('[data-view-panel="cards"] [data-project="payment"]'), rect('[data-view-panel="cards"] [data-drawer="pmis"]')]
+  })
   expect(d.x).toBeCloseTo(pmis.x, 0)
   expect(d.width).toBeCloseTo(pay.x + pay.width - pmis.x, 0)
-  expect(d.y).toBeGreaterThanOrEqual(pay.y + pay.height)
+  expect(d.y).toBeGreaterThanOrEqual(card.y + card.height)
 })
 
 test('時間軸：標題列一行；左欄 260px、只留實際 %；起點在左欄底下的 bar 名稱仍看得到', async ({ page }) => {
