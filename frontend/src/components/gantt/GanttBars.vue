@@ -14,6 +14,11 @@ import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 import type { Group, Task } from '@/types/models'
 
+const props = defineProps<{
+  /** 畫布高度（px）。今天線用它當高度：寫成 100% 的話畫布變矮時 height 的過渡永遠不會觸發（legacy 用 px，:3519）。 */
+  chartHeight: number
+}>()
+
 const clock = useClockStore()
 const ui = useUiStore()
 const rowsStore = useRowsStore()
@@ -71,7 +76,11 @@ const todayLeft = computed(
 <template>
   <GanttBar v-for="b in bars" :key="barKey(b)" v-bind="b" />
 
-  <div class="today-line" :class="{ still: ui.zooming }" :style="{ left: `${todayLeft}px` }"></div>
+  <div
+    class="today-line"
+    :class="{ still: ui.zooming }"
+    :style="{ left: `${todayLeft}px`, height: `${props.chartHeight}px` }"
+  ></div>
   <div class="today-tag" :class="{ still: ui.zooming }" :style="{ left: `${todayLeft + 5}px` }">
     今天
   </div>
@@ -82,13 +91,13 @@ const todayLeft = computed(
   position: absolute;
   top: 0;
   width: 2px;
-  height: 100%;
   background: var(--today);
   z-index: 2;
   pointer-events: none;
+  /* 高度跟列的上下位移用同一組時長與曲線，收合 / 展開時底端跟著最後一列走 */
   transition:
     left var(--t-bar) var(--ease),
-    height var(--t-bar) ease;
+    height var(--t-bar) var(--ease);
 }
 
 .today-tag {

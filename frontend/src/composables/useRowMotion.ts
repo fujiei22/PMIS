@@ -1,8 +1,16 @@
-import { onBeforeUnmount, shallowRef, watch, type ShallowRef } from 'vue'
+import {
+  inject,
+  onBeforeUnmount,
+  provide,
+  shallowRef,
+  watch,
+  type InjectionKey,
+  type ShallowRef,
+} from 'vue'
 import { parseDuration, parseEasing } from '@/lib/easing'
 
 /**
- * 甘特列的上下位移補間：左欄列、橫紋、條（之後還有連線圓點、相依線）共用同一個時鐘。
+ * 甘特列的上下位移補間：左欄列、橫紋、條、連線圓點共用同一個時鐘（相依線照條實際的位置畫，見 DependencyLines）。
  *
  * 為什麼不用 TransitionGroup 的 move ＋ 條 / 橫紋自己的 `top` 過渡（動畫稽核 D1 / D2 / D5 / D9）：
  * 兩套機制各走各的——離場列被 Vue 當成要等列自身 0.16s 過渡才移除、佔位；CSS 過渡反向時會縮短時長；
@@ -43,7 +51,7 @@ export interface RowMotionTiming {
 export interface RowMotionOptions {
   /** 目前的列 key，由上到下。 */
   keys: () => readonly string[]
-  /** 某一列在畫面上的元素（左欄列、橫紋、條…）；不在畫面上的回 undefined。 */
+  /** 某一列在畫面上的元素（左欄列、橫紋、條、圓點…）；不在畫面上的回 undefined。 */
   elementsOf: (key: string) => Iterable<HTMLElement | undefined>
   /** 一列的高度（px）。 */
   rowHeight: number
@@ -52,12 +60,17 @@ export interface RowMotionOptions {
 }
 
 export interface RowMotion {
-  /** 列 key → 這一幀的位移（px），只放正在補間的列。畫折線的相依線要加上它，才會跟條一起走。 */
+  /**
+   * 列 key → 這一幀的位移（px），只放正在補間的列。
+   * 每一幀在所有元素都寫好位移之後才換新值，相依線可以拿它當「這一幀的條已經就位」的訊號。
+   */
   offsets: Readonly<ShallowRef<ReadonlyMap<string, number>>>
 }
 
+const MOTION_KEY: InjectionKey<RowMotion> = Symbol('row-motion')
+
 /** 預設的時長與曲線：左右位移統一用 `--t-bar`（條原本的 top 過渡）與 `--ease`。 */
-function tokenTiming(): RowMotionTiming {
+export function tokenTiming(): RowMotionTiming {
   const cs = getComputedStyle(document.documentElement)
   return {
     duration: parseDuration(cs.getPropertyValue('--t-bar')),
@@ -147,5 +160,12 @@ export function useRowMotion(opts: RowMotionOptions): RowMotion {
     anims.clear()
   })
 
-  return { offsets }
+  const api: RowMotion = { offsets }
+  provide(MOTION_KEY, api)
+  return api
+}
+
+/** 甘特圖底下的元件（相依線）取用列位移補間；不在甘特圖裡時是一份永遠空的。 */
+export function useRowMotionContext(): RowMotion {
+  return inject(MOTION_KEY, () => ({ offsets: shallowRef(new Map()) }), true)
 }

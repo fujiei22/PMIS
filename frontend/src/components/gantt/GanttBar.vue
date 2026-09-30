@@ -211,7 +211,7 @@ function onDown(e: PointerEvent): void {
     <div
       :ref="dotRefs.L"
       class="dot-zone zone-l"
-      :class="{ shown: showL }"
+      :class="{ shown: showL, still }"
       :data-linkfor="id"
       :style="{ left: `${zoneL}px`, top: `${zoneY}px` }"
       @pointerdown="drag.startLink($event, id, 'L')"
@@ -223,7 +223,7 @@ function onDown(e: PointerEvent): void {
     <div
       :ref="dotRefs.R"
       class="dot-zone zone-r"
-      :class="{ shown: showR }"
+      :class="{ shown: showR, still }"
       :data-linkfor="id"
       :style="{ left: `${zoneR}px`, top: `${zoneY}px` }"
       @pointerdown="drag.startLink($event, id, 'R')"
@@ -394,7 +394,18 @@ function onDown(e: PointerEvent): void {
   z-index: 20;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s ease;
+  /*
+   * 左右跟條的 left / width 同一組時長與曲線：條變寬、被 cascade 推動時圓點貼著條緣走（動畫稽核 D4）。
+   * 上下位移由 GanttPanel 的 useRowMotion 寫 translate，跟條同一個時鐘。
+   */
+  transition:
+    left var(--t-bar) var(--ease),
+    opacity var(--t-fast) ease;
+}
+
+/* 條自己被拖 / 縮放中：條不補間，圓點也不補間 */
+.dot-zone.still {
+  transition: opacity var(--t-fast) ease;
 }
 
 .dot-zone.shown {

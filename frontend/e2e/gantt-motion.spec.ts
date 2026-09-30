@@ -23,6 +23,8 @@ interface Box {
   o: number
   /** computed `scale`（沒設就是 1）。 */
   s: number
+  /** SVG 折線才有：第一點與最後一點的畫面座標 [x0, y0, x1, y1]。 */
+  pts?: [number, number, number, number]
 }
 
 interface Frame {
@@ -86,6 +88,12 @@ async function trace(
             h: r.height,
             o: parseFloat(cs.opacity),
             s: cs.scale === 'none' ? 1 : parseFloat(cs.scale),
+          }
+          if (el instanceof SVGPolylineElement && el.points.numberOfItems && el.ownerSVGElement) {
+            const o = el.ownerSVGElement.getBoundingClientRect()
+            const a = el.points.getItem(0)
+            const b = el.points.getItem(el.points.numberOfItems - 1)
+            boxes[name]!.pts = [o.left + a.x, o.top + a.y, o.left + b.x, o.top + b.y]
           }
         }
         frames.push({ t: now - t0, dt: now - last, boxes })
@@ -521,5 +529,142 @@ test.describe('程式捲動補間讓位給使用者（D7）', () => {
     const end = await scrollLeftOf(app)
     // 沒讓位的話補間會一路把位置拉回今天
     expect(Math.abs(end - today), `停在 ${end}、今天在 ${today}`).toBeGreaterThan(100)
+  })
+})
+
+/**
+ * 在相依線上打測試用的標記（`data-probe-dep="<from>-<to>"`）：可見的 `.dep` 與點擊熱區 `.dep-hit` 是同一份清單、同一個順序，
+ * 熱區的 `<title>` 寫著「A → B（點擊刪除串接）」，用任務名對回去。
+ */
+async function tagDeps(page: Page, pairs: [string, string][]): Promise<void> {
+  await page.evaluate((pairs) => {
+    const name = (id: string): string =>
+      document.querySelector(`[data-rowtask="${id}"] .name`)?.getAttribute('title') ?? ''
+    const hits = [...document.querySelectorAll('.dep-hit')]
+    const lines = document.querySelectorAll('.dep-layer polyline.dep')
+    for (const [a, b] of pairs) {
+      const i = hits.findIndex((h) => h.textContent?.startsWith(`${name(a)} → ${name(b)}`))
+      lines[i]?.setAttribute('data-probe-dep', `${a}-${b}`)
+    }
+  }, pairs)
+}
+
+/**
+ * 相依線兩端與條的最大落差（同一幀）：起點貼著前置條的右緣、條的垂直中線（top + 11），
+ * 終點在後續條左緣往左 3px（箭頭）、同樣在垂直中線（DependencyLines 的 ax / ay / endX / by）。
+ */
+function depGap(tr: Trace, from: string, to: string, since: number): number {
+  let max = 0
+  for (const f of tr.frames) {
+    if (f.t < since) continue
+    const d = f.boxes[`dep:${from}-${to}`]?.pts
+    const a = f.boxes[`bar:${from}`]
+    const b = f.boxes[`bar:${to}`]
+    if (!d || !a || !b) continue
+    max = Math.max(
+      max,
+      Math.abs(d[0] - (a.x + a.w)),
+      Math.abs(d[1] - (a.y + 11)),
+      Math.abs(d[2] - (b.x - 3)),
+      Math.abs(d[3] - (b.y + 11)),
+    )
+  }
+  return +max.toFixed(1)
+}
+
+test.describe('相依線、今天線、選取淡化跟著條走（D4）', () => {
+  const PAIRS: [string, string][] = [
+    ['t8', 't9'],
+    ['t9', 't20'],
+  ]
+  const depTargets = (): Record<string, string> => {
+    const out: Record<string, string> = {}
+    for (const [a, b] of PAIRS) {
+      out[`dep:${a}-${b}`] = `[data-probe-dep="${a}-${b}"]`
+      out[`bar:${a}`] = bar(a)
+      out[`bar:${b}`] = bar(b)
+    }
+    return out
+  }
+
+  test('收合 g1：相依線兩端每一幀都貼著還在上移的條', async ({ page }) => {
+    const app = await openGantt(page)
+    await tagDeps(page, PAIRS)
+    const tr = await trace(page, depTargets(), () => app.groupRow('g1').locator('.caret').click())
+    const at = tr.marks[0]!
+    expect(pathReport(tr, 'bar:t9', at).moved, 't9 的條要有位移').toBeGreaterThan(100)
+    for (const [a, b] of PAIRS) expect(depGap(tr, a, b, at), `${a} → ${b}`).toBeLessThanOrEqual(4)
+  })
+
+  test('列選單 +1 天：相依線跟著變寬的條與被推動的下游一起走', async ({ page }) => {
+    const app = await openGantt(page)
+    await tagDeps(page, PAIRS)
+    await app.rowMore('t8').click()
+    const tr = await trace(page, depTargets(), () =>
+      app.rowMenu.locator('.rm-step', { hasText: '+1天' }).click(),
+    )
+    const at = tr.marks[0]!
+    const pushed = seriesOf(tr, 'bar:t9', at)
+    expect(pushed.at(-1)!.x - pushed[0]!.x, 't9 被推一天').toBeGreaterThan(20)
+    for (const [a, b] of PAIRS) expect(depGap(tr, a, b, at), `${a} → ${b}`).toBeLessThanOrEqual(4)
+  })
+
+  test('選取 t3：無關的相依線淡化有中間幀', async ({ page }) => {
+    const app = await openGantt(page)
+    await tagDeps(page, [['t24', 't25']])
+    const tr = await trace(page, { dep: '[data-probe-dep="t24-t25"]' }, () => app.row('t3').locator('.name').click())
+    const ops = tr.frames.filter((f) => f.t >= tr.marks[0]!).map((f) => f.boxes.dep?.o ?? 1)
+    expect(ops.at(-1), '最後淡到 0.25').toBeCloseTo(0.25, 2)
+    expect(ops.some((o) => o > 0.3 && o < 0.95), `淡化有中間幀：${ops.join(',')}`).toBe(true)
+  })
+
+  test('收合 g1：今天線高度逐幀變短（跟著畫布，不是一幀跳到終點）', async ({ page }) => {
+    const app = await openGantt(page)
+    const tr = await trace(page, { today: '.today-line' }, () => app.groupRow('g1').locator('.caret').click())
+    // 從點下去之前的最後一幀算起
+    const hs = seriesOf(tr, 'today', tr.marks[0]!).map((f) => f.h)
+    const [h0, h1] = [hs[0]!, hs.at(-1)!]
+    expect(h0 - h1, '畫布少了 6 列').toBeGreaterThan(150)
+    expect(hs.some((h) => h < h0 - 10 && h > h1 + 10), `高度有中間幀：${hs.join(',')}`).toBe(true)
+    expect(hs.every((h, i) => i === 0 || h <= hs[i - 1]! + 0.5), '一路變短').toBe(true)
+  })
+})
+
+test.describe('平板：選取中常駐的連線圓點跟著條走（D4）', () => {
+  test.use({ viewport: { width: 1024, height: 768 }, hasTouch: true, isMobile: true })
+
+  const dots = {
+    bar: bar('t8'),
+    dotR: '[data-linkfor="t8"].zone-r',
+    dotL: '[data-linkfor="t8"].zone-l',
+  }
+
+  /** 右側圓點熱區貼在條右緣外 2px、上緣比條高 9px（GanttBar 的 zoneR / zoneY）。 */
+  function dotGap(tr: Trace, since: number): number {
+    let max = 0
+    for (const f of tr.frames) {
+      if (f.t < since || !f.boxes.bar || !f.boxes.dotR) continue
+      const b = f.boxes.bar
+      const d = f.boxes.dotR
+      max = Math.max(max, Math.abs(d.x - (b.x + b.w + 2)), Math.abs(d.y - (b.y - 9)))
+    }
+    return +max.toFixed(1)
+  }
+
+  test('+1 天：右側圓點跟著條的右緣走；收合上方分類：圓點跟著條上移', async ({ page }) => {
+    const app = await openGantt(page)
+    await app.row('t8').locator('.name').tap()
+    await pause(page, 1300)
+    await expect(page.locator(dots.dotR)).toHaveClass(/shown/)
+
+    await app.rowMore('t8').tap()
+    let tr = await trace(page, dots, () => app.rowMenu.locator('.rm-step', { hasText: '+1天' }).tap())
+    expect(dotGap(tr, tr.marks[0]!), '+1 天時圓點與條右緣').toBeLessThanOrEqual(4)
+
+    await page.locator('.rm-mask').tap()
+    await idle(page)
+    tr = await trace(page, dots, () => app.groupRow('g1').locator('.caret').tap())
+    expect(pathReport(tr, 'bar', tr.marks[0]!).moved, '條要有位移').toBeGreaterThan(100)
+    expect(dotGap(tr, tr.marks[0]!), '收合時圓點與條').toBeLessThanOrEqual(4)
   })
 })

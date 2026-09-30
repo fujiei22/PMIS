@@ -135,7 +135,7 @@ const stripes = computed(() =>
 const stripeEls = new Map<string, HTMLElement>()
 
 /**
- * 某一列（`g-<gid>` / `t-<tid>`）在畫面上的元素：左欄列、橫紋、條（收合分類是摘要條）。
+ * 某一列（`g-<gid>` / `t-<tid>`）在畫面上的元素：左欄列、橫紋、條（收合分類是摘要條）、條兩側的連線圓點。
  * 同一列的元素由 useRowMotion 寫同一個位移，左右才會一起走。
  */
 function* rowElements(key: string): Generator<HTMLElement | undefined> {
@@ -147,6 +147,9 @@ function* rowElements(key: string): Generator<HTMLElement | undefined> {
   } else {
     yield registry.rows.get(id)
     yield registry.bars.get(id)
+    const dots = registry.linkDots.get(id)
+    yield dots?.L
+    yield dots?.R
   }
 }
 
@@ -321,7 +324,7 @@ function toggleAllGroups(): void {
               :style="{ top: `${s.top}px`, width: `${chartWidth}px` }"
             ></div>
             <DependencyLines :chart-width="chartWidth" :chart-height="chartHeight" />
-            <GanttBars />
+            <GanttBars :chart-height="chartHeight" />
           </div>
         </div>
       </div>
