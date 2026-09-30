@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { defineComponent, h, ref, type Ref } from 'vue'
+import { defineComponent, h, nextTick, ref, type Ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockApi as maybeMockApi } from '@/api'
 import { useGanttScroll, type GanttScroll } from '@/composables/useGanttScroll'
@@ -146,5 +146,57 @@ describe('useGanttScroll', () => {
     // 不是數字就什麼都不做
     api.onZoom('abc')
     expect(ui.dayWidth).toBe(20)
+  })
+})
+// 動畫稽核 D7：「今天」與選取 focus 的捲動補間不讓位給使用者——期間拖條會把捲動量算進拖曳（改錯日期）、
+// 滾輪無效、縮放後今天偏掉。使用者一動手就要停。
+describe('useGanttScroll 的捲動補間讓位給使用者（D7）', () => {
+  /** 開一段補間、跑到中途，回傳中途的位置。 */
+  function midway(api: GanttScroll, sc: HTMLElement): number {
+    api.scrollTo(1200, true)
+    frames.pop()!(performance.now() + 100)
+    const mid = sc.scrollLeft
+    expect(mid).toBeGreaterThan(0)
+    expect(mid).toBeLessThan(1200)
+    return mid
+  }
+
+  /** 把排隊中的幀都跑掉（時間走完）；被停掉的補間不該再改位置。 */
+  function flush(): void {
+    while (frames.length) frames.pop()!(performance.now() + 5000)
+  }
+
+  it.each(['pointerdown', 'wheel', 'touchstart'])('scroller 上的 %s 停掉補間，位置留在當下', (type) => {
+    const sc = scrollerEl(4000, 800)
+    const api = mountScroll(ref(sc), ref(rulerEl()))
+    const mid = midway(api, sc)
+
+    sc.dispatchEvent(new Event(type))
+    flush()
+    expect(sc.scrollLeft).toBe(mid)
+  })
+
+  it('縮放時停掉補間（不然會捲到舊比例算出來的位置）', () => {
+    const sc = scrollerEl(4000, 800)
+    const api = mountScroll(ref(sc), ref(rulerEl()))
+    const mid = midway(api, sc)
+
+    api.onZoom('20')
+    flush()
+    expect(sc.scrollLeft).toBe(mid)
+  })
+
+  it('scroller 換了一顆（面板收合再展開）也照樣監聽', async () => {
+    const first = scrollerEl(4000, 800)
+    const scroller = ref<HTMLElement | null>(first)
+    const api = mountScroll(scroller, ref(rulerEl()))
+    const second = scrollerEl(4000, 800)
+    scroller.value = second
+    await nextTick()
+    const mid = midway(api, second)
+
+    second.dispatchEvent(new Event('wheel'))
+    flush()
+    expect(second.scrollLeft).toBe(mid)
   })
 })

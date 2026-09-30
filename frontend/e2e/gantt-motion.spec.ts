@@ -467,3 +467,59 @@ test.describe('排序放手不變成點選（D16）', () => {
     await expect(app.groupRow('g2')).not.toHaveClass(/selected/)
   })
 })
+
+test.describe('程式捲動補間讓位給使用者（D7）', () => {
+  // 這組不量逐幀位置，照一般 e2e 固定時鐘（今天 = 2026-09-18），捲動位置才可預期
+  const scrollLeftOf = (app: DashboardPage): Promise<number> => app.scrollLeftOf(app.ganttScroller)
+
+  test('選取 t6 的 focus 捲動中按住條右移 6px：日期不變（捲動量不算進拖曳）', async ({ page }) => {
+    const app = new DashboardPage(page)
+    await app.goto()
+    // 先量 focus 捲動的終點：選取 t6、等補間（最長 1.15 秒）跑完，再取消選取
+    await app.row('t6').locator('.name').click()
+    await pause(page, 1300)
+    const target = await scrollLeftOf(app)
+    await app.row('t6').locator('.name').click()
+    // 從終點左邊 400px 再選一次：補間約 0.5 秒，條從右往左滑，一直在畫布中段（離自動捲動的邊緣很遠）
+    await app.ganttScroller.evaluate((el, v) => {
+      el.scrollLeft = v
+    }, target - 400)
+    const before = await app.row('t6').locator('.date-text').innerText()
+    await app.row('t6').locator('.name').click()
+    await pause(page, 60)
+    const b = (await app.bar('t6').boundingBox())!
+    const x = b.x + b.width / 2
+    const y = b.y + b.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await pause(page, 250)
+    await page.mouse.move(x + 3, y)
+    await pause(page, 250)
+    await page.mouse.move(x + 6, y)
+    await pause(page, 300)
+    await page.mouse.up()
+    await expect(app.row('t6').locator('.date-text')).toHaveText(before)
+  })
+
+  test('「今天」捲動補間中滾輪有效：停在滾輪之後的位置，不被拉回今天', async ({ page }) => {
+    const app = new DashboardPage(page)
+    await app.goto()
+    // 先量「今天」補間的終點
+    await app.todayButton.click()
+    await pause(page, 1300)
+    const today = await scrollLeftOf(app)
+    // 從最右邊按「今天」：往左捲一大段；60ms 後在畫布上往右滾
+    await app.ganttScroller.evaluate((el) => {
+      el.scrollLeft = el.scrollWidth
+    })
+    await app.todayButton.click()
+    const box = (await app.ganttScroller.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + 60)
+    await pause(page, 60)
+    await page.mouse.wheel(400, 0)
+    await pause(page, 1300)
+    const end = await scrollLeftOf(app)
+    // 沒讓位的話補間會一路把位置拉回今天
+    expect(Math.abs(end - today), `停在 ${end}、今天在 ${today}`).toBeGreaterThan(100)
+  })
+})

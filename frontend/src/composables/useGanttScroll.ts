@@ -41,7 +41,8 @@ export function useGanttScroll(
   const scrollX = ref(0)
   const viewW = ref(0)
 
-  let raf: number | undefined
+  /** 正在跑的捲動補間；被新的捲動或使用者動手取消時換掉，已排隊的那一幀看到不是自己就不再寫。 */
+  let anim: { raf: number } | null = null
   let zoomTimer: ReturnType<typeof setTimeout> | undefined
   let initialTimer: ReturnType<typeof setTimeout> | undefined
   let ro: ResizeObserver | undefined
@@ -60,12 +61,21 @@ export function useGanttScroll(
     scrollX.value = sc.scrollLeft
   }
 
+  /**
+   * 停掉程式捲動的補間（「今天」、選取任務的 focus）。動畫稽核 D7：補間不讓位的話，
+   * 期間拖條會把捲動量算進拖曳（游標移 6px、日期偏 6 天）、滾輪無效、縮放後今天偏掉。
+   */
+  function stopScroll(): void {
+    if (anim) cancelAnimationFrame(anim.raf)
+    anim = null
+  }
+
   function scrollTo(x: number, animated = false): void {
     const sc = scroller.value
     if (!sc) return
     const max = Math.max(0, sc.scrollWidth - sc.clientWidth)
     const to = Math.max(0, Math.min(max, x))
-    if (raf !== undefined) cancelAnimationFrame(raf)
+    stopScroll()
     const from = sc.scrollLeft
     if (!animated || Math.abs(to - from) < 1.5) {
       sc.scrollLeft = to
@@ -75,13 +85,28 @@ export function useGanttScroll(
     // 距離越遠動畫越長，夾在 460-1150ms（legacy :2653）
     const dur = Math.max(460, Math.min(1150, 340 + Math.abs(to - from) * 0.4))
     const t0 = performance.now()
+    const self = { raf: 0 }
     const step = (now: number): void => {
+      if (anim !== self) return
       const p = Math.min(1, (now - t0) / dur)
       sc.scrollLeft = from + (to - from) * (1 - Math.pow(1 - p, 4))
       syncRuler()
-      raf = p < 1 ? requestAnimationFrame(step) : undefined
+      if (p < 1) self.raf = requestAnimationFrame(step)
+      else anim = null
     }
-    raf = requestAnimationFrame(step)
+    anim = self
+    self.raf = requestAnimationFrame(step)
+  }
+
+  /** 使用者自己動手的事件：一發生就停掉補間。捕獲階段，比條 / 畫布自己的 pointerdown（會 stopPropagation）早。 */
+  const USER_EVENTS = ['pointerdown', 'wheel', 'touchstart'] as const
+  let listening: HTMLElement | null = null
+
+  /** 把「使用者動手就停補間」掛到目前的 scroller（面板收合再展開會換一顆）。 */
+  function listen(el: HTMLElement | null): void {
+    if (listening) for (const t of USER_EVENTS) listening.removeEventListener(t, stopScroll, true)
+    listening = el
+    if (el) for (const t of USER_EVENTS) el.addEventListener(t, stopScroll, { capture: true, passive: true })
   }
 
   function jumpToday(animated = false): void {
@@ -95,6 +120,8 @@ export function useGanttScroll(
   function onZoom(value: number | string): void {
     const v = typeof value === 'number' ? value : parseFloat(value)
     if (Number.isNaN(v)) return
+    // 補間的終點是用舊比例算的，縮放後再捲過去會偏掉
+    stopScroll()
     ui.zooming = true
     clearTimeout(zoomTimer)
     zoomTimer = setTimeout(() => {
@@ -105,6 +132,7 @@ export function useGanttScroll(
 
   onMounted(() => {
     measure()
+    listen(scroller.value)
     if (typeof ResizeObserver !== 'undefined') {
       ro = new ResizeObserver(() => measure())
       if (scroller.value) ro.observe(scroller.value)
@@ -129,6 +157,7 @@ export function useGanttScroll(
 
   // 面板重新展開時 scroller 會換一顆 DOM，要重新量與重新監看
   watch(scroller, (el) => {
+    listen(el)
     if (!el) return
     ro?.disconnect()
     ro?.observe(el)
@@ -136,7 +165,8 @@ export function useGanttScroll(
   })
 
   onBeforeUnmount(() => {
-    if (raf !== undefined) cancelAnimationFrame(raf)
+    stopScroll()
+    listen(null)
     clearTimeout(zoomTimer)
     clearTimeout(initialTimer)
     ro?.disconnect()
