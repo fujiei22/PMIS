@@ -1,4 +1,5 @@
-// 總覽頂欄：標題、登入者、成員 / 狀態 / 需注意篩選、清除篩選、檢視切換、載入前停用。
+// 總覽頂欄：標題、登入者、專案名稱搜尋、成員 / 狀態 / 需注意篩選、清除篩選、檢視切換、載入前停用。
+// 搜尋框要等注音選字完成才寫進 store（不然打到一半清單會閃空），所以另測 composition。
 // 完整的使用者流程（篩選後卡片跟著變）由 Task 11 的 e2e 覆蓋。
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -76,6 +77,50 @@ describe('OverviewTopBar', () => {
     w.unmount()
   })
 
+  it('搜尋框在篩選群組最前面；輸入寫進 store、清除篩選轉可點；有字才出現 ✕，點了清空', async () => {
+    const ov = useOverviewStore()
+    const w = mount(OverviewTopBar, { attachTo: document.body })
+    const input = w.find('[data-testid="overview-search"]')
+    expect(w.find('.filters').element.firstElementChild!.contains(input.element)).toBe(true)
+    expect(input.attributes('placeholder')).toBe('搜尋專案名稱')
+    expect(input.attributes('aria-label')).toBe('搜尋專案名稱')
+    expect(w.find('.search-clear').exists()).toBe(false)
+    await input.setValue('app')
+    expect(ov.query).toBe('app')
+    expect(w.find('[data-testid="overview-clear"]').attributes('disabled')).toBeUndefined()
+    await w.find('.search-clear').trigger('click')
+    expect(ov.query).toBe('')
+    expect((input.element as HTMLInputElement).value).toBe('')
+    w.unmount()
+  })
+
+  it('搜尋框按 Esc 清空；注音選字中按 Esc 不算', async () => {
+    const ov = useOverviewStore()
+    ov.setQuery('入口')
+    const w = mount(OverviewTopBar, { attachTo: document.body })
+    const input = w.find('[data-testid="overview-search"]')
+    await input.trigger('keydown', { key: 'Escape', isComposing: true })
+    expect(ov.query).toBe('入口')
+    await input.trigger('keydown', { key: 'Escape' })
+    expect(ov.query).toBe('')
+    w.unmount()
+  })
+
+  it('注音選字中不篩選，選完字才寫進 store', async () => {
+    const ov = useOverviewStore()
+    const w = mount(OverviewTopBar, { attachTo: document.body })
+    const input = w.find('[data-testid="overview-search"]')
+    const el = input.element as HTMLInputElement
+    await input.trigger('compositionstart')
+    el.value = 'ㄖㄨˋ'
+    await input.trigger('input')
+    expect(ov.query).toBe('')
+    el.value = '入'
+    await input.trigger('compositionend')
+    expect(ov.query).toBe('入')
+    w.unmount()
+  })
+
   it('檢視切換：aria-pressed 跟著 view', async () => {
     const w = mount(OverviewTopBar, { attachTo: document.body })
     await w.find('[data-view-switch="timeline"]').trigger('click')
@@ -84,9 +129,10 @@ describe('OverviewTopBar', () => {
     w.unmount()
   })
 
-  it('資料還沒到時三個篩選都 disabled', async () => {
+  it('資料還沒到時搜尋框與三個篩選都 disabled', async () => {
     useOverviewStore().loadState = 'loading'
     const w = mount(OverviewTopBar, { attachTo: document.body })
+    expect(w.find('[data-testid="overview-search"]').attributes('disabled')).toBeDefined()
     for (const k of ['pm', 'status', 'alert']) {
       expect(w.find(`[data-ov-dd="${k}"] .dd-trigger`).attributes('disabled')).toBeDefined()
     }

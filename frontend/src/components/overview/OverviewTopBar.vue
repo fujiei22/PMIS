@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// 總覽頂欄：標題、檢視切換、成員 / 狀態 / 需注意篩選、清除篩選、登入者。
+// 總覽頂欄：標題、檢視切換、專案名稱搜尋、成員 / 狀態 / 需注意篩選、清除篩選、登入者。
 // 版面照 Dashboard TopBar 的單列與 B2；專案計數只放在面板標題列，頂欄不放（spec 目標 3）。
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import OvDropdown from '@/components/overview/OvDropdown.vue'
 import PmFilter from '@/components/overview/PmFilter.vue'
@@ -39,6 +39,30 @@ const ALERT_DOT: Record<ProjectAlert, string> = {
 /** 資料還沒到就不給篩（選項計數都還是空的）。 */
 const notReady = computed(() => overview.loadState !== 'ready')
 
+/**
+ * 搜尋字用 v-model 綁 store：v-model 在注音等輸入法選字期間不更新值，
+ * 選完字才寫進 store，清單不會打到一半就閃成空的。
+ */
+const query = computed({
+  get: () => overview.query,
+  set: (v: string) => overview.setQuery(v),
+})
+/** 有實際搜尋字（不只空白）時外框轉 accent，同其他篩選的「已套用」樣子。 */
+const hasQuery = computed(() => overview.query.trim() !== '')
+
+const searchInput = ref<HTMLInputElement | null>(null)
+
+function clearQuery(): void {
+  overview.setQuery('')
+  searchInput.value?.focus()
+}
+
+function onSearchKey(e: KeyboardEvent): void {
+  // 選字中按 Esc 是取消選字，不是清空搜尋
+  if (e.key !== 'Escape' || e.isComposing) return
+  overview.setQuery('')
+}
+
 /** 觸發鈕 label：沒選時只有名稱，有選時接上勾選數，例如「狀態 2」。 */
 function ddLabel(name: string, n: number): string {
   return n ? `${name} ${n}` : name
@@ -70,6 +94,30 @@ const me = computed(() => portfolio.byId(portfolio.currentUserId))
     <!-- 右半組：篩選 + 登入者。窄螢幕放不下時整組換行、組內再換行，都靠右 -->
     <div class="top-right">
       <div class="filters" role="group" aria-label="篩選">
+        <div class="search" :class="{ on: hasQuery, disabled: notReady }">
+          <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6" />
+            <path d="m10.5 10.5 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          </svg>
+          <input
+            ref="searchInput"
+            v-model="query"
+            type="search"
+            class="search-input"
+            placeholder="搜尋專案名稱"
+            aria-label="搜尋專案名稱"
+            data-testid="overview-search"
+            :disabled="notReady"
+            @keydown="onSearchKey"
+          />
+          <button v-if="overview.query" type="button" class="search-clear" aria-label="清除搜尋" @click="clearQuery">
+            <svg viewBox="0 0 12 12" aria-hidden="true">
+              <path d="M3 3l6 6M9 3l-6 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        <span class="divider"></span>
         <span class="section">成員</span>
         <PmFilter :disabled="notReady" />
 
@@ -263,6 +311,120 @@ const me = computed(() => portfolio.byId(portfolio.currentUserId))
   gap: var(--sp-3);
   flex: 0 1 auto;
   min-width: 0;
+}
+
+/*
+ * 專案名稱搜尋：外框照 .dd-trigger（OvDropdown）——高 --ctrl-h、--border-1 框、膠囊圓角；
+ * 有搜尋字時同 .dd-trigger.active 轉 accent 框。窄的時候可縮到 120px，把寬度讓給其他篩選。
+ */
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: 0 1 200px;
+  min-width: 120px;
+  height: var(--ctrl-h);
+  padding: 0 var(--sp-2) 0 var(--sp-6);
+  border: 1px solid var(--border-1);
+  border-radius: var(--r-pill);
+  background: var(--surface-1);
+  transition:
+    border-color var(--t-fast) var(--ease),
+    box-shadow var(--t-fast) var(--ease);
+}
+
+@media (hover: hover) {
+  .search:hover:not(.disabled) {
+    border-color: var(--border-control);
+  }
+}
+
+.search.on {
+  border-color: var(--accent);
+}
+
+/* 焦點框畫在外框上（輸入框本身不畫） */
+.search:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--ring-focus);
+}
+
+.search-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  color: var(--text-muted);
+}
+
+.search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  appearance: none;
+  font-size: var(--fs-control);
+  color: var(--text-1);
+}
+
+.search-input::placeholder {
+  color: var(--text-placeholder);
+}
+
+.search-input:disabled {
+  cursor: default;
+}
+
+/* 用自己的 ✕，藏掉 Chromium / Safari 內建的清除鈕 */
+.search-input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.search-clear {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease),
+    box-shadow var(--t-fast) var(--ease);
+}
+
+.search-clear svg {
+  width: 12px;
+  height: 12px;
+}
+
+@media (hover: hover) {
+  .search-clear:hover {
+    background: var(--surface-3);
+    color: var(--text-1);
+  }
+}
+
+.search-clear:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+}
+
+/* 手指操作：✕ 用看不見的外擴熱區（同排序 chip 的 ✕） */
+@media (pointer: coarse) {
+  .search-clear::after {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--sp-3));
+  }
 }
 
 .section {
