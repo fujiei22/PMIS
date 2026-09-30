@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { hasMid, idle, openDashboard, openTaskDetail, peakThenFall, series, trace } from './helpers/motion'
+import { hasMid, idle, openDashboard, openTaskDetail, pause, peakThenFall, series, trace } from './helpers/motion'
 
 /** 選單類浮層的進出場（動畫稽核 G12）與捲動處理（G5，Task 5）。 */
 test.use({ viewport: { width: 1920, height: 1080 } })
@@ -67,4 +67,51 @@ test('選項選單與留言成員下拉：內部捲到底不帶動頁面（overs
   await openTaskDetail(page, 't3')
   await page.locator('.cmem-trigger').click()
   expect(await page.locator('.cmem-menu').evaluate((el) => getComputedStyle(el).overscrollBehaviorY)).toBe('contain')
+})
+
+for (const m of [
+  { name: '選項選單', trig: '[data-card="t3"] .st', pop: '.opt-menu' },
+  { name: '任務日期選擇器', trig: '[data-card="t3"] .range-main', pop: '.task-date-picker' },
+  { name: '完成日期選擇器', trig: '[data-card="t3"] .pill.clickable', pop: '.issue-date-picker' },
+  { name: '列動作選單', trig: '[data-rowmore="t3"]', pop: '[data-rowmenu]' },
+]) {
+  test(`G5 ${m.name}：捲動頁面把觸發元素帶走就關閉`, async ({ page }) => {
+    await openDashboard(page)
+    await page.locator(m.trig).scrollIntoViewIfNeeded()
+    await page.locator(m.trig).click()
+    await expect(page.locator(m.pop)).toBeVisible()
+    // 滾輪落在畫面左緣的遮罩上（遮罩不能捲，捲動交給頁面）
+    await page.mouse.move(5, 540)
+    await page.mouse.wheel(0, 240)
+    await expect(page.locator(m.pop)).toHaveCount(0)
+  })
+}
+
+test('G5 點卡片選取後馬上開狀態選單：甘特的橫向補間不會把選單關掉', async ({ page }) => {
+  await openDashboard(page)
+  await page.locator('[data-card="t3"]').scrollIntoViewIfNeeded()
+  await page.locator('[data-card="t3"] .title').click()
+  await page.locator('[data-card="t3"] .st').click()
+  await expect(page.locator('.opt-menu')).toBeVisible()
+  await pause(page, 1200)
+  await expect(page.locator('.opt-menu')).toBeVisible()
+})
+
+test('G5 點甘特列選取後馬上開「⋮」：選單維持開著', async ({ page }) => {
+  await openDashboard(page)
+  await page.locator('[data-rowtask="t3"] .name').click()
+  await page.locator('[data-rowmore="t3"]').click()
+  await expect(page.locator('[data-rowmenu]')).toBeVisible()
+  await pause(page, 1200)
+  await expect(page.locator('[data-rowmenu]')).toBeVisible()
+})
+
+test('G5 焦點在日期選擇器的工期輸入框時捲動頁面（平板軟鍵盤），選擇器不關', async ({ page }) => {
+  await openDashboard(page)
+  await page.locator('[data-card="t3"] .range-main').scrollIntoViewIfNeeded()
+  await page.locator('[data-card="t3"] .range-main').click()
+  await page.locator('.task-date-picker input[data-dur]').focus()
+  await page.evaluate(() => window.scrollBy(0, 200))
+  await pause(page, 200)
+  await expect(page.locator('.task-date-picker')).toBeVisible()
 })

@@ -2,7 +2,9 @@
 // 甘特任務列「⋮」開的動作選單（全域只會有一個）：工期 −1天 / +1天、相依設定、刪除任務。
 // 點任務列只標記（選取），動作一律從這裡來；hover / 選取不再撐開快捷鈕（user 選的 L 稿提案 A）。
 // 位置由 ui.rowMenu 帶進來（useMenus.toggleRowMenu → lib/anchor 的 anchorRowMenu）。
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useCloseOnScroll } from '@/composables/useCloseOnScroll'
+import { menuAnchors } from '@/composables/useMenus'
 import { dayIndex, isoFromIndex, lengthOf } from '@/lib/date'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -14,10 +16,14 @@ const menu = computed(() => ui.rowMenu)
 /** 任務在選單開著時被刪掉或篩掉，就不畫。 */
 const task = computed(() => (menu.value ? taskStore.taskById(menu.value.id) : undefined))
 const days = computed(() => (task.value ? lengthOf(task.value) : 0))
+const menuEl = ref<HTMLElement | null>(null)
 
 function close(): void {
   ui.rowMenu = null
 }
+
+// 觸發的「⋮」被捲走就關（位置只在開啟時量一次）
+useCloseOnScroll({ state: menu, popover: menuEl, anchor: () => menuAnchors.row, close })
 
 /** 工期加一天；選單不關，可以連點。legacy `onDaysUp` :2846 */
 function daysUp(): void {
@@ -59,6 +65,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
   <Transition name="pop">
     <div
       v-if="menu && task"
+      ref="menuEl"
       class="row-menu"
       role="menu"
       :aria-label="`${task.name} 的動作`"

@@ -5,6 +5,19 @@ import { useTaskStore } from '@/stores/task'
 import { useUiStore, type OptionMenuKind } from '@/stores/ui'
 import type { ISODate } from '@/types/models'
 
+export type MenuAnchorKind = 'option' | 'row' | 'taskDate' | 'issueDate'
+
+/**
+ * fixed 浮層各自的觸發元素，給 useCloseOnScroll 判斷捲動有沒有把它帶走。
+ * DOM 元素不放進 store（不可序列化，也不需要響應式）；一種浮層只留最後一次開它的元素。
+ */
+export const menuAnchors: Record<MenuAnchorKind, HTMLElement | null> = {
+  option: null,
+  row: null,
+  taskDate: null,
+  issueDate: null,
+}
+
 export interface Menus {
   /** 開狀態 / 優先度 / 分類 / Issue 欄位的選項選單。 */
   openOptionMenu: (e: MouseEvent, id: string, kind: OptionMenuKind) => void
@@ -54,15 +67,18 @@ export function useMenus(): Menus {
     }
   }
 
-  function rectOf(e: MouseEvent): DOMRect {
-    return (e.currentTarget as HTMLElement).getBoundingClientRect()
+  /** 量觸發元素的 rect，並記下觸發元素（menuAnchors）。 */
+  function rectOf(e: MouseEvent, kind: MenuAnchorKind): DOMRect {
+    const el = e.currentTarget as HTMLElement
+    menuAnchors[kind] = el
+    return el.getBoundingClientRect()
   }
 
   function openOptionMenu(e: MouseEvent, id: string, kind: OptionMenuKind): void {
     ui.optionMenu = {
       id,
       kind,
-      ...anchorOptionMenu(rectOf(e), rowCountOf(kind), viewport()),
+      ...anchorOptionMenu(rectOf(e, 'option'), rowCountOf(kind), viewport()),
     }
   }
 
@@ -73,7 +89,7 @@ export function useMenus(): Menus {
       id: taskId,
       target: 'start',
       month: t.start.slice(0, 7),
-      ...anchorCalendar(rectOf(e), viewport(), 'task'),
+      ...anchorCalendar(rectOf(e, 'taskDate'), viewport(), 'task'),
     }
   }
 
@@ -82,7 +98,7 @@ export function useMenus(): Menus {
       ui.rowMenu = null
       return
     }
-    ui.rowMenu = { id: taskId, ...anchorRowMenu(rectOf(e), viewport()) }
+    ui.rowMenu = { id: taskId, ...anchorRowMenu(rectOf(e, 'row'), viewport()) }
   }
 
   function openIssueDatePicker(
@@ -98,7 +114,7 @@ export function useMenus(): Menus {
       kind,
       // 沒填過就從今天所在的月份開始。legacy :2667
       month: (iso || clock.todayIso).slice(0, 7),
-      ...anchorCalendar(rectOf(e), viewport(), 'issue'),
+      ...anchorCalendar(rectOf(e, 'issueDate'), viewport(), 'issue'),
     }
   }
 

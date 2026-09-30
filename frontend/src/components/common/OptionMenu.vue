@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // 卡片上點狀態 / 優先度 / 分類 / Issue 欄位跳出的浮動選項選單（全域只會有一個）。
 // legacy 對照：optItems :3386-3452、模板 :1305-1320；位置由 ui.optionMenu 帶進來。
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { useCloseOnScroll } from '@/composables/useCloseOnScroll'
+import { menuAnchors } from '@/composables/useMenus'
 import { ISSUE_ITEM, ISSUE_LEVEL, ISSUE_STATUS, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
@@ -24,10 +26,14 @@ const issueStore = useIssueStore()
 const memberStore = useMemberStore()
 
 const menu = computed(() => ui.optionMenu)
+const menuEl = ref<HTMLElement | null>(null)
 
 function close(): void {
   ui.optionMenu = null
 }
+
+// 觸發元素被捲走就關（位置只在開啟時量一次）
+useCloseOnScroll({ state: menu, popover: menuEl, anchor: () => menuAnchors.option, close })
 
 /** 改任務欄位後關掉選單（單選）。legacy :3391 */
 function setTask(id: string, patch: Parameters<typeof taskStore.updateTask>[1]): void {
@@ -145,6 +151,7 @@ const items = computed<OptionItem[]>(() => {
   <Transition name="pop">
     <div
       v-if="menu"
+      ref="menuEl"
       class="opt-menu"
       :style="{ left: `${menu.left}px`, top: `${menu.top}px` }"
     >
