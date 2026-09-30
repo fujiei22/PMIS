@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { DashboardPage } from './helpers/dashboardPage'
+import { DashboardPage, html5Drag } from './helpers/dashboardPage'
 
 /**
  * 甘特面板的動畫銜接（動畫稽核批次 A，`docs/incidents/2026-09-30-motion-audit`）。
@@ -358,4 +358,64 @@ test('列排序換位後 40ms 放手：被拖列的放大、其他列的淡化�
   const ops = after.map((f) => f.boxes.other?.o ?? 1)
   expect(scales.some((s) => s > 1.002 && s < 1.023), `被拖列放大有中間幀：${scales.join(',')}`).toBe(true)
   expect(ops.some((o) => o > 0.55 && o < 0.95), `其他列淡化有中間幀：${ops.join(',')}`).toBe(true)
+})
+
+test.describe('重排：條 / 橫紋逐幀連續、跟著列走（D2）', () => {
+  test('分類交換（g1 拖到 g2 後面）：兩個分類的條 / 橫紋都平順換位', async ({ page }) => {
+    const app = await openGantt(page)
+    const tasks = ['t1', 't3', 't6', 't7', 't9', 't12']
+    const groups = ['g1', 'g2']
+    const gb = (await app.groupRow('g1').locator('.grip').boundingBox())!
+    const x = gb.x + gb.width / 2
+    const y0 = gb.y + gb.height / 2
+    await page.mouse.move(x, y0)
+    await page.mouse.down()
+    // 先越過自己整塊（7 列）的下緣，再過下一塊的一半才交換（legacy :2506-2520）
+    await page.mouse.move(x, y0 + 120)
+    await pause(page, 260)
+    await page.mouse.move(x, y0 + 240)
+    await pause(page, 100)
+    const tr = await trace(page, targetsFor(tasks, groups), () => page.mouse.move(x, y0 + 360), {
+      markOn: 'pointermove',
+    })
+    await page.mouse.up()
+    expect((await app.rowOrder()).slice(0, 8)).toEqual(['G:g2', 't7', 't8', 't9', 't10', 't11', 't12', 'G:g1'])
+    expectRowsInSync(tr, tr.marks[0]!, tasks, groups)
+  })
+
+  test('列排序（t4 拖過 t5）：被拖列自己的條也跟列一起補間', async ({ page }) => {
+    const app = await openGantt(page)
+    const tasks = ['t4', 't5']
+    const gb = (await app.row('t4').locator('.grip').boundingBox())!
+    const x = gb.x + gb.width / 2
+    const y0 = gb.y + gb.height / 2
+    await page.mouse.move(x, y0)
+    await page.mouse.down()
+    await page.mouse.move(x, y0 + 12)
+    await pause(page, 300)
+    const tr = await trace(page, targetsFor(tasks, []), () => page.mouse.move(x, y0 + 30), {
+      markOn: 'pointermove',
+    })
+    // 放開前把游標移到畫布上，不落在列上（放開變點選是 D16，另外驗）
+    await page.mouse.move(1000, y0 + 30)
+    await page.mouse.up()
+    expect((await app.rowOrder()).slice(3, 6)).toEqual(['t3', 't5', 't4'])
+    expectRowsInSync(tr, tr.marks[0]!, tasks, [])
+  })
+
+  test('看板卡拖到甘特分類列（t3 → g3）：搬走的列與後面的列、條、橫紋都平順換位', async ({ page }) => {
+    await openGantt(page)
+    // t3 搬到 g3 第一筆：原位置到 g3 之間的列上移一格，t3 自己往下一大段（g3 之後的列不動）
+    const tasks = ['t3', 't4', 't7', 't12']
+    const groups = ['g2', 'g3']
+    const tr = await trace(
+      page,
+      targetsFor(tasks, groups),
+      () => html5Drag(page, '[data-card="t3"]', '[data-rowgroup="g3"]'),
+      { markOn: 'drop' },
+    )
+    const order = await new DashboardPage(page).rowOrder()
+    expect(order[order.indexOf('G:g3') + 1], 't3 成為 g3 第一筆').toBe('t3')
+    expectRowsInSync(tr, tr.marks[0]!, tasks, groups)
+  })
 })
