@@ -6,7 +6,7 @@
   - 專案有兩種檢視：依 PM 分欄的卡片，以及時間軸。
   - 頂欄可以依成員、狀態、需注意篩選，面板標題列可以多鍵排序。
   - 讓 PM 主管一眼看出哪些專案需要注意。
-- **單一專案 Dashboard**（`/projects/:id`）：四張摘要卡、專案時程（甘特圖）、任務看板、Issue 看板與詳細視窗。
+- **單一專案 Dashboard**（`/projects/:id`）：五張摘要卡、專案時程（甘特圖）、任務看板、Issue 看板與詳細視窗。
 
 技術棧與使用慣例見 [`docs/reference/tech-stack.md`](../docs/reference/tech-stack.md)；設計語言區塊地圖見 [`docs/reference/design-map.md`](../docs/reference/design-map.md)。
 
@@ -44,7 +44,7 @@
 | 畫面區塊 | 元件 |
 |---|---|
 | 頂部篩選列與錯誤條 | `layout/TopBar`（FilterDropdown、FilterCalendar、MemberPicker、common/ErrorBar） |
-| 四張摘要卡 | `summary/SummaryCards` |
+| 五張摘要卡（總時長、進度、任務狀態、Issue 統計、預算 vs. 支出） | `summary/SummaryCards` |
 | 甘特圖 | `gantt/GanttPanel`（GanttTimeline、GanttGroupRow、GanttTaskRow、GanttBars → GanttBar、DependencyLines）；任務列「⋮」的動作選單 `gantt/RowActionMenu` |
 | 任務看板 | `kanban/KanbanPanel`（KanbanHeader、TaskCard） |
 | Issue 看板 | `issues/IssuePanel`（IssuePanelHeader、IssueCard） |
@@ -181,7 +181,7 @@ frontend/
 │   ├── router/            路由（pageSwap.ts：切頁過渡結束後才還原捲動位置）
 │   ├── stores/            Pinia store（三層，見下）
 │   │   ├── clock.ts                           時鐘層
-│   │   ├── task / issue / comment / member.ts   資料層（單一專案）
+│   │   ├── task / issue / comment / member / budget.ts   資料層（單一專案）
 │   │   ├── portfolio.ts                       資料層（總覽的專案摘要與成員名錄）
 │   │   ├── _optimistic.ts                     樂觀更新的共用機制（tracker / runOptimistic / error sink）
 │   │   ├── _sync.ts                           api.subscribe 的唯一訂閱點，把事件路由到各資料 store
@@ -242,6 +242,7 @@ COMPARE_DUMP=node_modules/.tmp/cmp npm run test:e2e -- e2e/compare.spec.ts
 - **理論進度的判準**：legacy 把「今天到期」的任務算進理論進度（`end <= 今天`，`Dashboard.html:3604-3620`）。新頁要到期日**隔天**才算（`end < 今天`），和總覽的 `taskPlanned`、「已延遲」的 `isLate` 同一個定義（都呼叫 `lib/schedule.ts` 的 `isPlannedDone`，改規則只改那裡），兩頁同一個專案的理論 % 才會一致（user 決定）。對照測試只遮掉摘要卡的差距標籤、理論的 N / 總數與理論 %（`e2e/helpers/compare.ts` 的 `maskPlan`），其餘照比。
 - **甘特列的快捷鈕**：legacy 滑鼠移到任務列上會撐開「▲ ▼ ⇄ ✕」並省掉日期的年份；新頁改成列尾一直顯示的「⋮」，動作收在它開的選單（user 決定：只想標記任務時快捷鈕很干擾，▲ ▼ 也看不出是工期 ±1 天）。對照測試比文字時兩邊都拿掉列尾動作字與年份（`e2e/helpers/compare.ts` 的 `maskActs`），情境 8 的相依 / 刪除各走各的路（`compare.spec.ts` 的 `rowAction`）；點任務列的位置改在名稱區 x=70（`ROW_NAME_POS`）。
 - **成員拖曳指派**：legacy 可以把成員篩選面板的列拖到甘特條或任務卡上指派，新頁移除了這個功能（user 決定；平板無法可靠支援原生拖放），指派一律在詳細視窗的「＋指派」。對照測試不比這個。
+- **第五張摘要卡「預算 vs. 支出」**：legacy 只有四張，這張是新頁才有的。`e2e/helpers/compare.ts` 取摘要卡文字時排除 `summary-budget`，其餘四張照比。
 - **文字之間的空白**：兩頁的文字節點切法不同（legacy 把每個 `{{ }}` 包成一層元素、元素之間留著模板縮排的空白節點），比對前會把文字裡的空白全部去掉。字級與間距的差異改由幾何量測把關。
 
 ## lib 與 store 的分工
@@ -261,7 +262,7 @@ store 分三層，依賴**只能由上往下**：
 | 層 | 檔 | 職責 | 可以 import 誰 |
 |---|---|---|---|
 | 時鐘層 | `clock.ts` | `now` / `todayIdx` / `todayIso`（60 秒 tick） | 誰都不用 |
-| 資料層 | `task.ts`、`issue.ts`、`comment.ts`、`member.ts`（＋共用的 `_optimistic.ts`、`_sync.ts`）；總覽的 `portfolio.ts` | 專案資料的唯一擁有者；所有寫入都經 `@/api` | `@/api/*`、`@/lib/*`、`@/types/*`、`@/stores/clock`、其他資料 store、`_optimistic` / `_sync` |
+| 資料層 | `task.ts`、`issue.ts`、`comment.ts`、`member.ts`、`budget.ts`（＋共用的 `_optimistic.ts`、`_sync.ts`）；總覽的 `portfolio.ts` | 專案資料的唯一擁有者；所有寫入都經 `@/api` | `@/api/*`、`@/lib/*`、`@/types/*`、`@/stores/clock`、其他資料 store、`_optimistic` / `_sync` |
 | 派生層 | `rows.ts`、`filter.ts`、`selection.ts`、`ui.ts`；總覽的 `overview.ts` | 從資料層算出畫面要的東西（可見列、篩選、選取、浮層 / 錯誤條 / 收合） | 所有層 |
 
 成員名錄有兩份：`portfolio.members`（總覽，含各專案的 PM）與 `member.members`（Dashboard，單一專案的成員）。總覽元件查成員一律用 `portfolio.byId`。
@@ -315,7 +316,7 @@ store 分三層，依賴**只能由上往下**：
 | `data-rel` | 任務卡 | `up` / `down` / `group` / 空 | ✗ |
 | `data-status` | 甘特條 / 任務卡 / Issue 卡 | 狀態 key，或 `delayed` | ✗ |
 | `data-panel` | 面板外殼 | `gantt` / `kanban` / `issues` | ✗ |
-| `data-testid` | 摘要卡 `summary-duration` / `summary-progress` / `summary-tasks` / `summary-issues`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count`；甘特左欄的展開鈕 `gantt-left-toggle`（只在 < 900px 出現） | 固定字串 | ✗ |
+| `data-testid` | 摘要卡 `summary-duration` / `summary-progress` / `summary-tasks` / `summary-issues` / `summary-budget`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count`；甘特左欄的展開鈕 `gantt-left-toggle`（只在 < 900px 出現） | 固定字串 | ✗ |
 
 總覽頁的屬性。legacy 沒有這一頁，所以下表全部都不能用在新舊對照測試：
 
@@ -365,6 +366,7 @@ store 分三層，依賴**只能由上往下**：
    | `Attachment.at` | `'YYYY-MM-DD'`（本地日） | ISO 8601 | adapter |
    | `Group` | 只有 `id` / `name` | 後端若存了收合狀態要忽略 | 收合是畫面狀態，在 `ui.collapsedGroups`，不上 wire |
    | `ProjectData.currentUserId`、`PortfolioData.currentUserId` | 必填字串 | 登入還沒做 | adapter 從 session / token 填；沒有登入就先填一個固定成員 id |
+   | `ProjectData.budget` | `{ total, actual }`（數字，只讀；剩餘與使用率由 `lib/budget.ts` 算） | 後端的預算欄位 | adapter 填進 `loadProject()` 與 `project.reloaded` 的 payload；目前沒有寫入端點 |
    | `ProjectSummary.taskPlanned` | 「照排程今天之前就該完成」的任務數 | 後端依伺服器當日算 | 後端；前端只拿它算理論 %，跨日差一天可接受 |
    | `Member.color` | 合法的 CSS 顏色值（例 `#2563eb`），經 `:style` 寫進 CSS 變數 | 後端存的顏色字串 | adapter 驗格式；前端沒有用字串拼接組 CSS，但格式錯會讓頭像與 PM 泳道沒有顏色 |
    | `ProjectSummary.upcoming` | 最多 3 筆、依到期日升冪、含已逾期 | 後端篩選排序 | 後端；前端原樣顯示 |

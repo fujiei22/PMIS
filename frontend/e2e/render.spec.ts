@@ -16,6 +16,9 @@ test('首頁渲染四張卡與三個面板', async ({ page }) => {
   await expect(app.summary('progress')).toBeVisible()
   await expect(app.summary('tasks')).toBeVisible()
   await expect(app.summary('issues')).toBeVisible()
+  await expect(app.summary('budget')).toContainText('$50,000')
+  await expect(app.summary('budget')).toContainText('$32,500')
+  await expect(app.summary('budget')).toContainText('$17,500')
 
   await expect(app.taskCount).toHaveText('共 30 個任務')
   await expect(app.issueCount).toHaveText('共 12 筆 Issue')

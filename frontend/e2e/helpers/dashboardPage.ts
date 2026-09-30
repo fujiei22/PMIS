@@ -18,8 +18,8 @@ export class DashboardPage {
     await this.page.locator('[data-rowtask]').first().waitFor()
   }
 
-  /** 四張摘要卡之一：duration / progress / tasks / issues。 */
-  summary(key: 'duration' | 'progress' | 'tasks' | 'issues'): Locator {
+  /** 五張摘要卡之一：duration / progress / tasks / issues / budget。 */
+  summary(key: 'duration' | 'progress' | 'tasks' | 'issues' | 'budget'): Locator {
     return this.page.getByTestId(`summary-${key}`)
   }
 

@@ -21,6 +21,7 @@ import {
   resetTracker,
   runOptimistic,
 } from '@/stores/_optimistic'
+import { useBudgetStore } from '@/stores/budget'
 import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useIssueStore } from '@/stores/issue'
@@ -88,6 +89,7 @@ export const useTaskStore = defineStore('task', () => {
     useMemberStore().setAll(data.members, data.currentUserId)
     useIssueStore().setAll(data.issues)
     useCommentStore().setAll(data.comments)
+    useBudgetStore().setAll(data.budget)
     groups.value = data.groups
     tasks.value = data.tasks
     deps.value = data.deps

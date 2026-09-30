@@ -56,7 +56,7 @@ PMIS 前端使用的技術與使用慣例。新加入的開發者先讀這份。
   - **資料欄位**（`tasks` / `issues` / `deps` / `groups` / `comments`）：一律透過 action 改，例如 `taskStore.updateTask()`、`commentStore.send()`。它們背後有 cascade、api 呼叫與失敗還原、懸空 id 清理等連動，繞過 action 就會漏做。
 
 #### store 分三層
-依賴只能由上往下：**時鐘層** `clock`（`now` / `todayIdx` / `todayIso`，誰都能讀）→ **資料層** `task` / `issue` / `comment` / `member`（專案資料的唯一擁有者）→ **派生層** `rows` / `filter` / `selection` / `ui`（算畫面要的東西，可讀所有層）。
+依賴只能由上往下：**時鐘層** `clock`（`now` / `todayIdx` / `todayIso`，誰都能讀）→ **資料層** `task` / `issue` / `comment` / `member` / `budget`（專案資料的唯一擁有者）→ **派生層** `rows` / `filter` / `selection` / `ui`（算畫面要的東西，可讀所有層）。
 
 資料層不知道派生層存在：新增的預設值由 `composables/useTaskActions.ts` 算好傳進去，懸空 id 由 `selection` / `ui` 各自的 `watch(flush: 'sync')` 清，錯誤條靠 `_optimistic.setErrorSink()` 注入。白名單由 `src/stores/__tests__/imports.spec.ts` 讀原始碼守著。
 
