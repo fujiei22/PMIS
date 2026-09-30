@@ -119,7 +119,7 @@ Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<s
 |---|---|
 | `src/stores/__tests__/imports.spec.ts` | store 三層的 import 白名單，資料層不得引用派生層 |
 | `src/__tests__/no-query-selector.spec.ts` | `src/**` 執行期不得用 `querySelector` 等 DOM 選擇器（唯一例外 `useClickOutside`） |
-| `src/__tests__/readme.spec.ts` | 本檔〈端點對照表〉〈錯誤碼對照表〉與 `api/types.ts` 一致 |
+| `src/__tests__/readme.spec.ts` | 本檔〈端點對照表〉〈錯誤碼對照表〉與 `api/types.ts` 一致；〈目錄結構〉的 composables 清單提到 `src/composables/` 底下每一支（新增 composable 要一起補說明） |
 | `src/mocks/__tests__/consistency.spec.ts` | 範例資料必須已是 cascade 之後的樣子 |
 | `src/assets/__tests__/tokens.spec.ts` | `tokens.css` 必須含有程式用到的每個變數與約定值，改名或刪 token 會紅 |
 | `src/mocks/__tests__/portfolio.spec.ts` | 總覽靜態專案算出的實際 / 理論 % 與需注意等於設計稿；m1–m7 與 `sampleProject` 的成員是同一份 |
@@ -194,7 +194,7 @@ frontend/
 └── e2e/                   Playwright 測試與 helper
 ```
 
-單元測試放在被測檔案旁的 `__tests__/`（例如 `src/lib/__tests__/date.spec.ts`）。不屬於任何單一檔案的結構守衛放 `src/__tests__/`：`no-query-selector.spec.ts`（執行期不得用 DOM 選擇器）、`readme.spec.ts`（本檔的端點表與 `ProjectApi` 一致），另有 `src/stores/__tests__/imports.spec.ts`（store 分層白名單）。
+單元測試放在被測檔案旁的 `__tests__/`（例如 `src/lib/__tests__/date.spec.ts`）。不屬於任何單一檔案的結構守衛放 `src/__tests__/`：`no-query-selector.spec.ts`（執行期不得用 DOM 選擇器）、`readme.spec.ts`（本檔的端點表與 `ProjectApi` 一致、目錄結構列到每一支 composable），另有 `src/stores/__tests__/imports.spec.ts`（store 分層白名單）。
 
 ## `legacy/` 是唯讀基準
 
