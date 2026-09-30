@@ -58,12 +58,6 @@ const stackTitle = computed(() => {
 })
 
 const name = computed(() => task.value?.name ?? issue.value?.title ?? '')
-/** 刪除後資料已經沒了，標題改用關閉前記下的字，免得關閉動畫途中整段閃成空白。 */
-const nameSnapshot = ref('')
-watch(name, (v) => {
-  if (v) nameSnapshot.value = v
-})
-const headerName = computed(() => name.value || nameSnapshot.value)
 
 /** 任務 ↔ Issue 切換時左右滑入。legacy `paneAnim` :3804 */
 const paneClass = computed(() =>
@@ -71,22 +65,53 @@ const paneClass = computed(() =>
 )
 
 /**
+ * 標題草稿屬於哪一筆：打字當下開著的那一筆。debounce 到期前詳情可能已經關掉或換到別筆
+ * （平板點遮罩不會 blur），送出一律送回這一筆，實體已刪就略過。
+ */
+let draftTarget: { kind: 'task' | 'issue'; id: string } | null = null
+
+/** 草稿那一筆目前的名稱；還沒打過字時看開著的這一筆。 */
+function draftName(): string {
+  const t = draftTarget
+  if (!t) return name.value
+  return (t.kind === 'task' ? taskStore.taskById(t.id)?.name : issueStore.byId(t.id)?.title) ?? ''
+}
+
+/**
  * 改標題：任務寫 name、Issue 寫 title。legacy `detail.onName` :3094 / :3292。
  * 本地逐鍵、api debounce 300ms，離開編輯時由 DetailHeader 的 `flush` 事件送出（契約 B-2）。
  */
 const titleDraft = useEditDraft({
-  get: () => name.value,
+  get: draftName,
   applyLocal: (v) => {
-    if (task.value) taskStore.applyLocalPatch(task.value.id, { name: v })
-    else if (issue.value) issueStore.applyLocalPatch(issue.value.id, { title: v })
+    if (task.value) {
+      draftTarget = { kind: 'task', id: task.value.id }
+      taskStore.applyLocalPatch(task.value.id, { name: v })
+    } else if (issue.value) {
+      draftTarget = { kind: 'issue', id: issue.value.id }
+      issueStore.applyLocalPatch(issue.value.id, { title: v })
+    }
   },
   commit: async (v) => {
-    if (task.value) await taskStore.commitTaskPatch(task.value.id, { name: v })
-    else if (issue.value) await issueStore.commitIssuePatch(issue.value.id, { title: v })
+    const t = draftTarget
+    if (!t) return
+    if (t.kind === 'task') {
+      if (taskStore.taskById(t.id)) await taskStore.commitTaskPatch(t.id, { name: v })
+    } else if (issueStore.byId(t.id)) {
+      await issueStore.commitIssuePatch(t.id, { title: v })
+    }
   },
   // 詳情標題的 ui.editing 是 { kind: 'dt', id: 這一筆的 id }
   editingId: () => task.value?.id ?? issue.value?.id ?? null,
 })
+
+// 關閉或換到別筆的當下，把還沒送的標題草稿送出去（不等 debounce）
+watch(
+  () => ui.detail?.id,
+  (id, old) => {
+    if (old && id !== old) void titleDraft.flush()
+  },
+)
 
 function rename(v: string): void {
   titleDraft.onInput(v)
@@ -101,7 +126,7 @@ function rename(v: string): void {
     <div v-if="shown" class="detail-layer">
       <div class="detail-modal" role="dialog" aria-modal="true">
         <DetailHeader
-          :name="headerName"
+          :name="name"
           :edit-id="shown.id"
           :stack-title="stackTitle"
           :pane-class="paneClass"
@@ -166,6 +191,8 @@ function rename(v: string): void {
 /*
  * 開關用 <Transition> 的 class（不是 keyframes）：開到一半就關時從當下的值往回走，keyframes 會從頭（全亮）重播（G10）。
  * 外觀同 popIn / popOut；Modal 的淡入淡出寫在外層 layer（Transition 的根元素，Vue 量它的過渡長度），位移縮放寫在 Modal。
+ * 遮罩（detail-fade）與 layer（detail-pop）的離場時長必須相同：鎖捲動的解鎖綁在 layer 的 after-leave，
+ * 遮罩比 layer 長的話，解鎖時遮罩還看得到、捲軸先冒回來（G1）；比 layer 短的話 Modal 會先失去遮罩。
  */
 .detail-fade-enter-active,
 .detail-fade-leave-active {

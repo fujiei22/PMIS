@@ -17,6 +17,7 @@ import SummaryCards from '@/components/summary/SummaryCards.vue'
 import { useClickOutside } from '@/composables/useClickOutside'
 import { useConfirmProps } from '@/composables/useConfirmProps'
 import { provideDomRegistry } from '@/composables/useDomRegistry'
+import { clearMenuAnchors } from '@/composables/useMenus'
 import { useNow } from '@/composables/useNow'
 import { useProjectBoot } from '@/composables/useProjectBoot'
 import { useStickyOffsets } from '@/composables/useStickyOffsets'
@@ -48,6 +49,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   boot.stop()
   ui.resetTransient()
+  // 觸發元素記在 useMenus 的模組層（store 不 import composable，所以在這裡清）
+  clearMenuAnchors()
 })
 </script>
 

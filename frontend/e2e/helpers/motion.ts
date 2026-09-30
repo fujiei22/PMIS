@@ -34,7 +34,11 @@ export interface Frame {
 
 export interface Trace {
   frames: Frame[]
-  /** action 開始的時間（同 Frame.t 的基準）。 */
+  /**
+   * action 開始的時間（同 Frame.t 的基準）：action 回傳頁內時間時以它為準，否則是 action 送出前的時間。
+   * 後者到頁面真的收到動作之間隔著 Playwright 的往返，可能夾著一幀動作前的畫面——要看「動作之後每一幀」的斷言，
+   * action 請用 clickInPage 這類回傳頁內時間的寫法。
+   */
   at: number
 }
 
@@ -65,7 +69,10 @@ export async function idle(page: Page): Promise<void> {
   await pause(page, 50)
 }
 
-/** 逐幀記錄一組元素，期間執行 action；action 前先錄 80ms 當起點，之後再錄 ms。 */
+/**
+ * 逐幀記錄一組元素，期間執行 action；action 前先錄 80ms 當起點，之後再錄 ms。
+ * action 回傳頁內時間（例：clickInPage 的回傳值）時，at 以它為準；否則 at 是 action 送出前的時間。
+ */
 export async function trace(
   page: Page,
   targets: Record<string, string>,
@@ -114,15 +121,15 @@ export async function trace(
     requestAnimationFrame(tick)
   }, targets)
   await pause(page, 80)
-  const at = await page.evaluate(() => performance.now() - (window as unknown as { __trace: TraceState }).__trace.t0)
-  await action()
+  const sent = await page.evaluate(() => performance.now() - (window as unknown as { __trace: TraceState }).__trace.t0)
+  const ret = await action()
   await pause(page, ms)
   const frames = await page.evaluate(() => {
     const s = (window as unknown as { __trace: TraceState }).__trace
     s.stop = true
     return s.frames
   })
-  return { frames, at }
+  return { frames, at: typeof ret === 'number' ? ret : sent }
 }
 
 /** 某個元素在畫面上的每一幀（不在畫面上的幀略過）。 */
@@ -186,4 +193,21 @@ export async function openDepEditor(page: Page, id: string): Promise<void> {
   await page.locator('[data-rowmenu] .rm-item', { hasText: '相依設定' }).click()
   await page.locator('.dep-editor').waitFor()
   await idle(page)
+}
+
+/**
+ * 頁內直接點（不等 Playwright 往返），可選 ms 毫秒後再點第二個。
+ * 回傳第一下點下去的頁內時間（同 trace 的時間基準）：當作 trace 的 action 回傳值時，trace 的 at 就是實際點擊的時間。
+ */
+export async function clickInPage(page: Page, sel: string, then?: { sel: string; ms: number }): Promise<number> {
+  return page.evaluate(
+    ({ sel, then }) => {
+      const tr = (window as unknown as { __trace?: TraceState }).__trace
+      const at = tr ? performance.now() - tr.t0 : 0
+      ;(document.querySelector(sel) as HTMLElement).click()
+      if (then) setTimeout(() => (document.querySelector(then.sel) as HTMLElement | null)?.click(), then.ms)
+      return at
+    },
+    { sel, then },
+  )
 }

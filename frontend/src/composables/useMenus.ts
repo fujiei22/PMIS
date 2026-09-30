@@ -18,6 +18,11 @@ export const menuAnchors: Record<MenuAnchorKind, HTMLElement | null> = {
   issueDate: null,
 }
 
+/** 放掉所有記下的觸發元素：離開 Dashboard 時呼叫（DashboardView），模組層不再抓著已脫離的 DOM。 */
+export function clearMenuAnchors(): void {
+  for (const k of Object.keys(menuAnchors) as MenuAnchorKind[]) menuAnchors[k] = null
+}
+
 export interface Menus {
   /** 開狀態 / 優先度 / 分類 / Issue 欄位的選項選單。 */
   openOptionMenu: (e: MouseEvent, id: string, kind: OptionMenuKind) => void

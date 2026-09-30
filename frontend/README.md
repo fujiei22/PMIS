@@ -300,6 +300,8 @@ store 分三層，依賴**只能由上往下**：
 
 **唯一例外**：`composables/useClickOutside.ts`。它做的是「這一下點在哪」的 hit-test，對象是任意祖先而不是某個登錄過的元素，所以仍用 `Element.closest`——`KEEP_SELECTION`（`[data-card],[data-taskid],[data-rowtask],[data-rowgroup],[data-issuerow],[data-dd],[data-errorbar],input,textarea,select,label` 逐字取自 legacy，另加新頁的 `[data-keep-selection]`）與 `KEEP_POPUP`（`[data-dd],[data-errorbar]`）。改動這些屬性名會弄壞「點外面清選取 / 關浮層」，不是只有測試變紅。它也是 `no-query-selector.spec.ts` 的白名單唯一一筆。
 
+**不進登錄表的元素**：開啟浮層的觸發元素（選項選單、兩種日期選擇器、列動作選單）記在 `composables/useMenus.ts` 模組層的 `menuAnchors`，給 `useCloseOnScroll` 判斷捲動有沒有把它帶走。它記的是「誰開了目前這個浮層」，不是常駐的畫面元素；而且登錄表在沒有 provider 時每次回一張新表，登錄進去會靜默失效。離開 Dashboard 時由 `DashboardView` 呼叫 `clearMenuAnchors()` 放掉。
+
 | 屬性 | 掛在 | 值 | legacy 也有 |
 |---|---|---|---|
 | `data-rowtask` | 甘特左欄任務列 | taskId | ✓ |

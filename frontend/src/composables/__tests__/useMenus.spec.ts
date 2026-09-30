@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { menuAnchors, useMenus } from '@/composables/useMenus'
+import { clearMenuAnchors, menuAnchors, useMenus } from '@/composables/useMenus'
 import { anchorCalendar, anchorOptionMenu, anchorRowMenu } from '@/lib/anchor'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
@@ -122,5 +122,15 @@ describe('useMenus', () => {
     const e4 = triggerAt(10, 10, 30)
     menus.openIssueDatePicker(e4, 'i1', 'due', '')
     expect(menuAnchors.issueDate).toBe(e4.currentTarget)
+  })
+
+  it('clearMenuAnchors 放掉四種觸發元素（離開 Dashboard 時呼叫，不抓著已脫離的 DOM）', () => {
+    const menus = useMenus()
+    menus.openOptionMenu(triggerAt(10, 10, 30), 't1', 'status')
+    menus.openTaskDatePicker(triggerAt(10, 10, 30), 't1')
+    menus.toggleRowMenu(triggerAt(10, 10, 30), 't1')
+    menus.openIssueDatePicker(triggerAt(10, 10, 30), 'i1', 'due', '')
+    clearMenuAnchors()
+    expect(menuAnchors).toEqual({ option: null, row: null, taskDate: null, issueDate: null })
   })
 })

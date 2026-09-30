@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { hasMid, openDashboard, peakThenFall, series, trace } from './helpers/motion'
+import { clickInPage, hasMid, openDashboard, peakThenFall, series, trace } from './helpers/motion'
 
 test.use({ viewport: { width: 1920, height: 1080 } })
 
@@ -31,4 +31,21 @@ test('trace：過渡量得到中間值與祖先的透明度，瞬間切換量不
   expect(hasMid(o('snap')), '瞬間切換沒有中間值').toBe(false)
   expect(hasMid(o('child')), '子元素吃得到父層的透明度').toBe(true)
   expect(peakThenFall(o('fade')).rises, '淡出一路往下').toBe(0)
+})
+
+test('trace：action 回傳頁內時間（clickInPage）時，at 就是實際點擊的時間，之後的幀都是點擊後的樣子', async ({ page }) => {
+  await openDashboard(page)
+  await page.evaluate(() => {
+    const d = document.createElement('div')
+    d.id = 'probe-click'
+    d.style.cssText = 'position:fixed;left:10px;top:60px;width:40px;height:40px;background:#000'
+    d.addEventListener('click', () => (d.style.pointerEvents = 'none'))
+    document.body.appendChild(d)
+  })
+  let clicked = -1
+  const tr = await trace(page, { p: '#probe-click' }, async () => (clicked = await clickInPage(page, '#probe-click')))
+  expect(tr.at, 'at 取 action 回傳的頁內時間').toBe(clicked)
+  const after = series(tr, 'p').filter((b) => b.t > tr.at)
+  expect(after.length).toBeGreaterThan(5)
+  expect(after.every((b) => b.pe === 'none'), 'at 之後沒有點擊前的幀').toBe(true)
 })

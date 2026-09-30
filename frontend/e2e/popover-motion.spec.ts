@@ -1,26 +1,8 @@
-import { expect, test, type Page } from '@playwright/test'
-import { hasMid, idle, openDashboard, openTaskDetail, pause, peakThenFall, series, trace } from './helpers/motion'
+import { expect, test } from '@playwright/test'
+import { clickInPage, hasMid, idle, openDashboard, openTaskDetail, pause, peakThenFall, series, trace } from './helpers/motion'
 
 /** 選單類浮層的進出場（動畫稽核 G12）與捲動處理（G5，Task 5）。 */
 test.use({ viewport: { width: 1920, height: 1080 } })
-
-/**
- * 頁內直接點（不等 Playwright 往返），可選 ms 毫秒後再點第二個。
- * 回傳第一下點下去的時間（同 trace 的時間基準）：trace 的 at 在 Playwright 往返之前就記了，
- * at 到實際點擊之間可能夾著一幀點擊前的畫面，「離場中」要從這個時間算。
- */
-function clickInPage(page: Page, first: string, then?: { sel: string; ms: number }): Promise<number> {
-  return page.evaluate(
-    ({ first, then }) => {
-      const tr = (window as unknown as { __trace?: { t0: number } }).__trace
-      const at = tr ? performance.now() - tr.t0 : 0
-      ;(document.querySelector(first) as HTMLElement).click()
-      if (then) setTimeout(() => (document.querySelector(then.sel) as HTMLElement | null)?.click(), then.ms)
-      return at
-    },
-    { first, then },
-  )
-}
 
 const MENUS = [
   { name: '選項選單', open: '[data-card="t3"] .st', sel: '.opt-menu', mask: '.opt-mask' },
@@ -38,11 +20,9 @@ for (const m of MENUS) {
     const opening = await trace(page, { pop: m.sel }, () => clickInPage(page, m.open))
     expect(hasMid(series(opening, 'pop').map((b) => b.o)), '進場有中間值').toBe(true)
 
-    let clicked = 0
-    const closing = await trace(page, { pop: m.sel }, async () => {
-      clicked = await clickInPage(page, m.mask)
-    })
-    const leaving = series(closing, 'pop').filter((b) => b.t > clicked)
+    // clickInPage 回傳頁內點擊時間，closing.at 就是實際點下去的那一刻
+    const closing = await trace(page, { pop: m.sel }, () => clickInPage(page, m.mask))
+    const leaving = series(closing, 'pop').filter((b) => b.t > closing.at)
     expect(hasMid(leaving.map((b) => b.o)), '離場有中間值').toBe(true)
     expect(leaving.every((b) => b.pe === 'none'), '離場中不攔點擊').toBe(true)
 
@@ -116,12 +96,42 @@ test('G5 點甘特列選取後馬上開「⋮」：選單維持開著', async ({
   await expect(page.locator('[data-rowmenu]')).toBeVisible()
 })
 
-test('G5 焦點在日期選擇器的工期輸入框時捲動頁面（平板軟鍵盤），選擇器不關', async ({ page }) => {
+test('G5 桌機：焦點在日期選擇器的工期輸入框時捲動頁面，觸發元素被帶走照樣關閉', async ({ page }) => {
   await openDashboard(page)
   await page.locator('[data-card="t3"] .range-main').scrollIntoViewIfNeeded()
   await page.locator('[data-card="t3"] .range-main').click()
   await page.locator('.task-date-picker input[data-dur]').focus()
   await page.evaluate(() => window.scrollBy(0, 200))
-  await pause(page, 200)
-  await expect(page.locator('.task-date-picker')).toBeVisible()
+  await expect(page.locator('.task-date-picker')).toHaveCount(0)
+})
+
+// 批次 A 合併後的守衛：專案起點外移時甘特會程式捲動 .gantt-scroller，同時看板卡片依起日換位置
+test('G5 從看板卡片開起訖選擇器、選一個早於專案起點的起日：選擇器仍開著', async ({ page }) => {
+  await openDashboard(page)
+  const trig = page.locator('[data-card="t3"] .range-main')
+  await trig.scrollIntoViewIfNeeded()
+  await trig.click()
+  const picker = page.locator('.task-date-picker')
+  await expect(picker).toBeVisible()
+  // 專案起點是 t1 的 2026-08-24：往回翻到 7 月，點 7/1
+  await picker.locator('.cal-arrow').first().click()
+  await picker.locator('.cal-arrow').first().click()
+  await expect(picker.locator('.cal-title')).toHaveText('2026年7月')
+  await picker.locator('.cal-cell:not(.dim)').first().click()
+  await pause(page, 1200)
+  await expect(picker).toBeVisible()
+})
+
+test.describe('觸控裝置（平板橫向）', () => {
+  test.use({ viewport: { width: 1024, height: 768 }, hasTouch: true, isMobile: true })
+
+  test('G5 焦點在日期選擇器的工期輸入框時捲動頁面（叫出軟鍵盤），選擇器不關', async ({ page }) => {
+    await openDashboard(page)
+    await page.locator('[data-card="t3"] .range-main').scrollIntoViewIfNeeded()
+    await page.locator('[data-card="t3"] .range-main').click()
+    await page.locator('.task-date-picker input[data-dur]').focus()
+    await page.evaluate(() => window.scrollBy(0, 200))
+    await pause(page, 200)
+    await expect(page.locator('.task-date-picker')).toBeVisible()
+  })
 })

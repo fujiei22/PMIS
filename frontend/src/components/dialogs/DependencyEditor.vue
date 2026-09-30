@@ -82,14 +82,35 @@ function close(): void {
 /**
  * 打開時置中、之後上緣固定（user 決定；G15）：增刪前置 / 後續任務會改變高度，一直垂直置中的話
  * 上下兩端每次都一起跳。打開後、第一次畫出來之前量出置中時的上緣，改成靠上對齊固定在那裡，之後只往下長。
+ * 開著的時候改視窗大小或旋轉：先回到置中，下一幀（新版面畫好）再量一次、重新固定。
  */
 const editorEl = ref<HTMLElement | null>(null)
 const pinnedTop = ref<number | null>(null)
+
+/** offsetTop 不含進場 transform，量到的是置中後的真正位置。 */
+function pinTop(): void {
+  pinnedTop.value = editorEl.value ? editorEl.value.offsetTop : null
+}
+
 watch(
   () => !!target.value,
-  (open) => {
-    // offsetTop 不含進場 transform，量到的是置中後的真正位置
-    pinnedTop.value = open && editorEl.value ? editorEl.value.offsetTop : null
+  (open, _old, onCleanup) => {
+    if (!open) {
+      pinnedTop.value = null
+      return
+    }
+    pinTop()
+    let frame = 0
+    const onResize = (): void => {
+      pinnedTop.value = null
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(pinTop)
+    }
+    window.addEventListener('resize', onResize)
+    onCleanup(() => {
+      window.removeEventListener('resize', onResize)
+      cancelAnimationFrame(frame)
+    })
   },
   { flush: 'post' },
 )
