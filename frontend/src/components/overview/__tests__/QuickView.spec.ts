@@ -2,9 +2,9 @@
  * 專案速覽 QuickView 的測試（用 mock 的範例專案組合）。
  *
  * 測什麼：四組標題、近期任務的快到期標記、落後色調、進度條下方的落後文字、三種空值文案，
- * 以及 withHead 時的標頭（專案名、狀態 pill、PM、收合鈕、進入連結）。
+ * 以及 withHead 時的標頭（專案名、狀態 pill、PM、進入入口塊；沒有收合鈕）。
  * 為什麼：卡片與時間軸共用這份速覽；快到期與落後色調是依今天日期與門檻派生的，
- * 寫死時鐘才驗得出邊界（09-23 算快到期、09-30 不算）。收合鈕要切 overview store 的展開狀態。
+ * 寫死時鐘才驗得出邊界（09-23 算快到期、09-30 不算）。收合改成再點一次卡片 / 時間軸列，標頭不再放收合鈕。
  */
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -15,7 +15,6 @@ import QuickView from '@/components/overview/QuickView.vue'
 import { deriveProject } from '@/lib/portfolio'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
-import { useOverviewStore } from '@/stores/overview'
 import { usePortfolioStore } from '@/stores/portfolio'
 
 const router = createRouter({ history: createMemoryHistory(), routes: [
@@ -60,16 +59,13 @@ describe('QuickView', () => {
     expect(w.text()).toContain('無未結 Issue')
   })
 
-  it('withHead：專案名、pill、PM、收合鈕、進入連結；收合鈕切換展開', async () => {
+  it('withHead：專案名、pill、PM、進入入口塊；沒有收合鈕', async () => {
     const w = await setup('portal', true)
-    const ov = useOverviewStore()
-    ov.toggleExpanded('portal')
     const head = w.find('.qv-head')
     expect(head.find('.qv-name').text()).toBe('客戶入口網站改版')
     expect(head.find('.pill').classes()).toContain('pill-paused')
     expect(head.text()).toContain('成員8')
-    expect(head.find('.btn-enter').attributes('href')).toBe('/projects/portal')
-    await head.find('.btn-quick').trigger('click')
-    expect(ov.isExpanded('portal')).toBe(false)
+    expect(head.find('.enter-head').attributes('href')).toBe('/projects/portal')
+    expect(head.find('.btn-quick').exists()).toBe(false)
   })
 })

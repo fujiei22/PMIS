@@ -51,7 +51,7 @@ describe('LaneDrawer', () => {
     expect(w.find('.quick-view').exists()).toBe(false)
   })
 
-  it('展開：顯示、1fr、排在該列之後；標頭的「收合」鈕關掉，收完才隱藏', async () => {
+  it('展開：顯示、1fr、排在該列之後；標頭沒有收合鈕，再點一次卡片（store）收起，收完才隱藏', async () => {
     const w = await setup(3)
     const ov = useOverviewStore()
     ov.toggleExpanded('portal')
@@ -60,7 +60,9 @@ describe('LaneDrawer', () => {
     expect(style(w)).toContain('1fr')
     expect(style(w)).toContain('order: 3')
     expect(w.find('.drawer').attributes('data-drawer')).toBe('portal')
-    await w.find('.btn-quick').trigger('click')
+    expect(w.find('.btn-quick').exists()).toBe(false)
+    ov.toggleExpanded('portal')
+    await flushPromises()
     expect(style(w)).toContain('0fr')
     expect(style(w)).not.toContain('display: none')
     vi.advanceTimersByTime(PANEL_UNMOUNT_MS)

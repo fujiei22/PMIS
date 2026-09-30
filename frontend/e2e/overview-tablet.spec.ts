@@ -83,7 +83,7 @@ test('點卡片展開再收合：卡片不會留著 hover 的上浮與陰影', a
   await card.locator('.card-name').tap()
   await expect(ov.drawer('payment')).toBeVisible()
   await card.locator('.card-name').tap()
-  await expect(card).toHaveAttribute('aria-expanded', 'false')
+  await expect(ov.cardMain('payment')).toHaveAttribute('aria-expanded', 'false')
   await expect(card).toHaveCSS('translate', 'none')
   await expect(card).toHaveCSS('box-shadow', 'none')
 })

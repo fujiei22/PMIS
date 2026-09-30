@@ -21,7 +21,7 @@ export const PROJECT_ALERT_LABEL: Record<ProjectAlert, string> = { late: '落後
 export const PROJECT_BADGE_LABEL: Record<ProjectBadgeKind, string> = {
   late: '落後', watch: '需注意', doing: '進行中', todo: '未開始', done: '已完成',
 }
-/** 狀態 → CSS class 字尾。B2 的「需注意」沿用 --st-paused-* 色系，所以 class 叫 paused（.pill-paused / .card-paused / .p-block.paused）。 */
+/** 狀態 → CSS class 字尾。B2 的「需注意」沿用 --st-paused-* 色系，所以 class 叫 paused（.pill-paused / .p-block.paused）。 */
 export const BADGE_CLASS: Record<ProjectBadgeKind, string> = {
   late: 'late', watch: 'paused', doing: 'doing', todo: 'todo', done: 'done',
 }
