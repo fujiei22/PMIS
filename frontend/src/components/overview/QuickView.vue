@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// 專案速覽的內容：進度與任務數、時程、風險項目、成員與近期任務四組；withHead 時加上專案與 PM 標頭（時間軸用）。
+// 專案速覽的內容：進度與任務數、時程、風險項目、成員與近期任務四組；withHead 時加上專案與 PM 標頭（卡片抽屜與時間軸用）。
+// 標頭不放收合鈕：再點一次卡片 / 時間軸列就收起，右端只留「進入」。
 // 展開收合的外殼（grid-rows 過渡、延遲卸載）由使用端包，本元件只負責內容。
 import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
@@ -10,7 +11,6 @@ import { ISSUE_LEVEL } from '@/constants/dashboard'
 import { BADGE_CLASS } from '@/constants/overview'
 import { dueSoon, gapTone, type ProjectRow } from '@/lib/portfolio'
 import { useClockStore } from '@/stores/clock'
-import { useOverviewStore } from '@/stores/overview'
 import { usePortfolioStore } from '@/stores/portfolio'
 import type { IssueLevel } from '@/types/models'
 
@@ -21,7 +21,6 @@ const props = defineProps<{
 }>()
 
 const clock = useClockStore()
-const overview = useOverviewStore()
 const portfolio = usePortfolioStore()
 
 const p = computed(() => props.row.p)
@@ -68,24 +67,6 @@ const upcoming = computed(() =>
         <Avatar :member="pm" :size="22" />{{ pm?.name ?? '?' }}<span class="qv-pm-role">PM</span>
       </span>
       <span class="spacer"></span>
-      <button
-        type="button"
-        class="btn btn-quick"
-        aria-label="收合速覽"
-        @click.stop="overview.toggleExpanded(p.id)"
-      >
-        <svg class="caret" viewBox="0 0 12 12" aria-hidden="true">
-          <path
-            d="M2.5 4.5 6 8l3.5-3.5"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.6"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-        收合
-      </button>
       <EnterLink :id="p.id" :name="p.name" variant="head" />
     </div>
 
@@ -164,12 +145,16 @@ const upcoming = computed(() =>
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 標頭（時間軸速覽）：底色與分隔線用使用端給的 PM 色（--pm-*），沒給時退回中性色 ── */
+/*
+ * ── 標頭：底色與分隔線用使用端給的 PM 色（--pm-*），沒給時退回中性色 ──
+ * 右端的「進入」入口塊要整個標頭高，所以右側不留內距；高 48px（觸控 44 以上）。
+ */
 .qv-head {
   display: flex;
   align-items: center;
   gap: var(--sp-5);
-  padding: var(--sp-5) var(--sp-7);
+  min-height: calc(var(--ctrl-h) + 2 * var(--sp-4));
+  padding: 0 0 0 var(--sp-7);
   background: var(--pm-sel, var(--surface-2));
   border-bottom: 1px solid var(--pm-soft, var(--border-1));
 }
@@ -204,59 +189,6 @@ const upcoming = computed(() =>
 
 .spacer {
   flex: 1;
-}
-
-.qv-head .btn-enter {
-  margin-left: 0;
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-3);
-  flex: 0 0 auto;
-  min-height: var(--ctrl-h);
-  padding: var(--sp-4) var(--sp-7);
-  font: inherit;
-  font-size: var(--fs-14);
-  font-weight: var(--fw-medium);
-  line-height: var(--lh-tight);
-  border-radius: var(--r-control);
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background var(--t-fast) var(--ease),
-    border-color var(--t-fast) var(--ease),
-    color var(--t-fast) var(--ease),
-    box-shadow var(--t-fast) var(--ease);
-}
-
-/* 標頭只在展開時出現，所以直接用 B2 .is-open .btn-quick 的樣子 */
-.btn-quick {
-  background: var(--surface-3);
-  border: 1px solid var(--border-control);
-  color: var(--text-1);
-}
-
-/* hover 只給有滑鼠的裝置：觸控點一下後 :hover 會一直黏著，直到點別的地方（本檔其他 hover 同理） */
-@media (hover: hover) {
-  .btn-quick:hover {
-    border-color: var(--text-placeholder);
-  }
-}
-
-.btn:focus-visible {
-  outline: none;
-  box-shadow: var(--ring-focus);
-}
-
-/* 標頭只在展開時出現，箭頭固定朝上表示「收合」 */
-.caret {
-  width: var(--sp-6);
-  height: var(--sp-6);
-  flex: 0 0 auto;
-  color: var(--text-muted);
-  transform: rotate(180deg);
 }
 
 /* ── 四組內容：卡片內 2×2，時間軸（withHead）4 欄橫排；依速覽本身的寬度（不是視窗）收欄 ── */

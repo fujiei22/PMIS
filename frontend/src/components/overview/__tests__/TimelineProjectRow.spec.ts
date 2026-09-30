@@ -58,7 +58,7 @@ describe('TimelineProjectRow', () => {
     expect(w.find('.bar-label').text()).toBe('客戶入口網站改版')
   })
 
-  it('速覽外殼一直在 DOM；點列展開，標頭有專案名、PM、收合、進入；Enter 收回', async () => {
+  it('速覽外殼一直在 DOM；點列展開，標頭有專案名、PM、進入（沒有收合鈕）；Enter 收回', async () => {
     const w = await setup()
     const ov = useOverviewStore()
     expect(w.find('.qv .quick-wrap').exists()).toBe(true)
@@ -68,8 +68,8 @@ describe('TimelineProjectRow', () => {
     const head = w.find('.qv-head')
     expect(head.find('.qv-name').text()).toBe('客戶入口網站改版')
     expect(head.text()).toContain('成員8')
-    expect(head.find('.btn-enter').attributes('href')).toBe('/projects/portal')
-    expect(head.find('.btn-quick').exists()).toBe(true)
+    expect(head.find('.enter-head').attributes('href')).toBe('/projects/portal')
+    expect(head.find('.btn-quick').exists()).toBe(false)
     await w.find('.p-row').trigger('keydown', { key: 'Enter' })
     expect(ov.isExpanded('portal')).toBe(false)
   })
