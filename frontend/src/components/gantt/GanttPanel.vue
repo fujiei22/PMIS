@@ -8,10 +8,12 @@ import GanttBars from '@/components/gantt/GanttBars.vue'
 import GanttGroupRow from '@/components/gantt/GanttGroupRow.vue'
 import GanttTaskRow from '@/components/gantt/GanttTaskRow.vue'
 import GanttTimeline, { type RulerDay, type RulerMonth } from '@/components/gantt/GanttTimeline.vue'
+import { registerEl, useDomRegistry } from '@/composables/useDomRegistry'
 import { useFocusRequest } from '@/composables/useFocusScroll'
 import { useGanttScroll } from '@/composables/useGanttScroll'
 import { NARROW_QUERY, useMediaQuery } from '@/composables/useMediaQuery'
 import { usePointerDrag } from '@/composables/usePointerDrag'
+import { useRowMotion } from '@/composables/useRowMotion'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
 import { useTaskActions } from '@/composables/useTaskActions'
 import { ROW_HEIGHT } from '@/constants/dashboard'
@@ -38,6 +40,7 @@ const taskStore = useTaskStore()
 const filter = useFilterStore()
 const selection = useSelectionStore()
 const sticky = useStickyOffsetsContext()
+const registry = useDomRegistry()
 
 const scrollerEl = ref<HTMLElement | null>(null)
 const rulerEl = ref<HTMLElement | null>(null)
@@ -127,6 +130,32 @@ const stripes = computed(() =>
     related: v.kind === 't' && (!!selection.related[v.id] || !!selection.softHighlight[v.id]),
   })),
 )
+
+/** 橫紋的元素（key 同 stripes 的 key），列位移補間要寫到它們身上。 */
+const stripeEls = new Map<string, HTMLElement>()
+
+/**
+ * 某一列（`g-<gid>` / `t-<tid>`）在畫面上的元素：左欄列、橫紋、條（收合分類是摘要條）。
+ * 同一列的元素由 useRowMotion 寫同一個位移，左右才會一起走。
+ */
+function* rowElements(key: string): Generator<HTMLElement | undefined> {
+  const id = key.slice(2)
+  yield stripeEls.get(key)
+  if (key.startsWith('g-')) {
+    yield registry.groups.get(id)
+    yield registry.bars.get(`sum-${id}`)
+  } else {
+    yield registry.rows.get(id)
+    yield registry.bars.get(id)
+  }
+}
+
+// 收合 / 篩選 / 重排時列的上下位移（左欄與右側同一個時鐘，取代 TransitionGroup 的 move 與條的 top 過渡）
+useRowMotion({
+  keys: () => rows.value.map((v) => `${v.kind}-${v.id}`),
+  elementsOf: rowElements,
+  rowHeight: ROW_HEIGHT,
+})
 
 const zoomPct = computed(() => Math.round((ui.dayWidth / 32) * 100))
 /** 滑桿軌道左半段的填色比例。legacy `zoomFill` :3581 */
@@ -256,14 +285,14 @@ function toggleAllGroups(): void {
 
     <div ref="bodyEl" class="gantt-body">
       <div class="gantt-rows">
-        <!-- 左欄：平鋪 visibleRows，TransitionGroup 負責收合 / 重排的 FLIP -->
+        <!-- 左欄：平鋪 visibleRows；收合 / 重排的上下位移由 useRowMotion 補間，離場列直接移除（同 legacy） -->
         <div class="gantt-left" @transitionend="onLeftTransitionEnd">
-          <TransitionGroup tag="div" move-class="row-move" class="gantt-flow">
+          <div class="gantt-flow">
             <template v-for="v in leftRows" :key="v.key">
               <GanttGroupRow v-if="v.group" :group="v.group" />
               <GanttTaskRow v-else-if="v.task" :task="v.task" />
             </template>
-          </TransitionGroup>
+          </div>
           <div class="gantt-filler"></div>
         </div>
 
@@ -286,6 +315,7 @@ function toggleAllGroups(): void {
             <div
               v-for="s in stripes"
               :key="s.key"
+              :ref="registerEl(stripeEls, s.key)"
               class="stripe"
               :class="{ group: s.group, selected: s.selected, related: s.related }"
               :style="{ top: `${s.top}px`, width: `${chartWidth}px` }"
@@ -484,11 +514,6 @@ function toggleAllGroups(): void {
   min-height: 0;
 }
 
-/* 收合 / 重排時列的位移由 TransitionGroup 的 FLIP 處理 */
-.row-move {
-  transition: transform var(--t-fast) var(--ease);
-}
-
 .gantt-scroller {
   position: relative;
   z-index: 1;
@@ -532,9 +557,8 @@ function toggleAllGroups(): void {
   height: var(--gantt-row);
   background: transparent;
   border-bottom: 1px solid var(--border-hair);
-  transition:
-    top var(--t-bar) var(--ease),
-    background var(--t-base) ease;
+  /* 上下位移不走 top 過渡：由 useRowMotion 寫 translate，跟左欄列同一個時鐘 */
+  transition: background var(--t-base) ease;
 }
 
 .stripe.group {

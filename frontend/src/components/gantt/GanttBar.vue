@@ -263,9 +263,9 @@ function onDown(e: PointerEvent): void {
   gap: var(--r-badge);
   overflow: hidden;
   z-index: 12;
+  /* 上下位移不走 top 過渡：由 GanttPanel 的 useRowMotion 寫 translate，跟左欄列同一個時鐘 */
   transition:
     left var(--t-bar) var(--ease),
-    top var(--t-bar) var(--ease),
     width var(--t-bar) var(--ease),
     background var(--t-base) ease,
     box-shadow var(--t-fast) ease,
