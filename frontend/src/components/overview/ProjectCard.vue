@@ -138,17 +138,6 @@ function onKey(e: KeyboardEvent): void {
 }
 
 /* 展開中：卡片下緣中央的箭頭指向下方的速覽抽屜（LaneDrawer），和抽屜框同為 PM 色 */
-/*
- * 進出場（篩選 / 搜尋讓卡片出現或消失）：過渡照 overview-motion.css 的 ov-card-*（淡入淡出＋縮放）。
- * 上面 .card 的 transition 是 scoped（特異度較高），會蓋掉全域的 .ov-card-enter-active，所以在這裡明寫一次。
- */
-.card.ov-card-enter-active,
-.card.ov-card-leave-active {
-  transition:
-    opacity var(--t-panel) var(--ease),
-    transform var(--t-panel) var(--ease);
-}
-
 .card.is-open::after {
   content: '';
   position: absolute;
@@ -171,6 +160,18 @@ function onKey(e: KeyboardEvent): void {
     border-color var(--t-base) var(--ease),
     box-shadow var(--t-fast) var(--ease),
     translate var(--t-base) var(--ease);
+}
+
+/*
+ * 進出場（篩選 / 搜尋讓卡片出現或消失）：過渡照 overview-motion.css 的 ov-card-*（淡入淡出＋縮放）。
+ * 上面 .card / .card.is-open 的 transition 是 scoped（特異度較高），會蓋掉全域的 .ov-card-enter-active，所以在這裡明寫一次。
+ * 要放在 .card.is-open 之後：兩者特異度相同，靠順序勝出——展開中的卡被篩掉時也要淡出。
+ */
+.card.ov-card-enter-active,
+.card.ov-card-leave-active {
+  transition:
+    opacity var(--t-panel) var(--ease),
+    transform var(--t-panel) var(--ease);
 }
 
 .card-head {

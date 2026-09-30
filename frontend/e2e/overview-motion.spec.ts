@@ -295,6 +295,20 @@ test.describe('總覽 重排動畫（A8 / A9 / A20）', () => {
     expect(ops.some((o) => o > 0.05 && o < 0.95)).toBe(true)
   })
 
+  test('卡片檢視：展開中的卡片被篩掉時也淡出（is-open 的過渡不能蓋掉離場過渡）', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    // 報表資料倉儲（已完成）與供應商入口 v1（未開始）同在成員9 泳道：篩「未開始」時泳道留著，只有展開中的它離場
+    // （整條泳道離場時淡出的是泳道本身，卡片自己的 opacity 不會變，量不到這個問題）
+    await ov.cardMain('dw').click()
+    await expect.poll(async () => (await ov.drawer('dw').boundingBox())?.height ?? 0).toBeGreaterThan(200)
+    await page.waitForFunction(() => document.getAnimations().length === 0)
+    await ov.openDropdown('status')
+    const ops = await trackOpacity(page, '[data-view-panel="cards"] [data-project="dw"]', () =>
+      ov.dropdown('status').getByRole('button', { name: '未開始', exact: true }).click(),
+    )
+    expect(ops.some((o) => o > 0.05 && o < 0.95)).toBe(true)
+  })
+
   test('時間軸：移掉「落後」排序，群組換位置時列平順移動、不回彈', async ({ page }) => {
     const ov = new OverviewPage(page); await ov.goto('#timeline')
     const dist = await trackMove(page, '[data-view-panel="timeline"] [data-project="dw"] .p-row', () =>
