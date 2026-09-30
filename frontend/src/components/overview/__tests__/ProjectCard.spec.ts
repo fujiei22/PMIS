@@ -2,10 +2,11 @@
  * 總覽專案卡 ProjectCard 的測試（用 mock 的範例專案組合，取「客戶入口網站改版」）。
  *
  * 測什麼：名稱、狀態 pill 與卡片色系、實際進度、meta 的落後色調與到期日；
+ * 卡片拆成兩個並排的點擊區：左邊主體 .card-main（role=button）展開速覽、右緣直條「進入」導頁；
  * 展開時的外框狀態與 aria-controls 指向速覽抽屜；點擊與 Enter / Space 切換展開；
  * 「進入」連結的網址，以及點「進入」不會切換展開；同泳道只展開一張。速覽抽屜本身見 LaneDrawer.spec。
- * 為什麼：整張卡是 role="button"，裡面又包了「進入」連結，
- * 冒泡與鍵盤事件很容易互相干擾；落後色調與卡片色系是依門檻派生的，寫死時鐘才驗得出來。
+ * 為什麼：兩個動作要是兄弟元素，不能再把連結包在 role="button" 裡（巢狀互動元素，報讀與鍵盤都會混）；
+ * 落後色調與卡片色系是依門檻派生的，寫死時鐘才驗得出來。
  */
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -48,26 +49,41 @@ describe('ProjectCard', () => {
     w.unmount()
   })
 
-  it('速覽不在卡片裡；展開時加 is-open，aria-controls 指向泳道的抽屜 lane-qv-m8', async () => {
+  it('兩個點擊區是兄弟：外框不是按鈕，主體是 role=button，右緣「進入」不在主體裡', async () => {
     const { w } = await setup()
     const card = w.find('article')
+    expect(card.attributes('role')).toBeUndefined()
+    expect(card.attributes('tabindex')).toBeUndefined()
+    const main = card.find('.card-main')
+    expect(main.attributes('role')).toBe('button')
+    expect(main.attributes('tabindex')).toBe('0')
+    expect(main.find('.btn-enter').exists()).toBe(false)
+    expect(card.find(':scope > .enter-edge').exists()).toBe(true)
+    w.unmount()
+  })
+
+  it('速覽不在卡片裡；展開時外框加 is-open，主體的 aria-controls 指向泳道的抽屜 lane-qv-m8', async () => {
+    const { w } = await setup()
+    const card = w.find('article')
+    const main = w.find('.card-main')
     expect(w.find('.quick-view').exists()).toBe(false)
-    expect(card.attributes('aria-controls')).toBe('lane-qv-m8')
+    expect(main.attributes('aria-controls')).toBe('lane-qv-m8')
     expect(card.classes()).not.toContain('is-open')
-    await card.trigger('click')
+    await main.trigger('click')
     expect(card.classes()).toContain('is-open')
     w.unmount()
   })
 
-  it('點卡片切換展開；Enter 與 Space 也可以', async () => {
+  it('點卡片主體切換展開；Enter 與 Space 也可以', async () => {
     const { w } = await setup()
     const ov = useOverviewStore()
-    await w.find('article').trigger('click')
+    const main = w.find('.card-main')
+    await main.trigger('click')
     expect(ov.isExpanded('portal')).toBe(true)
-    expect(w.find('article').attributes('aria-expanded')).toBe('true')
-    await w.find('article').trigger('keydown', { key: 'Enter' })
+    expect(main.attributes('aria-expanded')).toBe('true')
+    await main.trigger('keydown', { key: 'Enter' })
     expect(ov.isExpanded('portal')).toBe(false)
-    await w.find('article').trigger('keydown', { key: ' ' })
+    await main.trigger('keydown', { key: ' ' })
     expect(ov.isExpanded('portal')).toBe(true)
     w.unmount()
   })
@@ -77,7 +93,7 @@ describe('ProjectCard', () => {
     const ov = useOverviewStore()
     ov.toggleExpanded('app')
     ov.toggleExpanded('pmis')
-    await w.find('article').trigger('click')
+    await w.find('.card-main').trigger('click')
     expect(ov.expandedIds).toEqual(['pmis', 'portal'])
     w.unmount()
   })

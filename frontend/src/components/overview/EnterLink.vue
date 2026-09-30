@@ -3,7 +3,7 @@
 // - edge：卡片右緣、整張卡高的直條，只畫箭頭；平時 PM 淡色，hover 填滿 PM 色。
 // - head：速覽標頭右端貼邊、整個標頭高的色塊，寫「進入」。
 // 兩種都讀使用端給的 PM 色（--pm / --pm-ink，由 PmLane / TimelineGroup 提供）。
-// 模板：@click.stop：別讓點擊冒泡到卡片或列，觸發展開切換
+// 不擋冒泡：直條是卡片主體的兄弟、入口塊在速覽裡，上層都不是展開用的點擊區。
 import { RouterLink } from 'vue-router'
 
 defineProps<{
@@ -22,7 +22,6 @@ defineProps<{
     :to="{ name: 'dashboard', params: { id } }"
     :aria-label="`進入 ${name} Dashboard`"
     :title="variant === 'edge' ? '進入 Dashboard' : undefined"
-    @click.stop
   >
     <span v-if="variant === 'head'">進入</span>
     <svg class="enter-arrow" viewBox="0 0 16 16" aria-hidden="true">
