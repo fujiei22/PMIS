@@ -668,3 +668,54 @@ test.describe('平板：選取中常駐的連線圓點跟著條走（D4）', () 
     expect(dotGap(tr, tr.marks[0]!), '收合時圓點與條').toBeLessThanOrEqual(4)
   })
 })
+
+test.describe('窄版左欄（< 900px）：日期膠囊不重播淡入、任務名寬度單調（D10 / D15）', () => {
+  test.use({ viewport: { width: 768, height: 1024 } })
+
+  test('分類交換時被搬動的列，日期膠囊一直是實的（不重播淡入）', async ({ page }) => {
+    const app = await openGantt(page)
+    const dates: Record<string, string> = {}
+    for (const id of ['t1', 't6', 't7', 't9', 't12']) dates[id] = `${row(id)} .date`
+    const gb = (await app.groupRow('g1').locator('.grip').boundingBox())!
+    const x = gb.x + gb.width / 2
+    const y0 = gb.y + gb.height / 2
+    await page.mouse.move(x, y0)
+    await page.mouse.down()
+    await page.mouse.move(x, y0 + 120)
+    await pause(page, 260)
+    await page.mouse.move(x, y0 + 240)
+    await pause(page, 100)
+    const tr = await trace(page, dates, () => page.mouse.move(x, y0 + 360), { markOn: 'pointermove' })
+    await page.mouse.up()
+    expect((await app.rowOrder()).slice(0, 2)).toEqual(['G:g2', 't7'])
+    for (const id of Object.keys(dates)) {
+      const ops = tr.frames.map((f) => f.boxes[id]?.o ?? 1)
+      expect(Math.min(...ops), `${id} 的日期膠囊最淡到`).toBe(1)
+    }
+  })
+
+  test('左欄展開 / 收合：任務名寬度一路變寬 / 變窄，不在膠囊換寫法那一幀縮回去', async ({ page }) => {
+    await openGantt(page)
+    const names: Record<string, string> = {}
+    for (const id of ['t1', 't3', 't9', 't20']) names[id] = `${row(id)} .name`
+    const toggle = page.getByTestId('gantt-left-toggle')
+
+    /** 某個任務名的寬度序列（從動作前最後一幀起）要一路朝同一個方向走（容 0.5px）。 */
+    const expectMonotonic = (tr: Trace, dir: 1 | -1, label: string): void => {
+      for (const id of Object.keys(names)) {
+        const ws = seriesOf(tr, id, tr.marks[0]!).map((f) => f.w)
+        expect(dir * (ws.at(-1)! - ws[0]!), `${label} ${id} 最後比一開始${dir > 0 ? '寬' : '窄'}`).toBeGreaterThan(2)
+        const bad = ws.findIndex((w, i) => i > 0 && dir * (w - ws[i - 1]!) < -0.5)
+        expect(bad, `${label} ${id} 寬度逐幀：${ws.map((w) => w.toFixed(1)).join(',')}`).toBe(-1)
+      }
+    }
+
+    const open = await trace(page, names, () => toggle.click(), { ms: 1000 })
+    expectMonotonic(open, 1, '展開')
+    await expect(page.locator(`${row('t3')} .date-days`)).toBeVisible()
+    await idle(page)
+    const close = await trace(page, names, () => toggle.click(), { ms: 1000 })
+    expectMonotonic(close, -1, '收合')
+    await expect(page.locator(`${row('t3')} .date-days`)).toHaveCount(0)
+  })
+})

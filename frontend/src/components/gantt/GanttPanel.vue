@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 專案時程面板：尺規、左欄任務 / 分類列、右側甘特條與相依線。
 // legacy 對照：模板 :387-531，days / months :2716-2733，stripes :2882，sticky :3634-3637。
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import PanelShell from '@/components/common/PanelShell.vue'
 import DependencyLines from '@/components/gantt/DependencyLines.vue'
 import GanttBars from '@/components/gantt/GanttBars.vue'
@@ -169,42 +169,18 @@ const allCollapsed = computed(() => taskStore.groups.every((g) => ui.collapsedGr
 const narrow = useMediaQuery(NARROW_QUERY)
 
 /*
- * 左欄的寬度（ganttLeftExpanded）與列的寫法（ganttLeftDates）分開切：
- * 展開時先撐開寬度，寬度過渡跑完才換成起訖日——同時換的話，寬的日期膠囊會先出現、在還沒撐開的欄裡蓋住任務名；
- * 收合時反過來，先換回只寫工期的窄膠囊，再縮寬度。
+ * 左欄的寬度（ganttLeftExpanded）與列的寫法（ganttLeftDates）同時切：
+ * 膠囊換寫法時由 GanttTaskRow 把膠囊寬度從舊寫法補間到新寫法，時長與曲線跟左欄寬度（--t-layout / --ease）一樣，
+ * 任務名的寬度就一路單調（動畫稽核 D15）。原本「展開時等寬度撐開才換成起訖日」會讓任務名先變寬、
+ * 換寫法那一幀又縮回 105px；膠囊在補間途中裁掉超出的字，不會蓋住任務名。
  */
-
-/**
- * transitionend 沒來時（過渡被打斷、沒有過渡）的保險。平常由 transitionend 切；
- * 這裡比寬度過渡（--t-layout .24s）多留不少，裝置卡頓時才不會在寬度還沒撐開前就換成起訖日。
- */
-const LEFT_WIDTH_MS = 400
-let datesTimer: ReturnType<typeof setTimeout> | undefined
 watch(
   () => ui.ganttLeftExpanded,
-  (on, was) => {
-    clearTimeout(datesTimer)
-    // 收合，或頁面剛掛上（was 是 undefined，沒有過渡）：直接對齊
-    if (!on || was === undefined) {
-      ui.ganttLeftDates = on
-      return
-    }
-    datesTimer = setTimeout(() => {
-      ui.ganttLeftDates = true
-    }, LEFT_WIDTH_MS)
+  (on) => {
+    ui.ganttLeftDates = on
   },
   { immediate: true },
 )
-
-function onLeftTransitionEnd(e: TransitionEvent): void {
-  // 列裡面的過渡也會冒泡上來，只認左欄自己的寬度
-  if (e.target !== e.currentTarget || e.propertyName !== 'flex-basis') return
-  if (!ui.ganttLeftExpanded) return
-  clearTimeout(datesTimer)
-  ui.ganttLeftDates = true
-}
-
-onBeforeUnmount(() => clearTimeout(datesTimer))
 
 /**
  * 全部收合 / 全部展開。legacy `toggleAllGroups` :4110。
@@ -289,7 +265,7 @@ function toggleAllGroups(): void {
     <div ref="bodyEl" class="gantt-body">
       <div class="gantt-rows">
         <!-- 左欄：平鋪 visibleRows；收合 / 重排的上下位移由 useRowMotion 補間，離場列直接移除（同 legacy） -->
-        <div class="gantt-left" @transitionend="onLeftTransitionEnd">
+        <div class="gantt-left">
           <div class="gantt-flow">
             <template v-for="v in leftRows" :key="v.key">
               <GanttGroupRow v-if="v.group" :group="v.group" />

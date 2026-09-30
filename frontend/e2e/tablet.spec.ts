@@ -123,7 +123,7 @@ test('甘特：欄頭的展開鈕切回完整左欄（起訖日＋工期），�
   await expect(app.row('t3')).toHaveAttribute('data-selected', 'true')
 
   // 寬度過渡途中逐幀量：欄頭標題維持一行（沒被擠成一字一行）、展開鈕沒被擠出欄頭；
-  // 列裡的日期膠囊要等寬度撐開才換成起訖日：途中不能超出左欄，任務名也不能比展開前還窄（日期先出現就會把名字擠成「需求確…」）
+  // 列裡的日期膠囊換成起訖日時，寬度跟左欄同步補間：途中不能超出左欄，任務名也不能比展開前還窄（膠囊比欄先撐開就會把名字擠成「需求確…」）
   const nameBefore = await page.evaluate(() =>
     Math.min(...[...document.querySelectorAll('[data-rowtask]:not([data-selected="true"]) .name')].map((n) => n.getBoundingClientRect().width)),
   )

@@ -9,6 +9,7 @@ import { useMenus } from '@/composables/useMenus'
 import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { DELAYED, TASK_STATUS } from '@/constants/dashboard'
 import { lengthOf } from '@/lib/date'
+import { parseDuration } from '@/lib/easing'
 import { fmtDate, stripYear } from '@/lib/format'
 import { isImeComposing } from '@/lib/keyboard'
 import { isLate } from '@/lib/schedule'
@@ -69,6 +70,45 @@ const rangeText = computed(() => {
 const rangeTitle = computed(() => `${fmtDate(props.task.start)} → ${fmtDate(props.task.end)}`)
 /** 這一列正在開日期選擇器 → 日期膠囊亮起來。legacy `dateBd` :2844 */
 const calOpen = computed(() => ui.taskDatePicker?.id === props.task.id)
+
+/*
+ * 窄版膠囊換寫法（只寫工期 ↔ 起訖日）的那一次：
+ * - 新膠囊淡入（swap class）。原本 `.date` 常駐 animation，排序時被搬動 DOM 的列會重播、膠囊閃一下（動畫稽核 D10）；
+ * - 寬度從舊膠囊補間到新膠囊，時長與曲線跟左欄寬度（--t-layout / --ease）一樣，
+ *   左欄變寬多少、膠囊就同步吃掉多少，任務名寬度一路單調，不會在換寫法那一幀縮回去（D15）。
+ */
+const dateEl = ref<HTMLElement | null>(null)
+const dateSwap = ref(false)
+/** 換寫法前舊膠囊的寬度（DOM 更新前量）。 */
+let swapFrom = 0
+
+watch(
+  slim,
+  () => {
+    swapFrom = dateEl.value?.getBoundingClientRect().width ?? 0
+    if (narrow.value) dateSwap.value = true
+  },
+  { flush: 'pre' },
+)
+
+watch(
+  slim,
+  () => {
+    const el = dateEl.value
+    const from = swapFrom
+    if (!el || !from || !narrow.value) return
+    const to = el.getBoundingClientRect().width
+    if (Math.abs(to - from) < 0.5) return
+    const cs = getComputedStyle(document.documentElement)
+    const timing = {
+      duration: parseDuration(cs.getPropertyValue('--t-layout')),
+      easing: cs.getPropertyValue('--ease').trim() || 'ease',
+    }
+    // 每一列都先量完（這一輪 post watcher），下一個 tick 才一起寫動畫，免得每一列都逼一次重排
+    void nextTick(() => el.animate([{ width: `${from}px` }, { width: `${to}px` }], timing))
+  },
+  { flush: 'post' },
+)
 
 function onSelect(): void {
   selection.toggleTask(props.task.id)
@@ -177,8 +217,14 @@ function onDrop(e: DragEvent): void {
       @blur="endEdit"
       @keydown="onEditKey"
     />
-    <!-- key：窄膠囊 ↔ 完整日期切換時重掛，窄版用淡入帶過（見樣式） -->
-    <div :key="slim ? 'slim' : 'full'" class="date" :class="{ open: calOpen, slim }">
+    <!-- key：窄膠囊 ↔ 完整日期切換時重掛，窄版用淡入與寬度補間帶過（見 dateSwap） -->
+    <div
+      :key="slim ? 'slim' : 'full'"
+      ref="dateEl"
+      class="date"
+      :class="{ open: calOpen, slim, swap: dateSwap }"
+      @animationend.self="dateSwap = false"
+    >
       <div
         class="date-range"
         :title="rangeTitle"
@@ -440,9 +486,16 @@ function onDrop(e: DragEvent): void {
   padding-right: 7px;
 }
 
-/* 平板直向展開 / 收合左欄時，膠囊換寫法淡入，不要一下子跳出來 */
+/*
+ * 平板直向展開 / 收合左欄時，膠囊換寫法的那一次淡入，不要一下子跳出來（只在換的那一次，見 dateSwap）。
+ * 寬度補間途中新寫法比膠囊寬：橫向裁掉（clip 不影響直向，觸控加大的熱區照樣在）。
+ */
 @media (max-width: 899px) {
   .date {
+    overflow-x: clip;
+  }
+
+  .date.swap {
     animation: fadeIn var(--t-base) var(--ease);
   }
 }
