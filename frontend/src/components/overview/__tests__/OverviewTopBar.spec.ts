@@ -129,10 +129,12 @@ describe('OverviewTopBar', () => {
     w.unmount()
   })
 
-  it('資料還沒到時搜尋框與三個篩選都 disabled', async () => {
+  it('資料還沒到時搜尋框（含 ✕）與三個篩選都 disabled', async () => {
     useOverviewStore().loadState = 'loading'
+    useOverviewStore().setQuery('入口')
     const w = mount(OverviewTopBar, { attachTo: document.body })
     expect(w.find('[data-testid="overview-search"]').attributes('disabled')).toBeDefined()
+    expect(w.find('.search-clear').attributes('disabled')).toBeDefined()
     for (const k of ['pm', 'status', 'alert']) {
       expect(w.find(`[data-ov-dd="${k}"] .dd-trigger`).attributes('disabled')).toBeDefined()
     }

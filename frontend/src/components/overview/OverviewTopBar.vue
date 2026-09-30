@@ -110,7 +110,14 @@ const me = computed(() => portfolio.byId(portfolio.currentUserId))
             :disabled="notReady"
             @keydown="onSearchKey"
           />
-          <button v-if="overview.query" type="button" class="search-clear" aria-label="清除搜尋" @click="clearQuery">
+          <button
+            v-if="overview.query"
+            type="button"
+            class="search-clear"
+            aria-label="清除搜尋"
+            :disabled="notReady"
+            @click="clearQuery"
+          >
             <svg viewBox="0 0 12 12" aria-hidden="true">
               <path d="M3 3l6 6M9 3l-6 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
             </svg>
@@ -407,10 +414,14 @@ const me = computed(() => portfolio.byId(portfolio.currentUserId))
 }
 
 @media (hover: hover) {
-  .search-clear:hover {
+  .search-clear:hover:not(:disabled) {
     background: var(--surface-3);
     color: var(--text-1);
   }
+}
+
+.search-clear:disabled {
+  cursor: default;
 }
 
 .search-clear:focus-visible {
