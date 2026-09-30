@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 任務 / Issue 的詳細視窗外殼：遮罩、開關動畫、鎖 body 捲動，內容分左（屬性）右（留言 / 檔案）。
 // legacy 對照：模板 :858-1292，detailOpen / modalAnim / detailClose :3795-3812，鎖捲動 :1765-1771。
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import ActivityToolbar from '@/components/detail/ActivityToolbar.vue'
 import CommentsTab from '@/components/detail/CommentsTab.vue'
 import DetailHeader from '@/components/detail/DetailHeader.vue'
@@ -9,6 +9,7 @@ import FilesTab from '@/components/detail/FilesTab.vue'
 import IssueProperties from '@/components/detail/IssueProperties.vue'
 import TaskProperties from '@/components/detail/TaskProperties.vue'
 import { useEditDraft } from '@/composables/useEditDraft'
+import { useScrollLock } from '@/composables/useScrollLock'
 import { useCommentStore } from '@/stores/comment'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'
@@ -73,20 +74,8 @@ function rename(v: string): void {
   titleDraft.onInput(v)
 }
 
-// ── 鎖 body 捲動（legacy componentDidUpdate :1765-1771）──────────────────────
-let savedScrollY = 0
-watch(open, (v) => {
-  if (v) {
-    savedScrollY = window.scrollY
-    document.body.style.overflow = 'hidden'
-    return
-  }
-  document.body.style.overflow = ''
-  window.scrollTo(0, savedScrollY)
-})
-onBeforeUnmount(() => {
-  document.body.style.overflow = ''
-})
+// 鎖到關閉動畫播完（shown 在 hold 結束才清）：遮罩還深色時捲軸不先冒回來，Modal 淡出途中也不橫移（G1）
+useScrollLock(() => !!shown.value)
 </script>
 
 <template>
