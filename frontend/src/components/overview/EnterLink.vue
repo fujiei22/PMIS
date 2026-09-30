@@ -11,6 +11,7 @@ defineProps<{
   id: string
   /** 專案名：組可讀名稱，一頁很多條直條都只畫箭頭，報讀時靠它分辨是哪一張。 */
   name: string
+  /** 樣式：edge＝卡片右緣直條（只有箭頭），head＝速覽標頭右端的入口塊（寫「進入」）。 */
   variant: 'edge' | 'head'
 }>()
 </script>
