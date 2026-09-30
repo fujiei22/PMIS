@@ -29,6 +29,8 @@ const REORDER_PX = 3
 const GROUP_REORDER_MS = 220
 /** 平移的位移小於這個值就當成「點空白處」，清掉選取。legacy :2584 */
 const PAN_CLICK_PX = 4
+/** 列 / 分類排序放手時，指標位移達到這個值就不是點選（同平移的判斷），吞掉隨後的 click。 */
+const REORDER_CLICK_PX = 4
 
 /** 甘特圖裡拖曳會用到的三個容器。 */
 export interface DragElements {
@@ -82,6 +84,8 @@ export function usePointerDrag(els: DragElements): PointerDrag {
 
   /** 最後一次指標座標；不需要響應式，每次 tick 直接讀。legacy `_ptr`（:2432） */
   let ptr: { x: number; y: number } | null = null
+  /** 這一段拖曳按下去的座標；放手時判斷「有沒有真的拖」。 */
+  let downAt = { x: 0, y: 0 }
   let hoverTimer: ReturnType<typeof setTimeout> | undefined
   /**
    * 這一段拖曳改到的任務 id（含被 cascade 推動的下游）。
@@ -267,6 +271,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     ui.drag = state
     dragged.clear()
     ptr = { x: e.clientX, y: e.clientY }
+    downAt = { x: e.clientX, y: e.clientY }
     auto.start()
     // base.css 沒有行內的 user-select 規則，拖曳期間直接改 body 樣式（legacy :2598）
     document.body.style.userSelect = 'none'
@@ -431,13 +436,40 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     return null
   }
 
+  /**
+   * 吞掉這次放開之後的那一個 click。
+   *
+   * 排序從 12px 的把手開始拖，放手時游標多半已經在同一列的別處（任務名、日期…）；
+   * 瀏覽器會把 click 派給按下與放開兩處的共同祖先——整列——於是被當成點選：
+   * 全畫面淡化、甘特自動捲動（動畫稽核 D16，legacy 不會）。
+   * 滑鼠的 click 跟 pointerup 在同一個事件任務裡派送，所以這一輪跑完就撤掉攔截，
+   * 沒產生 click 的情況（放開時已離開共同祖先、觸控拖曳）也不會吃到下一次真正的點擊。
+   */
+  function swallowNextClick(): void {
+    const stop = (ev: MouseEvent): void => {
+      ev.stopPropagation()
+      ev.preventDefault()
+      release()
+    }
+    const release = (): void => {
+      window.removeEventListener('click', stop, true)
+      clearTimeout(timer)
+    }
+    // window 的捕獲階段最早收到，列自己的 @click 就不會跑
+    window.addEventListener('click', stop, true)
+    const timer = setTimeout(release, 0)
+  }
+
   /** 放開：連線要結算成相依，平移要判斷是不是「只是點一下空白處」。legacy `onUp`（:2571） */
   function onUp(e: PointerEvent): void {
     const d = finish()
     if (!d) return
     commit(d)
 
-    if (d.kind === 'link') {
+    if (d.kind === 'reorder' || d.kind === 'greorder') {
+      // 真的拖過（不是只按一下把手）才吞；只按一下的 click 落在把手上，把手自己會 stop
+      if (Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) >= REORDER_CLICK_PX) swallowNextClick()
+    } else if (d.kind === 'link') {
       // 命中條或圓點都算，都沒中就用最後壓到的那一列（legacy :2574-2576）
       const to = hitTaskAt(e.clientX, e.clientY) ?? ui.nearTaskId
       ui.linkLine = null

@@ -419,3 +419,51 @@ test.describe('重排：條 / 橫紋逐幀連續、跟著列走（D2）', () => 
     expectRowsInSync(tr, tr.marks[0]!, tasks, groups)
   })
 })
+
+test.describe('排序放手不變成點選（D16）', () => {
+  /** 甘特水平捲動位置。 */
+  const scrollLeft = (page: Page): Promise<number> =>
+    page.locator('.gantt-scroller').evaluate((el) => el.scrollLeft)
+
+  test('列排序：放手時游標在任務名上 → 不選取、不淡化、不捲動', async ({ page }) => {
+    const app = await openGantt(page)
+    const sl0 = await scrollLeft(page)
+    const gb = (await app.row('t4').locator('.grip').boundingBox())!
+    const x = gb.x + gb.width / 2
+    const y0 = gb.y + gb.height / 2
+    await page.mouse.move(x, y0)
+    await page.mouse.down()
+    await page.mouse.move(x, y0 + 12)
+    await pause(page, 300)
+    // 越過 t5 → 換位；游標往右移到 t4（換位後的位置）的任務名上再放開
+    await page.mouse.move(x + 80, y0 + 34)
+    await pause(page, 400)
+    await page.mouse.up()
+    await pause(page, 600)
+    expect((await app.rowOrder()).slice(3, 6)).toEqual(['t3', 't5', 't4'])
+    await expect(app.row('t4')).toHaveAttribute('data-selected', 'false')
+    await expect(app.row('t2')).toHaveCSS('opacity', '1')
+    expect(await scrollLeft(page)).toBe(sl0)
+  })
+
+  test('分類交換：放手時游標在分類名上 → 不選取分類', async ({ page }) => {
+    const app = await openGantt(page)
+    await page.getByRole('button', { name: '全部收合' }).click()
+    await idle(page)
+    const gb = (await app.groupRow('g1').locator('.grip').boundingBox())!
+    const x = gb.x + gb.width / 2
+    const y0 = gb.y + gb.height / 2
+    await page.mouse.move(x, y0)
+    await page.mouse.down()
+    await page.mouse.move(x, y0 + 16)
+    await pause(page, 300)
+    // 越過 g2 的一半 → 交換；游標往右移到分類名上再放開
+    await page.mouse.move(x + 80, y0 + 44)
+    await pause(page, 400)
+    await page.mouse.up()
+    await pause(page, 600)
+    expect((await app.rowOrder()).slice(0, 2)).toEqual(['G:g2', 'G:g1'])
+    await expect(app.groupRow('g1')).not.toHaveClass(/selected/)
+    await expect(app.groupRow('g2')).not.toHaveClass(/selected/)
+  })
+})

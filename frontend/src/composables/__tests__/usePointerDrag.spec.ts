@@ -322,3 +322,78 @@ describe('usePointerDrag 的中止事件（review M3）', () => {
     unmount()
   })
 })
+// 動畫稽核 D16：排序放手時游標不在把手上，click 會派給把手與放手處的共同祖先（整列），被當成點選
+describe('排序拖曳放手後的 click（D16）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mockApi.reset(structuredClone(sampleProject))
+    useTaskStore().load(structuredClone(sampleProject))
+  })
+
+  afterEach(() => {
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+    document.body.innerHTML = ''
+  })
+
+  /** 一顆掛在 document 上、會記錄 click 的元素（模擬整列的 @click="onSelect"）。 */
+  function clickTarget(): { el: HTMLElement; clicks: () => number } {
+    const el = document.createElement('div')
+    document.body.appendChild(el)
+    let n = 0
+    el.addEventListener('click', () => n++)
+    return { el, clicks: () => n }
+  }
+
+  it('列排序有位移：放手後的那一次 click 被吞掉，之後的點擊照常', async () => {
+    const { api: drag, unmount } = mountDrag()
+    const row = clickTarget()
+
+    drag.startReorder(pointer('pointerdown', 20, 100) as unknown as PointerEvent, 't4')
+    document.dispatchEvent(pointer('pointermove', 20, 130))
+    document.dispatchEvent(pointer('pointerup', 100, 134))
+    row.el.dispatchEvent(pointer('click', 100, 134))
+    expect(row.clicks()).toBe(0)
+
+    // 放手之後這一輪事件跑完就撤掉攔截，下一次真正的點擊不受影響
+    await new Promise((r) => setTimeout(r, 0))
+    row.el.dispatchEvent(pointer('click', 100, 134))
+    expect(row.clicks()).toBe(1)
+    unmount()
+  })
+
+  it('分類排序有位移：同樣吞掉放手後的 click', () => {
+    const { api: drag, unmount } = mountDrag()
+    const row = clickTarget()
+
+    drag.startGroupReorder(pointer('pointerdown', 20, 100) as unknown as PointerEvent, 'g1')
+    document.dispatchEvent(pointer('pointermove', 20, 300))
+    document.dispatchEvent(pointer('pointerup', 90, 300))
+    row.el.dispatchEvent(pointer('click', 90, 300))
+    expect(row.clicks()).toBe(0)
+    unmount()
+  })
+
+  it('沒有位移（只是按一下把手）：click 照常派送', () => {
+    const { api: drag, unmount } = mountDrag()
+    const row = clickTarget()
+
+    drag.startReorder(pointer('pointerdown', 20, 100) as unknown as PointerEvent, 't4')
+    document.dispatchEvent(pointer('pointerup', 20, 100))
+    row.el.dispatchEvent(pointer('click', 20, 100))
+    expect(row.clicks()).toBe(1)
+    unmount()
+  })
+
+  it('條的移動不吞 click（放手點條切換選取維持 legacy 行為）', () => {
+    const { api: drag, unmount } = mountDrag()
+    const row = clickTarget()
+
+    drag.startBar(pointer('pointerdown', 0, 0) as unknown as PointerEvent, 't1', 'move')
+    document.dispatchEvent(pointer('pointermove', 96, 0))
+    document.dispatchEvent(pointer('pointerup', 96, 0))
+    row.el.dispatchEvent(pointer('click', 96, 0))
+    expect(row.clicks()).toBe(1)
+    unmount()
+  })
+})
