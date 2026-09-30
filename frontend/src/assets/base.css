@@ -211,12 +211,87 @@ select {
   animation: fadeOut var(--t-fast) var(--ease);
 }
 
+/* ---------- 浮層進出場（Vue <Transition> 的 class；批次 D 定義，頂欄浮層（批次 C）沿用） ----------
+   一律用 transition 不用 keyframes：開到一半就關時往回走，keyframes 會從頭（全亮）重播；
+   進場中被打斷時 Vue 會先順著進場多走 1–2 幀才往回，不會跳回全亮。
+   離場中 pointer-events: none：淡出中的選單 / 遮罩不再吃點擊，舊選項也點不到。
+   元件 scoped 的 transition / animation / opacity / transform（特異度 0,2,0）會蓋掉這裡（0,1,0），
+   套用這些 class 的根元素與對話框本體不要再寫這四個屬性（PR #22 根因 B）。 */
+
+/* 選單、日期選擇器：時長同總覽的 ov-pop（進 --t-menu ease-out、出 --t-fast var(--ease)） */
+.pop-enter-active {
+  transition:
+    opacity var(--t-menu) ease-out,
+    transform var(--t-menu) ease-out;
+}
+
+.pop-leave-active {
+  transition:
+    opacity var(--t-fast) var(--ease),
+    transform var(--t-fast) var(--ease);
+  pointer-events: none;
+}
+
+.pop-enter-from {
+  opacity: 0;
+  transform: var(--pop-from);
+}
+
+.pop-leave-to {
+  opacity: 0;
+  transform: var(--pop-to);
+}
+
+/* 對話框：根元素＝遮罩（只動 opacity），唯一的第一層子元素＝本體（只動 transform，跟著遮罩一起淡）。
+   兩者同長 --t-pop：Vue 只量根元素的過渡長度，本體比遮罩長會在動到一半時被移除。 */
+.dialog-enter-active,
+.dialog-leave-active {
+  transition: opacity var(--t-pop) ease-out;
+}
+
+.dialog-leave-active {
+  pointer-events: none;
+}
+
+.dialog-enter-from,
+.dialog-leave-to {
+  opacity: 0;
+}
+
+.dialog-enter-active > *,
+.dialog-leave-active > * {
+  transition: transform var(--t-pop) ease-out;
+}
+
+.dialog-enter-from > * {
+  transform: var(--pop-from);
+}
+
+.dialog-leave-to > * {
+  transform: var(--pop-to);
+}
+
+/* 只淡入淡出：整片覆蓋、內容不需要位移縮放的浮層（Lightbox） */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity var(--t-pop) ease-out;
+}
+
+.fade-leave-active {
+  pointer-events: none;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
 /* ---------- keyframes ---------- */
 
 @keyframes popIn {
   from {
     opacity: 0;
-    transform: translateY(-4px) scale(0.985);
+    transform: var(--pop-from);
   }
   to {
     opacity: 1;
@@ -231,7 +306,7 @@ select {
   }
   to {
     opacity: 0;
-    transform: translateY(8px) scale(0.975);
+    transform: var(--pop-to);
   }
 }
 

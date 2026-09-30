@@ -141,24 +141,27 @@ const items = computed<OptionItem[]>(() => {
 <template>
   <!-- 遮罩不掛 data-dd，維持 legacy 行為：點它會順帶清掉選取（:1908 / :1306） -->
   <div v-if="menu" class="opt-mask" @click="close()"></div>
-  <div
-    v-if="menu"
-    class="opt-menu"
-    :style="{ left: `${menu.left}px`, top: `${menu.top}px` }"
-  >
+  <!-- 進出場用 base.css 的 pop；遮罩不包，關閉當下就放行點擊 -->
+  <Transition name="pop">
     <div
-      v-for="o in items"
-      :key="o.key"
-      class="opt-item"
-      :class="{ on: o.checked }"
-      role="button"
-      @click="o.pick()"
+      v-if="menu"
+      class="opt-menu"
+      :style="{ left: `${menu.left}px`, top: `${menu.top}px` }"
     >
-      <span v-if="o.dot" class="opt-dot" :style="{ background: o.dot }"></span>
-      <span class="opt-label">{{ o.label }}</span>
-      <span class="opt-check">{{ o.checked ? '✓' : '' }}</span>
+      <div
+        v-for="o in items"
+        :key="o.key"
+        class="opt-item"
+        :class="{ on: o.checked }"
+        role="button"
+        @click="o.pick()"
+      >
+        <span v-if="o.dot" class="opt-dot" :style="{ background: o.dot }"></span>
+        <span class="opt-label">{{ o.label }}</span>
+        <span class="opt-check">{{ o.checked ? '✓' : '' }}</span>
+      </div>
     </div>
-  </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -175,12 +178,13 @@ const items = computed<OptionItem[]>(() => {
   max-width: 230px;
   max-height: 280px;
   overflow: auto;
+  /* 選單內捲到底不帶動頁面：頁面一捲就會把選單關掉 */
+  overscroll-behavior: contain;
   padding: var(--r-badge);
   background: var(--surface-1);
   border: 1px solid var(--border-1);
   border-radius: var(--r-card);
   box-shadow: var(--shadow-menu);
-  animation: popIn var(--t-pop) ease-out;
 }
 
 .opt-item {

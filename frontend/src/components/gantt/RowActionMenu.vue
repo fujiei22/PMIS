@@ -55,30 +55,35 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 <template>
   <!-- 遮罩與選單都帶 data-keep-selection：點外面只關選單，不清掉任務的標記（OptionMenu 照 legacy 會一起清，這裡刻意不同） -->
   <div v-if="menu && task" class="rm-mask" data-keep-selection @click="close()"></div>
-  <div
-    v-if="menu && task"
-    class="row-menu"
-    role="menu"
-    :aria-label="`${task.name} 的動作`"
-    :data-rowmenu="task.id"
-    data-keep-selection
-    :style="{ left: `${menu.left}px`, top: `${menu.top}px` }"
-  >
-    <div class="rm-title" :title="task.name">{{ task.name }}</div>
-    <!-- 天數夾在 −1天 / +1天 中間，按了看得到結果；▲ ▼ 看不出是在調什麼 -->
-    <div class="rm-stepper">
-      <span class="rm-label">工期</span>
-      <button type="button" class="rm-step" :disabled="days <= 1" @click="daysDown()">−1天</button>
-      <span class="rm-days">{{ days }} 天</span>
-      <button type="button" class="rm-step" @click="daysUp()">+1天</button>
+  <!-- 進出場用 base.css 的 pop；遮罩不包，關閉當下就放行點擊 -->
+  <Transition name="pop">
+    <div
+      v-if="menu && task"
+      class="row-menu"
+      role="menu"
+      :aria-label="`${task.name} 的動作`"
+      :data-rowmenu="task.id"
+      data-keep-selection
+      :style="{ left: `${menu.left}px`, top: `${menu.top}px` }"
+    >
+      <div class="rm-title" :title="task.name">{{ task.name }}</div>
+      <!-- 天數夾在 −1天 / +1天 中間，按了看得到結果；▲ ▼ 看不出是在調什麼 -->
+      <div class="rm-stepper">
+        <span class="rm-label">工期</span>
+        <button type="button" class="rm-step" :disabled="days <= 1" @click="daysDown()">
+          −1天
+        </button>
+        <span class="rm-days">{{ days }} 天</span>
+        <button type="button" class="rm-step" @click="daysUp()">+1天</button>
+      </div>
+      <button type="button" class="rm-item" role="menuitem" @click="openDeps()">
+        <span class="rm-icon" aria-hidden="true">⇄</span>相依設定…
+      </button>
+      <button type="button" class="rm-item danger" role="menuitem" @click="askDelete()">
+        <span class="rm-icon" aria-hidden="true">✕</span>刪除任務…
+      </button>
     </div>
-    <button type="button" class="rm-item" role="menuitem" @click="openDeps()">
-      <span class="rm-icon" aria-hidden="true">⇄</span>相依設定…
-    </button>
-    <button type="button" class="rm-item danger" role="menuitem" @click="askDelete()">
-      <span class="rm-icon" aria-hidden="true">✕</span>刪除任務…
-    </button>
-  </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -99,7 +104,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
   border: 1px solid var(--border-1);
   border-radius: var(--r-card);
   box-shadow: var(--shadow-menu);
-  animation: popIn var(--t-pop) ease-out;
 }
 
 .rm-title {

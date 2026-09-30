@@ -136,10 +136,12 @@ function iSet(iso: string): void {
 </script>
 
 <template>
-  <!-- 遮罩不掛 data-dd，維持 legacy 行為（:1323 / :1348） -->
-  <template v-if="dCal && dTask">
-    <div class="cal-mask" @click="ui.taskDatePicker = null"></div>
+  <!-- 遮罩不掛 data-dd，維持 legacy 行為（:1323 / :1348）。
+       選擇器本體的進出場用 base.css 的 pop；遮罩不包，關閉當下就放行點擊 -->
+  <div v-if="dCal && dTask" class="cal-mask" @click="ui.taskDatePicker = null"></div>
+  <Transition name="pop">
     <div
+      v-if="dCal && dTask"
       class="cal task-date-picker"
       :style="{ left: `${dCal.left}px`, top: `${dCal.top}px` }"
     >
@@ -198,11 +200,12 @@ function iSet(iso: string): void {
         </div>
       </div>
     </div>
-  </template>
+  </Transition>
 
-  <template v-if="iCal && iExists">
-    <div class="cal-mask" @click="ui.issueDatePicker = null"></div>
+  <div v-if="iCal && iExists" class="cal-mask" @click="ui.issueDatePicker = null"></div>
+  <Transition name="pop">
     <div
+      v-if="iCal && iExists"
       class="cal issue-date-picker"
       :style="{ left: `${iCal.left}px`, top: `${iCal.top}px` }"
     >
@@ -233,7 +236,7 @@ function iSet(iso: string): void {
         </div>
       </div>
     </div>
-  </template>
+  </Transition>
 </template>
 
 <style scoped>
@@ -252,7 +255,6 @@ function iSet(iso: string): void {
   border: 1px solid var(--border-1);
   border-radius: var(--r-panel);
   box-shadow: var(--shadow-popover);
-  animation: popIn var(--t-pop) ease-out;
 }
 
 .cal-head {
