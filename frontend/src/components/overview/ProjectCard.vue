@@ -77,7 +77,7 @@ function onKey(e: KeyboardEvent): void {
         :planned="d.plannedPct"
         :tone="BADGE_CLASS[d.badge]"
       />
-      <EnterLink :id="p.id" />
+      <EnterLink :id="p.id" :name="p.name" variant="edge" />
     </div>
   </article>
 </template>

@@ -86,7 +86,7 @@ const upcoming = computed(() =>
         </svg>
         收合
       </button>
-      <EnterLink :id="p.id" />
+      <EnterLink :id="p.id" :name="p.name" variant="head" />
     </div>
 
     <div class="quick">
