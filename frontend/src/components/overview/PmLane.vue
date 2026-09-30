@@ -20,7 +20,7 @@ const props = defineProps<{ group: PmGroup }>()
 /*
  * 巢狀 FLIP：泳道本身有重排動畫（CardBoard 的 ov-col），泳道內卡片若也用 TransitionGroup 內建的 move，
  * 會用頁面上的絕對位置算位移、把泳道的位移再算一次。所以卡片的重排改用相對於 .lane-body 的位移
- * （useRelativeFlip），內建 move 以不存在的 class `ov-card-still` 停用；卡片的進出場照舊由 TransitionGroup 處理。
+ * （useRelativeFlip），內建 move 以 `ov-card-still`（overview-motion.css 裡只寫 transition: none）停用；卡片的進出場照舊由 TransitionGroup 處理。
  */
 const body = ref<ComponentPublicInstance | null>(null)
 const bodyEl = computed(() => body.value?.$el as HTMLElement | undefined)

@@ -23,7 +23,7 @@ const props = defineProps<{
 /*
  * 巢狀 FLIP：群組本身有重排動畫（OverviewTimeline 的 ov-group），組內專案列若也用 TransitionGroup
  * 內建的 move，會用頁面上的絕對位置算位移、把群組的位移再算一次。所以列的重排改用相對於 .g-list 的位移
- * （useRelativeFlip），內建 move 以不存在的 class `ov-row-still` 停用；列的進出場照舊。做法同 PmLane。
+ * （useRelativeFlip），內建 move 以 `ov-row-still`（overview-motion.css 裡只寫 transition: none）停用；列的進出場照舊。做法同 PmLane。
  */
 const list = ref<ComponentPublicInstance | null>(null)
 useRelativeFlip(

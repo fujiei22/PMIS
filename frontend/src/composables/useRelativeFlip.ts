@@ -9,7 +9,8 @@ import { onBeforeUpdate, onUpdated, toValue, type MaybeRefOrGetter } from 'vue'
  * 外層有沒有移動用 index 猜不準（兩欄 grid 裡前一列變矮，後一列整欄上移但 index 不變）。
  * 這裡改量 `offsetTop / offsetLeft`：相對於容器（必須是 `position: relative`），外層怎麼動都不影響。
  *
- * 用法：容器內的 TransitionGroup 設 `move-class` 為沒有定義的 class（停用內建 move），進出場照舊。
+ * 用法：容器內的 TransitionGroup 設 `move-class` 為只寫 `transition: none !important` 的 class（停用內建 move，
+ * 見 overview-motion.css 的 .ov-card-still；不能用不存在的 class，理由寫在那裡），進出場照舊。
  * 時序：本元件的 onBeforeUpdate 在 DOM 更新前記位置；onUpdated 在子元件（TransitionGroup）之後執行，
  * 這時離場元素已被 freezeLeave 釘成 absolute、不佔版面，量到的就是新位置。
  *

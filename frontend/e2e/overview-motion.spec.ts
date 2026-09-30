@@ -171,6 +171,35 @@ async function trackMove(page: Page, selector: string, action: () => Promise<voi
   return xs.map(([x, y]) => Math.hypot(x! - ex!, y! - ey!))
 }
 
+/**
+ * 逐幀離終點的距離是否一路不增加（容 2px 取樣誤差）。
+ * maxDist 抓不到「先跳到終點附近、再往外走、最後回來」：往外走的最遠點仍可能小於起點距離。
+ */
+function monotonic(dist: number[]): boolean {
+  return dist.every((d, i) => i === 0 || d <= dist[i - 1]! + 2)
+}
+
+/** 在 action 執行期間逐幀取某元素的 opacity（找不到元素的幀略過）。 */
+async function trackOpacity(page: Page, selector: string, action: () => Promise<void>): Promise<number[]> {
+  const frames = page.evaluate(
+    (sel) =>
+      new Promise<number[]>((resolve) => {
+        const out: number[] = []
+        const t0 = performance.now()
+        const tick = () => {
+          const el = document.querySelector(sel)
+          if (el) out.push(parseFloat(getComputedStyle(el).opacity))
+          if (performance.now() - t0 < 1200) requestAnimationFrame(tick)
+          else resolve(out)
+        }
+        requestAnimationFrame(tick)
+      }),
+    selector,
+  )
+  await action()
+  return frames
+}
+
 /** 把逐幀距離整理成三個要斷言的量：起點距離、有沒有中間幀、途中離終點最遠多少。 */
 function moveReport(dist: number[]): { start: number; hasMidFrame: boolean; maxDist: number } {
   const start = dist[0]!
@@ -224,6 +253,46 @@ test.describe('總覽 重排動畫（A8 / A9 / A20）', () => {
     expect(r.hasMidFrame).toBe(true)
     // 不回彈：途中不會比起點離終點更遠（容 2px 誤差）
     expect(r.maxDist).toBeLessThanOrEqual(r.start + 2)
+  })
+
+  /*
+   * 泳道整條移動、同時泳道內「第一張卡」換位置：Vue TransitionGroup 探測內建 move 時會複製第一個子元素（含 inline style），
+   * useRelativeFlip 先寫上的 inline transition 曾讓它誤判要跑內建 move、用絕對位移蓋掉相對位移——卡片先出現在終點再折返。
+   */
+  test('卡片檢視：清除篩選時留下的卡片從原位一路移到新位置，不先跳到終點', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    await ov.pick('status', '未開始')
+    await page.waitForFunction(() => document.getAnimations().length === 0)
+    const dist = await trackMove(page, '[data-view-panel="cards"] [data-project="vendor"]', () =>
+      page.getByTestId('overview-clear').click(),
+    )
+    const r = moveReport(dist)
+    expect(r.start).toBeGreaterThan(50)
+    expect(r.hasMidFrame).toBe(true)
+    expect(monotonic(dist)).toBe(true)
+  })
+
+  test('時間軸：清除篩選時留下的列從原位一路移到新位置，不先跳到終點', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto('#timeline')
+    await ov.pick('status', '未開始')
+    await page.waitForFunction(() => document.getAnimations().length === 0)
+    const dist = await trackMove(page, '[data-view-panel="timeline"] [data-project="vendor"] .p-row', () =>
+      page.getByTestId('overview-clear').click(),
+    )
+    const r = moveReport(dist)
+    expect(r.start).toBeGreaterThan(50)
+    expect(r.hasMidFrame).toBe(true)
+    expect(monotonic(dist)).toBe(true)
+  })
+
+  test('卡片檢視：清除篩選時新進場的卡片淡入（opacity 有中間值），不是直接出現', async ({ page }) => {
+    const ov = new OverviewPage(page); await ov.goto()
+    await ov.pick('status', '未開始')
+    await page.waitForFunction(() => document.getAnimations().length === 0)
+    const ops = await trackOpacity(page, '[data-view-panel="cards"] [data-project="dw"]', () =>
+      page.getByTestId('overview-clear').click(),
+    )
+    expect(ops.some((o) => o > 0.05 && o < 0.95)).toBe(true)
   })
 
   test('時間軸：移掉「落後」排序，群組換位置時列平順移動、不回彈', async ({ page }) => {
