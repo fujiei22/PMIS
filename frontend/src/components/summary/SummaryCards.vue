@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 五張摘要卡：專案總時長、整體進度、任務狀態、Issue 統計、預算 vs. 支出。
+// 四張摘要卡：專案總時長 + 整體進度（合成一張）、任務狀態、Issue 統計、預算 vs. 支出。
 // legacy 對照：模板 :298-385，數值 :3522-3633。
 import { computed } from 'vue'
 import { DELAYED, ISSUE_LEVEL, ISSUE_STATUS, TASK_STATUS } from '@/constants/dashboard'
@@ -22,13 +22,13 @@ const tasks = computed(() => taskStore.tasks)
 const issues = computed(() => issueStore.issues)
 const total = computed(() => tasks.value.length)
 
-// ── 卡 1：專案總時長 ───────────────────────────────────────────────────────
+// ── 卡 1 上段：專案總時長 ───────────────────────────────────────────────────────
 const totalDays = computed(() => taskStore.range.max - taskStore.range.min + 1)
 /** 起訖日各自不斷行（連字號會被當斷點），卡片窄時只在「~」處換行。 */
 const rangeStart = computed(() => isoFromIndex(taskStore.range.min))
 const rangeEnd = computed(() => isoFromIndex(taskStore.range.max))
 
-// ── 卡 2：整體進度（實際 = 已完成數；理論 = 到期日已過的數）legacy :3604-3620 ──
+// ── 卡 1 下段：整體進度（實際 = 已完成數；理論 = 到期日已過的數）legacy :3604-3620 ──
 const doneTasks = computed(() => tasks.value.filter((t) => t.status === 'done').length)
 /**
  * 理論上此刻該完成的任務（判準見 isPlannedDone：到期日隔天才算，和 legacy 刻意不同）。
@@ -51,7 +51,7 @@ const gapTone = computed(() => {
   return a < p ? 'behind' : a > p ? 'ahead' : 'flat'
 })
 
-// ── 卡 3：任務狀態 ────────────────────────────────────────────────────────
+// ── 卡 2：任務狀態 ────────────────────────────────────────────────────────
 const statusRows = computed(() =>
   (['todo', 'doing', 'paused', 'done'] as TaskStatus[]).map((k) => {
     const count = tasks.value.filter((t) => t.status === k).length
@@ -68,7 +68,7 @@ const statusRows = computed(() =>
 )
 const delayedCount = computed(() => tasks.value.filter((t) => isLate(t, clock.todayIdx)).length)
 
-// ── 卡 4：Issue 統計 ──────────────────────────────────────────────────────
+// ── 卡 3：Issue 統計 ──────────────────────────────────────────────────────
 const levelRows = computed(() =>
   (['A', 'B', 'C', 'D'] as IssueLevel[]).map((k) => ({
     k,
@@ -88,7 +88,7 @@ const issueStatusRows = computed(() =>
 )
 const delayedIssues = computed(() => issues.value.filter((i) => isLateIssue(i, clock.todayIdx)).length)
 
-// ── 卡 5：預算 vs. 支出（半圓儀表；演算法在 lib/budget）───────────────────
+// ── 卡 4：預算 vs. 支出（半圓儀表；演算法在 lib/budget）───────────────────
 const budget = computed(() => budgetStore.budget)
 const remaining = computed(() => budgetRemaining(budget.value))
 const overBudget = computed(() => isOverBudget(budget.value))
@@ -98,17 +98,16 @@ const needleAngle = computed(() => gaugeAngle(ratio.value))
 
 <template>
   <div class="cards">
-    <!-- 1. 專案總時長 -->
-    <div class="card" data-testid="summary-duration">
-      <div class="card-title">專案總時長</div>
-      <div class="hero">{{ totalDays }} <span class="hero-unit">天</span></div>
+    <!-- 1. 專案總時長 + 整體進度（同一張卡：上段時長、下段進度） -->
+    <div class="card" data-testid="summary-progress">
+      <div class="duration">
+        <span class="card-title">專案總時長</span>
+        <span class="duration-days">{{ totalDays }} <span class="duration-unit">天</span></span>
+      </div>
       <div class="range">
         <span>{{ rangeStart }}</span> ~ <span>{{ rangeEnd }}</span>
       </div>
-    </div>
-
-    <!-- 2. 整體進度 -->
-    <div class="card" data-testid="summary-progress">
+      <div class="divider"></div>
       <div class="card-head">
         <span class="card-title">整體進度</span>
         <span class="gap" :class="gapTone">{{ gapLabel }}</span>
@@ -138,7 +137,7 @@ const needleAngle = computed(() => gaugeAngle(ratio.value))
       </div>
     </div>
 
-    <!-- 3. 任務狀態 -->
+    <!-- 2. 任務狀態 -->
     <div class="card card-tight" data-testid="summary-tasks">
       <div class="stat-head">
         <span class="card-title">任務狀態</span>
@@ -168,7 +167,7 @@ const needleAngle = computed(() => gaugeAngle(ratio.value))
       </div>
     </div>
 
-    <!-- 4. Issue 統計 -->
+    <!-- 3. Issue 統計 -->
     <div class="card card-tight" data-testid="summary-issues">
       <div class="stat-head">
         <span class="card-title">Issue 統計</span>
@@ -203,7 +202,7 @@ const needleAngle = computed(() => gaugeAngle(ratio.value))
       </div>
     </div>
 
-    <!-- 5. 預算 vs. 支出 -->
+    <!-- 4. 預算 vs. 支出 -->
     <div class="card card-tight" data-testid="summary-budget">
       <div class="card-title budget-title">Budget vs. Actual</div>
       <div class="budget-body">
@@ -244,7 +243,7 @@ const needleAngle = computed(() => gaugeAngle(ratio.value))
 .cards {
   display: grid;
   align-items: stretch;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--gap-boards);
 }
 
@@ -285,8 +284,22 @@ const needleAngle = computed(() => gaugeAngle(ratio.value))
   color: var(--st-done);
 }
 
-.hero-unit {
+.duration {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+
+.duration-days {
   font-size: var(--fs-panel);
+  font-weight: var(--fw-bold);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  margin-left: auto;
+}
+
+.duration-unit {
+  font-size: var(--fs-pill);
   font-weight: var(--fw-medium);
   color: var(--text-muted);
 }
@@ -295,7 +308,11 @@ const needleAngle = computed(() => gaugeAngle(ratio.value))
   font-size: var(--fs-meta);
   color: var(--text-muted);
   font-family: var(--font-mono);
-  margin-top: auto;
+}
+
+.divider {
+  border-top: 1px dashed var(--border-1);
+  margin: var(--sp-3) 0;
 }
 
 .range span {
@@ -593,14 +610,10 @@ const needleAngle = computed(() => gaugeAngle(ratio.value))
   text-overflow: ellipsis;
 }
 
-/* 平板直向（< 900px）：五張擠一列時每張太窄，Issue 統計被擠成很長一條、其他卡空一大塊；改兩欄，落單的第五張（預算）佔滿一列 */
+/* 平板直向（< 900px）：四張擠一列時每張太窄，Issue 統計被擠成很長一條、其他卡空一大塊；改 2×2 */
 @media (max-width: 899px) {
   .cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .cards > .card:last-child:nth-child(odd) {
-    grid-column: 1 / -1;
   }
 }
 </style>

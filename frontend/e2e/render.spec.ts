@@ -11,8 +11,8 @@ test('首頁渲染四張卡與三個面板', async ({ page }) => {
   await app.goto()
 
   // legacy 的專案區間是 2026-08-24 ~ 2026-11-10，共 79 天
-  await expect(app.summary('duration')).toContainText('79 天')
-  await expect(app.summary('duration')).toContainText('2026-08-24 ~ 2026-11-10')
+  await expect(app.summary('progress')).toContainText('79 天')
+  await expect(app.summary('progress')).toContainText('2026-08-24 ~ 2026-11-10')
   await expect(app.summary('progress')).toBeVisible()
   await expect(app.summary('tasks')).toBeVisible()
   await expect(app.summary('issues')).toBeVisible()
