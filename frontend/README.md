@@ -330,7 +330,7 @@ store 分三層，依賴**只能由上往下**：
 | `data-pm-group` | 時間軸的 PM 群組列 `.g-row` | 成員 id |
 | `data-pm-option` | 成員篩選面板的一列（帶 `aria-pressed`） | 成員 id |
 | `data-ov-dd` | 總覽頂欄的下拉根元素（見表下說明） | `pm` / `status` / `alert` |
-| `data-testid` | 面板計數 `overview-count`、清除篩選 `overview-clear`、空狀態 `overview-empty`、時間軸「今天」`overview-today` | 固定字串 |
+| `data-testid` | 面板計數 `overview-count`、搜尋框 `overview-search`、清除篩選 `overview-clear`、空狀態 `overview-empty`、時間軸「今天」`overview-today` | 固定字串 |
 
 `data-ov-dd` 刻意和 Dashboard 的 `data-dd` 分開：它不在 `useClickOutside` 的保留清單裡，總覽的浮層改由 `useDismiss` 關閉。
 
