@@ -341,8 +341,8 @@ store 分三層，依賴**只能由上往下**：
 | 頂欄與下拉 | `.dd-trigger` `.dd-menu` `.alert-dot` |
 | 排序 | `.sort-trigger` `.sort-menu` `.sort-chip` `.chip-label` `.chip-x` `.chip-arrow` |
 | 面板 | `.panel-head` `.panel-title` `.panel-toggle` `.panel-body` `.panel-caret` |
-| 卡片 | `.lane-head` `.card-name` `.card-caret` `.hero` `.pa-bar` `.fill` `.qb-title` `.btn-quick` `.pm-count` |
-| 時間軸 | `.tl-body` `.tl-left-head` `.today-tag` `.p-row` `.p-left` `.p-name` `.c-pct` `.c-gap` `.pct-plan` `.bar` `.bar-label` `.g-caret` `.g-sum` `.qv` `.qv-head` `.btn-quick` |
+| 卡片 | `.lane-head` `.card-main` `.card-name` `.card-caret` `.hero` `.pa-bar` `.fill` `.enter-edge` `.qb-title` `.pm-count` |
+| 時間軸 | `.tl-body` `.tl-left-head` `.today-tag` `.p-row` `.p-left` `.p-name` `.c-pct` `.c-gap` `.pct-plan` `.bar` `.bar-label` `.g-caret` `.g-sum` `.qv` `.qv-head` |
 | 過渡（Vue 自動加上的 class） | `ov-pop-*` `ov-fade-*` `ov-view-*` `ov-card-*` `ov-col-*` `ov-row-*` `ov-chip-*` `ov-av-*`（定義在 `assets/overview-motion.css`）；切頁的 `page-view-*`（定義在 `assets/base.css`）；時間軸連接框 `.qv-cap` |
 
 ## 怎麼接後端
