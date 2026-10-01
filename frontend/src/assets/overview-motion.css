@@ -25,12 +25,8 @@
  * 指到不存在的 class 會讓它照元素自己的 transition 判斷。!important：元素自己的 class 宣告了 transform 過渡時也停得住。
  */
 .ov-card-still, .ov-row-still { transition: none !important; }
-.ov-card-enter-active, .ov-card-leave-active,
-.ov-row-enter-active, .ov-row-leave-active,
-.ov-group-enter-active, .ov-group-leave-active { transition: opacity var(--t-panel) var(--ease), transform var(--t-panel) var(--ease); }
+.ov-card-enter-active, .ov-card-leave-active { transition: opacity var(--t-panel) var(--ease), transform var(--t-panel) var(--ease); }
 .ov-card-enter-from, .ov-card-leave-to { opacity: 0; transform: scale(0.96); }
-.ov-row-enter-from, .ov-row-leave-to,
-.ov-group-enter-from, .ov-group-leave-to { opacity: 0; transform: translateY(-4px); }
 /*
  * 泳道、時間軸群組、時間軸列：原地收合進出場（user 選方案 2）。項目外層是 grid（0fr ↔ 1fr 跟著內容高度），
  * 內層裁切（min-height: 0; overflow: clip——clip 不建立捲動容器，sticky 標頭照常黏住）；間距與框線都放在裁切層裡面
@@ -38,11 +34,16 @@
  * 兄弟、容器、頁高與被夾的捲動都逐幀連續。transform 也要列：進場中又被重排的項目，move 的位移不能被這條蓋掉；
  * Vue 判斷要不要跑 move 時也會複製第一個子元素的 class 來看（見上面 still 的註解）。要放在 *-move 之後（同特異度靠順序）。
  * 同一個 key 在離場途中又回來時，由 composables/useCollapseReenter.ts 從舊元素當下的高度與透明度接續。
+ * 時間軸列的裁切層只在進出場時裁（TimelineGroup 的 .r-clip）：平常裁的話 bar 的光暈（A25）會在列的上下緣被切平。
  */
-.ov-col-enter-active, .ov-col-leave-active {
+.ov-col-enter-active, .ov-col-leave-active,
+.ov-group-enter-active, .ov-group-leave-active,
+.ov-row-enter-active, .ov-row-leave-active {
   transition: grid-template-rows var(--t-panel) var(--ease), opacity var(--t-panel) var(--ease), transform var(--t-panel) var(--ease);
 }
-.ov-col-enter-from, .ov-col-leave-to { grid-template-rows: 0fr; opacity: 0; }
+.ov-col-enter-from, .ov-col-leave-to,
+.ov-group-enter-from, .ov-group-leave-to,
+.ov-row-enter-from, .ov-row-leave-to { grid-template-rows: 0fr; opacity: 0; }
 
 /* 排序 chip 與成員頭像疊（A16 / A23） */
 /*
@@ -50,10 +51,16 @@
  * 但子元素沒有宣告 transition 時 transition-property 退回初始值 all：「屬性還在清單裡、終值沒變」→ 進行中的
  * transform 過渡不會被取消，Vue 量到含殘留位移的位置，算出來的位移讓元素先瞬移再折返（T3）。設成 none 就會被取消。
  * :where() 讓特異度為 0（*-move / *-enter-active / *-leave-active 仍勝出），只限總覽（.sorts / .mp-stack 在 Dashboard 也有）。
- * 泳道外層（CardBoard 的 .board > .lane-wrap，排序時跑 ov-col-move）同理。
+ * 泳道外層（CardBoard 的 .board > .lane-wrap，排序時跑 ov-col-move）、時間軸群組外層（OverviewTimeline 的
+ * .tl-groups > .g-wrap，ov-group-move）同理。時間軸列（.g-list > .r-wrap）不用：內建 move 已由 ov-row-still 停用。
  * 批次 C 改這兩個元件時：.sorts、.mp-stack 要維持是 TransitionGroup 根元素，子元素的 transition 不可含 transform / all。
  */
-:where([data-view="overview"] .sorts > *, [data-view="overview"] .mp-stack > *, [data-view="overview"] .board > *) {
+:where(
+  [data-view="overview"] .sorts > *,
+  [data-view="overview"] .mp-stack > *,
+  [data-view="overview"] .board > *,
+  [data-view="overview"] .tl-groups > *
+) {
   transition: none;
 }
 .ov-chip-move, .ov-av-move { transition: transform var(--t-base) var(--ease); }

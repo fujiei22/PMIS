@@ -3,12 +3,12 @@
 // 左欄與畫布放在同一個水平捲動容器裡（左欄 sticky left），速覽才能緊接在選取列下方、橫跨左欄 + 畫布。
 // 容器自己的橫捲軸藏起來，底下另放一條只在畫布下方的捲軸；左欄不會橫捲，捲軸不該伸到它下面。
 // 畫布區也能按住拖曳左右平移（useDragPan）。
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch, type ComponentPublicInstance } from 'vue'
 import OvEmpty from '@/components/overview/OvEmpty.vue'
 import OvPanel from '@/components/overview/OvPanel.vue'
 import OvSortControls from '@/components/overview/OvSortControls.vue'
 import TimelineGroup from '@/components/overview/TimelineGroup.vue'
-import { freezeLeave } from '@/composables/freezeLeave'
+import { useCollapseReenter } from '@/composables/useCollapseReenter'
 import { useDragPan } from '@/composables/useDragPan'
 import { NARROW_QUERY, useMediaQuery } from '@/composables/useMediaQuery'
 import { TIMELINE_DAY_W, TIMELINE_LEFT_W, TIMELINE_LEFT_W_NARROW } from '@/constants/overview'
@@ -24,6 +24,23 @@ const DW = TIMELINE_DAY_W
 
 const range = computed(() => overview.range)
 const groups = computed(() => overview.groups)
+
+/** 群組清單（TransitionGroup）的根元素：同一位 PM 的群組在收起途中又回來時，從當下的高度接續長回去。 */
+const groupsRef = ref<ComponentPublicInstance | null>(null)
+const reenter = useCollapseReenter(
+  computed(() => groupsRef.value?.$el as HTMLElement | undefined),
+  'data-g-wrap',
+)
+
+/**
+ * 離場的群組：收起途中仍在版面流裡、看得到，但不能再 Tab 進去、點到或被讀屏讀成兩份。焦點在裡面就先移開。
+ * 不讀任何樣式（理由同 CardBoard 的 leaving：進場中被離場時，讀樣式會取消進行中的高度過渡、一幀跳到全高）。
+ */
+function leaving(el: Element): void {
+  const node = el as HTMLElement
+  if (node.contains(document.activeElement)) (document.activeElement as HTMLElement).blur()
+  node.inert = true
+}
 
 /** 刻度與底層共用的日清單；d 是相對範圍起點的偏移，idx 是絕對日索引。 */
 const days = computed(() =>
@@ -243,14 +260,21 @@ onBeforeUnmount(() => {
             <div class="today-line" :style="{ '--x': `${todayX}px` }"></div>
             <div class="today-tag" :style="{ '--x': `${todayX}px` }">今天</div>
 
-            <TransitionGroup name="ov-group" tag="div" class="tl-groups" @before-leave="freezeLeave">
-              <TimelineGroup
-                v-for="g in groups"
-                :key="g.pm.id"
-                :group="g"
-                :start-idx="range.startIdx"
-                :dw="DW"
-              />
+            <!-- PM 群組的進出與重排（A20）：原地收合 / 長出（ov-group，見 overview-motion.css） -->
+            <TransitionGroup
+              ref="groupsRef"
+              name="ov-group"
+              tag="div"
+              class="tl-groups"
+              @before-leave="leaving"
+              @enter="reenter.onEnter"
+              @vue:before-update="reenter.snapshot"
+            >
+              <div v-for="g in groups" :key="g.pm.id" class="g-wrap" :data-g-wrap="g.pm.id">
+                <div class="g-wrap-clip">
+                  <TimelineGroup :group="g" :start-idx="range.startIdx" :dw="DW" />
+                </div>
+              </div>
             </TransitionGroup>
           </div>
         </div>
@@ -523,8 +547,34 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-/* 離場群組由 freezeLeave 釘成 absolute，以這層為基準（A20） */
+/* position: relative 保留（無害）：群組是原地收合、不釘位（A20；列的 useRelativeFlip 以各自的 .g-list 為基準） */
 .tl-groups {
   position: relative;
+}
+
+/* 群組外層：原地收合（ov-group，見 overview-motion.css） */
+.g-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/*
+ * 平常全高。寫在 :where() 裡讓特異度為 0：scoped 會加屬性選擇器（.g-wrap[data-v-…] 比單一 class 高），
+ * 直接寫在上面的話，進出場 class（ov-group-enter-from / leave-to 的 0fr）蓋不過，群組一出現就是全高、只剩淡入淡出。
+ */
+:where(.g-wrap) {
+  grid-template-rows: 1fr;
+}
+
+/* 一定要 clip 不能 hidden：hidden 會成為捲動容器，.g-left / .p-left / .qv 的 sticky left:0 就失效（同 TimelineGroup 的 .g-clip） */
+.g-wrap-clip {
+  min-height: 0;
+  min-width: 0;
+  overflow: clip;
+}
+
+/* 群組之間的分隔線畫在群組本體（裁切層裡），收起時跟著一起收；留在外層的話收到最後剩 1px、移除那一幀跳一下 */
+.g-wrap + .g-wrap .g {
+  border-top: 1px solid var(--border-1);
 }
 </style>
