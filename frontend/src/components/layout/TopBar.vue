@@ -48,6 +48,7 @@ function filterItems(box: HTMLElement): HTMLElement[] {
   return items.filter((el) => !['fixed', 'absolute'].includes(getComputedStyle(el).position))
 }
 
+/** 量篩選器在單行時放不放得下，放不下就 `stacked = true`；切 class、量、還原都在同一個同步區塊，不會被畫出來。 */
 function measureFit(): void {
   const row = rowEl.value
   const box = filtersEl.value
@@ -235,7 +236,7 @@ function clearFilters(): void {
         </div>
       </nav>
 
-      <!-- .fgroup 是「標籤 + 它的下拉」一組：桌機 display: contents（不影響版面），平板時整組一起換行 -->
+      <!-- .fgroup 是「標籤 + 它的下拉」一組：一行時 display: contents（不影響版面），改兩列（.stacked）時整組一起換行 -->
       <div ref="filtersEl" class="filters">
         <span class="fgroup">
           <span class="section">成員</span>
