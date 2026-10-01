@@ -13,6 +13,7 @@ import { useDragPan } from '@/composables/useDragPan'
 import { NARROW_QUERY, useMediaQuery } from '@/composables/useMediaQuery'
 import { TIMELINE_DAY_W, TIMELINE_LEFT_W, TIMELINE_LEFT_W_NARROW } from '@/constants/overview'
 import { dayFraction } from '@/lib/date'
+import { easeOutQuart, scrollTweenMs } from '@/lib/scrollTween'
 import { useClockStore } from '@/stores/clock'
 import { useOverviewStore } from '@/stores/overview'
 
@@ -78,7 +79,7 @@ function onBodyScroll(): void {
 
 /**
  * 拖底下的捲軸時帶動捲動容器。
- * 回音一定要略過：「今天」按鈕平滑捲動途中，回寫 scrollLeft 會打斷容器的平滑捲動。
+ * 回音一定要略過：容器正在平滑捲動（滾輪、觸控板慣性）時，回寫 scrollLeft 會打斷它。
  */
 function onBarScroll(): void {
   if (!hbar.value || !body.value) return
@@ -86,12 +87,56 @@ function onBarScroll(): void {
   body.value.scrollLeft = hbar.value.scrollLeft
 }
 
-/** 把今天置中到畫布可見區（扣掉左欄）；smooth 給按鈕（A14），auto 給初次掛載。 */
+/** 正在跑的「今天」捲動補間；被取消或重新開始時換掉，已排隊的那一幀看到不是自己就不再寫（同 useGanttScroll）。 */
+let todayAnim: { raf: number } | null = null
+
+/** 停掉「今天」的捲動補間：使用者自己捲 / 拖、捲動容器換一顆、卸載時。 */
+function stopToday(): void {
+  if (todayAnim) cancelAnimationFrame(todayAnim.raf)
+  todayAnim = null
+}
+
+/**
+ * 畫布上按下：先停掉「今天」的補間（否則拖曳的起點是補間途中的位置，放手後又被拉回今天），再交給拖曳平移。
+ * 合成一個 handler、不另掛 @pointerdown.capture：同一個事件經過兩個 Vue listener 時，
+ * Vue 以 Date.now() 判斷事件是否早於 listener 掛上，e2e 固定時鐘（clock.setFixedTime）下第二個會被略過。
+ */
+function onBodyPointerDown(e: PointerEvent): void {
+  stopToday()
+  pan.onPointerDown(e)
+}
+
+/**
+ * 把今天置中到畫布可見區（扣掉左欄）；smooth 給按鈕（A14），auto 給初次掛載。
+ * smooth 不用原生 scrollTo：原生平滑捲動由合成器推進，scroll 事件晚一幀才同步尺規，
+ * 捲動途中週刻度和畫布錯開（動畫稽核 T10）。改用 rAF 補間，每一幀同時設定本體、尺規與捲軸；
+ * 時長與曲線與甘特的程式捲動同一條（lib/scrollTween）。
+ */
 function scrollToToday(behavior: ScrollBehavior): void {
   const el = body.value
   if (!el) return
-  const left = Math.max(0, todayX.value - (el.clientWidth - leftW.value) / 2)
-  el.scrollTo({ left, behavior })
+  stopToday()
+  const max = Math.max(0, el.scrollWidth - el.clientWidth)
+  const left = Math.min(max, Math.max(0, todayX.value - (el.clientWidth - leftW.value) / 2))
+  const from = el.scrollLeft
+  if (behavior !== 'smooth' || Math.abs(left - from) < 1.5) {
+    el.scrollTo({ left, behavior: 'auto' })
+    return
+  }
+  const dur = scrollTweenMs(left - from)
+  const t0 = performance.now()
+  const self = { raf: 0 }
+  const step = (now: number): void => {
+    if (todayAnim !== self) return
+    // rAF 的時間戳可能比按下按鈕的時間早一點，夾在 0 以上才不會先往反方向退
+    const p = Math.min(1, Math.max(0, (now - t0) / dur))
+    el.scrollLeft = from + (left - from) * easeOutQuart(p)
+    onBodyScroll()
+    if (p < 1) self.raf = requestAnimationFrame(step)
+    else todayAnim = null
+  }
+  todayAnim = self
+  self.raf = requestAnimationFrame(step)
 }
 
 function measure(): void {
@@ -107,6 +152,7 @@ let ro: ResizeObserver | undefined
 watch(
   body,
   (el) => {
+    stopToday()
     ro?.disconnect()
     ro = undefined
     if (!el) return
@@ -120,7 +166,10 @@ watch(
   { flush: 'post' },
 )
 
-onBeforeUnmount(() => ro?.disconnect())
+onBeforeUnmount(() => {
+  stopToday()
+  ro?.disconnect()
+})
 </script>
 
 <template>
@@ -171,12 +220,15 @@ onBeforeUnmount(() => ro?.disconnect())
           </div>
         </div>
 
+        <!-- 使用者自己捲 / 拖就停掉「今天」的補間 -->
         <div
           ref="body"
           class="tl-body"
           :class="{ panning: pan.panning.value }"
           @scroll="onBodyScroll"
-          @pointerdown="pan.onPointerDown"
+          @pointerdown="onBodyPointerDown"
+          @wheel.passive="stopToday"
+          @touchstart.passive="stopToday"
         >
           <div class="tl-chart">
             <div class="tl-bg" aria-hidden="true">
@@ -204,7 +256,14 @@ onBeforeUnmount(() => ro?.disconnect())
         </div>
 
         <!-- 畫布專用的橫捲軸：從左欄右緣開始，內容寬 = 畫布寬，捲動範圍與 .tl-body 相同 -->
-        <div ref="hbar" class="tl-hbar" @scroll="onBarScroll">
+        <div
+          ref="hbar"
+          class="tl-hbar"
+          @scroll="onBarScroll"
+          @pointerdown="stopToday"
+          @wheel.passive="stopToday"
+          @touchstart.passive="stopToday"
+        >
           <div class="tl-hbar-track"></div>
         </div>
       </div>
