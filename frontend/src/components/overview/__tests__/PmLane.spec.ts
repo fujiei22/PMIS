@@ -126,6 +126,23 @@ describe('PmLane', () => {
     expect(releaseHeight).toHaveBeenCalledTimes(1)
   })
 
+  it('卡片 render 拋錯時撐住與放開仍成對（Vue 攔下錯誤、照樣跑 updated；高度不會卡在寫死的值，security M2）', async () => {
+    stubColumns(3)
+    const w = await setup()
+    const body = w.find('.lane-body').element as HTMLElement
+    const group = w.props('group')
+    const errors: unknown[] = []
+    w.vm.$.appContext.config.errorHandler = (e) => errors.push(e)
+    // 卡片有進出（拿掉第一張）、同時留下的那張 render 拋錯
+    w.vm.$.appContext.config.warnHandler = () => {}
+    const bad = { ...group.rows[1]!, p: new Proxy(group.rows[1]!.p, { get: (t, k) => { if (k === 'name') throw new Error('render 失敗'); return Reflect.get(t, k) } }) }
+    await w.setProps({ group: { ...group, rows: [bad] } })
+    expect(errors.length, '有 render 錯誤').toBeGreaterThan(0)
+    expect(holdHeight).toHaveBeenCalledTimes(1)
+    expect(releaseHeight).toHaveBeenCalledTimes(1)
+    void body
+  })
+
   it('卸載時停掉卡片網格進行中的補間', async () => {
     stubColumns(3)
     const w = await setup()

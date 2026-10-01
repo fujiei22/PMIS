@@ -122,8 +122,9 @@ function tick(now: number): void {
     }
   } finally {
     unpin?.()
+    // 放在 finally：這一幀中途拋錯也照樣排下一幀，補間不會卡在中間的高度（security M1）
+    if (tweens.size) frame = requestAnimationFrame(tick)
   }
-  if (tweens.size) frame = requestAnimationFrame(tick)
 }
 
 /** 把高度寫死成現在看得到的值（內容要換之前呼叫）；補間中就停在當下。 */

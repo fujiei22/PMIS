@@ -437,4 +437,25 @@ describe('heightTween：同時補間的元素共用一個 rAF、先讀完再寫'
     holdHeight(b)
     expect(vi.getTimerCount()).toBe(0)
   })
+
+  it('某一幀量測拋錯：頁高照樣還原、照樣排下一幀，補間照常走完（security M1）', () => {
+    const n = { h: 300 }
+    const el = box(n)
+    holdHeight(el)
+    n.h = 100
+    releaseHeight(el, PANEL)
+    const measure = el.getBoundingClientRect
+    let boom = true
+    el.getBoundingClientRect = () => {
+      if (boom && !el.style.height) {
+        boom = false
+        throw new Error('量測失敗')
+      }
+      return measure()
+    }
+    expect(() => vi.advanceTimersToNextFrame()).toThrow('量測失敗')
+    expect(document.documentElement.style.minHeight).toBe('')
+    for (let i = 0; i < 30; i++) vi.advanceTimersToNextFrame()
+    expect(el.style.height).toBe('')
+  })
 })
