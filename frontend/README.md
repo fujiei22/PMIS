@@ -84,7 +84,8 @@
 | 改總覽的範例專案 | `mocks/samplePortfolio.ts` ＋ `mocks/__tests__/portfolio.spec.ts`（數字要對得上設計稿）；PMIS 摘要改 `api/mock/portfolio.ts` |
 | 加總覽的互動或 UI 變化 | 元件 ＋ `assets/overview-motion.css`（過渡 class 唯一定義處）＋ `e2e/overview-motion.spec.ts`（在 spec〈動畫清單〉加一項，就在這裡補一條守衛） |
 | 加 Dashboard 的浮層（選單、日期選擇器、對話框） | 元件包 `<Transition name="pop \| dialog \| fade">`（根元素與對話框本體不寫 transition / animation / opacity / transform）；fixed 浮層接 `useCloseOnScroll`、開啟函式放 `useMenus`（記觸發元素）；鎖頁面捲動用 `useScrollLock`；`e2e/popover-motion.spec.ts` / `dialog-motion.spec.ts` 加一條離場守衛 |
-| 改 Dashboard 或總覽在平板上的版面或手指操作 | 見下方〈平板與觸控〉；`e2e/tablet.spec.ts`（Dashboard）、`e2e/overview-tablet.spec.ts`（總覽），都是 768×1024 觸控；Dashboard 1200px 以上不要動（`compare.spec.ts` 在 1440 / 1920 對照 legacy 幾何） |
+| 改 Dashboard 或總覽在平板上的版面或手指操作 | 見下方〈平板與觸控〉；`e2e/tablet.spec.ts`（Dashboard）、`e2e/overview-tablet.spec.ts`（總覽），都是 768×1024 觸控；Dashboard 1200px 以上的版面要跟 legacy 對得上（`compare.spec.ts` 在 1440 / 1920 對照 legacy 幾何；頂欄例外，見〈刻意保留的差異〉） |
+| 改 Dashboard 頂欄的篩選器（加減項目、改文字） | `layout/TopBar.vue`：一行放不下時整排移到第二列，由 `measureFit` 量實際寬度切 `.stacked`（不靠斷點，不用另調寬度）；兩列時日期日曆以日期那一組（`.date-group`）為基準、左緣對齊（`FilterCalendar` 的 `align`），這一組比日曆窄時往左挪到不超出視窗（可超出的量 `--cal-overhang` 取自列的左右留白 `--top-row-pad-x`，改留白只改這個變數）；`e2e/topbar-layout.spec.ts` 守版型與日曆位置，加了篩選項讓 1536 也放不下時要改它的寬度 |
 
 ### 平板與觸控
 
@@ -92,7 +93,7 @@ Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<s
 
 | 條件 | 寫在哪 | 做什麼 |
 |---|---|---|
-| `@media (max-width: 1199px)` | `TopBar` | 篩選器換到第二列、每組「標籤 + 下拉」整組換行（`.fgroup` 桌機是 `display: contents`） |
+| `@media (max-width: 1199px)` | `TopBar` | 只收小頂欄間距。版型由 `.stacked` 處理（平板一定放不下一行，桌機 1200～1470px 也會）：篩選器換到第二列、每組「標籤 + 下拉」整組換行（`.fgroup` 單行時是 `display: contents`），日期日曆貼著日期那一組、左緣對齊「日期」 |
 | `@media (max-width: 899px)`（JS 端 `NARROW_QUERY`） | `SummaryCards`、`KanbanPanel`、`IssuePanel`、`GanttPanel`、`GanttTaskRow` | 摘要卡與兩個看板改 2 欄；甘特左欄 250px，日期膠囊只寫工期（點了照樣開日期選擇器）；欄頭右端多一顆展開鈕（» / «，`ui.ganttLeftExpanded`），展開後左欄回到完整寬度。列的寫法另由 `ui.ganttLeftDates` 控制：展開時等寬度過渡跑完才換成起訖日，收合時先換回工期再縮 |
 | 同上 | `OvPanel`、`OvSortControls`、`OverviewTimeline`、`TimelineProjectRow` | 總覽面板標題列維持一行：計數短寫（「7 專案 · 3 需注意 · 4 PM」）、排序 chips 不換行，放不下時原地左右滑；時間軸左欄 260px（`TIMELINE_LEFT_W_NARROW`），進度欄只留實際 % |
 | `@container board (max-width: 841px)`（容器是 `CardBoard` 的 `.board`） | `PmLane` | 左側標頭放不下兩欄卡片時（約視窗 900px 以下），PM 標頭改放在卡片上方成一列（照樣黏在面板標題列下方），卡片排兩欄，速覽抽屜橫跨整列 |
@@ -110,7 +111,7 @@ Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<s
 - 總覽的排序選單往右開會超出視窗時（直向時排序鈕在標題列右半），改成對齊按鈕右緣往左開（`OvSortControls` 的 `alignEnd`）。
 - 時間軸 bar 的名稱是 sticky：bar 起點捲到左欄底下時，名稱停在左欄右緣。`.bar` 因此用 `overflow: clip`，用 `hidden` 的話 bar 自己會變成捲動容器，sticky 跟不上橫捲。
 
-`e2e/tablet.spec.ts` 除了〈DOM 鉤子〉的屬性，還依賴這些 class，**改名時要同步改測試**：`.top-bar` `.col` `.foot` `.caret` `.detail-layer` `.detail-close` `.draft-input` `.name` `.date` `.date-range` `.date-days` `.rm-days` `.gantt-left` `.gantt-scroller`。`e2e/overview-tablet.spec.ts` 用到的 class 列在〈DOM 鉤子〉最後的總覽 class 表。
+`e2e/tablet.spec.ts` 除了〈DOM 鉤子〉的屬性，還依賴這些 class，**改名時要同步改測試**：`.top-bar` `.col` `.foot` `.caret` `.detail-layer` `.detail-close` `.draft-input` `.name` `.date` `.date-range` `.date-days` `.rm-days` `.gantt-left` `.gantt-scroller`。`e2e/topbar-layout.spec.ts` 依賴 `.top-row` `.stacked` `.filters` `.fgroup` `.section` `.date-pill` `.cal` `.clear` `.project` `.burger`；`e2e/helpers/compare.ts` 依賴 `.top-bar`（量頂欄高度）。`e2e/overview-tablet.spec.ts` 用到的 class 列在〈DOM 鉤子〉最後的總覽 class 表。
 
 ### 守衛測試
 
@@ -231,9 +232,9 @@ COMPARE_DUMP=node_modules/.tmp/cmp npm run test:e2e -- e2e/compare.spec.ts
 | 類別 | 比什麼 |
 |---|---|
 | 文字 / 結構 | 摘要卡、三個面板標題列、甘特列與分類列順序與文字、甘特條、看板卡（依欄與序位）、Issue 卡、所有 `[data-dd]`、浮層、**整頁文字**、所有表單控制項的值；元素的 `opacity` 一併帶入（選取連動的淡化） |
-| 幾何 | 甘特列、甘特條、看板卡、看板欄、Issue 卡、浮層、表單控制項的 boundingBox，加上甘特左欄寬、畫布尺寸與整頁高度；容許 ±1px |
+| 幾何 | 甘特列、甘特條、看板卡、看板欄、Issue 卡、浮層、表單控制項的 boundingBox，加上甘特左欄寬、畫布尺寸與整頁高度；看板欄的 y 與整頁高從頂欄底部量起（頂欄高度新舊刻意不同）；容許 ±1px |
 
-選擇器只用 [DOM 鉤子](#dom-鉤子)表裡標「legacy 也有」的屬性與畫面上的文字。浮層（選單、對話框、詳細視窗）新舊沒有共同的選擇器，測試改用「computed style 的 `position` 是 `fixed`」這個兩頁都成立的特徵，臨時打上 `data-e2e-float` 再操作——標記只加在 DOM 上、兩頁一視同仁，不影響行為。
+選擇器只用 [DOM 鉤子](#dom-鉤子)表裡標「legacy 也有」的屬性與畫面上的文字。唯一例外是量頂欄高度：新頁用 `.top-bar`，legacy 用第一個 sticky、`top:0` 的列；找到的元素不含成員篩選的 `[data-dd]` 就直接失敗，不會默默當 0。浮層（選單、對話框、詳細視窗）新舊沒有共同的選擇器，測試改用「computed style 的 `position` 是 `fixed`」這個兩頁都成立的特徵，臨時打上 `data-e2e-float` 再操作——標記只加在 DOM 上、兩頁一視同仁，不影響行為。
 
 ### 刻意保留的差異
 
@@ -245,6 +246,7 @@ COMPARE_DUMP=node_modules/.tmp/cmp npm run test:e2e -- e2e/compare.spec.ts
 - **重排節流的時間來源**：legacy 用 `Date.now()`，被 e2e 的 `page.clock.setFixedTime` 凍住之後，一次拖曳裡除了第一次以外的 `dragTick` 全部被節流擋掉；新頁用 `performance.now()`，不受固定時鐘影響。這是測試環境造成的差異，不是行為差異——對照測試的重排只送一次 `mousemove`，比第一次落點。
 - **理論進度的判準**：legacy 把「今天到期」的任務算進理論進度（`end <= 今天`，`Dashboard.html:3604-3620`）。新頁要到期日**隔天**才算（`end < 今天`），和總覽的 `taskPlanned`、「已延遲」的 `isLate` 同一個定義（都呼叫 `lib/schedule.ts` 的 `isPlannedDone`，改規則只改那裡），兩頁同一個專案的理論 % 才會一致（user 決定）。對照測試只遮掉摘要卡的差距標籤、理論的 N / 總數與理論 %（`e2e/helpers/compare.ts` 的 `maskPlan`），其餘照比。
 - **甘特列的快捷鈕**：legacy 滑鼠移到任務列上會撐開「▲ ▼ ⇄ ✕」並省掉日期的年份；新頁改成列尾一直顯示的「⋮」，動作收在它開的選單（user 決定：只想標記任務時快捷鈕很干擾，▲ ▼ 也看不出是工期 ±1 天）。對照測試比文字時兩邊都拿掉列尾動作字與年份（`e2e/helpers/compare.ts` 的 `maskActs`），情境 8 的相依 / 刪除各走各的路（`compare.spec.ts` 的 `rowAction`）；點任務列的位置改在名稱區 x=70（`ROW_NAME_POS`）。
+- **頂欄放不下時改兩列**：篩選器在標題與右端之間一行放不下時（預設篩選約 1470px 以下；啟用日期範圍、專案名稱較長時門檻更高），新頁把篩選器整排移到滿寬的第二列、靠左排，標籤和它的下拉一定在同一行（`TopBar` 的 `measureFit` 量實際寬度切 `.stacked`）。legacy 是篩選器擠在中間自己換成兩行，標籤和下拉會被拆開（user 回報 15.6 吋筆電常見的 1200～1470px 排版怪異）。兩邊頂欄高度因此不同（1440 時差 2px），對照測試的看板欄 y 與整頁高改從頂欄底部量起（`e2e/helpers/compare.ts` 的 `geoSnapshot`），頂欄以下的幾何照樣 ±1px。兩列時日期日曆也不同：legacy 一律對齊篩選器右緣，篩選器滿寬時會離日期膠囊很遠；新頁改以日期那一組為基準、左緣對齊「日期」（user 決定），日曆在 DOM 裡也移進日期那一組（legacy 在「清除篩選」之後）。對照測試都在日曆關上之後才擷取，不受影響。
 - **成員拖曳指派**：legacy 可以把成員篩選面板的列拖到甘特條或任務卡上指派，新頁移除了這個功能（user 決定；平板無法可靠支援原生拖放），指派一律在詳細視窗的「＋指派」。對照測試不比這個。
 - **相依編輯器的位置**：legacy 一直垂直置中，增刪前置 / 後續任務時上下兩端一起跳；新頁打開時置中、之後上緣固定，只往下長（user 決定）。對照測試只比寬高，不受影響。
 - **文字之間的空白**：兩頁的文字節點切法不同（legacy 把每個 `{{ }}` 包成一層元素、元素之間留著模板縮排的空白節點），比對前會把文字裡的空白全部去掉。字級與間距的差異改由幾何量測把關。

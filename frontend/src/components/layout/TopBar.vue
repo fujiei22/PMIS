@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 頂部固定列：專案名、面板捷徑、成員篩選、七個篩選 pill、日期範圍、清除篩選、只顯示篩選結果。
 // legacy 對照：模板 :56-292、各 pill 的 label / options :3657-3764。
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import ErrorBar from '@/components/common/ErrorBar.vue'
 import FilterCalendar from '@/components/layout/FilterCalendar.vue'
@@ -25,6 +25,83 @@ const registry = useDomRegistry()
 
 const rootEl = ref<HTMLElement | null>(null)
 watch(rootEl, (el) => sticky.observe('top', el), { immediate: true })
+
+/**
+ * 篩選器在標題與右端之間一行放不下時改兩列：篩選器整排移到滿寬的第二列、靠左排（同平板版）。
+ *
+ * 用量的、不用斷點：預設狀態要 1471px 才放得下，啟用日期範圍多兩顆膠囊（約 250px）、專案名較長時要更寬；
+ * 寫死斷點的話，1200～1470（15.6 吋筆電常見寬度）或啟用篩選後，篩選器會在中間自己換行、標籤和下拉被拆開（user 回報）。
+ * 量法：同一個同步區塊裡暫時切回單行、不換行（.measuring），看篩選器有沒有溢出，量完立刻還原；
+ * 結果與目前是哪一種版型無關，不會在兩種版型之間來回切。
+ */
+const rowEl = ref<HTMLElement | null>(null)
+const filtersEl = ref<HTMLElement | null>(null)
+const stacked = ref(false)
+
+/** 篩選器裡實際參與排版的項目：`.fgroup` 是 display: contents，算它的子元素；浮在外面的（日曆）不算。 */
+function filterItems(box: HTMLElement): HTMLElement[] {
+  const items: HTMLElement[] = []
+  for (const c of Array.from(box.children) as HTMLElement[]) {
+    if (c.classList.contains('fgroup')) items.push(...(Array.from(c.children) as HTMLElement[]))
+    else items.push(c)
+  }
+  return items.filter((el) => !['fixed', 'absolute'].includes(getComputedStyle(el).position))
+}
+
+/** 量篩選器在單行時放不放得下，放不下就 `stacked = true`；切 class、量、還原都在同一個同步區塊，不會被畫出來。 */
+function measureFit(): void {
+  const row = rowEl.value
+  const box = filtersEl.value
+  if (!row || !box) return
+  row.classList.remove('stacked')
+  row.classList.add('measuring')
+  // 比最右一項的右緣與篩選器右緣（含小數）：只差不到 1px 也會讓 flex 換行，整數的 scrollWidth 量不準
+  const edge = box.getBoundingClientRect().right
+  const overflow = filterItems(box).some((el) => el.getBoundingClientRect().right > edge + 0.01)
+  row.classList.remove('measuring')
+  if (stacked.value) row.classList.add('stacked')
+  stacked.value = overflow
+}
+
+let fitRaf: number | undefined
+/**
+ * 視窗以外造成的寬度變化（捲軸出現 / 消失）：下一幀再量。
+ * 在 ResizeObserver 回呼裡直接切版型，會讓同一個元素當幀再變尺寸，瀏覽器報 loop 錯誤。
+ * 視窗縮放走 resize 事件、當幀就量（在繪製前），不會先畫一幀舊版型。
+ */
+function measureFitNextFrame(): void {
+  if (fitRaf !== undefined) return
+  fitRaf = requestAnimationFrame(() => {
+    fitRaf = undefined
+    measureFit()
+  })
+}
+
+let fitRo: ResizeObserver | undefined
+let fitMo: MutationObserver | undefined
+onMounted(() => {
+  // 第一次在繪製前就量，畫出來就是對的版型
+  measureFit()
+  window.addEventListener('resize', measureFit)
+  if (typeof ResizeObserver !== 'undefined' && rowEl.value) {
+    fitRo = new ResizeObserver(measureFitNextFrame)
+    fitRo.observe(rowEl.value)
+  }
+  // 篩選啟用後下拉的字、日期膠囊會變：DOM 一更新就量（MutationObserver 在繪製前回呼）
+  if (filtersEl.value) {
+    fitMo = new MutationObserver(measureFit)
+    fitMo.observe(filtersEl.value, { childList: true, subtree: true, characterData: true })
+  }
+  // 網頁字型載入後字寬會變
+  document.fonts?.addEventListener('loadingdone', measureFit)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', measureFit)
+  fitRo?.disconnect()
+  fitMo?.disconnect()
+  document.fonts?.removeEventListener('loadingdone', measureFit)
+  if (fitRaf !== undefined) cancelAnimationFrame(fitRaf)
+})
 
 /** 面板捷徑；點了捲到該面板。legacy `boardLinks` :3540 + `jumpPanel` :2223 */
 const boardLinks = [
@@ -140,7 +217,7 @@ function clearFilters(): void {
 
 <template>
   <header ref="rootEl" class="top-bar">
-    <div class="top-row">
+    <div ref="rowEl" class="top-row" :class="{ stacked }">
       <!-- 左上角三條線：回所有專案總覽 -->
       <RouterLink to="/" class="burger" title="所有專案" aria-label="所有專案">
         <i></i><i></i><i></i>
@@ -159,8 +236,8 @@ function clearFilters(): void {
         </div>
       </nav>
 
-      <!-- .fgroup 是「標籤 + 它的下拉」一組：桌機 display: contents（不影響版面），平板時整組一起換行 -->
-      <div class="filters">
+      <!-- .fgroup 是「標籤 + 它的下拉」一組：一行時 display: contents（不影響版面），改兩列（.stacked）時整組一起換行 -->
+      <div ref="filtersEl" class="filters">
         <span class="fgroup">
           <span class="section">成員</span>
           <MemberPicker />
@@ -225,7 +302,7 @@ function clearFilters(): void {
         </span>
 
         <span class="divider"></span>
-        <span class="fgroup">
+        <span class="fgroup date-group">
           <span class="section">日期</span>
           <FilterDropdown
             dd-key="fmode"
@@ -242,6 +319,9 @@ function clearFilters(): void {
           <div v-if="showD2" class="date-pill" role="button" @click="openCalendar('d2')">
             {{ fmtDate(filter.d2) }}
           </div>
+          <!-- 日曆的定位基準：一行時 .fgroup 是 display: contents，基準是篩選器、右緣對齊（同 legacy）；
+               兩列時基準換成這一組、左緣對齊，篩選器滿寬時才不會離日期膠囊很遠 -->
+          <FilterCalendar :align="stacked ? 'start' : 'end'" />
         </span>
 
         <div
@@ -253,8 +333,6 @@ function clearFilters(): void {
         >
           <span class="clear-x">✕</span><span>清除篩選</span>
         </div>
-
-        <FilterCalendar />
       </div>
 
       <div class="tail">
@@ -313,10 +391,12 @@ function clearFilters(): void {
 }
 
 .top-row {
+  /* 左右留白；兩列時日期日曆也用它算最多能超出日期那一組多少（.date-group 的 --cal-overhang） */
+  --top-row-pad-x: var(--sp-10);
   display: flex;
   align-items: center;
   gap: var(--sp-5);
-  padding: var(--sp-5) var(--sp-10);
+  padding: var(--sp-5) var(--top-row-pad-x);
   flex-wrap: nowrap;
 }
 
@@ -525,44 +605,74 @@ function clearFilters(): void {
   color: var(--text-3);
 }
 /*
- * 平板寬度（< 1200px）：篩選器原本擠在標題與右端之間，會被壓成好幾行的窄欄，
- * 直向時頂欄高到 233px（sticky，吃掉近四分之一螢幕）。改成篩選器獨立成滿寬的第二列、靠左排、放不下再換行。
- * 1200 以上維持原樣（compare.spec 在 1440 / 1920 對照 legacy 的幾何）。
+ * 篩選器一行放不下（.stacked，由 measureFit 量）：篩選器獨立成滿寬的第二列、靠左排、放不下再換行。
+ * 原本擠在標題與右端之間自己換行：平板時被壓成好幾行的窄欄（直向頂欄高到 233px），
+ * 1200～1470px（15.6 吋筆電）時兩行亂排、標籤和它的下拉被拆開（user 回報）。legacy 也是這樣，
+ * 刻意不跟（README〈刻意保留的差異〉；compare.spec 的位置量測已扣掉頂欄高度）。
  */
+.top-row.stacked {
+  flex-wrap: wrap;
+  row-gap: var(--sp-4);
+}
+
+.top-row.stacked .filters {
+  order: 3;
+  flex: 1 0 100%;
+  justify-content: flex-start;
+  margin-left: 0;
+  gap: var(--sp-3) var(--sp-6);
+}
+
+.top-row.stacked .fgroup {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: 0 0 auto;
+}
+
+/*
+ * 日期日曆改以這一組為定位基準（FilterCalendar 收到 align="start"）。
+ * 日曆最多可以超出這一組右緣「列的左右留白」那麼多：這一組排在一列最尾、貼著右緣時也不會超出視窗。
+ */
+.top-row.stacked .date-group {
+  position: relative;
+  --cal-overhang: var(--top-row-pad-x);
+}
+
+/* 換行後分隔線可能落在行首，改由組間距區隔 */
+.top-row.stacked .divider {
+  display: none;
+}
+
+/* 把成員推到最左、其餘推到右邊的彈性空白；換行後會把後面的篩選器擠到下一行 */
+.top-row.stacked .grow {
+  display: none;
+}
+
+.top-row.stacked .tail {
+  margin-left: auto;
+}
+
+/*
+ * measureFit 量的時候：暫時維持單行、不換行、各項不縮、靠左，看篩選器有沒有溢出。
+ * 一定要不縮：下拉的中文字可以在任兩字之間斷行，允許縮的話每一項會被擠窄、字折成兩行，量不到溢出。
+ * 一定要靠左：平常靠右（flex-end），溢出會往左邊（起始側）長，scrollWidth 不算起始側的溢出。
+ */
+.top-row.measuring .filters {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+}
+
+.top-row.measuring .filters > *,
+.top-row.measuring .fgroup > * {
+  flex-shrink: 0;
+}
+
+/* 平板：頂欄間距收小（版型由 .stacked 處理，平板一定放不下一行） */
 @media (max-width: 1199px) {
   .top-row {
-    flex-wrap: wrap;
-    row-gap: var(--sp-4);
-    padding: var(--sp-4) var(--sp-8);
-  }
-
-  .filters {
-    order: 3;
-    flex: 1 0 100%;
-    justify-content: flex-start;
-    margin-left: 0;
-    gap: var(--sp-3) var(--sp-6);
-  }
-
-  .fgroup {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    flex: 0 0 auto;
-  }
-
-  /* 換行後分隔線可能落在行首，改由組間距區隔 */
-  .divider {
-    display: none;
-  }
-
-  /* 把成員推到最左、其餘推到右邊的彈性空白；換行後會把後面的篩選器擠到下一行 */
-  .grow {
-    display: none;
-  }
-
-  .tail {
-    margin-left: auto;
+    --top-row-pad-x: var(--sp-8);
+    padding: var(--sp-4) var(--top-row-pad-x);
   }
 }
 

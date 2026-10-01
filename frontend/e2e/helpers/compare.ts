@@ -284,13 +284,13 @@ export interface GeoSnapshot {
   bars: Metric[]
   /** 看板卡：相對所屬欄左上角的位移 + 尺寸。 */
   cards: Metric[]
-  /** 看板四欄本身的尺寸與頁面座標。 */
+  /** 看板四欄本身的尺寸與頁面 y（從頂欄底部量起）。 */
   cols: Metric[]
   /** Issue 卡：相對第一張 Issue 卡左上角的位移 + 尺寸。 */
   issues: Metric[]
   /** 每個 `[data-dd]`（下拉觸發器與面板）的尺寸。 */
   dd: Metric[]
-  /** 甘特左欄寬、畫布寬、整頁高。 */
+  /** 甘特左欄寬、畫布寬、整頁高（扣掉頂欄）。 */
   page: Metric[]
   /** 浮層（選單 / 對話框 / 詳細視窗）本身與其直屬子元素的尺寸。 */
   floats: Metric[]
@@ -299,11 +299,29 @@ export interface GeoSnapshot {
 }
 
 /** 取一次幾何快照。 */
-export function geoSnapshot(page: Page): Promise<GeoSnapshot> {
-  return page.evaluate(() => {
+export function geoSnapshot(page: Page, kind: PageKind): Promise<GeoSnapshot> {
+  return page.evaluate((kind) => {
     const all = (sel: string): HTMLElement[] => [...document.querySelectorAll<HTMLElement>(sel)]
     const r = (el: Element): DOMRect => el.getBoundingClientRect()
     const round = (n: number): number => Math.round(n * 10) / 10
+
+    /**
+     * 刻意保留的差異：頂欄的篩選器一行放不下時，新頁整排移到第二列，legacy 在中間自己換行，
+     * 兩邊頂欄高度不同（1440 時差 2px）。頁面座標（看板欄的 y、整頁高）一律從頂欄底部量起，
+     * 頂欄以下的幾何照樣 ±1px 對照。新頁是 `.top-bar`，legacy 是第一個 sticky、top:0 的列（:56）；
+     * 找不到、或找到的不含第一個下拉（成員篩選，兩頁都在頂欄）就丟錯，不默默當 0。
+     */
+    const topBar =
+      kind === 'vue'
+        ? document.querySelector('.top-bar')
+        : [...document.querySelectorAll('body *')].find((el) => {
+            const s = getComputedStyle(el)
+            return s.position === 'sticky' && s.top === '0px'
+          })
+    if (!topBar || !topBar.contains(document.querySelector('[data-dd]'))) {
+      throw new Error(`${kind} 頁找不到頂欄（含成員篩選的 sticky 列），無法扣掉頂欄高度`)
+    }
+    const top = r(topBar).height
 
     const rows = all('[data-rowtask]')
     const base = rows[0] ? r(rows[0]) : new DOMRect()
@@ -337,7 +355,7 @@ export function geoSnapshot(page: Page): Promise<GeoSnapshot> {
       }),
       cols: all('[data-col]').map((el) => ({
         key: el.getAttribute('data-col') ?? '',
-        v: [round(r(el).width), round(r(el).height), round(r(el).y + window.scrollY)],
+        v: [round(r(el).width), round(r(el).height), round(r(el).y + window.scrollY - top)],
       })),
       issues: (() => {
         const list = all('[data-issuerow]')
@@ -357,7 +375,7 @@ export function geoSnapshot(page: Page): Promise<GeoSnapshot> {
       page: [
         { key: 'leftCol', v: [round(base.width)] },
         { key: 'chart', v: chart ? [round(r(chart).width), round(r(chart).height)] : [] },
-        { key: 'doc', v: [document.documentElement.scrollHeight] },
+        { key: 'doc', v: [round(document.documentElement.scrollHeight - top)] },
       ],
       floats: all('[data-e2e-float]').flatMap((f, i) => [
         { key: `float${i}`, v: [round(r(f).width), round(r(f).height)] },
@@ -371,7 +389,7 @@ export function geoSnapshot(page: Page): Promise<GeoSnapshot> {
         v: [round(r(el).width), round(r(el).height)],
       })),
     }
-  })
+  }, kind)
 }
 
 /** 幾何比對：key 序列要完全一樣，數值允許 ±tol px。 */
@@ -439,7 +457,7 @@ export async function runScenario(page: Page, kind: PageKind, scenario: Scenario
   const steps: Step[] = []
   const capture: Capture = async (label) => {
     await markFloating(page)
-    steps.push({ label, dom: await domSnapshot(page), geo: await geoSnapshot(page) })
+    steps.push({ label, dom: await domSnapshot(page), geo: await geoSnapshot(page, kind) })
   }
   await scenario(page, capture)
   return steps

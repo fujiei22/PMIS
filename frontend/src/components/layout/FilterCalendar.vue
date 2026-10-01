@@ -9,6 +9,17 @@ import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
 import { useUiStore } from '@/stores/ui'
 
+withDefaults(
+  defineProps<{
+    /**
+     * 對齊定位基準的哪一側。`end`（預設）：右緣對齊，頂欄一行時基準是篩選器（同 legacy）；
+     * `start`：左緣對齊，頂欄兩列時 TopBar 把基準換成日期那一組，日曆從「日期」標籤下方展開、不超出視窗。
+     */
+    align?: 'start' | 'end'
+  }>(),
+  { align: 'end' },
+)
+
 const clock = useClockStore()
 const ui = useUiStore()
 const filter = useFilterStore()
@@ -80,7 +91,7 @@ function pick(iso: string): void {
 
 <template>
   <div v-if="ui.filterCalendarOpen" class="cal-mask" @click="ui.filterCalendarOpen = false"></div>
-  <div v-if="ui.filterCalendarOpen" class="cal" data-dd="1">
+  <div v-if="ui.filterCalendarOpen" class="cal" :class="{ start: align === 'start' }" data-dd="1">
     <div class="cal-ends">
       <div
         class="cal-end"
@@ -132,17 +143,27 @@ function pick(iso: string): void {
 }
 
 .cal {
+  --cal-w: 250px;
   position: absolute;
   top: 42px;
   right: 0;
   z-index: 100;
-  width: 250px;
+  width: var(--cal-w);
   padding: var(--sp-6);
   background: var(--surface-1);
   border: 1px solid var(--border-1);
   border-radius: var(--r-panel);
   box-shadow: var(--shadow-popover);
   animation: popIn var(--t-pop) ease-out;
+}
+
+/*
+ * 左緣對齊基準（頂欄兩列時是日期那一組，從「日期」下方展開）。基準比日曆窄（只有一顆膠囊）時往左挪，
+ * 讓日曆超出基準右緣的量不超過 --cal-overhang（TopBar 給列的左右留白）：基準排在一列最尾也不會超出視窗。
+ */
+.cal.start {
+  left: min(0px, calc(100% + var(--cal-overhang, 0px) - var(--cal-w)));
+  right: auto;
 }
 
 .cal-ends {
