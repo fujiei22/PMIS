@@ -63,6 +63,13 @@ function measureFit(): void {
   stacked.value = overflow
 }
 
+/**
+ * 浮層錨在觸發鈕的哪一側：一行時篩選器靠右排（flex-end），某項變寬是它左緣往左長、右緣不動，錨右緣（end）；
+ * 兩列時靠左排，左緣不動，錨左緣（start）。下拉 / 成員面板開著勾選項讓觸發鈕變寬時才不會被帶著跑（G7）。
+ * 日曆同一套：一行時基準是篩選器、右緣對齊；兩列時基準換成日期那一組、左緣對齊。
+ */
+const popAlign = computed<'start' | 'end'>(() => (stacked.value ? 'start' : 'end'))
+
 let fitRaf: number | undefined
 /**
  * 視窗以外造成的寬度變化（捲軸出現 / 消失）：下一幀再量。
@@ -240,7 +247,7 @@ function clearFilters(): void {
       <div ref="filtersEl" class="filters">
         <span class="fgroup">
           <span class="section">成員</span>
-          <MemberPicker />
+          <MemberPicker :align="popAlign" />
         </span>
         <span class="grow"></span>
 
@@ -249,6 +256,7 @@ function clearFilters(): void {
           <span class="section">任務</span>
           <FilterDropdown
             dd-key="status"
+            :align="popAlign"
             :label="filter.statuses.length ? `狀態 ${filter.statuses.length}` : '狀態'"
             :active="filter.statuses.length > 0"
             :options="statusOptions"
@@ -256,6 +264,7 @@ function clearFilters(): void {
           />
           <FilterDropdown
             dd-key="prio"
+            :align="popAlign"
             :label="filter.priorities.length ? `優先度 ${filter.priorities.length}` : '優先度'"
             :active="filter.priorities.length > 0"
             :options="prioOptions"
@@ -263,6 +272,7 @@ function clearFilters(): void {
           />
           <FilterDropdown
             dd-key="group"
+            :align="popAlign"
             :label="filter.groupIds.length ? `分類 ${filter.groupIds.length}` : '分類'"
             :active="filter.groupIds.length > 0"
             :options="groupOptions"
@@ -273,6 +283,7 @@ function clearFilters(): void {
           />
           <FilterDropdown
             dd-key="issue"
+            :align="popAlign"
             :label="{ all: 'Issue', has: '有 Issue', none: '無 Issue' }[filter.issueMode]"
             :active="filter.issueMode !== 'all'"
             :options="issueModeOptions"
@@ -285,6 +296,7 @@ function clearFilters(): void {
           <span class="section">Issue</span>
           <FilterDropdown
             dd-key="icls"
+            :align="popAlign"
             :label="filter.issueLevels.length ? `等級 ${filter.issueLevels.length}` : '等級'"
             :active="filter.issueLevels.length > 0"
             :options="levelOptions"
@@ -292,6 +304,7 @@ function clearFilters(): void {
           />
           <FilterDropdown
             dd-key="ist"
+            :align="popAlign"
             :label="filter.issueStatuses.length ? `狀態 ${filter.issueStatuses.length}` : '狀態'"
             :active="filter.issueStatuses.length > 0"
             :options="issueStatusOptions"
@@ -306,22 +319,37 @@ function clearFilters(): void {
           <span class="section">日期</span>
           <FilterDropdown
             dd-key="fmode"
+            :align="popAlign"
             :label="DATE_MODE_LABEL[filter.dateMode]"
             :active="filter.dateMode !== 'off'"
             :options="dateModeOptions"
             :menu-width="128"
             @pick="pickDateMode"
           />
-          <div v-if="showD1" class="date-pill" role="button" @click="openCalendar('d1')">
+          <!-- data-keep-popup：日曆開著時點膠囊是切換要填哪一端，不算點到外面（useClickOutside）；
+               不用 data-dd：compare.spec 依 [data-dd] 的序列對照 legacy -->
+          <div
+            v-if="showD1"
+            class="date-pill"
+            data-keep-popup
+            role="button"
+            @click="openCalendar('d1')"
+          >
             {{ fmtDate(filter.d1) }}
           </div>
           <span v-if="showD2" class="tilde">～</span>
-          <div v-if="showD2" class="date-pill" role="button" @click="openCalendar('d2')">
+          <div
+            v-if="showD2"
+            class="date-pill"
+            data-keep-popup
+            role="button"
+            @click="openCalendar('d2')"
+          >
             {{ fmtDate(filter.d2) }}
           </div>
           <!-- 日曆的定位基準：一行時 .fgroup 是 display: contents，基準是篩選器、右緣對齊（同 legacy）；
                兩列時基準換成這一組、左緣對齊，篩選器滿寬時才不會離日期膠囊很遠 -->
-          <FilterCalendar :align="stacked ? 'start' : 'end'" />
+          <FilterCalendar :align="popAlign" />
         </span>
 
         <div

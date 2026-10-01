@@ -8,6 +8,18 @@ import { useFilterStore } from '@/stores/filter'
 import { useMemberStore } from '@/stores/member'
 import { useUiStore } from '@/stores/ui'
 
+withDefaults(
+  defineProps<{
+    /**
+     * 面板對齊觸發鈕的哪一側。`start`（預設）：左緣對齊、往右展開；`end`：右緣對齊、往左展開。
+     * 頂欄一行時篩選器靠右排，勾了人觸發鈕的頭像與人數會變，寬度變化落在左緣、右緣不動，
+     * TopBar 傳 `end` 讓面板錨在不動的那一側，開著勾人時不被帶著跑（動畫稽核 G7）。
+     */
+    align?: 'start' | 'end'
+  }>(),
+  { align: 'start' },
+)
+
 const ui = useUiStore()
 const filter = useFilterStore()
 const memberStore = useMemberStore()
@@ -47,30 +59,38 @@ function toggle(id: string): void {
       <span v-if="hasSel" class="mp-count">{{ selCount }}</span>
     </div>
 
-    <div v-if="ui.memberPickerOpen" class="mp-panel" data-dd="1">
-      <div class="mp-head">
-        <span class="mp-title">專案成員</span>
-        <span class="mp-sub">已選 {{ selCount }} 位</span>
-      </div>
-      <div class="mp-list">
-        <div
-          v-for="m in memberStore.members"
-          :key="m.id"
-          class="mp-row"
-          :class="{ on: selected.includes(m.id) }"
-          role="button"
-          @click="toggle(m.id)"
-        >
-          <Avatar :member="m" :size="28" />
-          <div class="mp-info">
-            <div class="mp-name" :title="m.name">{{ m.name }}</div>
-            <div class="mp-role" :title="m.role">{{ m.role }}</div>
-          </div>
-          <span class="mp-box">{{ selected.includes(m.id) ? '✓' : '' }}</span>
+    <!-- 進出場用 base.css 的 pop（動畫稽核 G12） -->
+    <Transition name="pop">
+      <div
+        v-if="ui.memberPickerOpen"
+        class="mp-panel"
+        :class="{ end: align === 'end' }"
+        data-dd="1"
+      >
+        <div class="mp-head">
+          <span class="mp-title">專案成員</span>
+          <span class="mp-sub">已選 {{ selCount }} 位</span>
         </div>
+        <div class="mp-list">
+          <div
+            v-for="m in memberStore.members"
+            :key="m.id"
+            class="mp-row"
+            :class="{ on: selected.includes(m.id) }"
+            role="button"
+            @click="toggle(m.id)"
+          >
+            <Avatar :member="m" :size="28" />
+            <div class="mp-info">
+              <div class="mp-name" :title="m.name">{{ m.name }}</div>
+              <div class="mp-role" :title="m.role">{{ m.role }}</div>
+            </div>
+            <span class="mp-box">{{ selected.includes(m.id) ? '✓' : '' }}</span>
+          </div>
+        </div>
+        <button v-if="hasSel" class="mp-clear" @click="filter.memberIds = []">清除勾選</button>
       </div>
-      <button v-if="hasSel" class="mp-clear" @click="filter.memberIds = []">清除勾選</button>
-    </div>
+    </Transition>
   </div>
 </template>
 
@@ -135,7 +155,12 @@ function toggle(id: string): void {
   border: 1px solid var(--border-1);
   border-radius: var(--r-panel);
   box-shadow: var(--shadow-popover);
-  animation: popIn var(--t-pop) ease-out;
+}
+
+/* 右緣對齊觸發鈕、往左展開（align="end"） */
+.mp-panel.end {
+  left: auto;
+  right: 0;
 }
 
 .mp-head {

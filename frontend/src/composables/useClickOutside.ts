@@ -10,8 +10,13 @@ import { useUiStore } from '@/stores/ui'
 const KEEP_SELECTION =
   '[data-card],[data-taskid],[data-rowtask],[data-rowgroup],[data-issuerow],[data-dd],[data-errorbar],[data-keep-selection],input,textarea,select,label'
 
-/** 點在這裡面不算「點到浮層外面」：下拉本體，以及錯誤條的 ✕（review M11）。 */
-const KEEP_POPUP = '[data-dd],[data-errorbar]'
+/**
+ * 點在這裡面不算「點到浮層外面」：下拉本體，以及錯誤條的 ✕（review M11）。
+ * 再加上新頁自己的 `[data-keep-popup]`：頂欄的日期膠囊——日曆開著時點它是切換要填哪一端。
+ * 新頁拿掉了日曆的遮罩（G19），不標的話 pointerdown 會先把日曆關掉、click 再打開，閃一下。
+ * 不用 `data-dd`：compare.spec 依 `[data-dd]` 的序列對照 legacy。
+ */
+const KEEP_POPUP = '[data-dd],[data-errorbar],[data-keep-popup]'
 
 /**
  * 全域的「點到外面」處理，掛在 DashboardView。
@@ -38,7 +43,7 @@ export function useClickOutside(): void {
     const target = e.target instanceof Element ? e.target : null
     lastWasTouch = e.pointerType === 'touch'
 
-    // 1) 任何浮層開著而點擊落在 [data-dd] 之外 → 全部關掉（手指開始捲動時收起浮層也合理）
+    // 1) 任何浮層開著而點擊落在 KEEP_POPUP 之外 → 全部關掉（手指開始捲動時收起浮層也合理）
     const popupOpen = !!ui.openDropdown || ui.memberPickerOpen || ui.filterCalendarOpen
     if (popupOpen && !target?.closest(KEEP_POPUP)) ui.closeAllPopups()
 

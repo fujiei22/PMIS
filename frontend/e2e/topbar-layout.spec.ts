@@ -189,7 +189,7 @@ interface CalendarLayout {
 }
 
 /**
- * 從「日期」那一組的下拉選日期模式；選完日曆會自動打開。等日曆進場動畫跑完（動畫中的 transform 會讓位置不準）再量。
+ * 從「日期」那一組的下拉選日期模式；選完日曆會自動打開。等日曆進場過渡跑完（過渡中的 transform 會讓位置不準）再量。
  */
 async function openCalendar(page: Page, dateMode: '大於' | '介於'): Promise<CalendarLayout> {
   const group = page.locator('.top-row .fgroup').filter({ has: page.getByText('日期', { exact: true }) })
@@ -197,7 +197,9 @@ async function openCalendar(page: Page, dateMode: '大於' | '介於'): Promise<
   await group.getByText(dateMode, { exact: true }).click()
   const cal = page.locator('.top-row .cal')
   await cal.waitFor()
-  await cal.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
+  // 進場是 <Transition name="pop">：剛插入的一兩幀過渡還沒開始（getAnimations() 是空的、pop-enter-from 的 transform 還在），
+  // 等 pop-enter-* 的 class 拿掉才算跑完
+  await expect(cal).not.toHaveClass(/pop-enter/)
   return page.evaluate(() => {
     const rect = (el: Element): Rect => {
       const r = el.getBoundingClientRect()

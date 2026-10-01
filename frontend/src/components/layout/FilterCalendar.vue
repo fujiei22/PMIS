@@ -90,58 +90,58 @@ function pick(iso: string): void {
 </script>
 
 <template>
-  <div v-if="ui.filterCalendarOpen" class="cal-mask" @click="ui.filterCalendarOpen = false"></div>
-  <div v-if="ui.filterCalendarOpen" class="cal" :class="{ start: align === 'start' }" data-dd="1">
-    <div class="cal-ends">
-      <div
-        class="cal-end"
-        :class="{ aimed: filter.calendarTarget === 'd1' }"
-        role="button"
-        @click="aim('d1')"
-      >
-        {{ fmtDate(filter.d1) }}
+  <!--
+    進出場用 base.css 的 pop（動畫稽核 G12）。
+    沒有遮罩：點外面由 useClickOutside 關，點擊照常送達（同其他下拉）。legacy 的 fixed 遮罩被頂欄的 transform
+    限制成只蓋頂欄，日曆開著時點頂欄其他下拉第一下會被吃掉（G19，README〈刻意保留的差異〉）。
+  -->
+  <Transition name="pop">
+    <div v-if="ui.filterCalendarOpen" class="cal" :class="{ start: align === 'start' }" data-dd="1">
+      <div class="cal-ends">
+        <div
+          class="cal-end"
+          :class="{ aimed: filter.calendarTarget === 'd1' }"
+          role="button"
+          @click="aim('d1')"
+        >
+          {{ fmtDate(filter.d1) }}
+        </div>
+        <div
+          v-if="showD2"
+          class="cal-end"
+          :class="{ aimed: filter.calendarTarget === 'd2' }"
+          role="button"
+          @click="aim('d2')"
+        >
+          {{ fmtDate(filter.d2) }}
+        </div>
       </div>
-      <div
-        v-if="showD2"
-        class="cal-end"
-        :class="{ aimed: filter.calendarTarget === 'd2' }"
-        role="button"
-        @click="aim('d2')"
-      >
-        {{ fmtDate(filter.d2) }}
+      <div class="cal-bar">
+        <div class="cal-title">{{ title }}</div>
+        <div class="cal-nav" role="button" @click="goToday">今天</div>
+        <div class="cal-arrow" role="button" @click="shift(-1)">‹</div>
+        <div class="cal-arrow" role="button" @click="shift(1)">›</div>
+      </div>
+      <div class="cal-grid">
+        <div v-for="w in WEEK_LABELS" :key="w" class="cal-weekday">{{ w }}</div>
+      </div>
+      <div class="cal-grid">
+        <div
+          v-for="c in cells"
+          :key="c.iso"
+          class="cal-cell"
+          :class="{ dim: c.dim, end: c.end, range: c.inRange, today: c.today }"
+          role="button"
+          @click="pick(c.iso)"
+        >
+          {{ c.label }}
+        </div>
       </div>
     </div>
-    <div class="cal-bar">
-      <div class="cal-title">{{ title }}</div>
-      <div class="cal-nav" role="button" @click="goToday">今天</div>
-      <div class="cal-arrow" role="button" @click="shift(-1)">‹</div>
-      <div class="cal-arrow" role="button" @click="shift(1)">›</div>
-    </div>
-    <div class="cal-grid">
-      <div v-for="w in WEEK_LABELS" :key="w" class="cal-weekday">{{ w }}</div>
-    </div>
-    <div class="cal-grid">
-      <div
-        v-for="c in cells"
-        :key="c.iso"
-        class="cal-cell"
-        :class="{ dim: c.dim, end: c.end, range: c.inRange, today: c.today }"
-        role="button"
-        @click="pick(c.iso)"
-      >
-        {{ c.label }}
-      </div>
-    </div>
-  </div>
+  </Transition>
 </template>
 
 <style scoped>
-.cal-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-}
-
 .cal {
   --cal-w: 250px;
   position: absolute;
@@ -154,7 +154,6 @@ function pick(iso: string): void {
   border: 1px solid var(--border-1);
   border-radius: var(--r-panel);
   box-shadow: var(--shadow-popover);
-  animation: popIn var(--t-pop) ease-out;
 }
 
 /*

@@ -158,19 +158,22 @@ useFocusRequest((req) => {
             <span class="tool-icon">▦</span><span>分組</span>
             <span class="tool-value">{{ GROUP_LABEL[filter.issueGroupBy] }}</span>
           </div>
-          <div v-if="ui.openDropdown === 'igroup'" class="dd-menu" data-dd="1">
-            <div
-              v-for="o in groupOptions"
-              :key="o.k"
-              class="dd-item"
-              :class="{ on: filter.issueGroupBy === o.k }"
-              role="button"
-              @click="pickGroupBy(o.k)"
-            >
-              <span class="dd-label">{{ o.label }}</span>
-              <span class="dd-check">{{ filter.issueGroupBy === o.k ? '✓' : '' }}</span>
+          <!-- 進出場用 base.css 的 pop（動畫稽核 G12） -->
+          <Transition name="pop">
+            <div v-if="ui.openDropdown === 'igroup'" class="dd-menu" data-dd="1">
+              <div
+                v-for="o in groupOptions"
+                :key="o.k"
+                class="dd-item"
+                :class="{ on: filter.issueGroupBy === o.k }"
+                role="button"
+                @click="pickGroupBy(o.k)"
+              >
+                <span class="dd-label">{{ o.label }}</span>
+                <span class="dd-check">{{ filter.issueGroupBy === o.k ? '✓' : '' }}</span>
+              </div>
             </div>
-          </div>
+          </Transition>
         </div>
         <SortChips kind="issue" />
         <SortMenu kind="issue" />
@@ -260,7 +263,6 @@ useFocusRequest((req) => {
   border: 1px solid var(--border-1);
   border-radius: var(--r-card);
   box-shadow: var(--shadow-menu);
-  animation: popIn var(--t-menu) ease-out;
 }
 
 .dd-item {

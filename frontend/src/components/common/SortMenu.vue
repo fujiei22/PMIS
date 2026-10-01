@@ -52,23 +52,26 @@ function reset(): void {
     >
       <span class="sort-icon">⇅</span><span>排序</span>
     </div>
-    <div v-if="open" class="sort-menu" data-dd="1">
-      <div class="sort-hint">依序點選排序層級</div>
-      <div
-        v-for="o in options"
-        :key="o.k"
-        class="sort-option"
-        :class="{ on: o.on }"
-        role="button"
-        @click.stop="pick(o.k)"
-      >
-        <span class="sort-option-label">{{ o.label }}</span>
-        <span class="sort-badge">{{ o.badge }}</span>
+    <!-- 進出場用 base.css 的 pop（動畫稽核 G12） -->
+    <Transition name="pop">
+      <div v-if="open" class="sort-menu" data-dd="1">
+        <div class="sort-hint">依序點選排序層級</div>
+        <div
+          v-for="o in options"
+          :key="o.k"
+          class="sort-option"
+          :class="{ on: o.on }"
+          role="button"
+          @click.stop="pick(o.k)"
+        >
+          <span class="sort-option-label">{{ o.label }}</span>
+          <span class="sort-badge">{{ o.badge }}</span>
+        </div>
+        <div v-if="sorts.length" class="sort-clear" role="button" @click.stop="reset()">
+          清除排序
+        </div>
       </div>
-      <div v-if="sorts.length" class="sort-clear" role="button" @click.stop="reset()">
-        清除排序
-      </div>
-    </div>
+    </Transition>
   </div>
 </template>
 
@@ -113,7 +116,6 @@ function reset(): void {
   border: 1px solid var(--border-1);
   border-radius: var(--r-card);
   box-shadow: var(--shadow-menu);
-  animation: popIn var(--t-menu) ease-out;
 }
 
 .sort-hint {

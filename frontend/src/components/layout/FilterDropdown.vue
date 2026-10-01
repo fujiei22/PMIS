@@ -29,8 +29,14 @@ const props = withDefaults(
     ellipsis?: boolean
     /** 面板最高高度（px），超過就捲。 */
     menuMaxHeight?: number
+    /**
+     * 選單對齊觸發鈕的哪一側。`start`（預設）：左緣對齊、往右展開；`end`：右緣對齊、往左展開。
+     * 頂欄一行時篩選器靠右排，觸發鈕變寬（勾了選項、標籤多了數字）是左緣往左長、右緣不動，
+     * TopBar 傳 `end` 讓選單錨在不動的那一側，開著勾選項時不被帶著跑（動畫稽核 G7）。
+     */
+    align?: 'start' | 'end'
   }>(),
-  { active: false, menuWidth: 150, ellipsis: false },
+  { active: false, menuWidth: 150, ellipsis: false, align: 'start' },
 )
 
 defineEmits<{ pick: [key: string] }>()
@@ -57,20 +63,29 @@ const menuStyle = computed(() => ({
       <span>{{ label }}</span>
       <span class="dd-arrow">▼</span>
     </div>
-    <div v-if="open" class="dd-menu" data-dd="1" :style="menuStyle">
+    <!-- 進出場用 base.css 的 pop（動畫稽核 G12） -->
+    <Transition name="pop">
       <div
-        v-for="o in options"
-        :key="o.key"
-        class="dd-item"
-        :class="{ on: o.checked }"
-        role="button"
-        @click="$emit('pick', o.key)"
+        v-if="open"
+        class="dd-menu"
+        :class="{ end: align === 'end' }"
+        data-dd="1"
+        :style="menuStyle"
       >
-        <span v-if="o.dot" class="dd-dot" :style="{ background: o.dot }"></span>
-        <span class="dd-label" :class="{ ellipsis }">{{ o.label }}</span>
-        <span class="dd-check">{{ o.checked ? '✓' : '' }}</span>
+        <div
+          v-for="o in options"
+          :key="o.key"
+          class="dd-item"
+          :class="{ on: o.checked }"
+          role="button"
+          @click="$emit('pick', o.key)"
+        >
+          <span v-if="o.dot" class="dd-dot" :style="{ background: o.dot }"></span>
+          <span class="dd-label" :class="{ ellipsis }">{{ o.label }}</span>
+          <span class="dd-check">{{ o.checked ? '✓' : '' }}</span>
+        </div>
       </div>
-    </div>
+    </Transition>
   </div>
 </template>
 
@@ -115,7 +130,12 @@ const menuStyle = computed(() => ({
   border: 1px solid var(--border-1);
   border-radius: var(--r-card);
   box-shadow: var(--shadow-menu);
-  animation: popIn var(--t-menu) ease-out;
+}
+
+/* 右緣對齊觸發鈕、往左展開（align="end"） */
+.dd-menu.end {
+  left: auto;
+  right: 0;
 }
 
 .dd-item {
