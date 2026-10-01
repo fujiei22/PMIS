@@ -143,11 +143,12 @@ function pick(iso: string): void {
 }
 
 .cal {
+  --cal-w: 250px;
   position: absolute;
   top: 42px;
   right: 0;
   z-index: 100;
-  width: 250px;
+  width: var(--cal-w);
   padding: var(--sp-6);
   background: var(--surface-1);
   border: 1px solid var(--border-1);
@@ -156,8 +157,12 @@ function pick(iso: string): void {
   animation: popIn var(--t-pop) ease-out;
 }
 
+/*
+ * 左緣對齊基準（頂欄兩列時是日期那一組，從「日期」下方展開）。基準比日曆窄（只有一顆膠囊）時往左挪，
+ * 讓日曆超出基準右緣的量不超過 --cal-overhang（TopBar 給列的左右留白）：基準排在一列最尾也不會超出視窗。
+ */
 .cal.start {
-  left: 0;
+  left: min(0px, calc(100% + var(--cal-overhang, 0px) - var(--cal-w)));
   right: auto;
 }
 

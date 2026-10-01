@@ -391,10 +391,12 @@ function clearFilters(): void {
 }
 
 .top-row {
+  /* 左右留白；兩列時日期日曆也用它算最多能超出日期那一組多少（.date-group 的 --cal-overhang） */
+  --top-row-pad-x: var(--sp-10);
   display: flex;
   align-items: center;
   gap: var(--sp-5);
-  padding: var(--sp-5) var(--sp-10);
+  padding: var(--sp-5) var(--top-row-pad-x);
   flex-wrap: nowrap;
 }
 
@@ -628,9 +630,13 @@ function clearFilters(): void {
   flex: 0 0 auto;
 }
 
-/* 日期日曆改以這一組為定位基準（FilterCalendar 收到 align="start"） */
+/*
+ * 日期日曆改以這一組為定位基準（FilterCalendar 收到 align="start"）。
+ * 日曆最多可以超出這一組右緣「列的左右留白」那麼多：這一組排在一列最尾、貼著右緣時也不會超出視窗。
+ */
 .top-row.stacked .date-group {
   position: relative;
+  --cal-overhang: var(--top-row-pad-x);
 }
 
 /* 換行後分隔線可能落在行首，改由組間距區隔 */
@@ -665,7 +671,8 @@ function clearFilters(): void {
 /* 平板：頂欄間距收小（版型由 .stacked 處理，平板一定放不下一行） */
 @media (max-width: 1199px) {
   .top-row {
-    padding: var(--sp-4) var(--sp-8);
+    --top-row-pad-x: var(--sp-8);
+    padding: var(--sp-4) var(--top-row-pad-x);
   }
 }
 

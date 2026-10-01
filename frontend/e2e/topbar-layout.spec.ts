@@ -71,7 +71,7 @@ test('1200～1470px：篩選器整排移到第二列，標籤不和下拉分開'
   await page.setViewportSize({ width: 1366, height: 900 })
   const app = new DashboardPage(page)
   await app.goto()
-  for (const width of [1200, 1280, 1366, 1440, 1470]) {
+  for (const width of [1200, 1280, 1366, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     // 換寬度後等版型穩定（ResizeObserver 在下一次繪製前切換）
     await expect
@@ -82,6 +82,10 @@ test('1200～1470px：篩選器整排移到第二列，標籤不和下拉分開'
       .toBe(true)
     await expectStacked(page, `${width}px`)
   }
+  // 1470 離門檻（本機 Noto Sans TC 要 1471px 才放得下一行）只差 1px，字型沒載到、換了版本就可能剛好放得下：
+  // 這裡只驗 user 在意的那件事——不會在中間自己換行（一行或整排兩列都算對）
+  await page.setViewportSize({ width: 1470, height: 900 })
+  await expect.poll(() => mode(page), '1470px 不在中間亂排').not.toBe('wrapped')
 })
 
 test('一行放得下（1536 / 1920 預設篩選）：維持跟標題同一行', async ({ page }) => {
@@ -170,14 +174,24 @@ interface Rect {
   bottom: number
 }
 
+interface CalendarLayout {
+  cal: Rect
+  /** 「日期」標籤。 */
+  label: Rect
+  /** 日期那一組（`.fgroup`）；一行時是 display: contents，量到的是 0。 */
+  group: Rect
+  pills: Rect[]
+  filters: Rect
+  /** 頂欄列的右側留白（px）。 */
+  padRight: number
+  /** 視窗寬（不含捲軸）。 */
+  vw: number
+}
+
 /**
- * 從「日期」那一組的下拉選日期模式；選完日曆會自動打開。等日曆進場動畫跑完（動畫中的 transform 會讓位置不準），
- * 回傳日曆、「日期」標籤、日期膠囊與篩選器的位置，以及視窗寬（不含捲軸）。
+ * 從「日期」那一組的下拉選日期模式；選完日曆會自動打開。等日曆進場動畫跑完（動畫中的 transform 會讓位置不準）再量。
  */
-async function openCalendar(
-  page: Page,
-  dateMode: '大於' | '介於',
-): Promise<{ cal: Rect; label: Rect; pills: Rect[]; filters: Rect; vw: number }> {
+async function openCalendar(page: Page, dateMode: '大於' | '介於'): Promise<CalendarLayout> {
   const group = page.locator('.top-row .fgroup').filter({ has: page.getByText('日期', { exact: true }) })
   await group.locator('[data-dd][role="button"]').first().click()
   await group.getByText(dateMode, { exact: true }).click()
@@ -195,35 +209,50 @@ async function openCalendar(
     return {
       cal: rect(document.querySelector('.top-row .cal')!),
       label: rect(label),
+      group: rect(label.closest('.fgroup')!),
       pills: [...document.querySelectorAll('.top-row .date-pill')].map(rect),
       filters: rect(document.querySelector('.top-row .filters')!),
+      padRight: parseFloat(getComputedStyle(document.querySelector('.top-row')!).paddingRight),
       vw: document.documentElement.clientWidth,
     }
   })
 }
 
-const CAL_CASES = [
-  { width: 768, dateMode: '大於' },
-  { width: 1024, dateMode: '介於' },
-  { width: 1366, dateMode: '介於' },
-  { width: 1600, dateMode: '介於' },
-] as const
+/** 日曆在膠囊下方、貼著膠囊、在視窗內。 */
+function expectBelowPillsInView(r: CalendarLayout, label: string): void {
+  const pillBottom = Math.max(...r.pills.map((p) => p.bottom))
+  expect(r.cal.top, `${label}：日曆在膠囊下方`).toBeGreaterThanOrEqual(pillBottom)
+  expect(r.cal.top - pillBottom, `${label}：日曆貼著膠囊`).toBeLessThanOrEqual(20)
+  expect(r.cal.left, `${label}：日曆不超出左緣`).toBeGreaterThanOrEqual(0)
+  expect(r.cal.right, `${label}：日曆不超出右緣`).toBeLessThanOrEqual(r.vw)
+}
 
 test('兩列時日期日曆貼著日期那一組打開：左緣對齊「日期」、在膠囊下方、不超出視窗', async ({ page }) => {
   // 篩選器滿寬時，日曆若照一行時對齊篩選器右緣，會離日期膠囊很遠（1600 約 300px，user 決定一併修）
   const app = new DashboardPage(page)
-  for (const c of CAL_CASES) {
-    await page.setViewportSize({ width: c.width, height: 900 })
+  for (const width of [1024, 1366, 1600]) {
+    await page.setViewportSize({ width, height: 900 })
     await app.goto()
-    const { cal, label, pills, vw } = await openCalendar(page, c.dateMode)
-    await expect(page.locator('.top-row.stacked'), `${c.width}px 是兩列`).toHaveCount(1)
-    const pillBottom = Math.max(...pills.map((p) => p.bottom))
-    expect(Math.abs(cal.left - label.left), `${c.width}px：日曆左緣對齊「日期」`).toBeLessThanOrEqual(1)
-    expect(cal.top, `${c.width}px：日曆在膠囊下方`).toBeGreaterThanOrEqual(pillBottom)
-    expect(cal.top - pillBottom, `${c.width}px：日曆貼著膠囊`).toBeLessThanOrEqual(20)
-    expect(cal.left, `${c.width}px：日曆不超出左緣`).toBeGreaterThanOrEqual(0)
-    expect(cal.right, `${c.width}px：日曆不超出右緣`).toBeLessThanOrEqual(vw)
+    const r = await openCalendar(page, '介於')
+    await expect(page.locator('.top-row.stacked'), `${width}px 是兩列`).toHaveCount(1)
+    expect(Math.abs(r.cal.left - r.label.left), `${width}px：日曆左緣對齊「日期」`).toBeLessThanOrEqual(1)
+    expectBelowPillsInView(r, `${width}px`)
   }
+})
+
+test('兩列時日期那一組比日曆窄（大於，只有一顆膠囊）：日曆超出這一組右緣不超過列的右側留白，排在哪裡都不會超出視窗', async ({
+  page,
+}) => {
+  // 這一組排在一列最尾、貼著右緣時，照樣左緣對齊會超出視窗（review 指出）；這個不變量讓它排在哪裡都不會超出
+  const app = new DashboardPage(page)
+  await page.setViewportSize({ width: 768, height: 900 })
+  await app.goto()
+  const r = await openCalendar(page, '大於')
+  await expect(page.locator('.top-row.stacked')).toHaveCount(1)
+  expect(r.group.right - r.group.left, '前提：這一組比日曆窄').toBeLessThan(r.cal.right - r.cal.left)
+  expect(r.cal.right - r.group.right, '日曆超出這一組右緣的量 ≤ 列的右側留白').toBeLessThanOrEqual(r.padRight + 0.5)
+  expect(r.cal.left, '日曆不會跑到「日期」右邊').toBeLessThanOrEqual(r.label.left + 1)
+  expectBelowPillsInView(r, '768px')
 })
 
 test('一行時（1920）日期日曆仍對齊篩選器右緣（同 legacy）', async ({ page }) => {
