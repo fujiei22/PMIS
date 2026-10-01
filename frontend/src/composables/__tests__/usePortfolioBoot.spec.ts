@@ -1,7 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api'
-import { usePortfolioBoot } from '@/composables/usePortfolioBoot'
+import { preloadPortfolio, usePortfolioBoot } from '@/composables/usePortfolioBoot'
 import { API_ERROR_TEXT } from '@/constants/api'
 import { ApiError } from '@/api/types'
 import { buildPortfolio } from '@/api/mock/portfolio'
@@ -68,6 +68,34 @@ describe('usePortfolioBoot', () => {
     await first
     expect(ov.loadState).toBe('ready')
     expect(ov.loadError).toBeNull()
+  })
+
+  it('切頁先載（G16 / C13）：掛載時的 reload 沿用同一發，不再打 api', async () => {
+    const ov = useOverviewStore()
+    const spy = vi.spyOn(api, 'listProjects')
+    preloadPortfolio()
+    expect(ov.loadState).toBe('loading')
+    expect(spy).toHaveBeenCalledTimes(1)
+    await usePortfolioBoot().reload()
+    expect(ov.loadState).toBe('ready')
+    expect(usePortfolioStore().projects).toHaveLength(7)
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('先載失敗：掛載的 reload 沿用失敗結果顯示重試，按重試才再打一次', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const ov = useOverviewStore()
+    const spy = vi.spyOn(api, 'listProjects').mockRejectedValueOnce(new ApiError('network', 'x'))
+    preloadPortfolio()
+    const boot = usePortfolioBoot()
+    await boot.reload()
+    expect(ov.loadState).toBe('error')
+    expect(ov.loadError).toBe(API_ERROR_TEXT.network)
+    expect(spy).toHaveBeenCalledTimes(1)
+
+    await boot.reload()
+    expect(ov.loadState).toBe('ready')
+    expect(spy).toHaveBeenCalledTimes(2)
   })
 
   it('第一次載入中離開又回來：較早那發成功、後發失敗 → 維持 ready，資料還在', async () => {
