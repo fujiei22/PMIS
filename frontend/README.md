@@ -83,7 +83,8 @@
 | 改總覽的畫面狀態（篩選、排序、展開、檢視） | `stores/overview.ts`；純邏輯（派生值、篩選、排序、分組）在 `lib/portfolio.ts` |
 | 改總覽的範例專案 | `mocks/samplePortfolio.ts` ＋ `mocks/__tests__/portfolio.spec.ts`（數字要對得上設計稿）；PMIS 摘要改 `api/mock/portfolio.ts` |
 | 加總覽的互動或 UI 變化 | 元件 ＋ `assets/overview-motion.css`（過渡 class 唯一定義處）＋ `e2e/overview-motion.spec.ts`（在 spec〈動畫清單〉加一項，就在這裡補一條守衛） |
-| 加 Dashboard 的浮層（選單、日期選擇器、對話框） | 元件包 `<Transition name="pop \| dialog \| fade">`（根元素與對話框本體不寫 transition / animation / opacity / transform）；fixed 浮層接 `useCloseOnScroll`、開啟函式放 `useMenus`（記觸發元素）；鎖頁面捲動用 `useScrollLock`；`e2e/popover-motion.spec.ts` / `dialog-motion.spec.ts` 加一條離場守衛 |
+| 加 Dashboard 的浮層（選單、日期選擇器、對話框） | 元件包 `<Transition name="pop \| dialog \| fade">`（根元素與對話框本體不寫 transition / animation / opacity / transform）；fixed 浮層接 `useCloseOnScroll`、開啟函式放 `useMenus`（記觸發元素）；鎖頁面捲動用 `useScrollLock`；`e2e/popover-motion.spec.ts` / `dialog-motion.spec.ts` 加一條離場守衛。頂欄的篩選下拉 / 成員面板 / 日期日曆、看板與 Issue 的排序選單、Issue 分欄下拉也是 `pop`（absolute 掛在觸發鈕或容器下，不是 fixed）：頂欄一行時傳 `align="end"`（右緣對齊，觸發鈕往左變寬時選單不動）、兩列時 `start`；排序選單以 `.sorts` / `.tools` 為定位基準、打開當下量好位置（`--menu-x` / `--menu-y`），開著期間不跟著觸發鈕；點了不該關掉浮層的觸發元件（例：日期膠囊）標 `data-keep-popup`。守衛在 `e2e/dash-menu-motion.spec.ts` |
+| 改 Dashboard 頂欄篩選項或排序 chip 的版面 | 頂欄一行時篩選條件變動會把篩選項 FLIP 到新位置（`TopBar` 的 pre / post watcher，比右緣；一行 / 兩列切換與縮放不做；`measureFit` 扣掉補間中的位移再量）；排序 chip 是 `TransitionGroup` ＋ `.sort-chip-slot > .sort-chip-clip` 原地橫向展開 / 收起，父層要提供 `--sorts-gap`；離場中的 chip 還在 DOM，測試讀 chip 要用會重試的寫法（`expect.poll`） |
 | 改 Dashboard 或總覽在平板上的版面或手指操作 | 見下方〈平板與觸控〉；`e2e/tablet.spec.ts`（Dashboard）、`e2e/overview-tablet.spec.ts`（總覽），都是 768×1024 觸控；Dashboard 1200px 以上的版面要跟 legacy 對得上（`compare.spec.ts` 在 1440 / 1920 對照 legacy 幾何；頂欄例外，見〈刻意保留的差異〉） |
 | 改 Dashboard 頂欄的篩選器（加減項目、改文字） | `layout/TopBar.vue`：一行放不下時整排移到第二列，由 `measureFit` 量實際寬度切 `.stacked`（不靠斷點，不用另調寬度）；兩列時日期日曆以日期那一組（`.date-group`）為基準、左緣對齊（`FilterCalendar` 的 `align`），這一組比日曆窄時往左挪到不超出視窗（可超出的量 `--cal-overhang` 取自列的左右留白 `--top-row-pad-x`，改留白只改這個變數）；`e2e/topbar-layout.spec.ts` 守版型與日曆位置，加了篩選項讓 1536 也放不下時要改它的寬度 |
 
@@ -111,7 +112,7 @@ Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<s
 - 總覽的排序選單往右開會超出視窗時（直向時排序鈕在標題列右半），改成對齊按鈕右緣往左開（`OvSortControls` 的 `alignEnd`）。
 - 時間軸 bar 的名稱是 sticky：bar 起點捲到左欄底下時，名稱停在左欄右緣。`.bar` 因此用 `overflow: clip`，用 `hidden` 的話 bar 自己會變成捲動容器，sticky 跟不上橫捲。
 
-`e2e/tablet.spec.ts` 除了〈DOM 鉤子〉的屬性，還依賴這些 class，**改名時要同步改測試**：`.top-bar` `.col` `.foot` `.caret` `.detail-layer` `.detail-close` `.draft-input` `.name` `.date` `.date-range` `.date-days` `.rm-days` `.gantt-left` `.gantt-scroller`。`e2e/topbar-layout.spec.ts` 依賴 `.top-row` `.stacked` `.filters` `.fgroup` `.section` `.date-pill` `.cal` `.clear` `.project` `.burger`；`e2e/helpers/compare.ts` 依賴 `.top-bar`（量頂欄高度）。`e2e/overview-tablet.spec.ts` 用到的 class 列在〈DOM 鉤子〉最後的總覽 class 表。
+`e2e/tablet.spec.ts` 除了〈DOM 鉤子〉的屬性，還依賴這些 class，**改名時要同步改測試**：`.top-bar` `.col` `.foot` `.caret` `.detail-layer` `.detail-close` `.draft-input` `.name` `.date` `.date-range` `.date-days` `.rm-days` `.gantt-left` `.gantt-scroller`。`e2e/topbar-layout.spec.ts` 依賴 `.top-row` `.stacked` `.filters` `.fgroup` `.section` `.date-pill` `.cal` `.clear` `.project` `.burger`；`e2e/helpers/compare.ts` 依賴 `.top-bar`（量頂欄高度）。`e2e/dash-menu-motion.spec.ts` 依賴 `.top-row` `.stacked` `.filters` `.fgroup` `.date-pill` `.cal` `.cal-end` `.dd-trigger` `.dd-menu` `.dd-item` `.mp-trigger` `.mp-panel` `.mp-row` `.panel-head` `.sort-trigger` `.sort-menu` `.sort-option` `.sort-chip` `.chip-x`。`e2e/overview-tablet.spec.ts` 用到的 class 列在〈DOM 鉤子〉最後的總覽 class 表。
 
 ### 守衛測試
 
@@ -247,6 +248,7 @@ COMPARE_DUMP=node_modules/.tmp/cmp npm run test:e2e -- e2e/compare.spec.ts
 - **理論進度的判準**：legacy 把「今天到期」的任務算進理論進度（`end <= 今天`，`Dashboard.html:3604-3620`）。新頁要到期日**隔天**才算（`end < 今天`），和總覽的 `taskPlanned`、「已延遲」的 `isLate` 同一個定義（都呼叫 `lib/schedule.ts` 的 `isPlannedDone`，改規則只改那裡），兩頁同一個專案的理論 % 才會一致（user 決定）。對照測試只遮掉摘要卡的差距標籤、理論的 N / 總數與理論 %（`e2e/helpers/compare.ts` 的 `maskPlan`），其餘照比。
 - **甘特列的快捷鈕**：legacy 滑鼠移到任務列上會撐開「▲ ▼ ⇄ ✕」並省掉日期的年份；新頁改成列尾一直顯示的「⋮」，動作收在它開的選單（user 決定：只想標記任務時快捷鈕很干擾，▲ ▼ 也看不出是工期 ±1 天）。對照測試比文字時兩邊都拿掉列尾動作字與年份（`e2e/helpers/compare.ts` 的 `maskActs`），情境 8 的相依 / 刪除各走各的路（`compare.spec.ts` 的 `rowAction`）；點任務列的位置改在名稱區 x=70（`ROW_NAME_POS`）。
 - **頂欄放不下時改兩列**：篩選器在標題與右端之間一行放不下時（預設篩選約 1470px 以下；啟用日期範圍、專案名稱較長時門檻更高），新頁把篩選器整排移到滿寬的第二列、靠左排，標籤和它的下拉一定在同一行（`TopBar` 的 `measureFit` 量實際寬度切 `.stacked`）。legacy 是篩選器擠在中間自己換成兩行，標籤和下拉會被拆開（user 回報 15.6 吋筆電常見的 1200～1470px 排版怪異）。兩邊頂欄高度因此不同（1440 時差 2px），對照測試的看板欄 y 與整頁高改從頂欄底部量起（`e2e/helpers/compare.ts` 的 `geoSnapshot`），頂欄以下的幾何照樣 ±1px。兩列時日期日曆也不同：legacy 一律對齊篩選器右緣，篩選器滿寬時會離日期膠囊很遠；新頁改以日期那一組為基準、左緣對齊「日期」（user 決定），日曆在 DOM 裡也移進日期那一組（legacy 在「清除篩選」之後）。對照測試都在日曆關上之後才擷取，不受影響。
+- **頂欄與面板的浮層**：legacy 的篩選下拉、成員面板、日期日曆、排序選單關閉時瞬間消失，新頁有離場淡出（批次 D 的 `pop`）；legacy 的日曆遮罩被 `.top-bar` 的 transform 限制成只蓋頂欄，會吃掉頂欄其他控制項的第一下點擊，新頁拿掉遮罩、點外面照常關（點擊照常送達），點另一顆日期膠囊只切換要填的端點、日曆不關；頂欄一行時下拉與成員面板右緣對齊往左展開（legacy 一律 `left: 0`，勾選讓觸發鈕變寬時選單跟著移）；排序選單開著時固定在打開時的位置（legacy 跟著觸發鈕跑）；一行時篩選項變寬整排平滑滑動、排序 chip 原地展開收起（legacy 一幀跳）。對照測試在 settle 之後才擷取，`[data-dd]` 序列不變。
 - **成員拖曳指派**：legacy 可以把成員篩選面板的列拖到甘特條或任務卡上指派，新頁移除了這個功能（user 決定；平板無法可靠支援原生拖放），指派一律在詳細視窗的「＋指派」。對照測試不比這個。
 - **相依編輯器的位置**：legacy 一直垂直置中，增刪前置 / 後續任務時上下兩端一起跳；新頁打開時置中、之後上緣固定，只往下長（user 決定）。對照測試只比寬高，不受影響。
 - **文字之間的空白**：兩頁的文字節點切法不同（legacy 把每個 `{{ }}` 包成一層元素、元素之間留著模板縮排的空白節點），比對前會把文字裡的空白全部去掉。字級與間距的差異改由幾何量測把關。
@@ -300,7 +302,7 @@ store 分三層，依賴**只能由上往下**：
 
 執行期的元素定位不走這裡：需要量測或命中判定的元素由元件自己登錄進 `composables/useDomRegistry.ts` 的登錄表（`rows` / `groups` / `bars` / `linkDots` / `cards` / `cols` / `issueRows` / `panels`），`usePointerDrag`、面板捲動與捷徑都查那張表。`src/__tests__/no-query-selector.spec.ts` 守著這條：`src/**`（不含 `__tests__`）不得出現 `querySelector` / `querySelectorAll` / `getElementById` / `elementFromPoint`。
 
-**唯一例外**：`composables/useClickOutside.ts`。它做的是「這一下點在哪」的 hit-test，對象是任意祖先而不是某個登錄過的元素，所以仍用 `Element.closest`——`KEEP_SELECTION`（`[data-card],[data-taskid],[data-rowtask],[data-rowgroup],[data-issuerow],[data-dd],[data-errorbar],input,textarea,select,label` 逐字取自 legacy，另加新頁的 `[data-keep-selection]`）與 `KEEP_POPUP`（`[data-dd],[data-errorbar]`）。改動這些屬性名會弄壞「點外面清選取 / 關浮層」，不是只有測試變紅。它也是 `no-query-selector.spec.ts` 的白名單唯一一筆。
+**唯一例外**：`composables/useClickOutside.ts`。它做的是「這一下點在哪」的 hit-test，對象是任意祖先而不是某個登錄過的元素，所以仍用 `Element.closest`——`KEEP_SELECTION`（`[data-card],[data-taskid],[data-rowtask],[data-rowgroup],[data-issuerow],[data-dd],[data-errorbar],input,textarea,select,label` 逐字取自 legacy，另加新頁的 `[data-keep-selection]`）與 `KEEP_POPUP`（`[data-dd],[data-errorbar]` 取自 legacy，另加新頁的 `[data-keep-popup]`：日期膠囊——日曆拿掉遮罩後，點膠囊切換端點不該先關日曆再開；不用 `data-dd` 是因為 `compare.spec` 依 `[data-dd]` 的序列對照 legacy）。改動這些屬性名會弄壞「點外面清選取 / 關浮層」，不是只有測試變紅。它也是 `no-query-selector.spec.ts` 的白名單唯一一筆。
 
 **不進登錄表的元素**：開啟浮層的觸發元素（選項選單、兩種日期選擇器、列動作選單）記在 `composables/useMenus.ts` 模組層的 `menuAnchors`，給 `useCloseOnScroll` 判斷捲動有沒有把它帶走。它記的是「誰開了目前這個浮層」，不是常駐的畫面元素；而且登錄表在沒有 provider 時每次回一張新表，登錄進去會靜默失效。離開 Dashboard 時由 `DashboardView` 呼叫 `clearMenuAnchors()` 放掉。
 
@@ -319,6 +321,7 @@ store 分三層，依賴**只能由上往下**：
 | `data-zoom` | 甘特縮放滑桿 | `1` | ✓ |
 | `data-errorbar` | 錯誤條容器（同一元素帶 `role="alert"`） | 空值 | ✗ |
 | `data-keep-selection` | 只改怎麼看、點了不清選取的控制項（平板甘特左欄的展開鈕） | 空值 | ✗ |
+| `data-keep-popup` | 點了不關浮層的觸發元件（頂欄的日期膠囊：日曆開著時點它只切換要填的端點） | 空值 | ✗ |
 | `data-loadstate` / `data-load-error` | 載入中 / 失敗畫面的容器與錯誤訊息（Dashboard 與總覽共用 `LoadingState`） | 空值 | ✗ |
 | `data-selected` | 甘特任務列 / 任務卡 / Issue 卡 / 總覽時間軸的專案列 `.p-row` | `true` / `false` | ✗ |
 | `data-rel` | 任務卡 | `up` / `down` / `group` / 空 | ✗ |
