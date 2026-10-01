@@ -4,11 +4,35 @@ import OvEmpty from '@/components/overview/OvEmpty.vue'
 import OvPanel from '@/components/overview/OvPanel.vue'
 import OvSortControls from '@/components/overview/OvSortControls.vue'
 import PmLane from '@/components/overview/PmLane.vue'
-import { computed, ref, type ComponentPublicInstance } from 'vue'
+import { computed, onBeforeUnmount, ref, watch, type ComponentPublicInstance } from 'vue'
+import { holdHeight, releaseHeight } from '@/composables/heightTween'
+import { tokenMs } from '@/composables/motionTokens'
 import { useCollapseReenter } from '@/composables/useCollapseReenter'
 import { useOverviewStore } from '@/stores/overview'
 
 const overview = useOverviewStore()
+
+/**
+ * 空狀態只延後「有 → 空」：泳道先原地收完（--t-panel）才判定真的沒結果，
+ * 打出沒結果的字又馬上刪時看板不會整塊淡掉（C9：out-in 一開始離場就不能取消）。已經是空的（切檢視、初次掛載）立即顯示。
+ */
+const showEmpty = ref(overview.groups.length === 0)
+let emptyTimer: ReturnType<typeof setTimeout> | undefined
+watch(
+  () => overview.groups.length === 0,
+  (empty) => {
+    clearTimeout(emptyTimer)
+    if (!empty) showEmpty.value = false
+    else emptyTimer = setTimeout(() => (showEmpty.value = true), tokenMs('--t-panel'))
+  },
+)
+onBeforeUnmount(() => clearTimeout(emptyTimer))
+
+/**
+ * 看板 ↔ 空狀態交換時撐住面板高度的外框（T16）：舊的離場前把高度寫死，新的一插入（還透明）就從舊高度補間到新內容的高度，
+ * 面板底邊與頁高逐幀變，不會在換的那一幀一次跳。
+ */
+const stage = ref<HTMLElement | null>(null)
 
 /** 泳道清單（TransitionGroup）的根元素：同一位 PM 的泳道在收起途中又回來時，從當下的高度接續長回去。 */
 const boardRef = ref<ComponentPublicInstance | null>(null)
@@ -34,29 +58,40 @@ function leaving(el: Element): void {
     <template #head>
       <OvSortControls />
     </template>
-    <!-- 有欄 ↔ 空狀態之間淡入淡出（A17） -->
-    <Transition name="ov-fade" mode="out-in">
-      <!-- PM 泳道的進出與重排（A9）：原地收合 / 長出（ov-col，見 overview-motion.css） -->
-      <TransitionGroup
-        v-if="overview.groups.length"
-        ref="boardRef"
-        name="ov-col"
-        tag="div"
-        class="board"
-        @before-leave="leaving"
-        @enter="reenter.onEnter"
-        @vue:before-update="reenter.snapshot"
-      >
-        <div v-for="group in overview.groups" :key="group.pm.id" class="lane-wrap" :data-lane-wrap="group.pm.id">
-          <div class="lane-clip"><PmLane :group="group" /></div>
-        </div>
-      </TransitionGroup>
-      <OvEmpty v-else />
-    </Transition>
+    <!-- 有欄 ↔ 空狀態之間淡入淡出（A17）；stage 撐住交換時的高度（hook 只收一個參數，Vue 仍自己偵測過渡結束） -->
+    <div ref="stage" class="ov-stage">
+      <Transition name="ov-fade" mode="out-in" @before-leave="holdHeight(stage)" @enter="releaseHeight(stage)">
+        <!-- PM 泳道的進出與重排（A9）：原地收合 / 長出（ov-col，見 overview-motion.css） -->
+        <TransitionGroup
+          v-if="!showEmpty"
+          ref="boardRef"
+          name="ov-col"
+          tag="div"
+          class="board"
+          @before-leave="leaving"
+          @enter="reenter.onEnter"
+          @vue:before-update="reenter.snapshot"
+        >
+          <div v-for="group in overview.groups" :key="group.pm.id" class="lane-wrap" :data-lane-wrap="group.pm.id">
+            <div class="lane-clip"><PmLane :group="group" /></div>
+          </div>
+        </TransitionGroup>
+        <OvEmpty v-else />
+      </Transition>
+    </div>
   </OvPanel>
 </template>
 
 <style scoped>
+/*
+ * 交換用的外框（stage）。flow-root：子元素的上下 margin 不穿出去，撐住的高度與自然高度量的是同一個框（否則放開那一幀差一個 margin）。
+ * clip：從空狀態長回看板時，外框還矮、看板已經在淡入，不裁的話會畫到面板框外；clip 不建立捲動容器，裡面的 sticky 照常黏住。
+ */
+.ov-stage {
+  display: flow-root;
+  overflow: clip;
+}
+
 /*
  * 泳道由上往下排。position: relative 保留（無害）：泳道是原地收合、不釘位（卡片的 freezeLeave 以 .lane-body 為基準）；
  * 也是 PmLane 窄版切換的容器（@container board）。

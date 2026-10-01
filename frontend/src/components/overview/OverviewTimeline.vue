@@ -8,6 +8,8 @@ import OvEmpty from '@/components/overview/OvEmpty.vue'
 import OvPanel from '@/components/overview/OvPanel.vue'
 import OvSortControls from '@/components/overview/OvSortControls.vue'
 import TimelineGroup from '@/components/overview/TimelineGroup.vue'
+import { holdHeight, releaseHeight } from '@/composables/heightTween'
+import { tokenMs } from '@/composables/motionTokens'
 import { useCollapseReenter } from '@/composables/useCollapseReenter'
 import { useDragPan } from '@/composables/useDragPan'
 import { NARROW_QUERY, useMediaQuery } from '@/composables/useMediaQuery'
@@ -24,6 +26,27 @@ const DW = TIMELINE_DAY_W
 
 const range = computed(() => overview.range)
 const groups = computed(() => overview.groups)
+
+/**
+ * 空狀態只延後「有 → 空」：群組先原地收完（--t-panel）才判定真的沒結果，
+ * 打出沒結果的字又馬上刪時時間軸不會整塊淡掉（C9：out-in 一開始離場就不能取消）。已經是空的（切檢視、初次掛載）立即顯示。
+ */
+const showEmpty = ref(groups.value.length === 0)
+let emptyTimer: ReturnType<typeof setTimeout> | undefined
+watch(
+  () => groups.value.length === 0,
+  (empty) => {
+    clearTimeout(emptyTimer)
+    if (!empty) showEmpty.value = false
+    else emptyTimer = setTimeout(() => (showEmpty.value = true), tokenMs('--t-panel'))
+  },
+)
+
+/**
+ * 時間軸 ↔ 空狀態交換時撐住面板高度的外框（T16，同 CardBoard 的 stage）：舊的離場前把高度寫死，
+ * 新的一插入（還透明）就從舊高度補間到新內容的高度，面板底邊與頁高逐幀變。
+ */
+const stage = ref<HTMLElement | null>(null)
 
 /** 群組清單（TransitionGroup）的根元素：同一位 PM 的群組在收起途中又回來時，從當下的高度接續長回去。 */
 const groupsRef = ref<ComponentPublicInstance | null>(null)
@@ -186,6 +209,7 @@ watch(
 onBeforeUnmount(() => {
   stopToday()
   ro?.disconnect()
+  clearTimeout(emptyTimer)
 })
 </script>
 
@@ -205,93 +229,96 @@ onBeforeUnmount(() => {
       </button>
     </template>
 
-    <Transition name="ov-fade" mode="out-in">
-      <OvEmpty v-if="!groups.length" key="empty" class="tl-empty" />
-      <div v-else key="timeline" class="tl">
-        <!-- sticky 尺規：左欄標題 + 月份列 / 週刻度；在 isolated 的 .tl-chart 之外，速覽才蓋不到它 -->
-        <div class="tl-ruler-row">
-          <div class="tl-left-head">
-            PM / 專案
-            <span class="spacer"></span>
-            <span class="col-lbl c-pct">進度</span>
-            <span class="col-lbl c-gap">落後</span>
-          </div>
-          <div ref="ruler" class="tl-ruler">
-            <div class="tl-track">
-              <div class="tl-months">
-                <div
-                  v-for="m in range.months"
-                  :key="m.iso"
-                  class="tl-month"
-                  :style="{ '--md': m.days }"
-                >
-                  {{ m.iso }}
+    <!-- 時間軸 ↔ 空狀態之間淡入淡出（A17）；stage 撐住交換時的高度（hook 只收一個參數，Vue 仍自己偵測過渡結束） -->
+    <div ref="stage" class="ov-stage">
+      <Transition name="ov-fade" mode="out-in" @before-leave="holdHeight(stage)" @enter="releaseHeight(stage)">
+        <OvEmpty v-if="showEmpty" key="empty" class="tl-empty" />
+        <div v-else key="timeline" class="tl">
+          <!-- sticky 尺規：左欄標題 + 月份列 / 週刻度；在 isolated 的 .tl-chart 之外，速覽才蓋不到它 -->
+          <div class="tl-ruler-row">
+            <div class="tl-left-head">
+              PM / 專案
+              <span class="spacer"></span>
+              <span class="col-lbl c-pct">進度</span>
+              <span class="col-lbl c-gap">落後</span>
+            </div>
+            <div ref="ruler" class="tl-ruler">
+              <div class="tl-track">
+                <div class="tl-months">
+                  <div
+                    v-for="m in range.months"
+                    :key="m.iso"
+                    class="tl-month"
+                    :style="{ '--md': m.days }"
+                  >
+                    {{ m.iso }}
+                  </div>
                 </div>
-              </div>
-              <div class="tl-days">
-                <div v-for="x in weekTicks" :key="x.idx" class="tl-day" :style="{ '--d': x.d }">
-                  {{ x.dnum }}
+                <div class="tl-days">
+                  <div v-for="x in weekTicks" :key="x.idx" class="tl-day" :style="{ '--d': x.d }">
+                    {{ x.dnum }}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- 使用者自己捲 / 拖就停掉「今天」的補間 -->
-        <div
-          ref="body"
-          class="tl-body"
-          :class="{ panning: pan.panning.value }"
-          @scroll="onBodyScroll"
-          @pointerdown="onBodyPointerDown"
-          @wheel.passive="stopToday"
-          @touchstart.passive="stopToday"
-        >
-          <div class="tl-chart">
-            <div class="tl-bg" aria-hidden="true">
-              <i
-                v-for="x in bgDays"
-                :key="x.idx"
-                class="day-bg"
-                :class="{ mon: x.isMonday, today: x.isToday }"
-                :style="{ '--d': x.d }"
-              ></i>
-            </div>
-            <div class="today-line" :style="{ '--x': `${todayX}px` }"></div>
-            <div class="today-tag" :style="{ '--x': `${todayX}px` }">今天</div>
-
-            <!-- PM 群組的進出與重排（A20）：原地收合 / 長出（ov-group，見 overview-motion.css） -->
-            <TransitionGroup
-              ref="groupsRef"
-              name="ov-group"
-              tag="div"
-              class="tl-groups"
-              @before-leave="leaving"
-              @enter="reenter.onEnter"
-              @vue:before-update="reenter.snapshot"
-            >
-              <div v-for="g in groups" :key="g.pm.id" class="g-wrap" :data-g-wrap="g.pm.id">
-                <div class="g-wrap-clip">
-                  <TimelineGroup :group="g" :start-idx="range.startIdx" :dw="DW" />
-                </div>
+          <!-- 使用者自己捲 / 拖就停掉「今天」的補間 -->
+          <div
+            ref="body"
+            class="tl-body"
+            :class="{ panning: pan.panning.value }"
+            @scroll="onBodyScroll"
+            @pointerdown="onBodyPointerDown"
+            @wheel.passive="stopToday"
+            @touchstart.passive="stopToday"
+          >
+            <div class="tl-chart">
+              <div class="tl-bg" aria-hidden="true">
+                <i
+                  v-for="x in bgDays"
+                  :key="x.idx"
+                  class="day-bg"
+                  :class="{ mon: x.isMonday, today: x.isToday }"
+                  :style="{ '--d': x.d }"
+                ></i>
               </div>
-            </TransitionGroup>
+              <div class="today-line" :style="{ '--x': `${todayX}px` }"></div>
+              <div class="today-tag" :style="{ '--x': `${todayX}px` }">今天</div>
+
+              <!-- PM 群組的進出與重排（A20）：原地收合 / 長出（ov-group，見 overview-motion.css） -->
+              <TransitionGroup
+                ref="groupsRef"
+                name="ov-group"
+                tag="div"
+                class="tl-groups"
+                @before-leave="leaving"
+                @enter="reenter.onEnter"
+                @vue:before-update="reenter.snapshot"
+              >
+                <div v-for="g in groups" :key="g.pm.id" class="g-wrap" :data-g-wrap="g.pm.id">
+                  <div class="g-wrap-clip">
+                    <TimelineGroup :group="g" :start-idx="range.startIdx" :dw="DW" />
+                  </div>
+                </div>
+              </TransitionGroup>
+            </div>
+          </div>
+
+          <!-- 畫布專用的橫捲軸：從左欄右緣開始，內容寬 = 畫布寬，捲動範圍與 .tl-body 相同 -->
+          <div
+            ref="hbar"
+            class="tl-hbar"
+            @scroll="onBarScroll"
+            @pointerdown="stopToday"
+            @wheel.passive="stopToday"
+            @touchstart.passive="stopToday"
+          >
+            <div class="tl-hbar-track"></div>
           </div>
         </div>
-
-        <!-- 畫布專用的橫捲軸：從左欄右緣開始，內容寬 = 畫布寬，捲動範圍與 .tl-body 相同 -->
-        <div
-          ref="hbar"
-          class="tl-hbar"
-          @scroll="onBarScroll"
-          @pointerdown="stopToday"
-          @wheel.passive="stopToday"
-          @touchstart.passive="stopToday"
-        >
-          <div class="tl-hbar-track"></div>
-        </div>
-      </div>
-    </Transition>
+      </Transition>
+    </div>
   </OvPanel>
 </template>
 
@@ -324,6 +351,12 @@ onBeforeUnmount(() => {
 .today-btn:focus-visible {
   outline: none;
   box-shadow: var(--ring-focus);
+}
+
+/* 交換用的外框：flow-root 讓空狀態的 margin 算在框內、clip 不讓長回時的時間軸畫到面板框外（理由同 CardBoard 的 .ov-stage） */
+.ov-stage {
+  display: flow-root;
+  overflow: clip;
 }
 
 .tl-empty {

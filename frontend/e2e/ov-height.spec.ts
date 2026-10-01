@@ -1,5 +1,18 @@
 import { expect, test } from '@playwright/test'
-import { endSnap, gotoOverview, jumpCount, series, trace, type Trace } from './helpers/ovMotion'
+import {
+  endSnap,
+  gotoOverview,
+  idle,
+  jumpCount,
+  pause,
+  reverses,
+  scrollSeries,
+  series,
+  settledFor,
+  speedJumps,
+  trace,
+  type Trace,
+} from './helpers/ovMotion'
 
 /** 容器高度的連續性（動畫稽核 R2：C1 泳道層、T16、C9、C6 / T11、M10）。 */
 test.use({ viewport: { width: 1920, height: 1080 } })
@@ -40,5 +53,133 @@ test.describe('一欄寬（泳道內卡片一列一張）', () => {
       .map((f) => (f.boxes.app!.y + f.boxes.app!.h - (f.boxes.lane!.y + f.boxes.lane!.h)) / f.boxes.app!.h)
     expect(out.length, '有量到離場中的 app').toBeGreaterThan(0)
     expect(Math.max(...out), '實心的離場卡超出泳道框的比例（卡片高度為 1）').toBeLessThan(0.5)
+  })
+})
+
+/** 起點與終點之間（各留 2px）的幀數：一幀從起點跳到終點時是 0；長幀被 jumpCount 略過時靠這個抓。 */
+const between = (pts: { v: number }[]): number => {
+  const a = pts[0]!.v
+  const z = pts[pts.length - 1]!.v
+  return pts.filter((p) => p.v > Math.min(a, z) + 2 && p.v < Math.max(a, z) - 2).length
+}
+
+test.describe('空狀態與切檢視（C9、T16、C6 / T11、M10）', () => {
+  test('打出沒結果的字又馬上刪：看板透明度全程 ≥ 0.95、空狀態從沒出現（C9）', async ({ page }) => {
+    // 資料前提：「v1」只剩 m9 的 vendor，「v12」沒有結果
+    await gotoOverview(page)
+    const search = page.getByTestId('overview-search')
+    await search.fill('v1')
+    await idle(page)
+    await expect(page.locator(`${P} [data-lane-wrap]`)).toHaveCount(1)
+    await search.focus()
+    const tr = await trace(page, { board: `${P} .board`, empty: '[data-testid="overview-empty"]' }, async () => {
+      await page.keyboard.type('2')
+      await pause(page, 80)
+      await page.keyboard.press('Backspace')
+    })
+    await expect(search).toHaveValue('v1')
+    // 看板是 ov-fade 過渡的根元素，它自己的 opacity 就是整塊淡出的進度
+    expect(tr.frames.every((f) => f.boxes.board !== null && f.boxes.board.o >= 0.95), '看板一直在、沒淡掉').toBe(true)
+    expect(tr.frames.some((f) => f.boxes.empty !== null), '空狀態出現過').toBe(false)
+  })
+
+  test('已經沒有結果時切檢視：新檢視一掛上就是空狀態（不延後）', async ({ page }) => {
+    await gotoOverview(page)
+    await page.getByTestId('overview-search').fill('zzzz')
+    await idle(page)
+    const tr = await trace(
+      page,
+      { board: '[data-view-panel="timeline"] .tl', empty: '[data-view-panel="timeline"] [data-testid="overview-empty"]' },
+      () => page.locator('[data-view-switch="timeline"]').click(),
+    )
+    expect(tr.frames.some((f) => f.boxes.board !== null), '先閃出時間軸本體').toBe(false)
+    expect(tr.frames.some((f) => f.boxes.empty !== null)).toBe(true)
+  })
+
+  for (const v of [
+    { name: '卡片', hash: '', panel: P },
+    { name: '時間軸', hash: '#timeline', panel: '[data-view-panel="timeline"]' },
+  ]) {
+    test(`${v.name} ↔ 空狀態兩個方向：面板底邊平順、結尾不跳（T16 / Design M1）`, async ({ page }) => {
+      await gotoOverview(page, v.hash)
+      const search = page.getByTestId('overview-search')
+      const out = await trace(page, { panel: v.panel }, () => search.fill('zzzz'), { ms: 1200 })
+      await expect(page.locator(`${v.panel} [data-testid="overview-empty"]`)).toBeVisible()
+      const b1 = bottoms(out, 'panel')
+      expect(b1[0]!.v - b1[b1.length - 1]!.v, '面板確實變矮（有鑑別力）').toBeGreaterThan(100)
+      // 一幀塌掉時沒有任何一幀停在中間高度（那一幀常是長幀，jumpCount 會略過）
+      expect(between(b1), '進空狀態：逐幀經過中間高度').toBeGreaterThanOrEqual(3)
+      expect(jumpCount(b1), '進空狀態').toBe(0)
+      expect(endSnap(b1.map((p) => p.v)), '進空狀態：結尾跳').toBe(false)
+      await idle(page)
+
+      const back = await trace(page, { panel: v.panel }, () => search.fill(''), { ms: 1200 })
+      const b2 = bottoms(back, 'panel')
+      expect(b2[b2.length - 1]!.v - b2[0]!.v, '面板確實變高（有鑑別力）').toBeGreaterThan(100)
+      expect(between(b2), '回到有內容：逐幀經過中間高度').toBeGreaterThanOrEqual(3)
+      expect(jumpCount(b2), '回到有內容').toBe(0)
+      expect(endSnap(b2.map((p) => p.v)), '回到有內容：結尾跳').toBe(false)
+    })
+  }
+
+  test('時間軸淡入到一半又切回卡片：透明度從當下往回，不先跳實心（M10）', async ({ page }) => {
+    await gotoOverview(page)
+    let switched = false
+    const tr = await trace(
+      page,
+      { tl: '[data-view-panel="timeline"]' },
+      async () => {
+        await page.locator('[data-view-switch="timeline"]').click()
+        // 時間軸淡入到一半時，在同一幀點回卡片：Playwright 的 click 要好幾趟往返，等它點到時可能已經淡完。
+        // 時間軸面板是 ov-view 過渡的根元素，它自己的 opacity 就是淡入進度
+        switched = await page.evaluate(
+          () =>
+            new Promise<boolean>((resolve) => {
+              const t0 = performance.now()
+              const tick = (): void => {
+                const el = document.querySelector('[data-view-panel="timeline"]')
+                const o = el ? parseFloat(getComputedStyle(el).opacity) : 0
+                if (o > 0.25 && o < 0.55) {
+                  document.querySelector<HTMLElement>('[data-view-switch="cards"]')!.click()
+                  resolve(true)
+                } else if (performance.now() - t0 > 2000) resolve(false)
+                else requestAnimationFrame(tick)
+              }
+              tick()
+            }),
+        )
+      },
+      { ms: 1000 },
+    )
+    expect(switched, '在淡入途中點到卡片').toBe(true)
+    const os = series(tr, 'tl').map((b) => b.o)
+    const peak = Math.max(...os)
+    const at = os.indexOf(peak)
+    expect(peak, '沒有先跳成實心').toBeLessThan(0.98)
+    expect(os.slice(at).every((o, i, a) => i === 0 || o <= a[i - 1]! + 0.02), '最亮之後一路往下').toBe(true)
+    await expect(page.locator(P)).toBeVisible()
+  })
+
+  test.describe('平板橫向 1024×768 觸控', () => {
+    test.use({ viewport: { width: 1024, height: 768 }, hasTouch: true, isMobile: true })
+
+    test('捲到底切到時間軸：捲動速度連續、不反向、結束後不再跳；新檢視可見期間不瞬移（C6 / T11）', async ({ page }) => {
+      await gotoOverview(page)
+      await page.evaluate(() => scrollTo(0, 99999))
+      await idle(page)
+      const tr = await trace(page, { tl: '[data-view-panel="timeline"]' }, () => page.locator('[data-view-switch="timeline"]').tap(), {
+        ms: 1500,
+      })
+      const sy = scrollSeries(tr, tr.at)
+      expect(sy[0]!.v - sy[sy.length - 1]!.v, '時間軸比卡片矮、捲動被往上夾（有鑑別力）').toBeGreaterThan(50)
+      expect(speedJumps(sy), '捲動速度跳').toBe(0)
+      expect(reverses(sy.map((p) => p.v)), '捲動反向').toBe(false)
+      expect(settledFor(sy, 150), '結束後不再變').toBe(true)
+      // 從新檢視插入那一刻量整段（它跟著被夾的捲動移動）：只取看得見的幀的話，第一筆的前一幀速度被當成 0，
+      // 正在移動中的起點一定被判成速度突變。修正前捲動在插入時一幀跳 110px，整段量照樣會紅
+      const tl = series(tr, 'tl')
+      expect(tl.filter((b) => b.o > 0.05).length, '有量到可見期間的時間軸').toBeGreaterThan(3)
+      expect(speedJumps(tl.map((b) => ({ t: b.t, v: b.y }))), '新檢視插入後瞬移').toBe(0)
+    })
   })
 })

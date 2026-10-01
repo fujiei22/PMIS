@@ -6,6 +6,7 @@ import LoadingState from '@/components/common/LoadingState.vue'
 import CardBoard from '@/components/overview/CardBoard.vue'
 import OverviewTimeline from '@/components/overview/OverviewTimeline.vue'
 import OverviewTopBar from '@/components/overview/OverviewTopBar.vue'
+import { holdHeight, releaseHeight } from '@/composables/heightTween'
 import { useNow } from '@/composables/useNow'
 import { usePortfolioBoot } from '@/composables/usePortfolioBoot'
 import { useOverviewStore } from '@/stores/overview'
@@ -43,15 +44,26 @@ onMounted(() => {
 onBeforeUnmount(() => ro?.disconnect())
 
 /**
- * out-in 切換時，舊檢視已拿掉、新的還沒掛上，這段時間頁面高度會塌掉，
- * 捲動位置被夾回頂端。離場前先把欄高撐住，進場完成再放開。
+ * 切檢視 / 載入完成（ov-view，out-in）：舊檢視拿掉、新的還沒掛上時頁面高度會塌掉、捲動位置被夾回頂端，
+ * 所以離場前先把欄高寫死（heightTween）。
  */
-function holdHeight(): void {
-  const el = column.value
-  if (el) el.style.minHeight = `${el.offsetHeight}px`
+function onViewLeave(): void {
+  holdHeight(column.value)
 }
-function releaseHeight(): void {
-  if (column.value) column.value.style.minHeight = ''
+
+/**
+ * 新檢視剛插入、還透明時：
+ * - 放開欄高，從舊高度補間到新檢視的高度。不等 @after-enter：等進場跑完才放開的話，捲得深時新檢視在視窗外淡入、
+ *   結束那一幀捲動被夾而整頁跳（C6 / T11）；一插入就補間，頁高逐幀變、被夾的捲動也逐幀連續（Design M3）。
+ * - 淡入立刻起步：ov-view 改用 transition（淡入中反悔可反向，M10）後，照 Vue 要等兩幀才拿掉 enter-from，
+ *   新檢視多停兩幀全透明，這段時間 document.getAnimations() 也看不到它（e2e 等動畫跑完的判斷會提早放行）。
+ *   先以 enter-from 算一次樣式當起點、再拿掉它，過渡當下就開始，起步時間同原本的 keyframes；之後 Vue 再拿是空操作。
+ * 只收一個參數：Vue 仍自己偵測過渡結束。
+ */
+function onViewEnter(el: Element): void {
+  releaseHeight(column.value)
+  void (el as HTMLElement).offsetHeight
+  el.classList.remove('ov-view-enter-from')
 }
 </script>
 
@@ -60,13 +72,8 @@ function releaseHeight(): void {
     <OverviewTopBar ref="topBar" />
     <main class="content">
       <div ref="column" class="column">
-        <!-- 載入完成換成內容（A18）、卡片 ↔ 時間軸（A10）共用同一個過渡 -->
-        <Transition
-          name="ov-view"
-          mode="out-in"
-          @before-leave="holdHeight"
-          @after-enter="releaseHeight"
-        >
+        <!-- 載入完成換成內容（A18）、卡片 ↔ 時間軸（A10）共用同一個過渡；欄高的撐住與放開見 onViewLeave / onViewEnter -->
+        <Transition name="ov-view" mode="out-in" @before-leave="onViewLeave" @enter="onViewEnter">
           <LoadingState
             v-if="ov.loadState !== 'ready'"
             key="loading"

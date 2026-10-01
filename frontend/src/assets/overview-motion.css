@@ -9,13 +9,16 @@
 .ov-fade-enter-active, .ov-fade-leave-active { transition: opacity var(--t-base) var(--ease); }
 .ov-fade-enter-from, .ov-fade-leave-to { opacity: 0; }
 
-/* 總覽內的檢視切換與載入完成（A10 / A18）：新的淡入並上移 4px，舊的淡出。切頁過渡（A29）在 base.css 的 page-view */
-@keyframes ovViewIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: none; }
-}
-.ov-view-enter-active { animation: ovViewIn var(--t-panel) var(--ease); }
-.ov-view-leave-active { animation: fadeOut var(--t-fast) var(--ease); }
+/*
+ * 總覽內的檢視切換與載入完成（A10 / A18）：新的淡入並上移 4px，舊的淡出。切頁過渡（A29）在 base.css 的 page-view。
+ * 用 transition 不用 keyframes：新檢視淡入到一半又切回時，離場從當下的透明度往回（keyframes 會從全亮重播，M10）；
+ * 離場也列 transform，淡入途中的上移跟著收完，不一幀跳回原位。
+ * 舊檢視還在淡出（--t-fast）時切回原檢視是 Vue out-in 的限制：離場開始後不能取消，要等它淡完、再重新淡入。
+ */
+.ov-view-enter-active { transition: opacity var(--t-panel) var(--ease), transform var(--t-panel) var(--ease); }
+.ov-view-enter-from { opacity: 0; transform: translateY(4px); }
+.ov-view-leave-active { transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease); }
+.ov-view-leave-to { opacity: 0; }
 
 /* 卡片、欄、時間軸群組與列：進出與重排（A7 / A8 / A9 / A20） */
 .ov-card-move, .ov-col-move, .ov-row-move, .ov-group-move { transition: transform var(--t-panel) var(--ease); }
