@@ -21,6 +21,11 @@ const props = defineProps<{
   cols: number
 }>()
 
+const emit = defineEmits<{
+  /** 抽屜實際展開在哪張卡下方（高度 1fr）；收起、收合途中是 null。卡片下緣的箭頭跟著它長出收起。 */
+  'open-id': [id: string | null]
+}>()
+
 const overview = useOverviewStore()
 
 interface Slot {
@@ -44,6 +49,10 @@ const shown = ref<Slot | null>(target.value)
 const visible = ref(target.value !== null)
 /** 高度是否已展開（1fr）。 */
 const grown = ref(target.value !== null)
+
+// 箭頭跟著抽屜「實際」展開的卡，不跟選取：換列時要等舊抽屜收完才到新的一列展開，store 早就切到新卡了（動畫稽核 C11）。
+// 和切 1fr 在同一次更新裡送出，箭頭與抽屜高度從同一幀開始過渡
+watch([shown, grown], () => emit('open-id', grown.value ? (shown.value?.row.p.id ?? null) : null), { immediate: true })
 
 const root = ref<HTMLElement | null>(null)
 let timer: ReturnType<typeof setTimeout> | undefined

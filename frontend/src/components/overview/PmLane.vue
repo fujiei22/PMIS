@@ -33,6 +33,13 @@ const laneIds = computed(() => props.group.rows.map((r) => r.p.id))
 
 // 時間軸可以同時展開多張：切回卡片（或篩選讓別的卡進到這條泳道）時，只留最後展開的那張
 watch(laneIds, (ids) => overview.keepLastExpandedInLane(ids), { immediate: true })
+
+/**
+ * 抽屜實際展開在哪張卡下方（LaneDrawer 回報）；那張卡畫指向抽屜的箭頭。換列時和選取不同步，所以不直接用 isExpanded。
+ * 初值同 LaneDrawer 掛載時的狀態（展開中的那張一掛上就是全開）：等它回報會晚一次更新，
+ * 切回卡片檢視、從 Dashboard 返回時箭頭會在已經全開的抽屜上方重新淡入。
+ */
+const openId = ref<string | null>(props.group.rows.find((r) => overview.isExpanded(r.p.id))?.p.id ?? null)
 </script>
 
 <template>
@@ -60,9 +67,16 @@ watch(laneIds, (ids) => overview.keepLastExpandedInLane(ids), { immediate: true 
         :key="row.p.id"
         :row="row"
         :lane-ids="laneIds"
+        :arrow="openId === row.p.id"
         :style="{ order: i * 2 }"
       />
-      <LaneDrawer key="lane-drawer" :pm-id="group.pm.id" :rows="group.rows" :cols="cols" />
+      <LaneDrawer
+        key="lane-drawer"
+        :pm-id="group.pm.id"
+        :rows="group.rows"
+        :cols="cols"
+        @open-id="openId = $event"
+      />
     </TransitionGroup>
   </div>
 </template>

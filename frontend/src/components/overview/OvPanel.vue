@@ -39,20 +39,21 @@ function toggle(): void {
 
 /**
  * 展開「而且」grid-template-rows 過渡跑完，才放行 overflow。
- * 過渡中必須 hidden，內容才會被裁成動畫高度；展開後必須 visible，
- * 否則裡面的 sticky 欄首與尺規會以 clip 層為捲動祖先而失效（PanelShell 同理）。
+ * 過渡中要裁切，內容才會被裁成動畫高度。用 clip 不用 hidden：hidden 會讓 .panel-clip 成為捲動容器，
+ * 黏住的泳道標頭、時間軸尺規改以它為基準，收合第一幀就彈回原位（動畫稽核 C7 B）；clip 一樣裁切，但不建立捲動容器。
+ * 展開跑完照舊放行 visible，不裁切展開後的內容。
  */
 const settled = ref(true)
 let settleTimer: ReturnType<typeof setTimeout> | undefined
 watch(open, () => {
   settled.value = false
   clearTimeout(settleTimer)
-  // 保險：transitionend 沒來（例如使用者關閉動畫）時，時間到也當作跑完，免得卡在 hidden
+  // 保險：transitionend 沒來（例如使用者關閉動畫）時，時間到也當作跑完，免得一直裁切
   settleTimer = setTimeout(() => {
     settled.value = true
   }, PANEL_UNMOUNT_MS)
 })
-const clipOverflow = computed(() => (open.value && settled.value ? 'visible' : 'hidden'))
+const clipOverflow = computed(() => (open.value && settled.value ? 'visible' : 'clip'))
 
 function onBodyTransitionEnd(e: TransitionEvent): void {
   // 內層的速覽也用 grid-template-rows 過渡，事件會冒泡上來；只認 .panel-body 自己的

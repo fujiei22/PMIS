@@ -3,7 +3,8 @@
 // 卡片拆成兩個並排的點擊區：左邊主體 .card-main 點了展開速覽，右緣直條點了進入 Dashboard；
 // 兩者是兄弟元素，不再把連結包在 role="button" 裡（巢狀互動元素，報讀與鍵盤事件都會互相干擾）。
 // 卡片本身不換底色與框色：狀態只看右上角 pill 與進度條色，整頁顏色才不會太雜（user 決定）。
-// 速覽不在卡片裡：是泳道裡插在這張卡所在列下方的抽屜（LaneDrawer，每條泳道一個），展開時卡片大小不變，只換外框並加一個指向抽屜的箭頭。
+// 速覽不在卡片裡：是泳道裡插在這張卡所在列下方的抽屜（LaneDrawer，每條泳道一個），展開時卡片大小不變，只換外框；
+// 指向抽屜的箭頭跟著抽屜實際展開的狀態（prop arrow）長出收起，不跟選取。
 import { computed } from 'vue'
 import EnterLink from '@/components/overview/EnterLink.vue'
 import PlanActualBar from '@/components/overview/PlanActualBar.vue'
@@ -16,6 +17,8 @@ const props = defineProps<{
   row: ProjectRow
   /** 同一條泳道的專案 id：展開這張時收起其他張（每條泳道只展開一張）。 */
   laneIds: readonly string[]
+  /** 抽屜實際展開在這張卡下方：畫指向抽屜的箭頭。 */
+  arrow?: boolean
 }>()
 
 const overview = useOverviewStore()
@@ -40,7 +43,7 @@ function onKey(e: KeyboardEvent): void {
 <template>
   <article
     class="card"
-    :class="{ 'is-open': open }"
+    :class="{ 'is-open': open, 'arrow-on': arrow }"
     :data-project="p.id"
   >
     <div
@@ -137,8 +140,12 @@ function onKey(e: KeyboardEvent): void {
   }
 }
 
-/* 展開中：卡片下緣中央的箭頭指向下方的速覽抽屜（LaneDrawer），和抽屜框同為 PM 色 */
-.card.is-open::after {
+/*
+ * 卡片下緣中央的箭頭指向下方的速覽抽屜（LaneDrawer），和抽屜框同為 PM 色。
+ * 常駐、平時透明：抽屜實際展開在這張卡下方（.arrow-on）時才長出來。時長曲線同抽屜的 grid-template-rows，
+ * 兩者同一幀開始、一起長出一起收起；從貼著抽屜的下緣往上長（transform-origin 在底邊）。
+ */
+.card::after {
   content: '';
   position: absolute;
   left: 50%;
@@ -147,6 +154,17 @@ function onKey(e: KeyboardEvent): void {
   border: var(--sp-5) solid transparent;
   border-bottom-color: var(--pm-frame);
   pointer-events: none;
+  opacity: 0;
+  transform: scaleY(0.4);
+  transform-origin: 50% 100%;
+  transition:
+    opacity var(--t-panel) var(--ease),
+    transform var(--t-panel) var(--ease);
+}
+
+.card.arrow-on::after {
+  opacity: 1;
+  transform: none;
 }
 
 /*
