@@ -217,3 +217,104 @@ test('排序位移途中被篩掉的卡：照常淡出、相對泳道原地不�
   expect(d, '離場後有樣本').not.toBeNaN()
   expect(d, '離場後相對泳道的位移').toBeLessThanOrEqual(4)
 })
+
+/*
+ * 淡入中被移除（spec 成功條件「進場中的元素 opacity 不跳到 1」的離場面）：Vue 取消進場、拿掉 *-enter-active 之後，
+ * 先呼叫 @before-leave（freezeLeave）才加 *-leave-active。freezeLeave 量版面逼瀏覽器重算樣式，這時元素自己的
+ * transition 清單沒有 opacity / transform，進行中的淡入與放大被取消：透明度當幀跳回 1、尺寸跳回原大，再從實心淡出。
+ */
+
+/**
+ * 從移除那一刻（t2，頁面裡和觸發同一個 task 取）起的逐幀樣本（含移除前最後一幀）；先確認情境成立：移除時正在淡入、最後離場。
+ * 呼叫端量「透明度從當下接續，不先跳回實心」：Vue 下一幀才加 *-leave-to，移除後一兩幀還會照進場的曲線多亮一點，
+ * 之後才反向淡出——所以不量「只降不升」，量沒有單幀跳、最亮不到實心。修正前移除後的第一幀透明度就是 1。
+ */
+function sinceRemoval(tr: Trace, name: string, t2: number): (Box & { t: number; dt: number })[] {
+  const s = series(tr, name, t2)
+  const at = s[0]
+  expect(at && at.t < t2, `${name} 移除前有樣本`).toBe(true)
+  expect(at!.o, `${name} 移除時正在淡入`).toBeGreaterThan(0.05)
+  expect(at!.o, `${name} 移除時還沒淡入完`).toBeLessThan(0.8)
+  expect(tr.frames.at(-1)!.boxes[name], `${name} 最後離場`).toBeNull()
+  expect(s.length, `${name} 移除後有樣本`).toBeGreaterThan(5)
+  return s
+}
+
+test('淡入中的卡被篩掉：透明度與縮放從當下接續淡出，不先跳回實心', async ({ page }) => {
+  await gotoOverview(page)
+  await page.getByTestId('overview-search').fill('p')
+  await idle(page)
+  // 「p」剩 m5 pmis、m8 app；清除後 portal 在 m8 泳道淡入，100ms 後篩「a」只剩 app：淡入中的 portal 被篩掉（m8 泳道留著）
+  let t2 = 0
+  const tr = await trace(page, { portal: '[data-view-panel="cards"] [data-project="portal"]' }, async () => {
+    t2 = await page.evaluate(
+      () =>
+        new Promise<number>((resolve) => {
+          ;(document.querySelector('[data-testid="overview-clear"]') as HTMLElement).click()
+          setTimeout(() => {
+            const input = document.querySelector('[data-testid="overview-search"]') as HTMLInputElement
+            input.value = 'a'
+            input.dispatchEvent(new Event('input', { bubbles: true }))
+            resolve(performance.now() - (window as unknown as TraceWindow).__ovTrace.t0)
+          }, 100)
+        }),
+    )
+  })
+  const s = sinceRemoval(tr, 'portal', t2)
+  expect(Math.max(...s.map((b) => b.o)), '移除後最亮').toBeLessThan(0.95)
+  expect(opacityJumps(s), '透明度單幀跳').toBe(false)
+  // 進場的放大也接續（修正前寬度當幀長約 10px 回原尺寸）。卡片的重排不走內建 move，離場的卡不會被 Vue 再加位移
+  expect(jumpCount(s.map((b) => ({ dt: b.dt, v: b.w }))), '縮放單幀跳').toBe(0)
+})
+
+test('加一層排序 80ms 內清除排序：淡入中的 chip 從當下接續淡出，不先跳回實心', async ({ page }) => {
+  await gotoOverview(page)
+  const P = '[data-view-panel="cards"]'
+  await page.locator(`${P} .sort-trigger`).click()
+  await idle(page)
+  // 預設兩層；加「專案開始日」成第三個 chip 淡入，80ms 後清除排序回預設：淡入中的第三個 chip 離場
+  // 不量縮放：chip / 頭像走內建 move，釘位的整數 offset 與實際寬度差零點幾 px，Vue 就對離場的 chip 加一段位移、蓋掉進場的放大（已知限制）
+  const n = await page.locator(`${P} .sorts > *`).count()
+  let t2 = 0
+  const tr = await trace(page, { chip: `${P} .sorts > :nth-child(${n + 1})` }, async () => {
+    t2 = await page.evaluate(
+      (P) =>
+        new Promise<number>((resolve) => {
+          const opts = [...document.querySelectorAll<HTMLElement>(`${P} .sort-option`)]
+          opts.find((b) => b.textContent?.includes('專案開始日'))!.click()
+          setTimeout(() => {
+            ;(document.querySelector(`${P} .sort-clear`) as HTMLElement).click()
+            resolve(performance.now() - (window as unknown as TraceWindow).__ovTrace.t0)
+          }, 80)
+        }),
+      P,
+    )
+  })
+  const s = sinceRemoval(tr, 'chip', t2)
+  expect(Math.max(...s.map((b) => b.o)), '移除後最亮').toBeLessThan(0.95)
+  expect(opacityJumps(s), '透明度單幀跳').toBe(false)
+})
+
+test('80ms 內勾了又取消成員：淡入中的頭像從當下接續淡出，不先跳回實心', async ({ page }) => {
+  await gotoOverview(page)
+  await page.locator('[data-ov-dd="pm"] button.dd-trigger').click()
+  await idle(page)
+  // 勾 m10：頭像疊只剩 m10（淡入）；80ms 後取消：回到前三位，淡入中的 m10 頭像離場
+  let t2 = 0
+  const tr = await trace(page, { av: '[data-ov-dd="pm"] .mp-stack > [title="成員10"]' }, async () => {
+    t2 = await page.evaluate(
+      () =>
+        new Promise<number>((resolve) => {
+          const opt = (): HTMLElement => document.querySelector('[data-ov-dd="pm"] [data-pm-option="m10"]') as HTMLElement
+          opt().click()
+          setTimeout(() => {
+            opt().click()
+            resolve(performance.now() - (window as unknown as TraceWindow).__ovTrace.t0)
+          }, 80)
+        }),
+    )
+  })
+  const s = sinceRemoval(tr, 'av', t2)
+  expect(Math.max(...s.map((b) => b.o)), '移除後最亮').toBeLessThan(0.95)
+  expect(opacityJumps(s), '透明度單幀跳').toBe(false)
+})

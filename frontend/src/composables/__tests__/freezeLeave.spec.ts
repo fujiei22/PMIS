@@ -92,6 +92,54 @@ describe('freezeLeave', () => {
     el.remove()
   })
 
+  it('淡入中被移除：每一次讀版面與動畫時，inline transition 都已列出全部屬性，讀完清掉', async () => {
+    const parent = document.createElement('div')
+    const kids = [0, 1].map(() => parent.appendChild(document.createElement('div')))
+    // 記下每次讀的當下元素的 inline transition：讀版面 / 動畫會逼瀏覽器重算樣式，清單沒列到的進行中過渡就被取消
+    const seen: string[] = []
+    for (const k of kids) {
+      Object.defineProperties(k, {
+        offsetTop: { configurable: true, get: () => (seen.push(k.style.transition), kids.indexOf(k) * 50) },
+        offsetLeft: { configurable: true, get: () => 0 },
+        offsetWidth: { configurable: true, get: () => 300 },
+        offsetHeight: { configurable: true, get: () => 50 },
+      })
+      ;(k as unknown as { getAnimations: () => unknown[] }).getAnimations = () => (seen.push(k.style.transition), [])
+    }
+    // 同一輪的第一個量完同父層全部子元素；第二個用快取，但讀自己的動畫之前也要先設好
+    freezeLeave(kids[0]!)
+    seen.length = 0
+    freezeLeave(kids[1]!)
+    expect(seen).toEqual(['all 0s'])
+    expect(kids.map((k) => k.style.transition)).toEqual(['', ''])
+    await Promise.resolve()
+  })
+
+  it('量同父層時，正在離場的這一個也已先設好 inline transition', async () => {
+    const parent = document.createElement('div')
+    const el = parent.appendChild(document.createElement('div'))
+    let during = ''
+    Object.defineProperty(el, 'offsetTop', { configurable: true, get: () => ((during = el.style.transition), 0) })
+    freezeLeave(el)
+    expect(during).toBe('all 0s')
+    expect(el.style.transition).toBe('')
+    await Promise.resolve()
+  })
+
+  it('只有縮放的 transform 過渡（進場的 scale）留著接續；有位移的、讀不到 keyframes 的照樣取消', () => {
+    const el = document.createElement('div')
+    const kf = (from: string) => ({ getKeyframes: () => [{ transform: from }, { transform: 'none' }] })
+    const scale = { transitionProperty: 'transform', effect: kf('scale(0.96)'), cancel: vi.fn() }
+    const move = { transitionProperty: 'transform', effect: kf('translate(12px, 0px)'), cancel: vi.fn() }
+    const matrix = { transitionProperty: 'transform', effect: kf('matrix(1, 0, 0, 1, 0, -4)'), cancel: vi.fn() }
+    const rise = { transitionProperty: 'transform', effect: kf('translateY(-4px)'), cancel: vi.fn() }
+    const bare = { transitionProperty: 'transform', effect: null, cancel: vi.fn() }
+    ;(el as unknown as { getAnimations: () => unknown[] }).getAnimations = () => [scale, move, matrix, rise, bare]
+    freezeLeave(el)
+    expect(scale.cancel).not.toHaveBeenCalled()
+    for (const a of [move, matrix, rise, bare]) expect(a.cancel).toHaveBeenCalledTimes(1)
+  })
+
   it('有給 rectOf 就用它（呼叫端在 DOM 更新前量的）', () => {
     const el = document.createElement('div')
     Object.defineProperties(el, {
