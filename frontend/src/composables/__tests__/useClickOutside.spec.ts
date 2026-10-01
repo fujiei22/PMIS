@@ -73,6 +73,15 @@ describe('useClickOutside 的浮層', () => {
     expect(ui.openDropdown).toBe('cdate')
   })
 
+  it('點在 [data-keep-popup]（日期膠囊：切換要填哪一端）內不關浮層', () => {
+    const ui = useUiStore()
+    ui.filterCalendarOpen = true
+    const pill = addNode('<div data-keep-popup><span class="deep">09/01</span></div>')
+
+    down(pill.querySelector('.deep')!)
+    expect(ui.filterCalendarOpen).toBe(true)
+  })
+
   it('點在 [data-dd] 外把所有浮層關掉', () => {
     const ui = useUiStore()
     ui.openDropdown = 'cdate'

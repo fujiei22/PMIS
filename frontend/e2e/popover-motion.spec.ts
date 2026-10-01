@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { clickInPage, hasMid, idle, openDashboard, openTaskDetail, pause, peakThenFall, series, trace } from './helpers/motion'
 
 /** 選單類浮層的進出場（動畫稽核 G12）與捲動處理（G5，Task 5）。 */
@@ -28,6 +28,63 @@ for (const m of MENUS) {
 
     await idle(page)
     const quick = await trace(page, { pop: m.sel }, () => clickInPage(page, m.open, { sel: m.mask, ms: 60 }))
+    const r = peakThenFall(series(quick, 'pop').map((b) => b.o))
+    expect(r.peak, '被打斷了，最亮不到全亮').toBeLessThan(0.98)
+    expect(r.rises, '過了最亮之後又變亮的幀數').toBe(0)
+  })
+}
+
+interface ChromeMenu {
+  name: string
+  open: string
+  sel: string
+  /** 收合時點哪裡；沒給就是再點一次觸發鈕。 */
+  close?: string
+  /** 開始量之前的準備（例：先讓日期膠囊出現）。 */
+  prep?: (page: Page) => Promise<void>
+}
+
+/**
+ * 頂欄與面板標題列的浮層（動畫稽核 G12，批次 C）：沒有遮罩，再點一次觸發鈕收合。
+ * 日期日曆沒有收合鈕：「大於」模式下選一天就收起，所以先選好日期模式讓日期膠囊出現。
+ */
+const CHROME_MENUS: ChromeMenu[] = [
+  { name: '頂欄篩選下拉', open: '.top-row .dd-trigger', sel: '.top-row .dd-menu' },
+  { name: '成員面板', open: '.mp-trigger', sel: '.mp-panel' },
+  {
+    name: '日期日曆',
+    open: '.top-row .date-pill',
+    sel: '.top-row .cal',
+    close: '.top-row .cal .cal-cell:not(.dim)',
+    prep: async (page) => {
+      await page.locator('.top-row .dd-trigger', { hasText: '日期' }).click()
+      await page.locator('.top-row .dd-item', { hasText: '大於' }).click()
+      await page.locator('.top-row .cal .cal-cell:not(.dim)').first().click()
+      await expect(page.locator('.top-row .cal')).toHaveCount(0)
+    },
+  },
+  { name: '排序選單', open: '[data-panel="kanban"] .sort-trigger', sel: '[data-panel="kanban"] .sort-menu' },
+  { name: 'Issue 分組下拉', open: '[data-panel="issues"] .dashed-trigger', sel: '[data-panel="issues"] .dd-menu' },
+]
+
+for (const m of CHROME_MENUS) {
+  test(`G12 ${m.name}：開關都有過渡、離場不攔點擊、快速開關不閃全亮`, async ({ page }) => {
+    const close = m.close ?? m.open
+    await openDashboard(page)
+    await m.prep?.(page)
+    await page.locator(m.open).first().scrollIntoViewIfNeeded()
+    await idle(page)
+
+    const opening = await trace(page, { pop: m.sel }, () => clickInPage(page, m.open))
+    expect(hasMid(series(opening, 'pop').map((b) => b.o)), '進場有中間值').toBe(true)
+
+    const closing = await trace(page, { pop: m.sel }, () => clickInPage(page, close))
+    const leaving = series(closing, 'pop').filter((b) => b.t > closing.at)
+    expect(hasMid(leaving.map((b) => b.o)), '離場有中間值').toBe(true)
+    expect(leaving.every((b) => b.pe === 'none'), '離場中不攔點擊').toBe(true)
+
+    await idle(page)
+    const quick = await trace(page, { pop: m.sel }, () => clickInPage(page, m.open, { sel: close, ms: 60 }))
     const r = peakThenFall(series(quick, 'pop').map((b) => b.o))
     expect(r.peak, '被打斷了，最亮不到全亮').toBeLessThan(0.98)
     expect(r.rises, '過了最亮之後又變亮的幀數').toBe(0)

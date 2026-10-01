@@ -37,22 +37,82 @@ function drop(k: string): void {
 </script>
 
 <template>
-  <div
-    v-for="c in chips"
-    :key="c.k"
-    class="sort-chip"
-    role="button"
-    :title="`${c.label} ${c.arrow}`"
-    @click.stop="bump(c.k)"
-  >
-    <span class="chip-level">{{ c.level }}</span>
-    <span class="chip-label">{{ c.label }}</span>
-    <span class="chip-arrow">{{ c.arrow }}</span>
-    <span class="chip-x" role="button" title="移除這層排序" @click.stop="drop(c.k)">✕</span>
-  </div>
+  <!--
+    加 / 移除一層排序時 chip 原地橫向展開 / 收起（動畫稽核 G6）：後面的觸發鈕跟著版面連續滑動，不是一幀跳過去。
+    TransitionGroup 不給 tag 就不產生外層元素：每個 chip 的 slot 直接排在父層（看板 .sorts / Issue .tools）的 flex 裡，
+    DOM 順序與文字不變（compare.spec 依 DOM 順序比標題列文字）。
+    每個 chip 外面兩層：.sort-chip-slot 是單欄 grid，欄寬 0fr ↔ 1fr 補間；.sort-chip-clip 是裁切層，
+    min-width: 0 讓欄寬能收到 0（chip 本身有 padding / border，收不到 0）。
+  -->
+  <TransitionGroup name="chip">
+    <div v-for="c in chips" :key="c.k" class="sort-chip-slot">
+      <div class="sort-chip-clip">
+        <div
+          class="sort-chip"
+          role="button"
+          :title="`${c.label} ${c.arrow}`"
+          @click.stop="bump(c.k)"
+        >
+          <span class="chip-level">{{ c.level }}</span>
+          <span class="chip-label">{{ c.label }}</span>
+          <span class="chip-arrow">{{ c.arrow }}</span>
+          <span class="chip-x" role="button" title="移除這層排序" @click.stop="drop(c.k)">✕</span>
+        </div>
+      </div>
+    </div>
+  </TransitionGroup>
 </template>
 
 <style scoped>
+/*
+ * 平常的欄寬寫在 :where() 裡（scoped 的屬性選擇器也編進 :where()，特異度 0）：
+ * 下面進出場的 .chip-enter-from / .chip-leave-to（scoped 後 0,2,0）不論寫在前面後面都蓋得過它。
+ */
+:where(.sort-chip-slot) {
+  display: grid;
+  grid-template-columns: 1fr;
+  flex: 0 0 auto;
+}
+
+.sort-chip-clip {
+  display: flex;
+  min-width: 0;
+}
+
+/*
+ * 進出場：欄寬 0fr ↔ 1fr、透明度 0 ↔ 1，時長 --t-panel、曲線 --ease。
+ * 寬度 0 時連父層的 flex gap（--sorts-gap，看板 .sorts / Issue .tools 提供）一起用負的右邊界抵掉，
+ * 插入 / 移除當幀觸發鈕不會先跳一個 gap。過渡都寫在 slot 自己身上：Vue 只等 slot 本身的 transitionend（子元素冒上來的不算）。
+ */
+.chip-enter-active,
+.chip-leave-active {
+  transition:
+    grid-template-columns var(--t-panel) var(--ease),
+    margin-right var(--t-panel) var(--ease),
+    opacity var(--t-panel) var(--ease);
+}
+
+/* 離場中不攔點擊（同 base.css 的 pop-leave-active） */
+.chip-leave-active {
+  pointer-events: none;
+}
+
+.chip-enter-from,
+.chip-leave-to {
+  grid-template-columns: 0fr;
+  margin-right: calc(-1 * var(--sorts-gap, 0px));
+  opacity: 0;
+}
+
+/*
+ * 只在過渡中裁切：平常不裁，觸控時 ✕ 的外擴熱區（::after）才不會被切掉。
+ * 用 clip 不用 hidden：hidden 會讓它變成捲動容器。
+ */
+.chip-enter-active .sort-chip-clip,
+.chip-leave-active .sort-chip-clip {
+  overflow: clip;
+}
+
 .sort-chip {
   display: inline-flex;
   align-items: center;

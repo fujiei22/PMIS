@@ -8,8 +8,10 @@ import FilterCalendar from '@/components/layout/FilterCalendar.vue'
 import FilterDropdown, { type FilterOption } from '@/components/layout/FilterDropdown.vue'
 import MemberPicker from '@/components/layout/MemberPicker.vue'
 import { DELAYED, ISSUE_LEVEL, ISSUE_STATUS, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
+import { freezeLeave } from '@/composables/freezeLeave'
 import { useDomRegistry } from '@/composables/useDomRegistry'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
+import { parseDuration } from '@/lib/easing'
 import { toggleIn } from '@/lib/filter'
 import { fmtDate } from '@/lib/format'
 import { useFilterStore } from '@/stores/filter'
@@ -38,7 +40,10 @@ const rowEl = ref<HTMLElement | null>(null)
 const filtersEl = ref<HTMLElement | null>(null)
 const stacked = ref(false)
 
-/** 篩選器裡實際參與排版的項目：`.fgroup` 是 display: contents，算它的子元素；浮在外面的（日曆）不算。 */
+/**
+ * 篩選器裡實際參與排版的項目：`.fgroup` 是 display: contents，算它的子元素；
+ * 浮在外面的（日曆）與正在淡出的日期膠囊 / ～（pinLeaving 釘成 absolute）不算。
+ */
 function filterItems(box: HTMLElement): HTMLElement[] {
   const items: HTMLElement[] = []
   for (const c of Array.from(box.children) as HTMLElement[]) {
@@ -57,11 +62,109 @@ function measureFit(): void {
   row.classList.add('measuring')
   // 比最右一項的右緣與篩選器右緣（含小數）：只差不到 1px 也會讓 flex 換行，整數的 scrollWidth 量不準
   const edge = box.getBoundingClientRect().right
-  const overflow = filterItems(box).some((el) => el.getBoundingClientRect().right > edge + 0.01)
+  const overflow = filterItems(box).some((el) => layoutRight(el) > edge + 0.01)
   row.classList.remove('measuring')
   if (stacked.value) row.classList.add('stacked')
+  // 一行 / 兩列要切換：滑到一半的位移補間直接停掉，版型直接到位；
+  // 正在淡出的日期膠囊釘的是舊版型的位置（定位基準也會換），直接藏起來
+  if (overflow !== stacked.value) {
+    cancelSlides()
+    for (const el of leavingPills) el.style.visibility = 'hidden'
+  }
   stacked.value = overflow
 }
+
+/**
+ * 篩選項在版面上的右緣，不算位移補間（G7，見下方 slides）的 translateX：
+ * 補間途中看得到的位置不是版面位置，拿它判斷放不放得下會誤判。
+ */
+function layoutRight(el: HTMLElement): number {
+  const right = el.getBoundingClientRect().right
+  if (!slides.has(el)) return right
+  return right - new DOMMatrixReadOnly(getComputedStyle(el).transform).m41
+}
+
+/**
+ * 一行時篩選項變寬的位移補間（動畫稽核 G7）。
+ * 一行時篩選器靠右排（flex-end），某一項變寬（選日期「介於」多出兩顆膠囊與「～」、下拉標籤多了數字），
+ * 它左邊的整排往左移；原本一幀跳過去（1920 選「介於」整排 −248px），改成 FLIP 滑過去：
+ * 篩選條件一變，DOM 更新前記下每一項看得到的右緣，更新後量新的右緣，
+ * 先用 translateX 移回舊位置，再補間回 0（Web Animations，`--t-panel` / `--ease`）。
+ *
+ * 比右緣、不比左緣：一行時變寬是左緣往左長、右緣不動（同 popAlign 的 end），變寬的那一項自己不動，
+ * 它開著的選單（錨在右緣）也就不會被帶著跑。新出現的項目（日期膠囊）沒有舊位置，直接出現在新位置。
+ * 只在這次更新前後都是一行時做：縮放視窗不是篩選條件變了，不經過這裡；
+ * 一行 / 兩列切換時整排換位置，直接到位（measureFit 切換時也會停掉進行中的補間）。
+ */
+const slides = new Map<HTMLElement, Animation>()
+/** DOM 更新前記下的右緣（看得到的位置，含進行中的補間）；null＝這次不做。 */
+let slideFrom: Map<HTMLElement, number> | null = null
+
+function cancelSlides(): void {
+  for (const a of slides.values()) a.cancel()
+  slides.clear()
+}
+
+/** 會改變篩選項寬度的篩選條件：下拉標籤、成員頭像、日期膠囊都跟著它們變。 */
+const slideSources = [() => filter.filter, () => filter.issueLevels, () => filter.issueStatuses]
+
+watch(
+  slideSources,
+  () => {
+    const box = filtersEl.value
+    // jsdom 沒有 Web Animations
+    slideFrom =
+      box && !stacked.value && typeof box.animate === 'function'
+        ? new Map(filterItems(box).map((el) => [el, el.getBoundingClientRect().right]))
+        : null
+    pillsBefore = box ? snapshotPills(box) : null
+  },
+  { flush: 'pre' },
+)
+
+watch(
+  slideSources,
+  () => {
+    const from = slideFrom
+    slideFrom = null
+    // 離場的膠囊在 DOM 更新途中（before-leave）已經照它釘好了
+    pillsBefore = null
+    const box = filtersEl.value
+    if (!from || !box) return
+    // MutationObserver 觸發的 measureFit 在這之後才跑：先自己量一次，以這次更新完成後的版型為準
+    measureFit()
+    if (stacked.value) return
+    // 進行中的補間先停掉，下面量到的才是版面位置（看得到的舊位置已經記在 from）
+    cancelSlides()
+    const moves = filterItems(box).map((el) => ({
+      el,
+      dx: (from.get(el) ?? NaN) - el.getBoundingClientRect().right,
+    }))
+    const cs = getComputedStyle(document.documentElement)
+    const timing = {
+      duration: parseDuration(cs.getPropertyValue('--t-panel')),
+      easing: cs.getPropertyValue('--ease').trim() || 'ease',
+    }
+    if (!timing.duration) return
+    for (const { el, dx } of moves) {
+      // NaN＝新出現的項目；不到半像素＝沒動
+      if (!(Math.abs(dx) >= 0.5)) continue
+      const anim = el.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], timing)
+      slides.set(el, anim)
+      anim.onfinish = () => {
+        if (slides.get(el) === anim) slides.delete(el)
+      }
+    }
+  },
+  { flush: 'post' },
+)
+
+/**
+ * 浮層錨在觸發鈕的哪一側：一行時篩選器靠右排（flex-end），某項變寬是它左緣往左長、右緣不動，錨右緣（end）；
+ * 兩列時靠左排，左緣不動，錨左緣（start）。下拉 / 成員面板開著勾選項讓觸發鈕變寬時才不會被帶著跑（G7）。
+ * 日曆同一套：一行時基準是篩選器、右緣對齊；兩列時基準換成日期那一組、左緣對齊。
+ */
+const popAlign = computed<'start' | 'end'>(() => (stacked.value ? 'start' : 'end'))
 
 let fitRaf: number | undefined
 /**
@@ -201,6 +304,61 @@ function openCalendar(target: 'd1' | 'd2'): void {
   ui.memberPickerOpen = false
 }
 
+/**
+ * 日期膠囊與「～」淡出時（base.css 的 fade）用 freezeLeave 釘在原位：不佔版面，其他項目立刻排到新位置，
+ * G7 的位移補間量得到正確的終點；釘成 absolute 也讓 filterItems 不算它。
+ * 定位基準一行時是篩選器、兩列時是日期那一組（.top-row.stacked .date-group），兩者都是 position: relative。
+ */
+const leavingPills = new Set<HTMLElement>()
+
+interface PillRect {
+  top: number
+  left: number
+  width: number
+  height: number
+}
+
+/**
+ * DOM 更新前日期膠囊 / ～ 看得到的位置（相對各自的定位基準，含進行中的位移補間）。離場時照這份釘，不逐顆現量：
+ * 同一次更新裡 Vue 依序呼叫每顆的 before-leave，後面那顆被量到時，前一顆已經釘成 absolute 脫離版面、
+ * 「日期」下拉的標籤也已經換字；兩列時日期那一組靠左排，後面的膠囊因此先往左跳再淡出（review）。
+ */
+let pillsBefore: Map<HTMLElement, PillRect> | null = null
+
+function snapshotPills(box: HTMLElement): Map<HTMLElement, PillRect> {
+  const rects = new Map<HTMLElement, PillRect>()
+  for (const el of filterItems(box)) {
+    if (!el.classList.contains('date-pill') && !el.classList.contains('tilde')) continue
+    const t = getComputedStyle(el).transform
+    // jsdom 沒有 DOMMatrixReadOnly
+    const dx = t && t !== 'none' && typeof DOMMatrixReadOnly !== 'undefined' ? new DOMMatrixReadOnly(t).m41 : 0
+    rects.set(el, { top: el.offsetTop, left: el.offsetLeft + dx, width: el.offsetWidth, height: el.offsetHeight })
+  }
+  return rects
+}
+
+function pinLeaving(el: Element): void {
+  const node = el as HTMLElement
+  const r = pillsBefore?.get(node)
+  // 釘的位置已含位移補間，補間要停掉，不然位移算兩次
+  slides.get(node)?.cancel()
+  slides.delete(node)
+  if (r) {
+    node.style.position = 'absolute'
+    node.style.top = `${r.top}px`
+    node.style.left = `${r.left}px`
+    node.style.width = `${r.width}px`
+    node.style.height = `${r.height}px`
+  } else {
+    freezeLeave(el)
+  }
+  leavingPills.add(node)
+}
+
+function unpinLeaving(el: Element): void {
+  leavingPills.delete(el as HTMLElement)
+}
+
 const showD1 = computed(() => filter.dateMode !== 'off')
 const showD2 = computed(() => filter.dateMode === 'between')
 
@@ -240,7 +398,7 @@ function clearFilters(): void {
       <div ref="filtersEl" class="filters">
         <span class="fgroup">
           <span class="section">成員</span>
-          <MemberPicker />
+          <MemberPicker :align="popAlign" />
         </span>
         <span class="grow"></span>
 
@@ -249,6 +407,7 @@ function clearFilters(): void {
           <span class="section">任務</span>
           <FilterDropdown
             dd-key="status"
+            :align="popAlign"
             :label="filter.statuses.length ? `狀態 ${filter.statuses.length}` : '狀態'"
             :active="filter.statuses.length > 0"
             :options="statusOptions"
@@ -256,6 +415,7 @@ function clearFilters(): void {
           />
           <FilterDropdown
             dd-key="prio"
+            :align="popAlign"
             :label="filter.priorities.length ? `優先度 ${filter.priorities.length}` : '優先度'"
             :active="filter.priorities.length > 0"
             :options="prioOptions"
@@ -263,6 +423,7 @@ function clearFilters(): void {
           />
           <FilterDropdown
             dd-key="group"
+            :align="popAlign"
             :label="filter.groupIds.length ? `分類 ${filter.groupIds.length}` : '分類'"
             :active="filter.groupIds.length > 0"
             :options="groupOptions"
@@ -273,6 +434,7 @@ function clearFilters(): void {
           />
           <FilterDropdown
             dd-key="issue"
+            :align="popAlign"
             :label="{ all: 'Issue', has: '有 Issue', none: '無 Issue' }[filter.issueMode]"
             :active="filter.issueMode !== 'all'"
             :options="issueModeOptions"
@@ -285,6 +447,7 @@ function clearFilters(): void {
           <span class="section">Issue</span>
           <FilterDropdown
             dd-key="icls"
+            :align="popAlign"
             :label="filter.issueLevels.length ? `等級 ${filter.issueLevels.length}` : '等級'"
             :active="filter.issueLevels.length > 0"
             :options="levelOptions"
@@ -292,6 +455,7 @@ function clearFilters(): void {
           />
           <FilterDropdown
             dd-key="ist"
+            :align="popAlign"
             :label="filter.issueStatuses.length ? `狀態 ${filter.issueStatuses.length}` : '狀態'"
             :active="filter.issueStatuses.length > 0"
             :options="issueStatusOptions"
@@ -306,22 +470,44 @@ function clearFilters(): void {
           <span class="section">日期</span>
           <FilterDropdown
             dd-key="fmode"
+            :align="popAlign"
             :label="DATE_MODE_LABEL[filter.dateMode]"
             :active="filter.dateMode !== 'off'"
             :options="dateModeOptions"
             :menu-width="128"
             @pick="pickDateMode"
           />
-          <div v-if="showD1" class="date-pill" role="button" @click="openCalendar('d1')">
-            {{ fmtDate(filter.d1) }}
-          </div>
-          <span v-if="showD2" class="tilde">～</span>
-          <div v-if="showD2" class="date-pill" role="button" @click="openCalendar('d2')">
-            {{ fmtDate(filter.d2) }}
-          </div>
+          <!-- data-keep-popup：日曆開著時點膠囊是切換要填哪一端，不算點到外面（useClickOutside）；
+               不用 data-dd：compare.spec 依 [data-dd] 的序列對照 legacy。
+               淡入淡出用 base.css 的 fade；離場的釘在原位、不佔版面（pinLeaving） -->
+          <Transition name="fade" @before-leave="pinLeaving" @after-leave="unpinLeaving">
+            <div
+              v-if="showD1"
+              class="date-pill"
+              data-keep-popup
+              role="button"
+              @click="openCalendar('d1')"
+            >
+              {{ fmtDate(filter.d1) }}
+            </div>
+          </Transition>
+          <Transition name="fade" @before-leave="pinLeaving" @after-leave="unpinLeaving">
+            <span v-if="showD2" class="tilde">～</span>
+          </Transition>
+          <Transition name="fade" @before-leave="pinLeaving" @after-leave="unpinLeaving">
+            <div
+              v-if="showD2"
+              class="date-pill"
+              data-keep-popup
+              role="button"
+              @click="openCalendar('d2')"
+            >
+              {{ fmtDate(filter.d2) }}
+            </div>
+          </Transition>
           <!-- 日曆的定位基準：一行時 .fgroup 是 display: contents，基準是篩選器、右緣對齊（同 legacy）；
                兩列時基準換成這一組、左緣對齊，篩選器滿寬時才不會離日期膠囊很遠 -->
-          <FilterCalendar :align="stacked ? 'start' : 'end'" />
+          <FilterCalendar :align="popAlign" />
         </span>
 
         <div
