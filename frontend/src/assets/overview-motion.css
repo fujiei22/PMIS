@@ -1,5 +1,5 @@
 /* 總覽頁的 Transition / TransitionGroup class。時長只用 tokens.css 的 --t-*。
-   離場元素由 composables/freezeLeave.ts 釘在原位，所以這裡不寫 position。 */
+   卡片、chip、頭像的離場元素由 composables/freezeLeave.ts 釘在原位；泳道、時間軸群組與列是原地收合（見下方），不釘位。 */
 
 /* 浮層：下拉、排序選單（A4 / A5） */
 .ov-pop-enter-active { animation: popIn var(--t-menu) ease-out; }
@@ -36,6 +36,16 @@
 .ov-group-enter-from, .ov-group-leave-to { opacity: 0; transform: translateY(-4px); }
 
 /* 排序 chip 與成員頭像疊（A16 / A23） */
+/*
+ * 內建 move 的子元素平常不宣告任何過渡。Vue 在下一次更新時拿掉 *-move 想停住進行中的位移，
+ * 但子元素沒有宣告 transition 時 transition-property 退回初始值 all：「屬性還在清單裡、終值沒變」→ 進行中的
+ * transform 過渡不會被取消，Vue 量到含殘留位移的位置，算出來的位移讓元素先瞬移再折返（T3）。設成 none 就會被取消。
+ * :where() 讓特異度為 0（*-move / *-enter-active / *-leave-active 仍勝出），只限總覽（.sorts / .mp-stack 在 Dashboard 也有）。
+ * 批次 C 改這兩個元件時：.sorts、.mp-stack 要維持是 TransitionGroup 根元素，子元素的 transition 不可含 transform / all。
+ */
+:where([data-view="overview"] .sorts > *, [data-view="overview"] .mp-stack > *) {
+  transition: none;
+}
 .ov-chip-move, .ov-av-move { transition: transform var(--t-base) var(--ease); }
 .ov-chip-enter-active, .ov-chip-leave-active,
 .ov-av-enter-active, .ov-av-leave-active { transition: opacity var(--t-base) var(--ease), transform var(--t-base) var(--ease); }
