@@ -42,6 +42,16 @@ describe('ErrorBar', () => {
     expect(ui.errors).toHaveLength(0)
   })
 
+  it('關掉最後一筆後整條拿掉，不留做高度過渡的外層佔位置', async () => {
+    const ui = useUiStore()
+    ui.pushError({ label: '更新任務', error: new ApiError('network', 'x') })
+    const w = mount(ErrorBar)
+    expect(w.find('[data-errorbar]').exists()).toBe(true)
+    await w.find('.error-x').trigger('click')
+    expect(w.find('[data-errorbar]').exists()).toBe(false)
+    expect(w.find('.error-slot').exists()).toBe(false)
+  })
+
   it('最多列 3 筆，其餘收成「還有 N 筆」', () => {
     const ui = useUiStore()
     for (let i = 1; i <= 5; i++) {
