@@ -8,8 +8,9 @@ import Avatar from '@/components/common/Avatar.vue'
 import LaneDrawer from '@/components/overview/LaneDrawer.vue'
 import PmCountPill from '@/components/overview/PmCountPill.vue'
 import ProjectCard from '@/components/overview/ProjectCard.vue'
-import { computed, ref, watch, type ComponentPublicInstance } from 'vue'
+import { computed, onBeforeUpdate, onUpdated, ref, watch, type ComponentPublicInstance } from 'vue'
 import { freezeLeave } from '@/composables/freezeLeave'
+import { holdHeight, releaseHeight } from '@/composables/heightTween'
 import { useGridColumns } from '@/composables/useGridColumns'
 import { useRelativeFlip } from '@/composables/useRelativeFlip'
 import type { PmGroup } from '@/lib/portfolio'
@@ -25,6 +26,10 @@ const props = defineProps<{ group: PmGroup }>()
 const body = ref<ComponentPublicInstance | null>(null)
 const bodyEl = computed(() => body.value?.$el as HTMLElement | undefined)
 useRelativeFlip(bodyEl, 'data-project')
+
+// 卡片網格的高度撐住再補間（C1 泳道層）：離場的卡釘成 absolute 後網格當幀就是新高度，泳道框會一幀縮掉、卡片畫到框外
+onBeforeUpdate(() => holdHeight(bodyEl.value))
+onUpdated(() => releaseHeight(bodyEl.value))
 
 const cols = useGridColumns(bodyEl)
 
