@@ -162,3 +162,75 @@ test('視窗來回拉寬拉窄：每個寬度的版型都對、停下來之後�
     expect(b, `${r.width}px 穩定`).toEqual(a)
   }
 })
+
+interface Rect {
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
+/**
+ * 從「日期」那一組的下拉選日期模式；選完日曆會自動打開。等日曆進場動畫跑完（動畫中的 transform 會讓位置不準），
+ * 回傳日曆、「日期」標籤、日期膠囊與篩選器的位置，以及視窗寬（不含捲軸）。
+ */
+async function openCalendar(
+  page: Page,
+  dateMode: '大於' | '介於',
+): Promise<{ cal: Rect; label: Rect; pills: Rect[]; filters: Rect; vw: number }> {
+  const group = page.locator('.top-row .fgroup').filter({ has: page.getByText('日期', { exact: true }) })
+  await group.locator('[data-dd][role="button"]').first().click()
+  await group.getByText(dateMode, { exact: true }).click()
+  const cal = page.locator('.top-row .cal')
+  await cal.waitFor()
+  await cal.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
+  return page.evaluate(() => {
+    const rect = (el: Element): Rect => {
+      const r = el.getBoundingClientRect()
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
+    }
+    const label = [...document.querySelectorAll('.top-row .filters .section')].find(
+      (el) => el.textContent?.trim() === '日期',
+    )!
+    return {
+      cal: rect(document.querySelector('.top-row .cal')!),
+      label: rect(label),
+      pills: [...document.querySelectorAll('.top-row .date-pill')].map(rect),
+      filters: rect(document.querySelector('.top-row .filters')!),
+      vw: document.documentElement.clientWidth,
+    }
+  })
+}
+
+const CAL_CASES = [
+  { width: 768, dateMode: '大於' },
+  { width: 1024, dateMode: '介於' },
+  { width: 1366, dateMode: '介於' },
+  { width: 1600, dateMode: '介於' },
+] as const
+
+test('兩列時日期日曆貼著日期那一組打開：左緣對齊「日期」、在膠囊下方、不超出視窗', async ({ page }) => {
+  // 篩選器滿寬時，日曆若照一行時對齊篩選器右緣，會離日期膠囊很遠（1600 約 300px，user 決定一併修）
+  const app = new DashboardPage(page)
+  for (const c of CAL_CASES) {
+    await page.setViewportSize({ width: c.width, height: 900 })
+    await app.goto()
+    const { cal, label, pills, vw } = await openCalendar(page, c.dateMode)
+    await expect(page.locator('.top-row.stacked'), `${c.width}px 是兩列`).toHaveCount(1)
+    const pillBottom = Math.max(...pills.map((p) => p.bottom))
+    expect(Math.abs(cal.left - label.left), `${c.width}px：日曆左緣對齊「日期」`).toBeLessThanOrEqual(1)
+    expect(cal.top, `${c.width}px：日曆在膠囊下方`).toBeGreaterThanOrEqual(pillBottom)
+    expect(cal.top - pillBottom, `${c.width}px：日曆貼著膠囊`).toBeLessThanOrEqual(20)
+    expect(cal.left, `${c.width}px：日曆不超出左緣`).toBeGreaterThanOrEqual(0)
+    expect(cal.right, `${c.width}px：日曆不超出右緣`).toBeLessThanOrEqual(vw)
+  }
+})
+
+test('一行時（1920）日期日曆仍對齊篩選器右緣（同 legacy）', async ({ page }) => {
+  const app = new DashboardPage(page)
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await app.goto()
+  const { cal, filters } = await openCalendar(page, '介於')
+  await expect(page.locator('.top-row.stacked')).toHaveCount(0)
+  expect(Math.abs(cal.right - filters.right), '日曆右緣對齊篩選器右緣').toBeLessThanOrEqual(1)
+})

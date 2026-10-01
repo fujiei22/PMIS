@@ -302,7 +302,7 @@ function clearFilters(): void {
         </span>
 
         <span class="divider"></span>
-        <span class="fgroup">
+        <span class="fgroup date-group">
           <span class="section">日期</span>
           <FilterDropdown
             dd-key="fmode"
@@ -319,6 +319,9 @@ function clearFilters(): void {
           <div v-if="showD2" class="date-pill" role="button" @click="openCalendar('d2')">
             {{ fmtDate(filter.d2) }}
           </div>
+          <!-- 日曆的定位基準：一行時 .fgroup 是 display: contents，基準是篩選器、右緣對齊（同 legacy）；
+               兩列時基準換成這一組、左緣對齊，篩選器滿寬時才不會離日期膠囊很遠 -->
+          <FilterCalendar :align="stacked ? 'start' : 'end'" />
         </span>
 
         <div
@@ -330,8 +333,6 @@ function clearFilters(): void {
         >
           <span class="clear-x">✕</span><span>清除篩選</span>
         </div>
-
-        <FilterCalendar />
       </div>
 
       <div class="tail">
@@ -625,6 +626,11 @@ function clearFilters(): void {
   align-items: center;
   gap: var(--sp-3);
   flex: 0 0 auto;
+}
+
+/* 日期日曆改以這一組為定位基準（FilterCalendar 收到 align="start"） */
+.top-row.stacked .date-group {
+  position: relative;
 }
 
 /* 換行後分隔線可能落在行首，改由組間距區隔 */

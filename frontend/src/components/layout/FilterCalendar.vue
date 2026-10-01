@@ -9,6 +9,17 @@ import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
 import { useUiStore } from '@/stores/ui'
 
+withDefaults(
+  defineProps<{
+    /**
+     * 對齊定位基準的哪一側。`end`（預設）：右緣對齊，頂欄一行時基準是篩選器（同 legacy）；
+     * `start`：左緣對齊，頂欄兩列時 TopBar 把基準換成日期那一組，日曆從「日期」標籤下方展開、不超出視窗。
+     */
+    align?: 'start' | 'end'
+  }>(),
+  { align: 'end' },
+)
+
 const clock = useClockStore()
 const ui = useUiStore()
 const filter = useFilterStore()
@@ -80,7 +91,7 @@ function pick(iso: string): void {
 
 <template>
   <div v-if="ui.filterCalendarOpen" class="cal-mask" @click="ui.filterCalendarOpen = false"></div>
-  <div v-if="ui.filterCalendarOpen" class="cal" data-dd="1">
+  <div v-if="ui.filterCalendarOpen" class="cal" :class="{ start: align === 'start' }" data-dd="1">
     <div class="cal-ends">
       <div
         class="cal-end"
@@ -143,6 +154,11 @@ function pick(iso: string): void {
   border-radius: var(--r-panel);
   box-shadow: var(--shadow-popover);
   animation: popIn var(--t-pop) ease-out;
+}
+
+.cal.start {
+  left: 0;
+  right: auto;
 }
 
 .cal-ends {
