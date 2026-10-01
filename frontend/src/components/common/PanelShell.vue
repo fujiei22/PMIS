@@ -1,10 +1,14 @@
 <script setup lang="ts">
 // 三個面板（甘特 / 看板 / Issue）共用的外殼：sticky 標題列 + 可收合的內容區。
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useDelayedUnmount } from '@/composables/useDelayedUnmount'
 import { registerEl, useDomRegistry } from '@/composables/useDomRegistry'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
+import { parseDuration } from '@/lib/easing'
 import { useUiStore } from '@/stores/ui'
+
+/** 展開的 transitionend 沒來時（過渡被打斷、沒有過渡）的保險：比 --t-panel 多留一點再放行 overflow。 */
+const OPEN_SLACK_MS = 120
 
 const props = defineProps<{
   /** 面板 key，同時當 `data-panel` 的值。 */
@@ -27,8 +31,34 @@ const registerPanel = computed(() => registerEl(registry.panels, props.panel))
 const open = computed(() => !ui.panelOff[props.panel])
 /** 收合動畫（grid-template-rows .26s）跑完前先別把內容拿掉。legacy `held()` :3651 */
 const mounted = useDelayedUnmount(open, 320)
-/** 展開時放行 overflow，讓甘特的浮層與陰影不被切掉。legacy `ganttClip` :3641 */
-const clip = computed(() => (open.value ? 'visible' : 'hidden'))
+
+/**
+ * 展開完才放行 overflow，讓甘特的浮層與陰影不被切掉。legacy `ganttClip` :3641。
+ * 展開途中外框還在長高、內容已經是全高：當下就放行的話，甘特有 z-index 的內容整張蓋在下方看板上
+ * （動畫稽核 D3，legacy 同）。所以等 grid-template-rows 的 transitionend 才放行；收合一開始就裁。
+ */
+const clip = ref<'visible' | 'hidden'>(open.value ? 'visible' : 'hidden')
+let clipTimer: ReturnType<typeof setTimeout> | undefined
+
+watch(open, (on) => {
+  clearTimeout(clipTimer)
+  clip.value = 'hidden'
+  if (!on) return
+  const panelMs = parseDuration(getComputedStyle(document.documentElement).getPropertyValue('--t-panel'))
+  clipTimer = setTimeout(() => {
+    if (open.value) clip.value = 'visible'
+  }, panelMs + OPEN_SLACK_MS)
+})
+
+function onBodyTransitionEnd(e: TransitionEvent): void {
+  // 內容裡的過渡也會冒泡上來，只認外框自己的高度
+  if (e.target !== e.currentTarget || e.propertyName !== 'grid-template-rows' || !open.value) return
+  clearTimeout(clipTimer)
+  clip.value = 'visible'
+}
+
+onBeforeUnmount(() => clearTimeout(clipTimer))
+
 const caret = computed(() => (open.value ? '▲' : '▼'))
 
 function toggle(): void {
@@ -44,7 +74,11 @@ function toggle(): void {
         {{ caret }}
       </div>
     </div>
-    <div class="panel-body" :style="{ gridTemplateRows: open ? '1fr' : '0fr' }">
+    <div
+      class="panel-body"
+      :style="{ gridTemplateRows: open ? '1fr' : '0fr' }"
+      @transitionend="onBodyTransitionEnd"
+    >
       <div class="panel-clip" :style="{ overflow: clip }">
         <slot v-if="mounted" />
       </div>

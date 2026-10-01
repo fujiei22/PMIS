@@ -119,7 +119,7 @@ Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<s
 |---|---|
 | `src/stores/__tests__/imports.spec.ts` | store 三層的 import 白名單，資料層不得引用派生層 |
 | `src/__tests__/no-query-selector.spec.ts` | `src/**` 執行期不得用 `querySelector` 等 DOM 選擇器（唯一例外 `useClickOutside`） |
-| `src/__tests__/readme.spec.ts` | 本檔〈端點對照表〉〈錯誤碼對照表〉與 `api/types.ts` 一致 |
+| `src/__tests__/readme.spec.ts` | 本檔〈端點對照表〉〈錯誤碼對照表〉與 `api/types.ts` 一致；〈目錄結構〉的 composables 清單提到 `src/composables/` 底下每一支（新增 composable 要一起補說明） |
 | `src/mocks/__tests__/consistency.spec.ts` | 範例資料必須已是 cascade 之後的樣子 |
 | `src/assets/__tests__/tokens.spec.ts` | `tokens.css` 必須含有程式用到的每個變數與約定值，改名或刪 token 會紅 |
 | `src/mocks/__tests__/portfolio.spec.ts` | 總覽靜態專案算出的實際 / 理論 % 與需注意等於設計稿；m1–m7 與 `sampleProject` 的成員是同一份 |
@@ -172,11 +172,12 @@ frontend/
 │   │                            useMenus / useFocusScroll / useNow / useStickyOffsets / useDelayedUnmount /
 │   │                            useDismiss（總覽浮層的點外面與 Esc）/ freezeLeave（TransitionGroup 離場釘在原位）/
 │   │                            useRelativeFlip（巢狀清單的重排動畫，以容器為基準量位移）/
+│   │                            useRowMotion（甘特列上下位移補間：左欄列、橫紋、條、圓點同一個時鐘）/
 │   │                            useMediaQuery（全站共用的 media query ref；TOUCH_UI_QUERY 觸控裝置、NARROW_QUERY 平板直向）/
 │   │                            useGridColumns（量 grid 實際排幾欄，總覽泳道的列下展開用）/
 │   │                            useDragPan（總覽時間軸按住拖曳平移）
 │   ├── constants/         畫面用常數（dashboard.ts：狀態 / 優先度 / 等級的標籤與顏色；overview.ts：總覽的排序鍵、標籤、尺寸；api.ts：API_ERROR_TEXT）
-│   ├── lib/               純函式（日期、月曆格、排程連動、篩選、排序、格式化、id…）
+│   ├── lib/               純函式（日期、月曆格、排程連動、篩選、排序、格式化、id、CSS 時長 / 曲線 token 轉 JS（easing.ts）…）
 │   ├── mocks/             範例資料
 │   ├── router/            路由（pageSwap.ts：切頁過渡結束後才還原捲動位置）
 │   ├── stores/            Pinia store（三層，見下）
@@ -193,7 +194,7 @@ frontend/
 └── e2e/                   Playwright 測試與 helper
 ```
 
-單元測試放在被測檔案旁的 `__tests__/`（例如 `src/lib/__tests__/date.spec.ts`）。不屬於任何單一檔案的結構守衛放 `src/__tests__/`：`no-query-selector.spec.ts`（執行期不得用 DOM 選擇器）、`readme.spec.ts`（本檔的端點表與 `ProjectApi` 一致），另有 `src/stores/__tests__/imports.spec.ts`（store 分層白名單）。
+單元測試放在被測檔案旁的 `__tests__/`（例如 `src/lib/__tests__/date.spec.ts`）。不屬於任何單一檔案的結構守衛放 `src/__tests__/`：`no-query-selector.spec.ts`（執行期不得用 DOM 選擇器）、`readme.spec.ts`（本檔的端點表與 `ProjectApi` 一致、目錄結構列到每一支 composable），另有 `src/stores/__tests__/imports.spec.ts`（store 分層白名單）。
 
 ## `legacy/` 是唯讀基準
 

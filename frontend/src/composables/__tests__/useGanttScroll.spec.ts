@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { defineComponent, h, ref, type Ref } from 'vue'
+import { defineComponent, h, nextTick, ref, type Ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockApi as maybeMockApi } from '@/api'
 import { useGanttScroll, type GanttScroll } from '@/composables/useGanttScroll'
@@ -146,5 +146,122 @@ describe('useGanttScroll', () => {
     // 不是數字就什麼都不做
     api.onZoom('abc')
     expect(ui.dayWidth).toBe(20)
+  })
+})
+// 動畫稽核 D7：「今天」與選取 focus 的捲動補間不讓位給使用者——期間拖條會把捲動量算進拖曳（改錯日期）、
+// 滾輪無效、縮放後今天偏掉。使用者一動手就要停。
+describe('useGanttScroll 的捲動補間讓位給使用者（D7）', () => {
+  /** 開一段補間、跑到中途，回傳中途的位置。 */
+  function midway(api: GanttScroll, sc: HTMLElement): number {
+    api.scrollTo(1200, true)
+    frames.pop()!(performance.now() + 100)
+    const mid = sc.scrollLeft
+    expect(mid).toBeGreaterThan(0)
+    expect(mid).toBeLessThan(1200)
+    return mid
+  }
+
+  /** 把排隊中的幀都跑掉（時間走完）；被停掉的補間不該再改位置。 */
+  function flush(): void {
+    while (frames.length) frames.pop()!(performance.now() + 5000)
+  }
+
+  it.each(['pointerdown', 'wheel', 'touchstart'])('scroller 上的 %s 停掉補間，位置留在當下', (type) => {
+    const sc = scrollerEl(4000, 800)
+    const api = mountScroll(ref(sc), ref(rulerEl()))
+    const mid = midway(api, sc)
+
+    sc.dispatchEvent(new Event(type))
+    flush()
+    expect(sc.scrollLeft).toBe(mid)
+  })
+
+  it('縮放時停掉補間（不然會捲到舊比例算出來的位置）', () => {
+    const sc = scrollerEl(4000, 800)
+    const api = mountScroll(ref(sc), ref(rulerEl()))
+    const mid = midway(api, sc)
+
+    api.onZoom('20')
+    flush()
+    expect(sc.scrollLeft).toBe(mid)
+  })
+
+  it('scroller 換了一顆（面板收合再展開）也照樣監聽', async () => {
+    const first = scrollerEl(4000, 800)
+    const scroller = ref<HTMLElement | null>(first)
+    const api = mountScroll(scroller, ref(rulerEl()))
+    const second = scrollerEl(4000, 800)
+    scroller.value = second
+    await nextTick()
+    const mid = midway(api, second)
+
+    second.dispatchEvent(new Event('wheel'))
+    flush()
+    expect(second.scrollLeft).toBe(mid)
+  })
+})
+
+// 動畫稽核 D12：甘特面板收合 320ms 後卸載內容，再展開時 scroller 是新的一顆、從 0 開始（捲回專案起點、看不到今天）
+describe('useGanttScroll：面板收合再展開保留水平捲動位置（D12）', () => {
+  it('scroller 換了一顆：捲到上一顆最後的位置，尺規跟著', async () => {
+    const first = scrollerEl(4000, 800)
+    const scroller = ref<HTMLElement | null>(first)
+    const ruler = ref<HTMLElement | null>(rulerEl())
+    const api = mountScroll(scroller, ruler)
+    first.scrollLeft = 640
+    api.onScroll()
+
+    // 收合：內容卸載
+    scroller.value = null
+    ruler.value = null
+    await nextTick()
+    // 展開：新的一顆 scroller / 尺規
+    const second = scrollerEl(4000, 800)
+    const secondRuler = rulerEl()
+    scroller.value = second
+    ruler.value = secondRuler
+    await nextTick()
+
+    expect(second.scrollLeft).toBe(640)
+    expect(secondRuler.scrollLeft).toBe(640)
+    expect(api.scrollX.value).toBe(640)
+  })
+
+  // review：收合期間專案起點變了（看板把最早的任務往前移），重新展開會捲回舊的 px——整片跳好幾天
+  it('scroller 卸載時 shift 更新記住的位置，重掛後捲到補過的位置', async () => {
+    const first = scrollerEl(4000, 800)
+    const scroller = ref<HTMLElement | null>(first)
+    const ruler = ref<HTMLElement | null>(rulerEl())
+    const api = mountScroll(scroller, ruler)
+    first.scrollLeft = 640
+    api.onScroll()
+
+    scroller.value = null
+    ruler.value = null
+    await nextTick()
+    // 收合中專案起點往前 5 天：座標右移 5 × 32px
+    api.shift(160)
+    expect(api.scrollX.value).toBe(800)
+
+    const second = scrollerEl(4000, 800)
+    const secondRuler = rulerEl()
+    scroller.value = second
+    ruler.value = secondRuler
+    await nextTick()
+    expect(second.scrollLeft).toBe(800)
+    expect(secondRuler.scrollLeft).toBe(800)
+  })
+
+  it('scroller 在的時候 shift 直接補捲動位置，尺規與 scrollX 跟著', () => {
+    const sc = scrollerEl(4000, 800)
+    const ru = rulerEl()
+    const api = mountScroll(ref(sc), ref(ru))
+    sc.scrollLeft = 300
+    api.onScroll()
+
+    api.shift(64)
+    expect(sc.scrollLeft).toBe(364)
+    expect(ru.scrollLeft).toBe(364)
+    expect(api.scrollX.value).toBe(364)
   })
 })

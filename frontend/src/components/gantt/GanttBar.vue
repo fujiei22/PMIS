@@ -110,12 +110,16 @@ const showR = computed(() => {
   return d.id === id.value ? d.side === 'R' : near.value && d.side === 'L'
 })
 
-/** 拖曳 / 縮放 / 縮放滑桿進行中就關掉位移補間，條才不會追著游標跑。legacy :2926 */
+/**
+ * 自己被拖（移動 / 縮放）、平移畫布、縮放滑桿進行中就關掉位移補間，條才不會追著游標跑。legacy :2926。
+ * 只認這幾種：列排序、拉相依線也帶著 id，但那時條要照常補間（動畫稽核 D2）。
+ */
 const still = computed(() => {
   if (ui.zooming) return true
   const d = ui.drag
   if (!d || props.kind !== 'task') return false
-  return d.kind === 'pan' || ('id' in d && d.id === props.task.id)
+  if (d.kind === 'pan') return true
+  return (d.kind === 'move' || d.kind === 'resL' || d.kind === 'resR') && d.id === props.task.id
 })
 
 /** 條上的文字；摘要條不放字。legacy `label` :2920 */
@@ -207,7 +211,7 @@ function onDown(e: PointerEvent): void {
     <div
       :ref="dotRefs.L"
       class="dot-zone zone-l"
-      :class="{ shown: showL }"
+      :class="{ shown: showL, still }"
       :data-linkfor="id"
       :style="{ left: `${zoneL}px`, top: `${zoneY}px` }"
       @pointerdown="drag.startLink($event, id, 'L')"
@@ -219,7 +223,7 @@ function onDown(e: PointerEvent): void {
     <div
       :ref="dotRefs.R"
       class="dot-zone zone-r"
-      :class="{ shown: showR }"
+      :class="{ shown: showR, still }"
       :data-linkfor="id"
       :style="{ left: `${zoneR}px`, top: `${zoneY}px` }"
       @pointerdown="drag.startLink($event, id, 'R')"
@@ -263,9 +267,9 @@ function onDown(e: PointerEvent): void {
   gap: var(--r-badge);
   overflow: hidden;
   z-index: 12;
+  /* 上下位移不走 top 過渡：由 GanttPanel 的 useRowMotion 寫 translate，跟左欄列同一個時鐘 */
   transition:
     left var(--t-bar) var(--ease),
-    top var(--t-bar) var(--ease),
     width var(--t-bar) var(--ease),
     background var(--t-base) ease,
     box-shadow var(--t-fast) ease,
@@ -390,7 +394,18 @@ function onDown(e: PointerEvent): void {
   z-index: 20;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s ease;
+  /*
+   * 左右跟條的 left / width 同一組時長與曲線：條變寬、被 cascade 推動時圓點貼著條緣走（動畫稽核 D4）。
+   * 上下位移由 GanttPanel 的 useRowMotion 寫 translate，跟條同一個時鐘。
+   */
+  transition:
+    left var(--t-bar) var(--ease),
+    opacity var(--t-fast) ease;
+}
+
+/* 條自己被拖 / 縮放中：條不補間，圓點也不補間 */
+.dot-zone.still {
+  transition: opacity var(--t-fast) ease;
 }
 
 .dot-zone.shown {

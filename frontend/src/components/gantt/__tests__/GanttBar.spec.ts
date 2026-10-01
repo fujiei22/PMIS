@@ -10,7 +10,7 @@ import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
-import { useUiStore } from '@/stores/ui'
+import { useUiStore, type DragState } from '@/stores/ui'
 
 /** 測試一定走 mock 實作（review F11：mockApi 在型別上是 optional）。 */
 const mockApi = maybeMockApi!
@@ -123,6 +123,39 @@ describe('GanttBar 的視覺狀態（契約 G、legacy :496-513）', () => {
     useClockStore().now = Date.parse('2026-09-20T03:00:00Z')
     const w = mountTask('t3')
     expect(w.find('.bar').attributes('data-status')).toBe('delayed')
+  })
+
+  // 動畫稽核 D2(b)：原本判斷式是「drag 有 id 且等於自己」，連列排序 / 拉相依線也命中，
+  // 被拖列自己的條就沒有位移補間。只有條自己被拖（移動 / 縮放）與平移畫布時才要停住。
+  it('still 只在條自己被拖（move / resL / resR）與平移畫布時成立', async () => {
+    const ui = useUiStore()
+    const w = mountTask('t3')
+    const bar = { id: 't3', x0: 0, sl0: 0, s0: 0, e0: 0, last: 0 }
+    const cases: Record<string, DragState> = {
+      move: { kind: 'move', ...bar },
+      resL: { kind: 'resL', ...bar },
+      resR: { kind: 'resR', ...bar },
+      pan: { kind: 'pan', x0: 0, y0: 0, sl: 0, st: 0, moved: 0, native: false },
+      reorder: { kind: 'reorder', id: 't3', over: null, lastAt: 0, lastY: 0 },
+      link: { kind: 'link', id: 't3', side: 'R', ax: 0, ay: 0 },
+      // 別條被拖：自己照常補間
+      otherBar: { kind: 'move', ...bar, id: 't4' },
+    }
+    const still: Record<string, boolean> = {}
+    for (const [name, drag] of Object.entries(cases)) {
+      ui.drag = drag
+      await nextTick()
+      still[name] = w.find('.bar').classes().includes('still')
+    }
+    expect(still).toEqual({
+      move: true,
+      resL: true,
+      resR: true,
+      pan: true,
+      reorder: false,
+      link: false,
+      otherBar: false,
+    })
   })
 
   it('選取中 hover 才亮圓點（hovered = selected && hoverTaskId）', async () => {

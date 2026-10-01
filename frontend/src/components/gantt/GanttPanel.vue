@@ -8,10 +8,12 @@ import GanttBars from '@/components/gantt/GanttBars.vue'
 import GanttGroupRow from '@/components/gantt/GanttGroupRow.vue'
 import GanttTaskRow from '@/components/gantt/GanttTaskRow.vue'
 import GanttTimeline, { type RulerDay, type RulerMonth } from '@/components/gantt/GanttTimeline.vue'
+import { registerEl, useDomRegistry } from '@/composables/useDomRegistry'
 import { useFocusRequest } from '@/composables/useFocusScroll'
 import { useGanttScroll } from '@/composables/useGanttScroll'
 import { NARROW_QUERY, useMediaQuery } from '@/composables/useMediaQuery'
 import { usePointerDrag } from '@/composables/usePointerDrag'
+import { useRowMotion } from '@/composables/useRowMotion'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
 import { useTaskActions } from '@/composables/useTaskActions'
 import { ROW_HEIGHT } from '@/constants/dashboard'
@@ -38,16 +40,58 @@ const taskStore = useTaskStore()
 const filter = useFilterStore()
 const selection = useSelectionStore()
 const sticky = useStickyOffsetsContext()
+const registry = useDomRegistry()
 
 const scrollerEl = ref<HTMLElement | null>(null)
 const rulerEl = ref<HTMLElement | null>(null)
 const chartEl = ref<HTMLElement | null>(null)
 const bodyEl = ref<HTMLElement | null>(null)
 // scrollX / viewW 由 composable 繼續維護，S5 的拖曳要用；S3 的畫面本身用不到
-const { onScroll, jumpToday, onZoom, scrollTo } = useGanttScroll(scrollerEl, rulerEl)
+const { onScroll, jumpToday, onZoom, scrollTo, shift } = useGanttScroll(scrollerEl, rulerEl)
 
 // 拖曳的容器在這一層，API 往下 provide 給列與條（GanttGroupRow / GanttTaskRow / GanttBars）
 const drag = usePointerDrag({ gantt: scrollerEl, chart: chartEl, vscroll: bodyEl })
+
+/*
+ * 專案起點外移 / 內縮（range.a 變）：畫布所有座標換基準（最早的任務被拖到更早、刪掉等）。
+ * 日期格與尺規當幀就換、條與今天線卻用 left 過渡追 0.2 秒，而且整片跳 N 天（動畫稽核 D13）。
+ * 這一幀讓畫布上的東西不補間（rebasing），DOM 更新後把捲動位置補回同樣的 px、拖曳的基準也跟著補，畫面就停在原地。
+ */
+const rebasing = ref(false)
+let rebaseRaf: number | undefined
+
+watch(
+  () => taskStore.range.a,
+  () => {
+    rebasing.value = true
+  },
+  { flush: 'sync' },
+)
+
+watch(
+  () => taskStore.range.a,
+  (a, was) => {
+    const dx = (was - a) * ui.dayWidth
+    if (dx) {
+      // 面板收合中（沒有 scroller）也要補記住的位置，展開時才不會捲回舊的 px
+      shift(dx)
+      drag.rebase(dx)
+    }
+    // 至少一次樣式計算帶著 rebasing 之後（兩幀）才恢復補間
+    if (rebaseRaf !== undefined) cancelAnimationFrame(rebaseRaf)
+    rebaseRaf = requestAnimationFrame(() => {
+      rebaseRaf = requestAnimationFrame(() => {
+        rebaseRaf = undefined
+        rebasing.value = false
+      })
+    })
+  },
+  { flush: 'post' },
+)
+
+onBeforeUnmount(() => {
+  if (rebaseRaf !== undefined) cancelAnimationFrame(rebaseRaf)
+})
 
 /** 選到任務就把它的條捲到畫面左側三分之一處。legacy `focus()` :2400-2403 */
 useFocusRequest((req) => {
@@ -128,6 +172,35 @@ const stripes = computed(() =>
   })),
 )
 
+/** 橫紋的元素（key 同 stripes 的 key），列位移補間要寫到它們身上。 */
+const stripeEls = new Map<string, HTMLElement>()
+
+/**
+ * 某一列（`g-<gid>` / `t-<tid>`）在畫面上的元素：左欄列、橫紋、條（收合分類是摘要條）、條兩側的連線圓點。
+ * 同一列的元素由 useRowMotion 寫同一個位移，左右才會一起走。
+ */
+function* rowElements(key: string): Generator<HTMLElement | undefined> {
+  const id = key.slice(2)
+  yield stripeEls.get(key)
+  if (key.startsWith('g-')) {
+    yield registry.groups.get(id)
+    yield registry.bars.get(`sum-${id}`)
+  } else {
+    yield registry.rows.get(id)
+    yield registry.bars.get(id)
+    const dots = registry.linkDots.get(id)
+    yield dots?.L
+    yield dots?.R
+  }
+}
+
+// 收合 / 篩選 / 重排時列的上下位移（左欄與右側同一個時鐘，取代 TransitionGroup 的 move 與條的 top 過渡）
+useRowMotion({
+  keys: () => rows.value.map((v) => `${v.kind}-${v.id}`),
+  elementsOf: rowElements,
+  rowHeight: ROW_HEIGHT,
+})
+
 const zoomPct = computed(() => Math.round((ui.dayWidth / 32) * 100))
 /** 滑桿軌道左半段的填色比例。legacy `zoomFill` :3581 */
 const zoomFill = computed(() => Math.round(((ui.dayWidth - 14) / 18) * 100))
@@ -137,42 +210,18 @@ const allCollapsed = computed(() => taskStore.groups.every((g) => ui.collapsedGr
 const narrow = useMediaQuery(NARROW_QUERY)
 
 /*
- * 左欄的寬度（ganttLeftExpanded）與列的寫法（ganttLeftDates）分開切：
- * 展開時先撐開寬度，寬度過渡跑完才換成起訖日——同時換的話，寬的日期膠囊會先出現、在還沒撐開的欄裡蓋住任務名；
- * 收合時反過來，先換回只寫工期的窄膠囊，再縮寬度。
+ * 左欄的寬度（ganttLeftExpanded）與列的寫法（ganttLeftDates）同時切：
+ * 膠囊換寫法時由 GanttTaskRow 把膠囊寬度從舊寫法補間到新寫法，時長與曲線跟左欄寬度（--t-layout / --ease）一樣，
+ * 任務名的寬度就一路單調（動畫稽核 D15）。原本「展開時等寬度撐開才換成起訖日」會讓任務名先變寬、
+ * 換寫法那一幀又縮回 105px；膠囊在補間途中裁掉超出的字，不會蓋住任務名。
  */
-
-/**
- * transitionend 沒來時（過渡被打斷、沒有過渡）的保險。平常由 transitionend 切；
- * 這裡比寬度過渡（--t-layout .24s）多留不少，裝置卡頓時才不會在寬度還沒撐開前就換成起訖日。
- */
-const LEFT_WIDTH_MS = 400
-let datesTimer: ReturnType<typeof setTimeout> | undefined
 watch(
   () => ui.ganttLeftExpanded,
-  (on, was) => {
-    clearTimeout(datesTimer)
-    // 收合，或頁面剛掛上（was 是 undefined，沒有過渡）：直接對齊
-    if (!on || was === undefined) {
-      ui.ganttLeftDates = on
-      return
-    }
-    datesTimer = setTimeout(() => {
-      ui.ganttLeftDates = true
-    }, LEFT_WIDTH_MS)
+  (on) => {
+    ui.ganttLeftDates = on
   },
   { immediate: true },
 )
-
-function onLeftTransitionEnd(e: TransitionEvent): void {
-  // 列裡面的過渡也會冒泡上來，只認左欄自己的寬度
-  if (e.target !== e.currentTarget || e.propertyName !== 'flex-basis') return
-  if (!ui.ganttLeftExpanded) return
-  clearTimeout(datesTimer)
-  ui.ganttLeftDates = true
-}
-
-onBeforeUnmount(() => clearTimeout(datesTimer))
 
 /**
  * 全部收合 / 全部展開。legacy `toggleAllGroups` :4110。
@@ -256,14 +305,14 @@ function toggleAllGroups(): void {
 
     <div ref="bodyEl" class="gantt-body">
       <div class="gantt-rows">
-        <!-- 左欄：平鋪 visibleRows，TransitionGroup 負責收合 / 重排的 FLIP -->
-        <div class="gantt-left" @transitionend="onLeftTransitionEnd">
-          <TransitionGroup tag="div" move-class="row-move" class="gantt-flow">
+        <!-- 左欄：平鋪 visibleRows；收合 / 重排的上下位移由 useRowMotion 補間，離場列直接移除（同 legacy） -->
+        <div class="gantt-left">
+          <div class="gantt-flow">
             <template v-for="v in leftRows" :key="v.key">
               <GanttGroupRow v-if="v.group" :group="v.group" />
               <GanttTaskRow v-else-if="v.task" :task="v.task" />
             </template>
-          </TransitionGroup>
+          </div>
           <div class="gantt-filler"></div>
         </div>
 
@@ -272,7 +321,7 @@ function toggleAllGroups(): void {
           <div
             ref="chartEl"
             class="gantt-chart"
-            :class="{ panning: ui.drag?.kind === 'pan' }"
+            :class="{ panning: ui.drag?.kind === 'pan', rebasing }"
             :style="{ width: `${chartWidth}px`, height: `${chartHeight}px` }"
             @pointerdown="drag.startPan($event)"
           >
@@ -286,12 +335,13 @@ function toggleAllGroups(): void {
             <div
               v-for="s in stripes"
               :key="s.key"
+              :ref="registerEl(stripeEls, s.key)"
               class="stripe"
               :class="{ group: s.group, selected: s.selected, related: s.related }"
               :style="{ top: `${s.top}px`, width: `${chartWidth}px` }"
             ></div>
             <DependencyLines :chart-width="chartWidth" :chart-height="chartHeight" />
-            <GanttBars />
+            <GanttBars :chart-height="chartHeight" />
           </div>
         </div>
       </div>
@@ -484,11 +534,6 @@ function toggleAllGroups(): void {
   min-height: 0;
 }
 
-/* 收合 / 重排時列的位移由 TransitionGroup 的 FLIP 處理 */
-.row-move {
-  transition: transform var(--t-fast) var(--ease);
-}
-
 .gantt-scroller {
   position: relative;
   z-index: 1;
@@ -507,6 +552,14 @@ function toggleAllGroups(): void {
 /* 平移中：整個畫布的游標換成抓握（body 也同步改，指標跑到畫布外也不會變回來） */
 .gantt-chart.panning {
   cursor: grabbing;
+}
+
+/* 專案起點外移 / 內縮的那一幀：座標換基準、捲動位置同步補回，條、圓點、今天線都不補間（D13） */
+.gantt-chart.rebasing :deep(.bar),
+.gantt-chart.rebasing :deep(.dot-zone),
+.gantt-chart.rebasing :deep(.today-line),
+.gantt-chart.rebasing :deep(.today-tag) {
+  transition: none;
 }
 
 .day-bg {
@@ -532,9 +585,8 @@ function toggleAllGroups(): void {
   height: var(--gantt-row);
   background: transparent;
   border-bottom: 1px solid var(--border-hair);
-  transition:
-    top var(--t-bar) var(--ease),
-    background var(--t-base) ease;
+  /* 上下位移不走 top 過渡：由 useRowMotion 寫 translate，跟左欄列同一個時鐘 */
+  transition: background var(--t-base) ease;
 }
 
 .stripe.group {

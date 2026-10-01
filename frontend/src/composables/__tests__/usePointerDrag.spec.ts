@@ -322,3 +322,223 @@ describe('usePointerDrag 的中止事件（review M3）', () => {
     unmount()
   })
 })
+// 動畫稽核 D16：排序放手時游標不在把手上，click 會派給把手與放手處的共同祖先（整列），被當成點選
+describe('排序拖曳放手後的 click（D16）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mockApi.reset(structuredClone(sampleProject))
+    useTaskStore().load(structuredClone(sampleProject))
+  })
+
+  afterEach(() => {
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+    document.body.innerHTML = ''
+  })
+
+  /** 一顆掛在 document 上、會記錄 click 的元素（模擬整列的 @click="onSelect"）。 */
+  function clickTarget(): { el: HTMLElement; clicks: () => number } {
+    const el = document.createElement('div')
+    document.body.appendChild(el)
+    let n = 0
+    el.addEventListener('click', () => n++)
+    return { el, clicks: () => n }
+  }
+
+  it('列排序有位移：放手後的那一次 click 被吞掉，之後的點擊照常', async () => {
+    const { api: drag, unmount } = mountDrag()
+    const row = clickTarget()
+
+    drag.startReorder(pointer('pointerdown', 20, 100) as unknown as PointerEvent, 't4')
+    document.dispatchEvent(pointer('pointermove', 20, 130))
+    document.dispatchEvent(pointer('pointerup', 100, 134))
+    row.el.dispatchEvent(pointer('click', 100, 134))
+    expect(row.clicks()).toBe(0)
+
+    // 放手之後這一輪事件跑完就撤掉攔截，下一次真正的點擊不受影響
+    await new Promise((r) => setTimeout(r, 0))
+    row.el.dispatchEvent(pointer('click', 100, 134))
+    expect(row.clicks()).toBe(1)
+    unmount()
+  })
+
+  it('分類排序有位移：同樣吞掉放手後的 click', () => {
+    const { api: drag, unmount } = mountDrag()
+    const row = clickTarget()
+
+    drag.startGroupReorder(pointer('pointerdown', 20, 100) as unknown as PointerEvent, 'g1')
+    document.dispatchEvent(pointer('pointermove', 20, 300))
+    document.dispatchEvent(pointer('pointerup', 90, 300))
+    row.el.dispatchEvent(pointer('click', 90, 300))
+    expect(row.clicks()).toBe(0)
+    unmount()
+  })
+
+  it('沒有位移（只是按一下把手）：click 照常派送', () => {
+    const { api: drag, unmount } = mountDrag()
+    const row = clickTarget()
+
+    drag.startReorder(pointer('pointerdown', 20, 100) as unknown as PointerEvent, 't4')
+    document.dispatchEvent(pointer('pointerup', 20, 100))
+    row.el.dispatchEvent(pointer('click', 20, 100))
+    expect(row.clicks()).toBe(1)
+    unmount()
+  })
+
+  it('條的移動不吞 click（放手點條切換選取維持 legacy 行為）', () => {
+    const { api: drag, unmount } = mountDrag()
+    const row = clickTarget()
+
+    drag.startBar(pointer('pointerdown', 0, 0) as unknown as PointerEvent, 't1', 'move')
+    document.dispatchEvent(pointer('pointermove', 96, 0))
+    document.dispatchEvent(pointer('pointerup', 96, 0))
+    row.el.dispatchEvent(pointer('click', 96, 0))
+    expect(row.clicks()).toBe(1)
+    unmount()
+  })
+})
+
+// 動畫稽核 D6 / D13：自動捲動時條以整天吸附、scrollLeft 卻連續變 → 條在游標下鋸齒抖動；
+// 專案起點外移時所有座標換基準，捲動位置補回之後，拖曳的基準也要跟著補，否則多算好幾天
+describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mockApi.reset(structuredClone(sampleProject))
+    useTaskStore().load(structuredClone(sampleProject))
+  })
+
+  afterEach(() => {
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+  })
+
+  /** 掛拖曳，並給它一顆 scrollLeft 由測試控制的甘特捲動容器。 */
+  function mountWithScroller(): {
+    api: PointerDrag
+    registry: DomRegistry
+    scroller: HTMLElement
+    unmount: () => void
+  } {
+    let api!: PointerDrag
+    let registry!: DomRegistry
+    const scroller = document.createElement('div')
+    let sl = 0
+    Object.defineProperty(scroller, 'scrollLeft', { get: () => sl, set: (v: number) => void (sl = v) })
+    const Inner = defineComponent({
+      setup() {
+        api = usePointerDrag({ gantt: ref(scroller), chart: ref(null), vscroll: ref(null) })
+        return () => h('div')
+      },
+    })
+    const Host = defineComponent({
+      setup() {
+        registry = provideDomRegistry()
+        return () => h(Inner)
+      },
+    })
+    const wrapper = mount(Host, { attachTo: document.body })
+    return { api, registry, scroller, unmount: () => wrapper.unmount() }
+  }
+
+  it('游標不動、畫面自動捲動：條用 transform 補上還沒湊滿一天的捲動量，湊滿才改日期', () => {
+    const tasks = useTaskStore()
+    const { api: drag, registry, scroller, unmount } = mountWithScroller()
+    const bar = document.createElement('div')
+    registerEl(registry.bars, 't1')(bar)
+    const s0 = dayIndex(tasks.taskById('t1')!.start)
+
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't1', 'move')
+    scroller.scrollLeft = 10
+    document.dispatchEvent(pointer('pointermove', 500, 0))
+    // 捲了 10px、日期還沒動：條往右補 10px，畫面上還在游標下
+    expect(bar.style.transform).toBe('translateX(10px)')
+    expect(dayIndex(tasks.taskById('t1')!.start)).toBe(s0)
+
+    scroller.scrollLeft = 20
+    document.dispatchEvent(pointer('pointermove', 500, 0))
+    // 捲了 20px：四捨五入成 1 天，條往左補回 12px
+    expect(dayIndex(tasks.taskById('t1')!.start)).toBe(s0 + 1)
+    expect(bar.style.transform).toBe('translateX(-12px)')
+
+    // 放開：補償拿掉，條落在整天的位置
+    document.dispatchEvent(pointer('pointerup', 500, 0))
+    expect(bar.style.transform).toBe('')
+    unmount()
+  })
+
+  it('沒有自動捲動時照舊整天吸附，不加 transform', () => {
+    const tasks = useTaskStore()
+    const { api: drag, registry, unmount } = mountWithScroller()
+    const bar = document.createElement('div')
+    registerEl(registry.bars, 't1')(bar)
+    const s0 = dayIndex(tasks.taskById('t1')!.start)
+
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't1', 'move')
+    document.dispatchEvent(pointer('pointermove', 540, 0))
+    expect(dayIndex(tasks.taskById('t1')!.start)).toBe(s0 + 1)
+    expect(bar.style.transform).toBe('')
+    document.dispatchEvent(pointer('pointerup', 540, 0))
+    unmount()
+  })
+
+  // review：補償（nudge）不改資料，相依線只在資料變後跟一段；要有旗標讓它在補償與放開回彈期間一直跟著條
+  it('nudging 在補償與回彈期間為 true、結束後 false；回彈中又開新的拖曳不會被清掉', () => {
+    vi.useFakeTimers()
+    // 回彈時長讀 --t-bar；jsdom 沒有 tokens.css，這裡給 0.2s
+    vi.spyOn(window, 'getComputedStyle').mockImplementation(
+      () => ({ getPropertyValue: (p: string) => (p === '--t-bar' ? '0.2s' : '') }) as unknown as CSSStyleDeclaration,
+    )
+    const { api: drag, registry, scroller, unmount } = mountWithScroller()
+    registerEl(registry.bars, 't1')(document.createElement('div'))
+    expect(drag.nudging.value).toBe(false)
+
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't1', 'move')
+    document.dispatchEvent(pointer('pointermove', 500, 0))
+    // 還沒捲動：沒有補償
+    expect(drag.nudging.value).toBe(false)
+    scroller.scrollLeft = 10
+    document.dispatchEvent(pointer('pointermove', 500, 0))
+    expect(drag.nudging.value).toBe(true)
+
+    // 放開：回彈（--t-bar）跑完才算結束
+    document.dispatchEvent(pointer('pointerup', 500, 0))
+    expect(drag.nudging.value).toBe(true)
+    vi.advanceTimersByTime(150)
+    expect(drag.nudging.value).toBe(true)
+
+    // 回彈途中又拖一次、又有補償：舊回彈的計時器到了也不能清掉
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't1', 'move')
+    scroller.scrollLeft = 20
+    document.dispatchEvent(pointer('pointermove', 500, 0))
+    vi.advanceTimersByTime(100)
+    expect(drag.nudging.value).toBe(true)
+
+    document.dispatchEvent(pointer('pointerup', 500, 0))
+    vi.advanceTimersByTime(199)
+    expect(drag.nudging.value).toBe(true)
+    vi.advanceTimersByTime(2)
+    expect(drag.nudging.value).toBe(false)
+    unmount()
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  it('rebase：捲動位置補回 N px 時，拖曳的基準跟著補，日期不會多算', () => {
+    const tasks = useTaskStore()
+    const { api: drag, scroller, unmount } = mountWithScroller()
+    // t28 沒有前置，可以往前拖（t1 有前置 t28，不能早於它）
+    const s0 = dayIndex(tasks.taskById('t28')!.start)
+
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't28', 'move')
+    document.dispatchEvent(pointer('pointermove', 468, 0))
+    expect(dayIndex(tasks.taskById('t28')!.start)).toBe(s0 - 1)
+
+    // 專案起點外移 2 天：所有座標右移 64px，GanttPanel 把 scrollLeft 補 +64
+    scroller.scrollLeft += 64
+    drag.rebase(64)
+    document.dispatchEvent(pointer('pointermove', 468, 0))
+    expect(dayIndex(tasks.taskById('t28')!.start)).toBe(s0 - 1)
+    document.dispatchEvent(pointer('pointerup', 468, 0))
+    unmount()
+  })
+})

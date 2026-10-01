@@ -1,8 +1,9 @@
-import { inject, onBeforeUnmount, onMounted, provide, type InjectionKey, type Ref } from 'vue'
+import { inject, onBeforeUnmount, onMounted, provide, ref, type InjectionKey, type Ref } from 'vue'
 import { useAutoScroll } from '@/composables/useAutoScroll'
 import { useDomRegistry } from '@/composables/useDomRegistry'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex, isoFromIndex } from '@/lib/date'
+import { parseDuration } from '@/lib/easing'
 import { useRowsStore } from '@/stores/rows'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
@@ -29,6 +30,8 @@ const REORDER_PX = 3
 const GROUP_REORDER_MS = 220
 /** 平移的位移小於這個值就當成「點空白處」，清掉選取。legacy :2584 */
 const PAN_CLICK_PX = 4
+/** 列 / 分類排序放手時，指標位移達到這個值就不是點選（同平移的判斷），吞掉隨後的 click。 */
+const REORDER_CLICK_PX = 4
 
 /** 甘特圖裡拖曳會用到的三個容器。 */
 export interface DragElements {
@@ -55,6 +58,16 @@ export interface PointerDrag {
   setHover: (id: string) => void
   /** 滑鼠離開；延遲 280ms 才收圓點，讓指標有時間從條移到圓點上。 */
   clearHover: (id: string) => void
+  /**
+   * 畫布座標換了基準（專案起點外移 / 內縮，所有東西右移 dx px）、捲動位置已補回 dx 之後呼叫：
+   * 拖曳的捲動基準跟著補，日期才不會多算（動畫稽核 D13）。
+   */
+  rebase: (dx: number) => void
+  /**
+   * 被拖的條正在用 transform 補償自動捲動（拖曳中），或補償正在回彈（放開後 --t-bar 內）。
+   * 補償不改資料：相依線這段期間要一直照條的實際位置畫，資料沒變它不會自己跟。
+   */
+  nudging: Readonly<Ref<boolean>>
 }
 
 const NOOP: PointerDrag = {
@@ -65,6 +78,8 @@ const NOOP: PointerDrag = {
   startPan: () => {},
   setHover: () => {},
   clearHover: () => {},
+  rebase: () => {},
+  nudging: ref(false),
 }
 
 const DRAG_KEY: InjectionKey<PointerDrag> = Symbol('pointer-drag')
@@ -82,6 +97,8 @@ export function usePointerDrag(els: DragElements): PointerDrag {
 
   /** 最後一次指標座標；不需要響應式，每次 tick 直接讀。legacy `_ptr`（:2432） */
   let ptr: { x: number; y: number } | null = null
+  /** 這一段拖曳按下去的座標；放手時判斷「有沒有真的拖」。 */
+  let downAt = { x: 0, y: 0 }
   let hoverTimer: ReturnType<typeof setTimeout> | undefined
   /**
    * 這一段拖曳改到的任務 id（含被 cascade 推動的下游）。
@@ -123,9 +140,16 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     d: Extract<DragState, { kind: 'move' | 'resL' | 'resR' }>,
     p: { x: number; y: number },
   ): void {
-    const sl = els.gantt.value?.scrollLeft ?? 0
+    const dw = ui.dayWidth
+    const moved = p.x - d.x0
+    const scrolled = (els.gantt.value?.scrollLeft ?? 0) - d.sl0
     // 加上捲動位移，自動捲動時才不會因為畫面移動而多算幾天（legacy :2489）
-    const delta = Math.round((p.x + sl - (d.x0 + d.sl0)) / ui.dayWidth)
+    const delta = Math.round((moved + scrolled) / dw)
+    if (d.kind === 'move') {
+      // 動畫稽核 D6：自動捲動時 scrollLeft 連續在變、條卻以整天吸附，條在游標下鋸齒抖動。
+      // 補上「捲動造成、還沒湊滿一天」的差，條在畫面上只跟著游標的位移走；放開才吸附（finish）
+      nudge(d.id, scrolled - (delta - Math.round(moved / dw)) * dw)
+    }
     if (delta === d.last) return
     d.last = delta
     if (d.kind === 'move') {
@@ -141,6 +165,64 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     } else {
       track(taskStore.applyLocalPatch(d.id, { end: isoFromIndex(Math.max(d.e0 + delta, d.s0)) }))
     }
+  }
+
+  /**
+   * 這一段拖曳的補償：被拖的條（與它兩側的連線圓點）此刻的位移。補償過就一直留著（位移可能回到 0），
+   * 放開時從這裡吸附回整天的位置。
+   */
+  let nudged: { id: string; px: number } | null = null
+  /** 見 PointerDrag.nudging。 */
+  const nudging = ref(false)
+  /** 放開後的回彈動畫；回彈途中又拖同一條要先停掉，不然動畫會蓋住新的補償。 */
+  let rebound: { id: string; anims: Animation[] } | null = null
+
+  /** 條與圓點一起平移 px（`transform`，跟列上下位移用的 `translate` 是不同屬性，不互相蓋掉）。 */
+  function nudgeEls(id: string): HTMLElement[] {
+    const dots = registry.linkDots.get(id)
+    return [registry.bars.get(id), dots?.L, dots?.R].filter((el): el is HTMLElement => !!el)
+  }
+
+  function nudge(id: string, px: number): void {
+    const v = Math.round(px * 100) / 100
+    if (!v && !nudged) return
+    if (v) {
+      nudging.value = true
+      if (rebound?.id === id) {
+        for (const a of rebound.anims) a.cancel()
+        rebound = null
+      }
+    }
+    nudged = { id, px: v }
+    for (const el of nudgeEls(id)) el.style.transform = v ? `translateX(${v}px)` : ''
+  }
+
+  /** 放開 / 中止：拿掉補償位移，條從目前的位置補間回整天的位置（--t-bar / --ease）。 */
+  function settleNudge(): void {
+    if (!nudged) return
+    const { id, px } = nudged
+    nudged = null
+    const cs = getComputedStyle(document.documentElement)
+    const timing = {
+      duration: parseDuration(cs.getPropertyValue('--t-bar')),
+      easing: cs.getPropertyValue('--ease').trim() || 'ease',
+    }
+    const anims: Animation[] = []
+    for (const el of nudgeEls(id)) {
+      el.style.transform = ''
+      // jsdom 沒有 Web Animations
+      if (px && typeof el.animate === 'function' && timing.duration > 0) {
+        anims.push(el.animate([{ transform: `translateX(${px}px)` }, { transform: 'none' }], timing))
+      }
+    }
+    rebound = anims.length ? { id, anims } : null
+    // 回彈跑完才算結束；這段期間又開了新的補償（又拖了一條）就留給它，不能清掉
+    setTimeout(
+      () => {
+        if (!nudged) nudging.value = false
+      },
+      px ? timing.duration : 0,
+    )
   }
 
   /** 記下這一段拖曳改到的任務（review F2）。 */
@@ -267,6 +349,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     ui.drag = state
     dragged.clear()
     ptr = { x: e.clientX, y: e.clientY }
+    downAt = { x: e.clientX, y: e.clientY }
     auto.start()
     // base.css 沒有行內的 user-select 規則，拖曳期間直接改 body 樣式（legacy :2598）
     document.body.style.userSelect = 'none'
@@ -336,6 +419,13 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     document.body.style.cursor = 'grabbing'
   }
 
+  function rebase(dx: number): void {
+    const d = ui.drag
+    if (!d) return
+    if (d.kind === 'move' || d.kind === 'resL' || d.kind === 'resR') d.sl0 += dx
+    else if (d.kind === 'pan') d.sl += dx
+  }
+
   function setHover(id: string): void {
     if (ui.drag) return
     clearTimeout(hoverTimer)
@@ -363,6 +453,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     if (!d) return null
     ui.drag = null
     auto.stop()
+    settleNudge()
     document.body.style.userSelect = ''
     if (d.kind === 'pan') document.body.style.cursor = ''
     return d
@@ -431,13 +522,40 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     return null
   }
 
+  /**
+   * 吞掉這次放開之後的那一個 click。
+   *
+   * 排序從 12px 的把手開始拖，放手時游標多半已經在同一列的別處（任務名、日期…）；
+   * 瀏覽器會把 click 派給按下與放開兩處的共同祖先——整列——於是被當成點選：
+   * 全畫面淡化、甘特自動捲動（動畫稽核 D16，legacy 不會）。
+   * 滑鼠的 click 跟 pointerup 在同一個事件任務裡派送，所以這一輪跑完就撤掉攔截，
+   * 沒產生 click 的情況（放開時已離開共同祖先、觸控拖曳）也不會吃到下一次真正的點擊。
+   */
+  function swallowNextClick(): void {
+    const stop = (ev: MouseEvent): void => {
+      ev.stopPropagation()
+      ev.preventDefault()
+      release()
+    }
+    const release = (): void => {
+      window.removeEventListener('click', stop, true)
+      clearTimeout(timer)
+    }
+    // window 的捕獲階段最早收到，列自己的 @click 就不會跑
+    window.addEventListener('click', stop, true)
+    const timer = setTimeout(release, 0)
+  }
+
   /** 放開：連線要結算成相依，平移要判斷是不是「只是點一下空白處」。legacy `onUp`（:2571） */
   function onUp(e: PointerEvent): void {
     const d = finish()
     if (!d) return
     commit(d)
 
-    if (d.kind === 'link') {
+    if (d.kind === 'reorder' || d.kind === 'greorder') {
+      // 真的拖過（不是只按一下把手）才吞；只按一下的 click 落在把手上，把手自己會 stop
+      if (Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) >= REORDER_CLICK_PX) swallowNextClick()
+    } else if (d.kind === 'link') {
       // 命中條或圓點都算，都沒中就用最後壓到的那一列（legacy :2574-2576）
       const to = hitTaskAt(e.clientX, e.clientY) ?? ui.nearTaskId
       ui.linkLine = null
@@ -479,6 +597,8 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     startPan,
     setHover,
     clearHover,
+    rebase,
+    nudging,
   }
   provide(DRAG_KEY, api)
   return api

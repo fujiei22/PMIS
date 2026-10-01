@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -111,5 +111,20 @@ describe('README 的「怎麼接後端」', () => {
       .map((cell) => cell.replace(/`/g, '').trim())
       .sort()
     expect(documented).toEqual(codes)
+  })
+})
+
+/**
+ * 目錄結構那一節的 composables 清單：`src/composables/` 底下每一支都要被提到。
+ * review（動畫稽核批次 A）：新增 useRowMotion 時 README 沒跟上；清單目前是逐一列名，漏了就紅。
+ */
+describe('README 的目錄結構', () => {
+  it('composables 清單提到 src/composables/ 底下的每一支', () => {
+    const tree = sectionUnder('## 目錄結構')
+    const files = readdirSync(resolve(ROOT, 'src/composables'))
+      .filter((f) => /\.ts$/.test(f))
+      .map((f) => f.replace(/\.ts$/, ''))
+    expect(files.length, '沒讀到 composables').toBeGreaterThan(10)
+    expect(files.filter((name) => !tree.includes(name))).toEqual([])
   })
 })
