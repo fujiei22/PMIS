@@ -490,6 +490,9 @@ dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (im
 
 - **逾時與取消**：`ProjectApi` 目前沒有 `AbortSignal`，也沒有逾時。網路實作至少要給每個請求一個逾時（逾時 → `ApiError('network')`）；離開頁面或連續改動時要能取消前一發。
 - **authn / authz**：`ProjectApi` 完全沒有身分概念，**每一支端點都要後端自己做認證與授權**。`ProjectData.currentUserId` 只是「留言掛誰、頭像顯示誰」的顯示用欄位，是 client 送什麼就是什麼，**絕對不能拿它當身分**。
+  - 兩頁重進時的背景重載失敗**只記 console、畫面維持舊資料**（Dashboard 的 `useProjectBoot`、總覽的 `usePortfolioBoot`）。加上登入之後，session 過期 / 撤權 / 專案被刪（401 / 403 / 404）不能也這樣吞掉：`ApiErrorCode` 補 `unauthorized` / `forbidden`，背景失敗遇到這幾種就清掉資料、切成錯誤或導回登入頁，只有 `network` 才維持舊資料。
+  - 登出 / 換使用者要有明確的重置：清資料層（task / issue / comment / member / portfolio）與 `selection` / `filter`，兩個 `loadState` 設回 `idle`；不然下一位進頁時是背景重載，會先看到上一位的資料。
+  - 加登入守衛時，`router/index.ts` 的先載守衛要排在它**後面**（守衛依註冊順序執行），未登入或被擋下的導航才不會先打出需要認證的請求。
 - **PATCH body 要用 schema 白名單驗欄位**：`updateTask` / `updateGroup` / `updateIssue` 送的是 JSON merge patch，後端必須逐欄位比對允許清單再寫入，**不可以整包 merge 進實體**（mass-assignment；也要擋 `__proto__` / `constructor` / `prototype` 這類鍵造成的原型污染）。同理 `createTask` 這些帶完整實體的端點也要過一次 schema。
 - **多人衝突**：現在是「後到的覆蓋先到的」，沒有版本號或 `If-Match`。同時編輯同一筆的情境沒有處理（spec 已排除）。附帶一提：`dirty`（本地改了還沒送出）只保護**本地**不被 reconcile 蓋掉，**不保護 server 端**——那段值還沒上 wire，別的 client 這段時間寫進去的東西，等它送出時一樣會被覆蓋。
 - **附件上傳驗證**：`comment.addDraftFiles` 直接 `URL.createObjectURL`，沒有任何檢查。要補檔案大小上限、MIME 型別與副檔名白名單（三者都要，只擋副檔名擋不住偽裝的檔案），**伺服器端再驗一次**。
@@ -498,11 +501,12 @@ dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (im
   2. DashboardView 從 `route.params.id` 取 id 傳給 `useProjectBoot()`。`App.vue` 的頁面 key 已經是 `route.path`，換專案時 Dashboard 會重新掛載、重新載入。
   3. 換專案時要清空資料層（task / issue / comment / member）與 `selection` / `filter`，不能只靠 `ui.resetTransient()`（它只清暫態浮層）。
   4. 總覽的 PMIS 摘要目前由 mock 從範例專案彙整，接上後改由後端的 `listProjects()` 提供。
-  5. 切頁先載要帶 id：`router/index.ts` 的 `beforeEach` 改成 `preloadProject(to.params.id)`。
-  6. 背景重載前先比對 store 裡是不是同一個專案（`useProjectBoot.ts` 的 `load()` 有註記）：不是就要走「載入中」，不然畫面會先秀上一個專案。換專案時先載會把 `ui.loadState` 切成 loading，正在淡出的舊頁會閃一下「載入中」，要一併處理（例如等新頁掛上才切）。
+  5. 切頁先載已經收到路由的 id（`router/index.ts` 的 `preloadProject(String(to.params.id))`），把它往下傳給 `loadProject(id)`。
+  6. 換了專案不走背景重載**已經做了**：`useProjectBoot.ts` 的 `loadedId` 記著 store 裡是哪個專案，不同就走「載入中」（單元測試守），畫面不會先秀上一個專案、也不會在 B 的頁面改到 A。剩下要處理的是換專案時先載把 `ui.loadState` 切成 loading，正在淡出的舊頁會閃一下「載入中」（例如等新頁掛上才切）。
 - **切頁先載與背景重載的競賽**（mock 延遲為 0，現在不會發生）：
   - **事件空窗**：先載的快照在導航一開始就打，`subscribe` 要到 Dashboard 掛載（舊頁淡出之後）才開始，這段時間別人改的事件會漏接。接後端時把訂閱提前，或訂閱後比對版本再補一次 `project.reloaded`。
   - **整包覆蓋**：背景重載回來時使用者已經能操作，`applyProject` 會整包覆蓋本地，包括還沒送出（`dirty`）的改動，語意同 `project.reloaded`。延遲大的後端要考慮背景重載遇到 `dirty` / `inflight` 時延後套用。
+  - **舊快照蓋回已完成的寫入**：Dashboard 背景重載的請求若在某次寫入之前被後端處理、卻在寫入的 response 之後才回來，`inflight` / `dirty` 都已清空，`applyProject` 會把那筆蓋回舊值（server 其實是新值）。整包資料帶版本或時間戳、比本地已確認的舊就丟掉，可以一併解決上一點。
   - **讀寫先後**：Dashboard 剛送出修改就切回總覽時，先載的 `listProjects()` 可能比那次修改先被後端處理，總覽短暫顯示舊值、下次載入才更新。
 - **總覽的規模**：時間軸範圍涵蓋所有專案與今天，日刻度與底色格的 DOM 節點數跟天數成正比。專案變多、時間跨度拉長時，要考慮限縮範圍或做虛擬化。
 - **總覽的篩選不寫進網址**：重新整理或分享連結時，篩選條件不會保留。

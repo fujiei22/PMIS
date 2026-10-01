@@ -141,7 +141,7 @@ describe('useProjectBoot', () => {
   it('切頁先載（G16 / C13）：掛載時的 reload 沿用同一發，不再打 api', async () => {
     const ui = useUiStore()
     const spy = vi.spyOn(mockApi, 'loadProject')
-    preloadProject()
+    preloadProject('pmis')
     // 不阻塞導航：只是開始，狀態先切成載入中（頁面還沒掛上，看不到）
     expect(ui.loadState).toBe('loading')
     expect(spy).toHaveBeenCalledTimes(1)
@@ -155,7 +155,7 @@ describe('useProjectBoot', () => {
     const ui = useUiStore()
     const spy = vi.spyOn(mockApi, 'loadProject')
     mockApi.failNext('loadProject')
-    preloadProject()
+    preloadProject('pmis')
     const boot = useProjectBoot()
     await boot.reload()
     expect(ui.loadState).toBe('error')
@@ -171,12 +171,29 @@ describe('useProjectBoot', () => {
     const ui = useUiStore()
     await useProjectBoot().reload()
     const spy = vi.spyOn(mockApi, 'loadProject')
-    preloadProject()
+    preloadProject('pmis')
     expect(ui.loadState).toBe('ready')
     expect(spy).toHaveBeenCalledTimes(1)
     await useProjectBoot().reload()
     expect(ui.loadState).toBe('ready')
     expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('已 ready 但換了專案：不走背景重載、切回載入中，畫面不先秀上一個專案的資料', async () => {
+    const ui = useUiStore()
+    preloadProject('pmis')
+    await useProjectBoot().reload()
+    expect(ui.loadState).toBe('ready')
+
+    preloadProject('other')
+    expect(ui.loadState).toBe('loading')
+    await useProjectBoot().reload()
+    expect(ui.loadState).toBe('ready')
+
+    // 再進同一個專案才走背景
+    preloadProject('other')
+    expect(ui.loadState).toBe('ready')
+    await useProjectBoot().reload()
   })
 
   it('start 只訂閱一次，stop 之後事件不再進來', async () => {

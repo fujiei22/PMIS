@@ -48,12 +48,13 @@ const router = createRouter({
  *   直接開總覽時 path 沒變，所以用 matched 是否為空判斷，跟 scrollBehavior 一樣。
  * - 導航被後來的導航打斷時，這一發不會被取走；下一次進同一頁的導航會覆寫它，不會沿用到舊的。
  *
- * `api.loadProject()` 目前不帶 id；接後端時把 `to.params.id` 傳進 `preloadProject`。
+ * 專案 id 傳給 `preloadProject`：換了專案不走背景重載（見 useProjectBoot 的 `loadedId`）。
+ * `api.loadProject()` 目前不帶 id；接後端時由 `preloadProject` 往下傳給 api。
  */
 router.beforeEach((to, from) => {
   if (from.matched.length && to.path === from.path) return
   if (to.name === 'overview') preloadPortfolio()
-  else if (to.name === 'dashboard') preloadProject()
+  else if (to.name === 'dashboard') preloadProject(String(to.params.id))
 })
 
 export default router

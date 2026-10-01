@@ -31,6 +31,13 @@ let reloadSeq = 0
 let preloaded: Promise<void> | null = null
 
 /**
+ * store 裡（或正在載）的是哪個專案。背景重載只在**同一個專案**時才走：換了專案一律走「載入中」，
+ * 畫面不會先秀上一個專案的資料，也不會讓人在 B 的頁面上改到 A 的任務（安全審查 M2）。
+ * `api.loadProject()` 目前不帶 id（mock 只有一份專案），比對已經在這裡；接後端時把 id 傳給 api 就好。
+ */
+let loadedId: string | null = null
+
+/**
  * 等頁面第一幀畫出來之後。rAF 在下一次繪製前執行，從裡面排的 setTimeout 落在那次繪製之後。
  *
  * 不用 `pageSwap.ts` 的 enter 通知：切頁 Transition 的 enter 跟頁面的 onMounted 在同一次 flush 裡、
@@ -50,20 +57,21 @@ function afterNextPaint(): Promise<void> {
  * - 已經有資料（ready）→ 背景重載，全程維持 ready；資料到了就地更新（列以 id 為 key，元素不換）。
  *   背景失敗不蓋掉畫面，只記 console——舊資料仍然可用。
  *
+ * @param id 要載的專案（路由的 `:id`）；跟 store 裡的不是同一個就不走背景重載。
  * @param mounted 頁面已經掛上（掛載時的 reload）。背景重載要等新頁第一幀畫出來再打：
  *   mock 的資料在 microtask 就回來，會在掛載同一個 task 裡再把整頁重算一次，拉長切頁那一幀。
  *   router 先載時頁面還沒掛上，資料進 store 不會重算畫面，立刻打。
  */
-async function load(mounted: boolean): Promise<void> {
+async function load(id: string | null, mounted: boolean): Promise<void> {
   const ui = useUiStore()
   const taskStore = useTaskStore()
   // 懸空 id 清理 watch 要在資料進來前掛好（契約 E）；router 先載時頁面還沒呼叫 useProjectBoot
   useSelectionStore()
   const ticket = ++reloadSeq
+  const sameProject = id === loadedId
+  loadedId = id
 
-  if (ui.loadState === 'ready') {
-    // `api.loadProject()` 目前不帶 id（mock 只有一份專案）。接後端時這裡要先比對 store 裡是不是
-    // 同一個專案：不是就不能背景重載（畫面會先秀上一個專案），要走下面的 loading。
+  if (ui.loadState === 'ready' && sameProject) {
     if (mounted) await afterNextPaint()
     try {
       await taskStore.load()
@@ -95,8 +103,8 @@ async function load(mounted: boolean): Promise<void> {
  * 狀態照 `reload()` 的規則走（還沒資料切 loading、已有資料背景重載）；頁面還沒掛上，看不到。
  * 每次導航都覆寫：上一次導航被打斷而沒被取走的那一發，不會留給下一次進頁。
  */
-export function preloadProject(): void {
-  preloaded = load(false)
+export function preloadProject(id: string): void {
+  preloaded = load(id, false)
 }
 
 /**
@@ -121,7 +129,8 @@ export function useProjectBoot(): ProjectBoot {
     // 掛載時沿用 router 先開始的那一發（進行中或已完成都一樣），不再多打
     const p = preloaded
     preloaded = null
-    return p ?? load(true)
+    // 沒有先載（直接呼叫、按重試）就載 store 裡的那個專案
+    return p ?? load(loadedId, true)
   }
 
   return { start: sync.start, stop: sync.stop, reload }
