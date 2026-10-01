@@ -2,7 +2,9 @@
 // 甘特任務列「⋮」開的動作選單（全域只會有一個）：工期 −1天 / +1天、相依設定、刪除任務。
 // 點任務列只標記（選取），動作一律從這裡來；hover / 選取不再撐開快捷鈕（user 選的 L 稿提案 A）。
 // 位置由 ui.rowMenu 帶進來（useMenus.toggleRowMenu → lib/anchor 的 anchorRowMenu）。
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useCloseOnScroll } from '@/composables/useCloseOnScroll'
+import { menuAnchors } from '@/composables/useMenus'
 import { dayIndex, isoFromIndex, lengthOf } from '@/lib/date'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -14,10 +16,14 @@ const menu = computed(() => ui.rowMenu)
 /** 任務在選單開著時被刪掉或篩掉，就不畫。 */
 const task = computed(() => (menu.value ? taskStore.taskById(menu.value.id) : undefined))
 const days = computed(() => (task.value ? lengthOf(task.value) : 0))
+const menuEl = ref<HTMLElement | null>(null)
 
 function close(): void {
   ui.rowMenu = null
 }
+
+// 觸發的「⋮」被捲走就關（位置只在開啟時量一次）
+useCloseOnScroll({ state: menu, popover: menuEl, anchor: () => menuAnchors.row, close })
 
 /** 工期加一天；選單不關，可以連點。legacy `onDaysUp` :2846 */
 function daysUp(): void {
@@ -55,30 +61,36 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 <template>
   <!-- 遮罩與選單都帶 data-keep-selection：點外面只關選單，不清掉任務的標記（OptionMenu 照 legacy 會一起清，這裡刻意不同） -->
   <div v-if="menu && task" class="rm-mask" data-keep-selection @click="close()"></div>
-  <div
-    v-if="menu && task"
-    class="row-menu"
-    role="menu"
-    :aria-label="`${task.name} 的動作`"
-    :data-rowmenu="task.id"
-    data-keep-selection
-    :style="{ left: `${menu.left}px`, top: `${menu.top}px` }"
-  >
-    <div class="rm-title" :title="task.name">{{ task.name }}</div>
-    <!-- 天數夾在 −1天 / +1天 中間，按了看得到結果；▲ ▼ 看不出是在調什麼 -->
-    <div class="rm-stepper">
-      <span class="rm-label">工期</span>
-      <button type="button" class="rm-step" :disabled="days <= 1" @click="daysDown()">−1天</button>
-      <span class="rm-days">{{ days }} 天</span>
-      <button type="button" class="rm-step" @click="daysUp()">+1天</button>
+  <!-- 進出場用 base.css 的 pop；遮罩不包，關閉當下就放行點擊 -->
+  <Transition name="pop">
+    <div
+      v-if="menu && task"
+      ref="menuEl"
+      class="row-menu"
+      role="menu"
+      :aria-label="`${task.name} 的動作`"
+      :data-rowmenu="task.id"
+      data-keep-selection
+      :style="{ left: `${menu.left}px`, top: `${menu.top}px` }"
+    >
+      <div class="rm-title" :title="task.name">{{ task.name }}</div>
+      <!-- 天數夾在 −1天 / +1天 中間，按了看得到結果；▲ ▼ 看不出是在調什麼 -->
+      <div class="rm-stepper">
+        <span class="rm-label">工期</span>
+        <button type="button" class="rm-step" :disabled="days <= 1" @click="daysDown()">
+          −1天
+        </button>
+        <span class="rm-days">{{ days }} 天</span>
+        <button type="button" class="rm-step" @click="daysUp()">+1天</button>
+      </div>
+      <button type="button" class="rm-item" role="menuitem" @click="openDeps()">
+        <span class="rm-icon" aria-hidden="true">⇄</span>相依設定…
+      </button>
+      <button type="button" class="rm-item danger" role="menuitem" @click="askDelete()">
+        <span class="rm-icon" aria-hidden="true">✕</span>刪除任務…
+      </button>
     </div>
-    <button type="button" class="rm-item" role="menuitem" @click="openDeps()">
-      <span class="rm-icon" aria-hidden="true">⇄</span>相依設定…
-    </button>
-    <button type="button" class="rm-item danger" role="menuitem" @click="askDelete()">
-      <span class="rm-icon" aria-hidden="true">✕</span>刪除任務…
-    </button>
-  </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -99,7 +111,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
   border: 1px solid var(--border-1);
   border-radius: var(--r-card);
   box-shadow: var(--shadow-menu);
-  animation: popIn var(--t-pop) ease-out;
 }
 
 .rm-title {

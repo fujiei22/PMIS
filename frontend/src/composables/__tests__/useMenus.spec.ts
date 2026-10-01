@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { useMenus } from '@/composables/useMenus'
+import { clearMenuAnchors, menuAnchors, useMenus } from '@/composables/useMenus'
 import { anchorCalendar, anchorOptionMenu, anchorRowMenu } from '@/lib/anchor'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
@@ -106,5 +106,31 @@ describe('useMenus', () => {
 
     menus.openIssueDatePicker(triggerAt(rect.left, rect.top, rect.bottom), 't1', 'done', '2026-03-09', 'task')
     expect(ui.issueDatePicker).toMatchObject({ id: 't1', field: 'done', kind: 'task', month: '2026-03' })
+  })
+
+  it('開各種浮層時記下觸發元素（給 useCloseOnScroll 判斷捲動有沒有把它帶走）', () => {
+    const menus = useMenus()
+    const e1 = triggerAt(10, 10, 30)
+    menus.openOptionMenu(e1, 't1', 'status')
+    expect(menuAnchors.option).toBe(e1.currentTarget)
+    const e2 = triggerAt(10, 10, 30)
+    menus.openTaskDatePicker(e2, 't1')
+    expect(menuAnchors.taskDate).toBe(e2.currentTarget)
+    const e3 = triggerAt(10, 10, 30)
+    menus.toggleRowMenu(e3, 't1')
+    expect(menuAnchors.row).toBe(e3.currentTarget)
+    const e4 = triggerAt(10, 10, 30)
+    menus.openIssueDatePicker(e4, 'i1', 'due', '')
+    expect(menuAnchors.issueDate).toBe(e4.currentTarget)
+  })
+
+  it('clearMenuAnchors 放掉四種觸發元素（離開 Dashboard 時呼叫，不抓著已脫離的 DOM）', () => {
+    const menus = useMenus()
+    menus.openOptionMenu(triggerAt(10, 10, 30), 't1', 'status')
+    menus.openTaskDatePicker(triggerAt(10, 10, 30), 't1')
+    menus.toggleRowMenu(triggerAt(10, 10, 30), 't1')
+    menus.openIssueDatePicker(triggerAt(10, 10, 30), 'i1', 'due', '')
+    clearMenuAnchors()
+    expect(menuAnchors).toEqual({ option: null, row: null, taskDate: null, issueDate: null })
   })
 })

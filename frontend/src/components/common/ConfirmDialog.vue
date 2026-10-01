@@ -38,6 +38,7 @@ defineEmits<{
 </template>
 
 <style scoped>
+/* 進出場由 DashboardView 包的 <Transition name="dialog">（base.css）負責，遮罩與本體都不寫 animation / transition / opacity / transform */
 .confirm-backdrop {
   position: fixed;
   inset: 0;
@@ -47,7 +48,6 @@ defineEmits<{
   justify-content: center;
   z-index: 200;
   padding: var(--sp-10);
-  animation: fadeIn var(--t-pop) ease-out;
 }
 
 .confirm-dialog {
@@ -57,7 +57,6 @@ defineEmits<{
   border-radius: var(--r-dialog);
   padding: var(--sp-10);
   box-shadow: var(--shadow-modal);
-  animation: popIn var(--t-fast) ease-out;
 }
 
 .confirm-title {

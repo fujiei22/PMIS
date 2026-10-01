@@ -182,3 +182,20 @@ test('詳情標題可以重複進出編輯，每次都自動聚焦', async ({ pa
   await modal(page).locator('.detail-close').click()
   await expect(page.locator('[data-rowtask="t3"] .name')).toHaveText('前端框架建置一二')
 })
+
+// review：標題不再用「關閉前記下的名字」補空白（離場畫面已凍結，不需要）；清空標題要照實顯示
+test('清空詳情標題：結束編輯後標題就是空的，不會被舊名字補回', async ({ page }) => {
+  const app = new DashboardPage(page)
+  await app.goto()
+  await openTaskDetail(page, 't3')
+
+  const title = modal(page).locator('.detail-title')
+  const input = modal(page).locator('.detail-title-input')
+  await title.dblclick()
+  await input.fill('')
+  await expect(input).toHaveValue('')
+  await page.keyboard.press('Enter')
+  await expect(input).toHaveCount(0)
+  await expect(title).toHaveText('')
+  await expect(page.locator('[data-rowtask="t3"] .name')).toHaveText('')
+})

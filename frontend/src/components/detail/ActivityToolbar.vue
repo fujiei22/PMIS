@@ -127,50 +127,53 @@ function toggleMember(id: string): void {
       >
         <span class="dd-glyph">▦</span><span>{{ dateLabel }}</span><span class="dd-caret">▼</span>
       </div>
-      <div v-if="ui.openDropdown === 'cdate'" class="dd-menu cdate-menu" data-dd="1">
-        <div class="cal-ends">
-          <div
-            class="cal-end"
-            :class="{ aimed: calTarget === 'd1' }"
-            role="button"
-            @click="calTarget = 'd1'"
-          >
-            {{ comment.dateFrom ? fmtDate(comment.dateFrom) : '起始日' }}
+      <!-- 兩個下拉的進出場用 base.css 的 pop -->
+      <Transition name="pop">
+        <div v-if="ui.openDropdown === 'cdate'" class="dd-menu cdate-menu" data-dd="1">
+          <div class="cal-ends">
+            <div
+              class="cal-end"
+              :class="{ aimed: calTarget === 'd1' }"
+              role="button"
+              @click="calTarget = 'd1'"
+            >
+              {{ comment.dateFrom ? fmtDate(comment.dateFrom) : '起始日' }}
+            </div>
+            <div
+              class="cal-end"
+              :class="{ aimed: calTarget === 'd2' }"
+              role="button"
+              @click="calTarget = 'd2'"
+            >
+              {{ comment.dateTo ? fmtDate(comment.dateTo) : '結束日' }}
+            </div>
           </div>
-          <div
-            class="cal-end"
-            :class="{ aimed: calTarget === 'd2' }"
-            role="button"
-            @click="calTarget = 'd2'"
-          >
-            {{ comment.dateTo ? fmtDate(comment.dateTo) : '結束日' }}
+          <div class="cal-bar">
+            <div class="cal-title">{{ calTitle }}</div>
+            <div class="cal-nav" role="button" @click="calMonth = clock.todayIso.slice(0, 7)">今天</div>
+            <div class="cal-arrow" role="button" @click="shiftCal(-1)">‹</div>
+            <div class="cal-arrow" role="button" @click="shiftCal(1)">›</div>
+          </div>
+          <div class="cal-grid">
+            <div v-for="w in WEEK_LABELS" :key="w" class="cal-weekday">{{ w }}</div>
+          </div>
+          <div class="cal-grid">
+            <div
+              v-for="c in cells"
+              :key="c.idx"
+              class="cal-cell"
+              :class="{ range: c.inRange, today: c.isToday, picked: c.picked }"
+              role="button"
+              @click="pickDay(c)"
+            >
+              {{ c.label }}
+            </div>
+          </div>
+          <div class="cal-clear" :class="{ active: dateActive }" role="button" @click="clearDate()">
+            全部時間
           </div>
         </div>
-        <div class="cal-bar">
-          <div class="cal-title">{{ calTitle }}</div>
-          <div class="cal-nav" role="button" @click="calMonth = clock.todayIso.slice(0, 7)">今天</div>
-          <div class="cal-arrow" role="button" @click="shiftCal(-1)">‹</div>
-          <div class="cal-arrow" role="button" @click="shiftCal(1)">›</div>
-        </div>
-        <div class="cal-grid">
-          <div v-for="w in WEEK_LABELS" :key="w" class="cal-weekday">{{ w }}</div>
-        </div>
-        <div class="cal-grid">
-          <div
-            v-for="c in cells"
-            :key="c.idx"
-            class="cal-cell"
-            :class="{ range: c.inRange, today: c.isToday, picked: c.picked }"
-            role="button"
-            @click="pickDay(c)"
-          >
-            {{ c.label }}
-          </div>
-        </div>
-        <div class="cal-clear" :class="{ active: dateActive }" role="button" @click="clearDate()">
-          全部時間
-        </div>
-      </div>
+      </Transition>
     </div>
 
     <!-- 成員篩選 -->
@@ -186,21 +189,23 @@ function toggleMember(id: string): void {
         <span>{{ comment.memberIds.length ? `成員 ${comment.memberIds.length}` : '全部成員' }}</span>
         <span class="dd-caret">▼</span>
       </div>
-      <div v-if="ui.openDropdown === 'cmem'" class="dd-menu cmem-menu" data-dd="1">
-        <div v-if="!commenters.length" class="dd-empty">尚無留言成員</div>
-        <div
-          v-for="m in commenters"
-          :key="m.id"
-          class="dd-item"
-          :class="{ on: comment.memberIds.includes(m.id) }"
-          role="button"
-          @click="toggleMember(m.id)"
-        >
-          <Avatar :member="m" :size="19" />
-          <span class="dd-item-label">{{ m.name }}</span>
-          <span class="dd-check">{{ comment.memberIds.includes(m.id) ? '✓' : '' }}</span>
+      <Transition name="pop">
+        <div v-if="ui.openDropdown === 'cmem'" class="dd-menu cmem-menu" data-dd="1">
+          <div v-if="!commenters.length" class="dd-empty">尚無留言成員</div>
+          <div
+            v-for="m in commenters"
+            :key="m.id"
+            class="dd-item"
+            :class="{ on: comment.memberIds.includes(m.id) }"
+            role="button"
+            @click="toggleMember(m.id)"
+          >
+            <Avatar :member="m" :size="19" />
+            <span class="dd-item-label">{{ m.name }}</span>
+            <span class="dd-check">{{ comment.memberIds.includes(m.id) ? '✓' : '' }}</span>
+          </div>
         </div>
-      </div>
+      </Transition>
     </div>
 
     <!-- 檔案頁籤的檢視切換 -->
@@ -307,7 +312,6 @@ function toggleMember(id: string): void {
   z-index: 200;
   background: var(--surface-1);
   border: 1px solid var(--border-1);
-  animation: popIn var(--t-pop) ease-out;
 }
 
 .cdate-menu {
@@ -321,6 +325,8 @@ function toggleMember(id: string): void {
   min-width: 178px;
   max-height: 280px;
   overflow: auto;
+  /* 選單內捲到底不把捲動傳給外層（同 OptionMenu） */
+  overscroll-behavior: contain;
   padding: var(--sp-2);
   border-radius: var(--r-card);
   box-shadow: var(--shadow-menu);

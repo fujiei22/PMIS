@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // 兩個浮動日期選擇器：任務的起訖日期（含工期輸入）與 Issue / 任務的單一日期。
 // legacy 對照：模板 :1325-1390，dCalCells :3452-3486、iCalCells :3488-3509。
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { useCloseOnScroll } from '@/composables/useCloseOnScroll'
+import { menuAnchors } from '@/composables/useMenus'
 import { monthGrid, WEEK_LABELS, type CalendarCell } from '@/lib/calendar'
 import { dayIndex, isoFromIndex, lengthOf, shiftMonth } from '@/lib/date'
 import { fmtDate } from '@/lib/format'
@@ -35,6 +37,17 @@ function monthTitle(month: string): string {
 // ── 任務起訖日期選擇器（legacy dCal）────────────────────────────────────────
 const dCal = computed(() => ui.taskDatePicker)
 const dTask = computed(() => (dCal.value ? taskStore.taskById(dCal.value.id) : undefined))
+const dCalEl = ref<HTMLElement | null>(null)
+
+// 觸發元素被捲走就關（位置只在開啟時量一次）；焦點在工期輸入框時不關
+useCloseOnScroll({
+  state: dCal,
+  popover: dCalEl,
+  anchor: () => menuAnchors.taskDate,
+  close: () => {
+    ui.taskDatePicker = null
+  },
+})
 
 const dCells = computed<Cell[]>(() => {
   const cal = dCal.value
@@ -89,6 +102,16 @@ function dSetDays(e: Event): void {
 
 // ── 單一日期選擇器（legacy iCal；kind='task' 時改任務完成日）────────────────
 const iCal = computed(() => ui.issueDatePicker)
+const iCalEl = ref<HTMLElement | null>(null)
+
+useCloseOnScroll({
+  state: () => ui.issueDatePicker,
+  popover: iCalEl,
+  anchor: () => menuAnchors.issueDate,
+  close: () => {
+    ui.issueDatePicker = null
+  },
+})
 
 /** 目前這個欄位的值；任務模式讀 task.done，Issue 模式讀 issue 的 due / done。 */
 const iValue = computed<string>(() => {
@@ -136,10 +159,13 @@ function iSet(iso: string): void {
 </script>
 
 <template>
-  <!-- 遮罩不掛 data-dd，維持 legacy 行為（:1323 / :1348） -->
-  <template v-if="dCal && dTask">
-    <div class="cal-mask" @click="ui.taskDatePicker = null"></div>
+  <!-- 遮罩不掛 data-dd，維持 legacy 行為（:1323 / :1348）。
+       選擇器本體的進出場用 base.css 的 pop；遮罩不包，關閉當下就放行點擊 -->
+  <div v-if="dCal && dTask" class="cal-mask" @click="ui.taskDatePicker = null"></div>
+  <Transition name="pop">
     <div
+      v-if="dCal && dTask"
+      ref="dCalEl"
       class="cal task-date-picker"
       :style="{ left: `${dCal.left}px`, top: `${dCal.top}px` }"
     >
@@ -198,11 +224,13 @@ function iSet(iso: string): void {
         </div>
       </div>
     </div>
-  </template>
+  </Transition>
 
-  <template v-if="iCal && iExists">
-    <div class="cal-mask" @click="ui.issueDatePicker = null"></div>
+  <div v-if="iCal && iExists" class="cal-mask" @click="ui.issueDatePicker = null"></div>
+  <Transition name="pop">
     <div
+      v-if="iCal && iExists"
+      ref="iCalEl"
       class="cal issue-date-picker"
       :style="{ left: `${iCal.left}px`, top: `${iCal.top}px` }"
     >
@@ -233,7 +261,7 @@ function iSet(iso: string): void {
         </div>
       </div>
     </div>
-  </template>
+  </Transition>
 </template>
 
 <style scoped>
@@ -252,7 +280,6 @@ function iSet(iso: string): void {
   border: 1px solid var(--border-1);
   border-radius: var(--r-panel);
   box-shadow: var(--shadow-popover);
-  animation: popIn var(--t-pop) ease-out;
 }
 
 .cal-head {

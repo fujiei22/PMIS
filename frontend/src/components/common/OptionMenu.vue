@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // 卡片上點狀態 / 優先度 / 分類 / Issue 欄位跳出的浮動選項選單（全域只會有一個）。
 // legacy 對照：optItems :3386-3452、模板 :1305-1320；位置由 ui.optionMenu 帶進來。
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { useCloseOnScroll } from '@/composables/useCloseOnScroll'
+import { menuAnchors } from '@/composables/useMenus'
 import { ISSUE_ITEM, ISSUE_LEVEL, ISSUE_STATUS, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
@@ -24,10 +26,14 @@ const issueStore = useIssueStore()
 const memberStore = useMemberStore()
 
 const menu = computed(() => ui.optionMenu)
+const menuEl = ref<HTMLElement | null>(null)
 
 function close(): void {
   ui.optionMenu = null
 }
+
+// 觸發元素被捲走就關（位置只在開啟時量一次）
+useCloseOnScroll({ state: menu, popover: menuEl, anchor: () => menuAnchors.option, close })
 
 /** 改任務欄位後關掉選單（單選）。legacy :3391 */
 function setTask(id: string, patch: Parameters<typeof taskStore.updateTask>[1]): void {
@@ -141,24 +147,28 @@ const items = computed<OptionItem[]>(() => {
 <template>
   <!-- 遮罩不掛 data-dd，維持 legacy 行為：點它會順帶清掉選取（:1908 / :1306） -->
   <div v-if="menu" class="opt-mask" @click="close()"></div>
-  <div
-    v-if="menu"
-    class="opt-menu"
-    :style="{ left: `${menu.left}px`, top: `${menu.top}px` }"
-  >
+  <!-- 進出場用 base.css 的 pop；遮罩不包，關閉當下就放行點擊 -->
+  <Transition name="pop">
     <div
-      v-for="o in items"
-      :key="o.key"
-      class="opt-item"
-      :class="{ on: o.checked }"
-      role="button"
-      @click="o.pick()"
+      v-if="menu"
+      ref="menuEl"
+      class="opt-menu"
+      :style="{ left: `${menu.left}px`, top: `${menu.top}px` }"
     >
-      <span v-if="o.dot" class="opt-dot" :style="{ background: o.dot }"></span>
-      <span class="opt-label">{{ o.label }}</span>
-      <span class="opt-check">{{ o.checked ? '✓' : '' }}</span>
+      <div
+        v-for="o in items"
+        :key="o.key"
+        class="opt-item"
+        :class="{ on: o.checked }"
+        role="button"
+        @click="o.pick()"
+      >
+        <span v-if="o.dot" class="opt-dot" :style="{ background: o.dot }"></span>
+        <span class="opt-label">{{ o.label }}</span>
+        <span class="opt-check">{{ o.checked ? '✓' : '' }}</span>
+      </div>
     </div>
-  </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -175,12 +185,13 @@ const items = computed<OptionItem[]>(() => {
   max-width: 230px;
   max-height: 280px;
   overflow: auto;
+  /* 選單內捲到底不帶動頁面：頁面一捲就會把選單關掉 */
+  overscroll-behavior: contain;
   padding: var(--r-badge);
   background: var(--surface-1);
   border: 1px solid var(--border-1);
   border-radius: var(--r-card);
   box-shadow: var(--shadow-menu);
-  animation: popIn var(--t-pop) ease-out;
 }
 
 .opt-item {

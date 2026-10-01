@@ -33,7 +33,6 @@ describe('uiStore', () => {
     expect(ui.editing).toBeNull()
     expect(ui.pickerFor).toBeNull()
     expect(ui.detail).toBeNull()
-    expect(ui.lastDetail).toBeNull()
     expect(ui.navAnim).toBeNull()
     expect(ui.confirm).toBeNull()
     expect(ui.depEditFor).toBeNull()
@@ -129,12 +128,16 @@ describe('uiStore', () => {
     expect(ui.navAnim).toBe('in')
   })
 
-  it('closeDetail 設 lastDetail', () => {
+  it('closeDetail 清掉 detail 與詳情裡的暫態；關閉動畫交給 DetailModal 的 Transition，不再留 lastDetail', () => {
     const ui = useUiStore()
     ui.openDetail('t3', 'task')
+    ui.pickerFor = 't3'
+    ui.editing = { kind: 'dt', id: 't3' }
     ui.closeDetail()
     expect(ui.detail).toBeNull()
-    expect(ui.lastDetail).toEqual({ id: 't3', kind: 'task' })
+    expect(ui.pickerFor).toBeNull()
+    expect(ui.editing).toBeNull()
+    expect('lastDetail' in ui).toBe(false)
   })
 
   it('detailBack 回到來源任務並播放 paneBack', () => {

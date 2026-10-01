@@ -234,4 +234,7 @@
   --t-hover: 0.22s;
   --t-bar: 0.2s;
   --t-progress: 0.35s;
+  /* 浮層進出場的起訖位移：popIn / popOut keyframes、base.css 的 pop / dialog、DetailModal 共用 */
+  --pop-from: translateY(-4px) scale(0.985);
+  --pop-to: translateY(8px) scale(0.975);
 }

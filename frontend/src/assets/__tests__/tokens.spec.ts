@@ -66,4 +66,9 @@ describe('tokens.css', () => {
     expect(css).toMatch(/--ctrl-h:\s*32px/)
     expect(css).toMatch(/--dd-item-h:\s*36px/)
   })
+
+  it('浮層進出場的起訖位移集中成 token（popIn / popOut 與 base.css 的 pop / dialog、DetailModal 共用）', () => {
+    expect(css).toMatch(/--pop-from:\s*translateY\(-4px\) scale\(0\.985\)/)
+    expect(css).toMatch(/--pop-to:\s*translateY\(8px\) scale\(0\.975\)/)
+  })
 })
