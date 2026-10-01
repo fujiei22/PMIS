@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { clickInPage, openDashboard, pause, series, trace, type Trace } from './helpers/motion'
+import { clickInPage, hasMid, openDashboard, pause, series, trace, type Trace } from './helpers/motion'
 
 /**
  * Dashboard 頂欄的浮層（動畫稽核批次 C 的 Dashboard 部分，docs/incidents/2026-09-30-motion-audit）。
@@ -203,6 +203,45 @@ test.describe('G7 一行時篩選項變寬：左邊的項目滑到新位置', ()
       expect(r.jumps, `${name}：單幀瞬移的次數（總位移 ${r.moved.toFixed(1)}px）`).toBe(0)
       expect(r.monotonic, `${name}：一路朝新位置走、不回頭`).toBe(true)
     }
+  })
+
+  /**
+   * 日期膠囊與「～」淡入 / 淡出（base.css 的 fade）：選「介於」時日期觸發鈕從右邊滑過來，膠囊不能一出現就全亮被它壓著；
+   * 清除篩選時淡出，離場中不攔點擊，也不佔版面——左邊的項目照樣一路滑到新位置，不會等膠囊收完再跳一下。
+   */
+  test('日期膠囊與「～」：選「介於」時淡入；清除篩選時淡出、離場中不攔點擊、左邊的項目照樣連續滑動', async ({
+    page,
+  }) => {
+    const pills = {
+      d1: '.top-row .date-group > .date-pill:nth-child(1 of .date-pill)',
+      tilde: '.top-row .date-group > .tilde',
+      d2: '.top-row .date-group > .date-pill:nth-child(2 of .date-pill)',
+    }
+    await openDashboard(page)
+    await expect(page.locator('.top-row.stacked'), '前提：一行').toHaveCount(0)
+    await page.locator('.top-row .dd-trigger', { hasText: '日期' }).click()
+    await expect(page.locator('.top-row .dd-menu')).not.toHaveClass(/pop-enter/)
+
+    const entering = await trace(page, pills, () => clickInPage(page, '.top-row .dd-menu .dd-item:nth-child(4)'))
+    await expect(page.locator('.top-row .date-pill'), '前提：出現兩顆日期膠囊').toHaveCount(2)
+    for (const name of Object.keys(pills)) {
+      expect(hasMid(series(entering, name).map((b) => b.o)), `${name}：進場有中間值`).toBe(true)
+    }
+
+    await expect(page.locator('.top-row .cal')).not.toHaveClass(/pop-enter/)
+    const leaving = await trace(page, { ...pills, status: STATUS }, () =>
+      clickInPage(page, '[data-testid="filter-clear"]'),
+    )
+    await expect(page.locator('.top-row .date-pill'), '前提：膠囊收掉了').toHaveCount(0)
+    for (const name of Object.keys(pills)) {
+      const s = series(leaving, name).filter((b) => b.t > leaving.at)
+      expect(hasMid(s.map((b) => b.o)), `${name}：離場有中間值`).toBe(true)
+      expect(s.every((b) => b.pe === 'none'), `${name}：離場中不攔點擊`).toBe(true)
+    }
+    const r = slideX(leaving, 'status')
+    expect(r.moved, 'status：前提：整排右移了').toBeGreaterThan(100)
+    expect(r.jumps, `status：單幀瞬移的次數（總位移 ${r.moved.toFixed(1)}px）`).toBe(0)
+    expect(r.monotonic, 'status：一路朝新位置走、不回頭').toBe(true)
   })
 })
 

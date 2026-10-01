@@ -8,6 +8,7 @@ import FilterCalendar from '@/components/layout/FilterCalendar.vue'
 import FilterDropdown, { type FilterOption } from '@/components/layout/FilterDropdown.vue'
 import MemberPicker from '@/components/layout/MemberPicker.vue'
 import { DELAYED, ISSUE_LEVEL, ISSUE_STATUS, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
+import { freezeLeave } from '@/composables/freezeLeave'
 import { useDomRegistry } from '@/composables/useDomRegistry'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
 import { parseDuration } from '@/lib/easing'
@@ -39,7 +40,10 @@ const rowEl = ref<HTMLElement | null>(null)
 const filtersEl = ref<HTMLElement | null>(null)
 const stacked = ref(false)
 
-/** 篩選器裡實際參與排版的項目：`.fgroup` 是 display: contents，算它的子元素；浮在外面的（日曆）不算。 */
+/**
+ * 篩選器裡實際參與排版的項目：`.fgroup` 是 display: contents，算它的子元素；
+ * 浮在外面的（日曆）與正在淡出的日期膠囊 / ～（pinLeaving 釘成 absolute）不算。
+ */
 function filterItems(box: HTMLElement): HTMLElement[] {
   const items: HTMLElement[] = []
   for (const c of Array.from(box.children) as HTMLElement[]) {
@@ -61,8 +65,12 @@ function measureFit(): void {
   const overflow = filterItems(box).some((el) => layoutRight(el) > edge + 0.01)
   row.classList.remove('measuring')
   if (stacked.value) row.classList.add('stacked')
-  // 一行 / 兩列要切換：滑到一半的位移補間直接停掉，版型直接到位
-  if (overflow !== stacked.value) cancelSlides()
+  // 一行 / 兩列要切換：滑到一半的位移補間直接停掉，版型直接到位；
+  // 正在淡出的日期膠囊釘的是舊版型的位置（定位基準也會換），直接藏起來
+  if (overflow !== stacked.value) {
+    cancelSlides()
+    for (const el of leavingPills) el.style.visibility = 'hidden'
+  }
   stacked.value = overflow
 }
 
@@ -293,6 +301,22 @@ function openCalendar(target: 'd1' | 'd2'): void {
   ui.memberPickerOpen = false
 }
 
+/**
+ * 日期膠囊與「～」淡出時（base.css 的 fade）用 freezeLeave 釘在原位：不佔版面，其他項目立刻排到新位置，
+ * G7 的位移補間量得到正確的終點；釘成 absolute 也讓 filterItems 不算它。
+ * 定位基準一行時是篩選器、兩列時是日期那一組（.top-row.stacked .date-group），兩者都是 position: relative。
+ */
+const leavingPills = new Set<HTMLElement>()
+
+function pinLeaving(el: Element): void {
+  freezeLeave(el)
+  leavingPills.add(el as HTMLElement)
+}
+
+function unpinLeaving(el: Element): void {
+  leavingPills.delete(el as HTMLElement)
+}
+
 const showD1 = computed(() => filter.dateMode !== 'off')
 const showD2 = computed(() => filter.dateMode === 'between')
 
@@ -412,26 +436,33 @@ function clearFilters(): void {
             @pick="pickDateMode"
           />
           <!-- data-keep-popup：日曆開著時點膠囊是切換要填哪一端，不算點到外面（useClickOutside）；
-               不用 data-dd：compare.spec 依 [data-dd] 的序列對照 legacy -->
-          <div
-            v-if="showD1"
-            class="date-pill"
-            data-keep-popup
-            role="button"
-            @click="openCalendar('d1')"
-          >
-            {{ fmtDate(filter.d1) }}
-          </div>
-          <span v-if="showD2" class="tilde">～</span>
-          <div
-            v-if="showD2"
-            class="date-pill"
-            data-keep-popup
-            role="button"
-            @click="openCalendar('d2')"
-          >
-            {{ fmtDate(filter.d2) }}
-          </div>
+               不用 data-dd：compare.spec 依 [data-dd] 的序列對照 legacy。
+               淡入淡出用 base.css 的 fade；離場的釘在原位、不佔版面（pinLeaving） -->
+          <Transition name="fade" @before-leave="pinLeaving" @after-leave="unpinLeaving">
+            <div
+              v-if="showD1"
+              class="date-pill"
+              data-keep-popup
+              role="button"
+              @click="openCalendar('d1')"
+            >
+              {{ fmtDate(filter.d1) }}
+            </div>
+          </Transition>
+          <Transition name="fade" @before-leave="pinLeaving" @after-leave="unpinLeaving">
+            <span v-if="showD2" class="tilde">～</span>
+          </Transition>
+          <Transition name="fade" @before-leave="pinLeaving" @after-leave="unpinLeaving">
+            <div
+              v-if="showD2"
+              class="date-pill"
+              data-keep-popup
+              role="button"
+              @click="openCalendar('d2')"
+            >
+              {{ fmtDate(filter.d2) }}
+            </div>
+          </Transition>
           <!-- 日曆的定位基準：一行時 .fgroup 是 display: contents，基準是篩選器、右緣對齊（同 legacy）；
                兩列時基準換成這一組、左緣對齊，篩選器滿寬時才不會離日期膠囊很遠 -->
           <FilterCalendar :align="popAlign" />
