@@ -79,4 +79,36 @@ describe('heightTween', () => {
     releaseHeight(el, { duration: 0, ease: PANEL.ease })
     expect(el.style.height).toBe('')
   })
+
+  it.each(['', '50vh'])(
+    '量自然高度時撐住整頁最小高度（頁面捲在底部時才不會被夾捲動），量完還原成原值（原值 %j）',
+    (prev) => {
+      const html = document.documentElement
+      Object.defineProperty(html, 'scrollHeight', { configurable: true, get: () => 1234 })
+      html.style.minHeight = prev
+      const n = { h: 300 }
+      const el = box(n)
+      const natural = el.getBoundingClientRect
+      /** 拿掉 inline height 量自然高度的那幾次，量的當下 html 的 min-height。 */
+      const seen: string[] = []
+      let watching = false
+      el.getBoundingClientRect = () => {
+        if (watching && !el.style.height) seen.push(html.style.minHeight)
+        return natural()
+      }
+      holdHeight(el)
+      watching = true
+      n.h = 100
+      releaseHeight(el, PANEL)
+      expect(html.style.minHeight).toBe(prev)
+      for (let i = 0; i < 30; i++) {
+        vi.advanceTimersToNextFrame()
+        expect(html.style.minHeight).toBe(prev)
+      }
+      expect(seen.length).toBeGreaterThan(1)
+      expect(seen.every((v) => v === '1234px')).toBe(true)
+      Reflect.deleteProperty(html, 'scrollHeight')
+      html.style.minHeight = ''
+    },
+  )
 })

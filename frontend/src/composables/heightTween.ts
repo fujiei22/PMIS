@@ -43,12 +43,23 @@ export function releaseHeight(el: HTMLElement | null | undefined, timing: Timing
     return
   }
   const from = parseFloat(el.style.height)
+  /**
+   * 暫時拿掉 inline height 量自然高度。量的那次強制版面計算裡頁面會變矮：頁面捲在底部時瀏覽器當下就把捲動夾到新的底，
+   * 之後每幀量都再夾一次，補間對被夾的捲動完全無效（平板捲到底切檢視時 scrollY 一幀 110 → 0）。
+   * 所以量之前用 html 的 min-height 撐住現在的頁高，量完還原成原值（不是清空：別處可能也設了）。
+   */
   const natural = (): number => {
     const held = el.style.height
-    el.style.height = ''
-    const h = el.getBoundingClientRect().height
-    el.style.height = held
-    return h
+    const html = document.documentElement
+    const prev = html.style.minHeight
+    html.style.minHeight = `${html.scrollHeight}px`
+    try {
+      el.style.height = ''
+      return el.getBoundingClientRect().height
+    } finally {
+      el.style.height = held
+      html.style.minHeight = prev
+    }
   }
   if (Math.abs(natural() - from) < 0.5) {
     el.style.height = ''
