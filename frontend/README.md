@@ -84,7 +84,7 @@
 | 改使用者操作流程 | 對應的 `e2e/*.spec.ts`；選擇器只用〈DOM 鉤子〉表裡的屬性 |
 | 改總覽的畫面狀態（篩選、排序、展開、檢視） | `stores/overview.ts`；純邏輯（派生值、篩選、排序、分組）在 `lib/portfolio.ts` |
 | 改總覽的範例專案 | `mocks/samplePortfolio.ts` ＋ `mocks/__tests__/portfolio.spec.ts`（數字要對得上設計稿）；PMIS 摘要改 `api/mock/portfolio.ts` |
-| 加總覽的互動或 UI 變化 | 元件 ＋ `assets/overview-motion.css`（過渡 class 唯一定義處）＋ `e2e/overview-motion.spec.ts`（在 spec〈動畫清單〉加一項，就在這裡補一條守衛） |
+| 加總覽的互動或 UI 變化 | 元件 ＋ `assets/overview-motion.css`（過渡 class 唯一定義處）＋ `e2e/overview-motion.spec.ts`（在 spec〈動畫清單〉加一項，就在這裡補一條守衛）；要量逐幀連續（位置、高度、透明度不跳、不反向）的守衛放 `e2e/ov-*.spec.ts`，helper 在 `e2e/helpers/ovMotion.ts`。清單進出場：泳道 / 時間軸群組 / 列是原地收合，結構是外層（grid，帶 `data-lane-wrap` / `data-g-wrap` / `data-row-wrap`）→ 裁切層 → 本體；外層平常的 `grid-template-rows: 1fr` 要寫在 `:where()` 裡（scoped 加的屬性選擇器特異度會壓過 enter-from / leave-to 的 0fr，只剩淡入淡出），間距與分隔線放在裁切層裡跟著收（群組分隔線在 `OverviewTimeline` 的 `.g-wrap + .g-wrap .g`）。同 key 離場中又回來的接續：泳道 / 群組 / 列用 `useCollapseReenter`（泳道與群組綁 TransitionGroup 的 `@vue:before-update` / `@enter`；列綁 `TimelineGroup` 自己的 `onBeforeUpdate` / `onUpdated`，`onUpdated` 要註冊在 `useRelativeFlip` 之前，先寫好回來那列的起點，重排才量得對），卡片用 `useFreezeReenter`。容器高度跟著內容變用 `heightTween`（`holdHeight` 撐住、`releaseHeight` 逐幀追自然高度）：看板 / 時間軸 ↔ 空狀態撐 `CardBoard` / `OverviewTimeline` 的 `.ov-stage`（`flow-root` ＋ `overflow: clip`），切檢視撐 `ProjectsOverviewView` 的 `.column`（`onViewEnter` 一插入就放開欄高，並立刻拿掉 `ov-view-enter-from`）；空狀態只延後「有 → 空」（`showEmpty` 等 `--t-panel` 讓清單先收完），「空 → 有」立即 |
 | 加 Dashboard 的浮層（選單、日期選擇器、對話框） | 元件包 `<Transition name="pop \| dialog \| fade">`（根元素與對話框本體不寫 transition / animation / opacity / transform）；fixed 浮層接 `useCloseOnScroll`、開啟函式放 `useMenus`（記觸發元素）；鎖頁面捲動用 `useScrollLock`；`e2e/popover-motion.spec.ts` / `dialog-motion.spec.ts` 加一條離場守衛。頂欄的篩選下拉 / 成員面板 / 日期日曆、看板與 Issue 的排序選單、Issue 分欄下拉也是 `pop`（absolute 掛在觸發鈕或容器下，不是 fixed）：頂欄一行時傳 `align="end"`（右緣對齊，觸發鈕往左變寬時選單不動）、兩列時 `start`；排序選單以 `.sorts` / `.tools` 為定位基準、打開當下量好位置（`--menu-x` / `--menu-y`），開著期間不跟著觸發鈕；點了不該關掉浮層的觸發元件（例：日期膠囊）標 `data-keep-popup`。守衛在 `e2e/dash-menu-motion.spec.ts` |
 | 改 Dashboard 頂欄篩選項或排序 chip 的版面 | 頂欄一行時篩選條件變動會把篩選項 FLIP 到新位置（`TopBar` 的 pre / post watcher，比右緣；一行 / 兩列切換與縮放不做；`measureFit` 扣掉補間中的位移再量）；日期膠囊與「～」用 `fade` 淡入淡出，離場中的由 `freezeLeave` 釘成 absolute（不佔版面、不算進 `measureFit` 與位移補間，一行 / 兩列切換時直接藏起來）；排序 chip 是 `TransitionGroup` ＋ `.sort-chip-slot > .sort-chip-clip` 原地橫向展開 / 收起，父層要提供 `--sorts-gap`；離場中的 chip 還在 DOM，測試讀 chip 要用會重試的寫法（`expect.poll`） |
 | 改切頁過渡或頁面的載入流程 | 切頁淡入淡出是 `assets/base.css` 的 `page-view-*`（transition，淡入途中切走會從當下的透明度往回淡出；頁面根元素 `.dash` / `.ov` 不寫 opacity / transition / animation，會蓋掉它）；`router/pageSwap.ts` 等新頁插入（`@enter`）才還原捲動，新頁插入當下要已經是最終高度。載入：`router/index.ts` 的 `beforeEach` 在 path 變或初始導航時呼叫 `preloadProject` / `preloadPortfolio`，頁面掛載時 boot 的 `reload()` 取走沿用——**同一次進頁只打一次 load**（`failNext` 類測試只擋一發，靠這個維持語意）；已經 ready 時背景重載、失敗不蓋掉內容。守衛 `e2e/page-motion.spec.ts`、`e2e/load-motion.spec.ts` |
@@ -147,7 +147,7 @@ Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<s
 環境安裝、常用指令與提交前檢查在[根目錄 README](../README.md)，指令都在這個 `frontend/` 目錄下執行。本檔只補 e2e 的細節：
 
 - `playwright.config.ts` 會自己起一份 dev server（`reuseExistingServer: false`），不必事先 `npm run dev`；port 由 `PLAYWRIGHT_PORT` 決定，預設 5174。
-- 全部 e2e 的時鐘固定在 `2026-09-18T10:00:00`（`e2e/helpers/clock.ts` 的 `setFixedTime(page)`），否則「已延遲」「今天」這類跟當下時間有關的斷言會隨日期改變。
+- 全部 e2e 的時鐘固定在 `2026-09-18T10:00:00`（`e2e/helpers/clock.ts` 的 `setFixedTime(page)`），否則「已延遲」「今天」這類跟當下時間有關的斷言會隨日期改變。副作用：Vue 用 `Date.now()` 判斷事件是不是在 listener 掛上之前發生的，時鐘凍住時，同一個事件傳遞路徑上的第二個 Vue listener 會被略過（例：同一元素另掛 `@pointerdown.capture`）。同一個事件要做兩件事就合成一個 handler（`OverviewTimeline` 的 `onBodyPointerDown`）。
 - 靠 `window.__mockApi` 的 e2e，接上真後端之後會自動跳過（見[怎麼接後端](#怎麼接後端)）。共有四條：
   - `e2e/interactions.spec.ts`：兩條注入 api 失敗的測試。
   - `e2e/overview.spec.ts`：「載入失敗」與「Dashboard 改了資料回總覽看得到」。
@@ -166,7 +166,7 @@ frontend/
 │   │   ├── types.ts       ProjectApi / ProjectEvent / ApiError 契約，檔頭是給後端看的 wire 約定
 │   │   ├── mock/          記憶體實作（store.ts + index.ts）；可注入延遲與失敗；portfolio.ts 是總覽摘要的彙整
 │   │   └── index.ts       挑實作的唯一出口（VITE_API 未設或 'mock' 用 mock；dev build 掛 window.__mockApi）
-│   ├── assets/            tokens.css（設計 token）、base.css（全域樣式、keyframes、Dashboard 浮層共用的 pop / dialog / fade 過渡）、overview-motion.css（總覽的過渡 class）
+│   ├── assets/            tokens.css（設計 token）、base.css（全域樣式、keyframes、Dashboard 浮層共用的 pop / dialog / fade 過渡）、overview-motion.css（總覽的過渡 class；泳道 / 群組 / 列原地收合）
 │   ├── components/        元件，依畫面區塊分子目錄（common / layout / summary / gantt / kanban / issues / detail / dialogs / overview）
 │   ├── composables/       可重用的組合式函式
 │   │   ├── useProjectBoot.ts    啟動層：注入 error sink、載入狀態（第一次載入中、之後背景重載）、訂閱事件；preloadProject 給 router 切頁先載
@@ -186,11 +186,11 @@ frontend/
 │   │                            useScrollLock（鎖頁面捲動：先停平滑捲動、補捲軸寬、參考計數）/
 │   │                            useCloseOnScroll（fixed 浮層的觸發元素被捲走時關閉）/
 │   │                            motionTokens（執行期讀動畫 token：JS 動畫與 CSS 同源）/
-│   │                            heightTween（容器高度雙向補間：holdHeight 撐住、releaseHeight 每幀追自然高度）/
+│   │                            heightTween（容器高度雙向補間：holdHeight 撐住、releaseHeight 每幀追自然高度，量的時候以 html 的 min-height 撐住頁高）/
 │   │                            useCollapseReenter（原地收合清單：同 key 離場中又回來時從當下高度 / 透明度接續）/
 │   │                            useFreezeReenter（釘位離場清單：同 key 離場中又回來時從舊元素當下的位置 / 透明度 / 縮放接續）
 │   ├── constants/         畫面用常數（dashboard.ts：狀態 / 優先度 / 等級的標籤與顏色；overview.ts：總覽的排序鍵、標籤、尺寸；api.ts：API_ERROR_TEXT）
-│   ├── lib/               純函式（日期、月曆格、排程連動、篩選、排序、格式化、id、CSS 時長 / 曲線 token 轉 JS（easing.ts）…）
+│   ├── lib/               純函式（日期、月曆格、排程連動、篩選、排序、格式化、id、CSS 時長 / 曲線 token 轉 JS（easing.ts）、元素目前的 translate（transform.ts）、程式平滑捲動的時長與曲線（scrollTween.ts，甘特與總覽時間軸共用）…）
 │   ├── mocks/             範例資料
 │   ├── router/            路由（index.ts：切頁時先載目標頁資料；pageSwap.ts：切頁過渡結束後才還原捲動位置）
 │   ├── stores/            Pinia store（三層，見下）
@@ -348,24 +348,28 @@ store 分三層，依賴**只能由上往下**：
 | `data-project` | 專案卡；時間軸的 `.p-block`（同時包住 `.p-row` 與 `.qv`） | projectId |
 | `data-drawer` | 卡片檢視的速覽抽屜（每條泳道一個，是卡片的兄弟元素，插在展開那張卡所在列下方；`id` 是 `lane-qv-<成員 id>`，對應卡片的 `aria-controls`） | 正在顯示的 projectId（沒展開時沒有這個屬性） |
 | `data-pm-col` | 卡片檢視的 PM 泳道 | 成員 id |
+| `data-lane-wrap` | 卡片檢視 PM 泳道的外層 `.lane-wrap`：原地收合與重排的單位，`useCollapseReenter` 以它對應新舊元素；`data-pm-col` 仍在裡面的泳道本體 | 成員 id |
 | `data-pm-group` | 時間軸的 PM 群組列 `.g-row` | 成員 id |
+| `data-g-wrap` | 時間軸 PM 群組的外層 `.g-wrap`：原地收合與重排的單位（同 `data-lane-wrap`）；`data-pm-group` 仍在裡面的 `.g-row` | 成員 id |
+| `data-row-wrap` | 時間軸專案列的外層 `.r-wrap`：原地收合與重排的單位（`useRelativeFlip` 也以它對應）；`data-project` 仍在裡面的 `.p-block` | projectId |
 | `data-pm-option` | 成員篩選面板的一列（帶 `aria-pressed`） | 成員 id |
 | `data-ov-dd` | 總覽頂欄的下拉根元素（見表下說明） | `pm` / `status` / `alert` |
 | `data-testid` | 面板計數 `overview-count`、搜尋框 `overview-search`、清除篩選 `overview-clear`、空狀態 `overview-empty`、時間軸「今天」`overview-today` | 固定字串 |
 
 `data-ov-dd` 刻意和 Dashboard 的 `data-dd` 分開：它不在 `useClickOutside` 的保留清單裡，總覽的浮層改由 `useDismiss` 關閉。
 
-總覽 e2e 還依賴下表這些 class，**改名時要同步改測試**。用到的檔是 `e2e/overview.spec.ts`、`e2e/overview-motion.spec.ts`、`e2e/overview-tablet.spec.ts`、`e2e/page-motion.spec.ts`、`e2e/helpers/overviewPage.ts`：
+總覽 e2e 還依賴下表這些 class，**改名時要同步改測試**。用到的檔是 `e2e/overview.spec.ts`、`e2e/overview-motion.spec.ts`、`e2e/overview-tablet.spec.ts`、`e2e/page-motion.spec.ts`、`e2e/ov-*.spec.ts`（逐幀量測）、`e2e/helpers/overviewPage.ts`、`e2e/helpers/ovMotion.ts`：
 
 | 用途 | class |
 |---|---|
 | 頁面根元素 | `.dash`（Dashboard；`page-motion.spec` 量它的透明度） |
-| 頂欄與下拉 | `.dd-trigger` `.dd-menu` `.alert-dot` |
-| 排序 | `.sort-trigger` `.sort-menu` `.sort-chip` `.chip-label` `.chip-x` `.chip-arrow` |
+| 頂欄與下拉 | `.dd-trigger` `.dd-menu` `.alert-dot` `.mp-stack` |
+| 排序 | `.sort-trigger` `.sort-menu` `.sort-chip` `.chip-label` `.chip-x` `.chip-arrow` `.sorts` `.sort-option` `.sort-clear` |
 | 面板 | `.panel-head` `.panel-title` `.panel-toggle` `.panel-body` `.panel-caret` |
-| 卡片 | `.lane-head` `.card-main` `.card-name` `.card-caret` `.hero` `.pa-bar` `.fill` `.enter-edge` `.qb-title` `.pm-count` |
-| 時間軸 | `.tl-body` `.tl-left-head` `.today-tag` `.p-row` `.p-left` `.p-name` `.c-pct` `.c-gap` `.pct-plan` `.bar` `.bar-label` `.g-caret` `.g-sum` `.qv` `.qv-head` |
-| 過渡（Vue 自動加上的 class） | `ov-pop-*` `ov-fade-*` `ov-view-*` `ov-card-*` `ov-col-*` `ov-row-*` `ov-chip-*` `ov-av-*`（定義在 `assets/overview-motion.css`）；切頁的 `page-view-*`（定義在 `assets/base.css`）；時間軸連接框 `.qv-cap`；Dashboard 浮層的 `pop-*`（選單、日期選擇器）`dialog-*`（相依編輯器、確認框）`fade-*`（Lightbox）定義在 `assets/base.css`，詳情視窗的 `detail-fade-*` `detail-pop-*` 在 `DetailModal.vue` |
+| 卡片 | `.lane-head` `.card-main` `.card-name` `.card-caret` `.hero` `.pa-bar` `.fill` `.enter-edge` `.qb-title` `.pm-count` `.board` `.lane-body`；速覽抽屜 `.drawer` `.drawer-box` `.drawer-content` `.enter-head` |
+| 時間軸 | `.tl-body` `.tl-left-head` `.today-tag` `.p-row` `.p-left` `.p-name` `.c-pct` `.c-gap` `.pct-plan` `.bar` `.bar-label` `.g-caret` `.g-sum` `.qv` `.qv-head` `.tl` `.tl-ruler` `.tl-hbar` `.tl-groups` `.g-list` `.quick-wrap` `.qv-box` `.quick-view` |
+| 原地收合的外層 / 裁切層 | `.lane-wrap` `.lane-clip`（卡片）、`.g-wrap` `.g-wrap-clip` `.r-wrap` `.r-clip`（時間軸）。e2e 不寫這幾個 class 名，改用屬性與層級找：`.board > *`、`.tl-groups > *`、`.g-list > *` 是外層，`.g-list > * > *` 是列的裁切層（平常不裁、收合中才 `overflow: clip`）；多包或少包一層都要同步改測試 |
+| 過渡（Vue 自動加上的 class） | `ov-pop-*` `ov-fade-*` `ov-view-*` `ov-card-*` `ov-col-*` `ov-group-*` `ov-row-*` `ov-chip-*` `ov-av-*`（定義在 `assets/overview-motion.css`）。`ov-col-*` / `ov-group-*` / `ov-row-*` 是原地收合：外層 `grid-template-rows` 0fr ↔ 1fr ＋ 透明度，外層 / 裁切層結構見 `overview-motion.css` 的註解；`ov-view-*` 是 transition（不是 keyframes，淡入中切回會從當下反向）；同檔另以 `:where()` 給 `.sorts > *` `.mp-stack > *` `.board > *` `.tl-groups > *` 寫 `transition: none` 當基礎（內建 move 被中斷時才停得住，理由見該檔註解）；切頁的 `page-view-*`（定義在 `assets/base.css`）；時間軸連接框 `.qv-cap`；Dashboard 浮層的 `pop-*`（選單、日期選擇器）`dialog-*`（相依編輯器、確認框）`fade-*`（Lightbox）定義在 `assets/base.css`，詳情視窗的 `detail-fade-*` `detail-pop-*` 在 `DetailModal.vue` |
 
 ## 怎麼接後端
 
@@ -514,5 +518,5 @@ dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (im
   - **讀寫先後**：Dashboard 剛送出修改就切回總覽時，先載的 `listProjects()` 可能比那次修改先被後端處理，總覽短暫顯示舊值、下次載入才更新。
 - **總覽的規模**：時間軸範圍涵蓋所有專案與今天，日刻度與底色格的 DOM 節點數跟天數成正比。專案變多、時間跨度拉長時，要考慮限縮範圍或做虛擬化。
 - **總覽的篩選不寫進網址**：重新整理或分享連結時，篩選條件不會保留。
-- **`prefers-reduced-motion`**：全專案都還沒支援。總覽的過渡集中在 `assets/overview-motion.css` 與各元件的 `transition`，要支援時從這裡下手。Dashboard 的浮層在 `assets/base.css` 的「浮層進出場」段（pop / dialog / fade）與 `DetailModal.vue` 的 detail-fade / detail-pop；切頁的 `page-view-*` 在 `assets/base.css`，錯誤條的進出場與換行補間在 `ErrorBar.vue` 的 `tween()`（Web Animations，讀 `--t-panel`；CSS 的 reduced-motion 規則管不到，要在這裡判斷）。
+- **`prefers-reduced-motion`**：全專案都還沒支援。總覽的過渡集中在 `assets/overview-motion.css` 與各元件的 `transition`，要支援時從這裡下手。總覽另有 JS 驅動的過渡：`composables/motionTokens.ts` 在執行期讀 `--t-*` / `--ease`，`heightTween`（容器高度補間）、`useRelativeFlip` / `useFreezeReenter`（Web Animations 的重排位移與同 key 接續）與空狀態的延後（`showEmpty`）都經它取時長，token 設成 0 就直接放開、不播；程式平滑捲動（總覽時間軸的「今天」、甘特的 `useGanttScroll`）的時長來自 `lib/scrollTween.ts` 的固定公式（460–1150ms），不讀 token，要另外處理。Dashboard 的浮層在 `assets/base.css` 的「浮層進出場」段（pop / dialog / fade）與 `DetailModal.vue` 的 detail-fade / detail-pop；切頁的 `page-view-*` 在 `assets/base.css`，錯誤條的進出場與換行補間在 `ErrorBar.vue` 的 `tween()`（Web Animations，讀 `--t-panel`；CSS 的 reduced-motion 規則管不到，要在這裡判斷）。
 - **CSP**：目前沒有 Content-Security-Policy；上線前在伺服器或 CDN 層補上，至少限制 `script-src` / `style-src` / `img-src`（`blob:` 要放行，附件預覽用得到）。
