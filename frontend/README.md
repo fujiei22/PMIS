@@ -88,7 +88,7 @@
 | 加 Dashboard 的浮層（選單、日期選擇器、對話框） | 元件包 `<Transition name="pop \| dialog \| fade">`（根元素與對話框本體不寫 transition / animation / opacity / transform）；fixed 浮層接 `useCloseOnScroll`、開啟函式放 `useMenus`（記觸發元素）；鎖頁面捲動用 `useScrollLock`；`e2e/popover-motion.spec.ts` / `dialog-motion.spec.ts` 加一條離場守衛。頂欄的篩選下拉 / 成員面板 / 日期日曆、看板與 Issue 的排序選單、Issue 分欄下拉也是 `pop`（absolute 掛在觸發鈕或容器下，不是 fixed）：頂欄一行時傳 `align="end"`（右緣對齊，觸發鈕往左變寬時選單不動）、兩列時 `start`；排序選單以 `.sorts` / `.tools` 為定位基準、打開當下量好位置（`--menu-x` / `--menu-y`），開著期間不跟著觸發鈕；點了不該關掉浮層的觸發元件（例：日期膠囊）標 `data-keep-popup`。守衛在 `e2e/dash-menu-motion.spec.ts` |
 | 改 Dashboard 頂欄篩選項或排序 chip 的版面 | 頂欄一行時篩選條件變動會把篩選項 FLIP 到新位置（`TopBar` 的 pre / post watcher，比右緣；一行 / 兩列切換與縮放不做；`measureFit` 扣掉補間中的位移再量）；日期膠囊與「～」用 `fade` 淡入淡出，離場中的由 `freezeLeave` 釘成 absolute（不佔版面、不算進 `measureFit` 與位移補間，一行 / 兩列切換時直接藏起來）；排序 chip 是 `TransitionGroup` ＋ `.sort-chip-slot > .sort-chip-clip` 原地橫向展開 / 收起，父層要提供 `--sorts-gap`；離場中的 chip 還在 DOM，測試讀 chip 要用會重試的寫法（`expect.poll`） |
 | 改切頁過渡或頁面的載入流程 | 切頁淡入淡出是 `assets/base.css` 的 `page-view-*`（transition，淡入途中切走會從當下的透明度往回淡出；頁面根元素 `.dash` / `.ov` 不寫 opacity / transition / animation，會蓋掉它）；`router/pageSwap.ts` 等新頁插入（`@enter`）才還原捲動，新頁插入當下要已經是最終高度。載入：`router/index.ts` 的 `beforeEach` 在 path 變或初始導航時呼叫 `preloadProject` / `preloadPortfolio`，頁面掛載時 boot 的 `reload()` 取走沿用——**同一次進頁只打一次 load**（`failNext` 類測試只擋一發，靠這個維持語意）；已經 ready 時背景重載、失敗不蓋掉內容。守衛 `e2e/page-motion.spec.ts`、`e2e/load-motion.spec.ts` |
-| 改錯誤條的內容或版面 | `common/ErrorBar.vue`：在 TopBar 第二列、文件流裡（不是浮層，契約 C），三層 `.error-slot`（grid `0fr ↔ 1fr` ＋透明度，`<Transition name="errorbar">`，`v-if` 拿掉的是這層）/ `.error-clip`（裁切）/ `.error-bar`（`role="alert"`、`data-errorbar`）；已在畫面上時筆數變了而換行，用 Web Animations 補間裁切層高度；每次從沒有錯誤變成有錯誤換一個 key（收起途中又來一筆時舊的照收完）。下面的內容與 sticky 面板頭因此逐幀被推開 / 收回；捲到中段時 Chrome 的 scroll anchoring 會補償，內容不動、頂欄往下蓋。守衛 `e2e/errorbar-motion.spec.ts` |
+| 改錯誤條的內容或版面 | `common/ErrorBar.vue`：在 TopBar 第二列、文件流裡（不是浮層，契約 C），兩層 `.error-slot`（`overflow: clip`，`v-if` 拿掉的是這層）/ `.error-bar`（`role="alert"`、`data-errorbar`）；進場、離場、筆數變了而換行三種高度變化都用 Web Animations 在 `.error-slot` 補間 `height` ＋透明度（`<Transition :css="false">` 的 `onEnter` / `onLeave` 與內容 watcher 共用 `tween()`，時長 `--t-panel`、曲線 `--ease`），每次從畫面上看得到的高度與透明度起步，中途接手（進場途中換行、少一行途中關掉最後一筆）不跳；不用 grid `0fr ↔ 1fr`（裡層被補間寫上 px 高度時會撐住外層的 `0fr`）；每次從沒有錯誤變成有錯誤換一個 key（收起途中又來一筆時舊的照收完）。下面的內容與 sticky 面板頭因此逐幀被推開 / 收回；捲到中段時 Chrome 的 scroll anchoring 會補償，內容不動、頂欄往下蓋。守衛 `e2e/errorbar-motion.spec.ts` |
 | 改 Dashboard 或總覽在平板上的版面或手指操作 | 見下方〈平板與觸控〉；`e2e/tablet.spec.ts`（Dashboard）、`e2e/overview-tablet.spec.ts`（總覽），都是 768×1024 觸控；Dashboard 1200px 以上的版面要跟 legacy 對得上（`compare.spec.ts` 在 1440 / 1920 對照 legacy 幾何；頂欄例外，見〈刻意保留的差異〉） |
 | 改 Dashboard 頂欄的篩選器（加減項目、改文字） | `layout/TopBar.vue`：一行放不下時整排移到第二列，由 `measureFit` 量實際寬度切 `.stacked`（不靠斷點，不用另調寬度）；兩列時日期日曆以日期那一組（`.date-group`）為基準、左緣對齊（`FilterCalendar` 的 `align`），這一組比日曆窄時往左挪到不超出視窗（可超出的量 `--cal-overhang` 取自列的左右留白 `--top-row-pad-x`，改留白只改這個變數）；`e2e/topbar-layout.spec.ts` 守版型與日曆位置，加了篩選項讓 1536 也放不下時要改它的寬度 |
 
@@ -324,7 +324,7 @@ store 分三層，依賴**只能由上往下**：
 | `data-col` | 看板欄內容區 | 狀態 key | ✓ |
 | `data-dd` | 所有下拉的觸發器與面板 | `1` | ✓ |
 | `data-zoom` | 甘特縮放滑桿 | `1` | ✓ |
-| `data-errorbar` | 錯誤條容器（同一元素帶 `role="alert"`；外面還有兩層做高度過渡，`v-if` 拿掉的是最外層，關閉後整條不留） | 空值 | ✗ |
+| `data-errorbar` | 錯誤條容器（同一元素帶 `role="alert"`；外面還有一層 `.error-slot` 做高度補間，`v-if` 拿掉的是那層，關閉後整條不留） | 空值 | ✗ |
 | `data-keep-selection` | 只改怎麼看、點了不清選取的控制項（平板甘特左欄的展開鈕） | 空值 | ✗ |
 | `data-keep-popup` | 點了不關浮層的觸發元件（頂欄的日期膠囊：日曆開著時點它只切換要填的端點） | 空值 | ✗ |
 | `data-loadstate` / `data-load-error` | 載入中 / 失敗畫面的容器與錯誤訊息（Dashboard 與總覽共用 `LoadingState`） | 空值 | ✗ |
@@ -482,7 +482,7 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 
 dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (import.meta.env.DEV)`），e2e 用它注入延遲與失敗（`failNext` / `setLatency` / `reset` / `emit`）。總覽的載入失敗用 `failNext('listProjects')`。
 
-接上真後端之後 `window.__mockApi` 會是 `undefined`，這幾條開頭就是 `test.skip(!__mockApi)`，會自動跳過，其餘照跑：`e2e/interactions.spec.ts` 的**那兩條**（api 失敗後還原並顯示錯誤條、載入失敗後重試）、`e2e/errorbar-motion.spec.ts` 的頁頂與捲到中段兩條（`failNext('updateTask')` 讓錯誤條出現；另兩條直接呼叫 `ui.pushError`，不需要 mock）、`e2e/load-motion.spec.ts` 的重進 Dashboard（`setLatency`）與載入次數守門。要在真後端上也測失敗路徑，就換成在 `page.route()` 攔 HTTP 回錯誤碼。
+接上真後端之後 `window.__mockApi` 會是 `undefined`，這幾條開頭就是 `test.skip(!__mockApi)`，會自動跳過，其餘照跑：`e2e/interactions.spec.ts` 的**那兩條**（api 失敗後還原並顯示錯誤條、載入失敗後重試）、`e2e/errorbar-motion.spec.ts` 的頁頂與捲到中段兩條（`failNext('updateTask')` 讓錯誤條出現；另四條直接呼叫 `ui.pushError`，不需要 mock）、`e2e/load-motion.spec.ts` 的重進 Dashboard（`setLatency`）與載入次數守門。要在真後端上也測失敗路徑，就換成在 `page.route()` 攔 HTTP 回錯誤碼。
 
 **每次進頁只打一次 load**：`failNext` 只擋下一發，切頁先載（`router` 的 `beforeEach`）與頁面掛載的 `reload()` 共用同一發，失敗與重試的測試才有意義；`load-motion.spec` 的次數守門守這一點。
 
@@ -506,5 +506,5 @@ dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (im
   - **讀寫先後**：Dashboard 剛送出修改就切回總覽時，先載的 `listProjects()` 可能比那次修改先被後端處理，總覽短暫顯示舊值、下次載入才更新。
 - **總覽的規模**：時間軸範圍涵蓋所有專案與今天，日刻度與底色格的 DOM 節點數跟天數成正比。專案變多、時間跨度拉長時，要考慮限縮範圍或做虛擬化。
 - **總覽的篩選不寫進網址**：重新整理或分享連結時，篩選條件不會保留。
-- **`prefers-reduced-motion`**：全專案都還沒支援。總覽的過渡集中在 `assets/overview-motion.css` 與各元件的 `transition`，要支援時從這裡下手。Dashboard 的浮層在 `assets/base.css` 的「浮層進出場」段（pop / dialog / fade）與 `DetailModal.vue` 的 detail-fade / detail-pop；切頁的 `page-view-*` 在 `assets/base.css`，錯誤條的 `errorbar-*` 在 `ErrorBar.vue`。
+- **`prefers-reduced-motion`**：全專案都還沒支援。總覽的過渡集中在 `assets/overview-motion.css` 與各元件的 `transition`，要支援時從這裡下手。Dashboard 的浮層在 `assets/base.css` 的「浮層進出場」段（pop / dialog / fade）與 `DetailModal.vue` 的 detail-fade / detail-pop；切頁的 `page-view-*` 在 `assets/base.css`，錯誤條的進出場與換行補間在 `ErrorBar.vue` 的 `tween()`（Web Animations，讀 `--t-panel`；CSS 的 reduced-motion 規則管不到，要在這裡判斷）。
 - **CSP**：目前沒有 Content-Security-Policy；上線前在伺服器或 CDN 層補上，至少限制 `script-src` / `style-src` / `img-src`（`blob:` 要放行，附件預覽用得到）。

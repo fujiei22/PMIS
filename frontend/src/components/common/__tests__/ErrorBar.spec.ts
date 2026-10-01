@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { ApiError } from '@/api/types'
 import ErrorBar from '@/components/common/ErrorBar.vue'
 import { useUiStore } from '@/stores/ui'
@@ -49,6 +50,17 @@ describe('ErrorBar', () => {
     expect(w.find('[data-errorbar]').exists()).toBe(true)
     await w.find('.error-x').trigger('click')
     expect(w.find('[data-errorbar]').exists()).toBe(false)
+    expect(w.find('.error-slot').exists()).toBe(false)
+  })
+
+  it('讀不到補間時長（--t-panel）時不補間：進出場的 done 當場呼叫，關掉最後一筆就整條拿掉', async () => {
+    const ui = useUiStore()
+    // 不用 test-utils 預設的 Transition stub，真的走 onEnter / onLeave（jsdom 沒有 CSS 變數，時長讀成 0）
+    const w = mount(ErrorBar, { global: { stubs: { transition: false } } })
+    ui.pushError({ label: '更新任務', error: new ApiError('network', 'x') })
+    await nextTick()
+    expect(w.find('[data-errorbar]').exists()).toBe(true)
+    await w.find('.error-x').trigger('click')
     expect(w.find('.error-slot').exists()).toBe(false)
   })
 

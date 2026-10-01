@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 寫入失敗的提示條：掛在 TopBar 的 <header> 第二列（契約 C、review M11）。
 // 主文是操作名稱、副文是錯誤碼對應的固定中文；server 原文只進 console（review M2）。
-// 在文件流裡、不是浮層：出現 / 關閉時高度原地展開 / 收起，下面的內容與 sticky 面板頭（top 跟著頂欄高度）
+// 在文件流裡、不是浮層：出現 / 關閉 / 換行時高度原地展開 / 收起，下面的內容與 sticky 面板頭（top 跟著頂欄高度）
 // 逐幀被推開 / 收回，不是一幀跳 40px（動畫稽核 G11 / D14）。
 import { computed, ref, watch } from 'vue'
 import { API_ERROR_TEXT } from '@/constants/api'
@@ -28,13 +28,87 @@ watch(
 )
 
 /**
- * 錯誤列已經在畫面上、筆數或 ×N 變了讓它換行 / 少一行時，高度也要補間（進出場的 0fr ↔ 1fr 只管出現與關閉）。
- * 補間寫在裁切層的 height：外層的 0fr ↔ 1fr 是乘在它上面的比例，進場途中內容又變也接得上。
+ * 進場、離場、換行三種高度變化走同一條：在外層（.error-slot）用 Web Animations 補間 height 與透明度，
+ * 每次都從畫面上看得到的高度與透明度起步，中途接手（進場途中又換行、少一行途中關掉最後一筆）也接得上。
+ * 不用 grid 0fr ↔ 1fr：裡面一層被補間寫上 px 高度時，它的最小貢獻就是那個 px，外層的 0fr 收不下去，
+ * 補間跑完才一幀掉到插值的位置。
  */
-const clipEl = ref<HTMLElement | null>(null)
+interface Look {
+  /** 高度（px） */
+  h: number
+  /** 透明度 */
+  o: number
+}
+
+/** 每個 slot 正在跑的補間與它的終點（離場中的舊 slot 與新的並存時各管各的）。 */
+const motions = new WeakMap<Element, { anim: Animation; to: number }>()
+
+/** 畫面上看得到的高度與透明度（補間中就是補間當下的值）。 */
+function looks(el: HTMLElement): Look {
+  const o = parseFloat(getComputedStyle(el).opacity)
+  return { h: el.getBoundingClientRect().height, o: Number.isNaN(o) ? 1 : o }
+}
+
+/**
+ * 把 slot 從 from 補到 to，取代它正在跑的補間；補完（或被下一段接手）呼叫 done。
+ * 時長 --t-panel、曲線 --ease（同面板收合、排序 chip）；讀不到時長就不補、直接 done。
+ */
+function tween(
+  el: HTMLElement,
+  from: Look,
+  to: Look,
+  done?: () => void,
+  fill: FillMode = 'none',
+): void {
+  // 上一段先停：from 已經量好了，停了之後同一個 task 裡就接上新的一段，中間不會畫出一幀
+  motions.get(el)?.anim.cancel()
+  motions.delete(el)
+  const cs = getComputedStyle(document.documentElement)
+  const duration = parseDuration(cs.getPropertyValue('--t-panel'))
+  if (!duration) {
+    done?.()
+    return
+  }
+  const anim = el.animate(
+    [
+      { height: `${from.h}px`, opacity: from.o },
+      { height: `${to.h}px`, opacity: to.o },
+    ],
+    { duration, easing: cs.getPropertyValue('--ease').trim() || 'ease', fill },
+  )
+  motions.set(el, { anim, to: to.h })
+  const end = (): void => {
+    if (motions.get(el)?.anim === anim) motions.delete(el)
+    done?.()
+  }
+  anim.onfinish = end
+  anim.oncancel = end
+}
+
+/** 進場：剛插入、還沒補間，量到的就是內容高度；從 0 展開。 */
+function onEnter(el: Element, done: () => void): void {
+  const slot = el as HTMLElement
+  tween(slot, { h: 0, o: 0 }, { h: slot.getBoundingClientRect().height, o: 1 }, done)
+}
+
+/**
+ * 離場：從看得到的高度與透明度（可能還在進場或換行的補間中）收到 0。
+ * 補完停在 0（fill）直到 Vue 拿掉它，不會先彈回內容高度一幀。
+ */
+function onLeave(el: Element, done: () => void): void {
+  const slot = el as HTMLElement
+  // 離場中不攔點擊（同 base.css 的 pop-leave-active）：收起中的 ✕ 不再吃點擊
+  slot.style.pointerEvents = 'none'
+  tween(slot, looks(slot), { h: 0, o: 0 }, done, 'forwards')
+}
+
+/**
+ * 已經在畫面上、筆數或 ×N 變了讓它換行 / 少一行：pre 量看得到的樣子，post 量新的內容高度，從看得到的補過去。
+ * 進場途中換行也走這裡（接手進場的補間，透明度從當下接到 1）。
+ */
+const slotEl = ref<HTMLElement | null>(null)
 const barEl = ref<HTMLElement | null>(null)
-let fromH = 0
-let resize: Animation | undefined
+let before: Look | null = null
 
 /** 會改變錯誤列內容的東西：筆數（含「還有 N 筆」）與每筆的 ×N。每次都回新陣列，任一項變了就觸發。 */
 const content = (): number[] => ui.errors.map((e) => e.count)
@@ -42,9 +116,7 @@ const content = (): number[] => ui.errors.map((e) => e.count)
 watch(
   content,
   () => {
-    // 補間中的話量裁切層（看得到的高度），否則量內容本身（進場中裁切層被外層壓扁，量它會少算）
-    const el = resize?.playState === 'running' ? clipEl.value : barEl.value
-    fromH = el?.getBoundingClientRect().height ?? 0
+    before = slotEl.value ? looks(slotEl.value) : null
   },
   { flush: 'pre' },
 )
@@ -52,22 +124,15 @@ watch(
 watch(
   content,
   () => {
-    const clip = clipEl.value
-    const from = fromH
-    fromH = 0
-    // 剛出現（from 0）或正在關閉（已卸載）交給進出場
-    if (!clip || !barEl.value || !from) return
+    const slot = slotEl.value
+    const from = before
+    before = null
+    // 剛出現（pre 時還沒有 slot，交給進場）或正在關閉（slot 已卸載，交給離場）
+    if (!slot || !barEl.value || !from) return
     const to = barEl.value.getBoundingClientRect().height
-    // 上一段補間先停：停了裁切層就回到內容高度 to；不停的話它跑完會從舊終點跳到 to
-    resize?.cancel()
-    if (Math.abs(to - from) < 0.5) return
-    const cs = getComputedStyle(document.documentElement)
-    const timing = {
-      duration: parseDuration(cs.getPropertyValue('--t-panel')),
-      easing: cs.getPropertyValue('--ease').trim() || 'ease',
-    }
-    if (!timing.duration) return
-    resize = clip.animate([{ height: `${from}px` }, { height: `${to}px` }], timing)
+    // 正在補的終點（沒在補就是看得到的高度）已經是新高度：內容變了但高度沒變，照原本的補間走完
+    if (Math.abs(to - (motions.get(slot)?.to ?? from.h)) < 0.5) return
+    tween(slot, from, { h: to, o: 1 })
   },
   { flush: 'post' },
 )
@@ -75,22 +140,20 @@ watch(
 
 <template>
   <!--
-    三層：.error-slot 是單欄 grid，列高 0fr ↔ 1fr 補間、連同透明度做進出場（v-if 拿掉的就是這層）；
-    .error-clip 是裁切層，min-height: 0 讓列高能收到 0；.error-bar 是內容本身。
+    兩層：.error-slot 是補間高度與透明度的那層（v-if 拿掉的就是它，裁掉補間中比內容矮的部分）；
+    .error-bar 是內容本身。進出場由上面的 onEnter / onLeave 補間，不用 CSS 過渡。
   -->
-  <Transition name="errorbar">
-    <div v-if="ui.errors.length" :key="round" class="error-slot">
-      <div ref="clipEl" class="error-clip">
-        <!-- 不自動關閉：使用者自己按 ✕（契約 C） -->
-        <div ref="barEl" class="error-bar" role="alert" data-errorbar>
-          <div v-for="e in shown" :key="e.id" class="error-item">
-            <span class="error-label">{{ e.label }}</span>
-            <span class="error-code">{{ API_ERROR_TEXT[e.code] }}</span>
-            <span v-if="e.count > 1" class="error-count">×{{ e.count }}</span>
-            <span class="error-x" role="button" title="關閉" @click="ui.dismissError(e.id)">✕</span>
-          </div>
-          <div v-if="rest" class="error-rest">還有 {{ rest }} 筆</div>
+  <Transition :css="false" @enter="onEnter" @leave="onLeave">
+    <div v-if="ui.errors.length" :key="round" ref="slotEl" class="error-slot">
+      <!-- 不自動關閉：使用者自己按 ✕（契約 C） -->
+      <div ref="barEl" class="error-bar" role="alert" data-errorbar>
+        <div v-for="e in shown" :key="e.id" class="error-item">
+          <span class="error-label">{{ e.label }}</span>
+          <span class="error-code">{{ API_ERROR_TEXT[e.code] }}</span>
+          <span v-if="e.count > 1" class="error-count">×{{ e.count }}</span>
+          <span class="error-x" role="button" title="關閉" @click="ui.dismissError(e.id)">✕</span>
         </div>
+        <div v-if="rest" class="error-rest">還有 {{ rest }} 筆</div>
       </div>
     </div>
   </Transition>
@@ -98,37 +161,10 @@ watch(
 
 <style scoped>
 /*
- * 平常的列高寫在 :where() 裡（scoped 的屬性選擇器也編進 :where()，特異度 0）：
- * 下面進出場的 .errorbar-enter-from / .errorbar-leave-to（scoped 後 0,2,0）不論寫在前面後面都蓋得過它。
- * 外層也裁切（用 clip 不用 hidden：hidden 會讓它變成捲動容器）：裁切層正在補間高度時會比外層的列高高，
- * 不裁的話多出來的部分會蓋到頂欄下面的頁面內容上。
+ * 補間高度的那層：裁掉補間中比內容矮的部分（用 clip 不用 hidden：hidden 會讓它變成捲動容器）。
+ * min-height: 0：它是頂欄（flex 直排）的項目，不讓 flex 的自動最小高度把它撐回內容高度。
  */
-:where(.error-slot) {
-  display: grid;
-  grid-template-rows: 1fr;
-  overflow: clip;
-}
-
-/* 進出場：列高 0fr ↔ 1fr、透明度 0 ↔ 1，時長 --t-panel、曲線 --ease（同面板收合、排序 chip） */
-.errorbar-enter-active,
-.errorbar-leave-active {
-  transition:
-    grid-template-rows var(--t-panel) var(--ease),
-    opacity var(--t-panel) var(--ease);
-}
-
-/* 離場中不攔點擊（同 base.css 的 pop-leave-active）：收起中的 ✕ 不再吃點擊 */
-.errorbar-leave-active {
-  pointer-events: none;
-}
-
-.errorbar-enter-from,
-.errorbar-leave-to {
-  grid-template-rows: 0fr;
-  opacity: 0;
-}
-
-.error-clip {
+.error-slot {
   min-height: 0;
   overflow: clip;
 }
