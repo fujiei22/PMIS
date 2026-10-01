@@ -54,6 +54,49 @@ test.describe('一欄寬（泳道內卡片一列一張）', () => {
     expect(out.length, '有量到離場中的 app').toBeGreaterThan(0)
     expect(Math.max(...out), '實心的離場卡超出泳道框的比例（卡片高度為 1）').toBeLessThan(0.5)
   })
+
+  test('搜尋「入口」讓 m8 少一列：留下的 portal 卡高度全程不變（撐住的網格不把多出來的空間分給卡片）', async ({ page }) => {
+    // 卡片網格（grid）的 align-content 預設 normal＝stretch：高度撐在舊值時，剩下的列會被拉高去填滿，留下的卡跟著變高
+    await gotoOverview(page)
+    const portal = `${P} [data-project="portal"]`
+    const before = (await page.locator(portal).boundingBox())!.height
+    const tr = await trace(page, { portal, app: `${P} [data-project="app"]` }, () =>
+      page.getByTestId('overview-search').fill('入口'),
+    )
+    expect(series(tr, 'app').some((b) => b.t >= tr.at), 'app 確實在離場（有鑑別力）').toBe(true)
+    await expect(page.locator(`${P} [data-project="app"]`)).toHaveCount(0)
+    const hs = series(tr, 'portal').map((b) => b.h)
+    expect(hs.length).toBeGreaterThan(10)
+    expect(Math.max(...hs.map((h) => Math.abs(h - before))), '留下的卡高度變了（px）').toBeLessThanOrEqual(1)
+  })
+
+  test('卡片網格補間到一半整條泳道被篩掉（「入口」→「入口x」）：收起中的泳道高度不跳', async ({ page }) => {
+    // 泳道卸載時停掉網格的高度補間（heightTween 的 cancelHeight）：高度要停在當下，清掉的話收起中的泳道一幀跳回自然高度
+    await gotoOverview(page)
+    const search = page.getByTestId('overview-search')
+    const lane = `${P} .board > [data-lane-wrap="m8"]`
+    const body = `${P} [data-pm-col="m8"] .lane-body`
+    const from = (await page.locator(body).boundingBox())!.height
+    await search.fill('入口')
+    await idle(page)
+    const to = (await page.locator(body).boundingBox())!.height
+    await search.fill('')
+    await idle(page)
+    expect(from - to, '「入口」讓 m8 少一列（有鑑別力）').toBeGreaterThan(60)
+    await search.focus()
+    let xAt = 0
+    const tr = await trace(page, { lane, body }, async () => {
+      await search.fill('入口')
+      await pause(page, 90)
+      xAt = await page.evaluate(() => performance.now() - (window as unknown as { __ovTrace: { t0: number } }).__ovTrace.t0)
+      await page.keyboard.type('x')
+    })
+    await expect(page.locator(lane)).toHaveCount(0)
+    const mid = series(tr, 'body').filter((b) => b.t <= xAt).at(-1)!.h
+    expect(mid, '打 x 時卡片網格還在補間（有鑑別力）').toBeLessThan(from - 2)
+    expect(mid, '打 x 時卡片網格還在補間（有鑑別力）').toBeGreaterThan(to + 2)
+    expect(speedJumps(series(tr, 'lane').map((b) => ({ t: b.t, v: b.h }))), '收起中的泳道高度跳').toBe(0)
+  })
 })
 
 /** 起點與終點之間（各留 2px）的幀數：一幀從起點跳到終點時是 0；長幀被 jumpCount 略過時靠這個抓。 */

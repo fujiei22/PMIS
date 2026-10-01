@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { drift, gotoOverview, idle, jumpCount, probe, reverses, series, trace } from './helpers/ovMotion'
+import { drift, gotoOverview, idle, jumpCount, pause, probe, reverses, series, trace } from './helpers/ovMotion'
 
 /** 速覽抽屜與卡片的銜接（動畫稽核 C5、C7 B、C8、C11、C12、C14）。 */
 test.use({ viewport: { width: 1920, height: 1080 } })
@@ -61,6 +61,35 @@ test('展開箭頭與抽屜同步：長出、收起的每一幀，箭頭透明�
   const closing = await recordArrows(page, 'm5', ['pmis'], cardMain('pmis'), 600)
   expect(closing.at(-1)!.h).toBe(0)
   expect(closing.every((f) => Math.abs(f.arrows.pmis! - f.h / full) <= 0.35), '收起時箭頭與抽屜不同步').toBe(true)
+})
+
+test('收起速覽時滑鼠還停在卡片上：箭頭收起期間卡片不上浮（箭頭不和收起中的抽屜之間出現縫隙）', async ({ page }) => {
+  await gotoOverview(page)
+  await page.locator(cardMain('pmis')).click()
+  await idle(page)
+  // 滑鼠停在主體上（hover）；再點一次收起
+  const b = (await page.locator(cardMain('pmis')).boundingBox())!
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2)
+  await idle(page)
+  const frames = await page.evaluate(async (P) => {
+    const card = document.querySelector(`${P} [data-project="pmis"]`) as HTMLElement
+    const out: { top: number; arrow: number }[] = []
+    const t0 = performance.now()
+    card.querySelector<HTMLElement>('.card-main')!.click()
+    await new Promise<void>((done) => {
+      const tick = (): void => {
+        out.push({ top: card.getBoundingClientRect().top, arrow: parseFloat(getComputedStyle(card, '::after').opacity) })
+        if (performance.now() - t0 < 500) requestAnimationFrame(tick)
+        else done()
+      }
+      requestAnimationFrame(tick)
+    })
+    return out
+  }, P)
+  const top0 = frames[0]!.top
+  const showing = frames.filter((f) => f.arrow > 0.02)
+  expect(showing.length, '有錄到箭頭收起的過程（有鑑別力）').toBeGreaterThan(5)
+  expect(Math.max(...showing.map((f) => Math.abs(f.top - top0))), '箭頭還看得到時卡片上浮了（px）').toBeLessThanOrEqual(0.1)
 })
 
 test('切回卡片檢視：展開中那張的箭頭和抽屜一起在，不會在已全開的抽屜上方重新淡入（C11）', async ({ page }) => {
@@ -196,9 +225,12 @@ test.describe('一欄寬（換列）', () => {
    * 展開 portal，把 app（下一列）捲到畫面中間（420px；m8 是最後一條泳道，頁面在底部會被夾住）。
    * 回傳 app 的追蹤選擇器與它主體的中心點：用 mouse.click 點座標，不用 locator.click——後者點之前有時會先把元素
    * 捲到它認為可點的位置（實測先捲 10–20px），量到的起點就不是使用者看到的位置。
+   * @param padBottom 頁面下方墊高（px）：頁面捲在底部時，抽屜收合讓頁高變矮、瀏覽器自己把捲動往上夾，等於替補償做了；
+   *   墊高讓捲動不會被夾，量得到補償本身有沒有晚一幀。
    */
-  async function openPortalShowApp(page: Page): Promise<{ app: string; pt: { x: number; y: number } }> {
+  async function openPortalShowApp(page: Page, padBottom = 0): Promise<{ app: string; pt: { x: number; y: number } }> {
     await gotoOverview(page)
+    if (padBottom) await page.addStyleTag({ content: `[data-view="overview"] { padding-bottom: ${padBottom}px; }` })
     await page.locator(cardMain('portal')).click()
     await idle(page)
     await page.locator(`${P} [data-project="app"]`).evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 420))
@@ -231,6 +263,18 @@ test.describe('一欄寬（換列）', () => {
     })
   }
 
+  test('換到下一列、頁面下方還有內容（捲動不會被夾）：被點的卡在畫出來的每一幀都不動（補償不晚一幀，C8）', async ({ page }) => {
+    const { app, pt } = await openPortalShowApp(page, 1200)
+    // ovMotion 的取樣在版面算完、繪製前（ResizeObserver），量到的就是畫出來的那一幀
+    const tr = await trace(page, { app }, () => page.mouse.click(pt.x, pt.y), { ms: 1200 })
+    const ys = series(tr, 'app')
+    const collapsing = ys.filter((b) => b.t <= tr.at + 300)
+    expect(collapsing.length).toBeGreaterThan(8)
+    expect(Math.min(...collapsing.map((b) => b.sy)), '頁面要真的有上捲（有鑑別力）').toBeLessThan(ys[0]!.sy - 100)
+    const worst = Math.max(...collapsing.map((b) => Math.abs(b.y - ys[0]!.y)))
+    expect(worst, '收合期間被點的卡離開原位（px）').toBeLessThanOrEqual(2)
+  })
+
   test('換列補償中使用者往上捲：補償立刻停，不把頁面拉回去（C8）', async ({ page }) => {
     const { app, pt } = await openPortalShowApp(page)
     const tr = await trace(page, { app }, async () => {
@@ -245,6 +289,73 @@ test.describe('一欄寬（換列）', () => {
     const sy = tr.frames.filter((f) => f.t >= tr.at && f.t <= tr.at + 300).map((f) => f.sy)
     expect(sy.length).toBeGreaterThan(8)
     expect(sy.every((v, i) => i === 0 || v <= sy[i - 1]! + 1), '使用者捲動後頁面被往下拉').toBe(true)
+  })
+
+  test('換列補償中按下（pointerdown：拖捲軸、點畫面）：補償立刻停（C8）', async ({ page }) => {
+    const { app, pt } = await openPortalShowApp(page)
+    const tr = await trace(page, { app }, async () => {
+      // 記下每次 pointerdown 的時間（同 trace 的時間基準）：第一次是點 app，第二次是補償中按下
+      await page.evaluate(() => {
+        const w = window as unknown as { __ovTrace: { t0: number }; __downs: number[] }
+        w.__downs = []
+        addEventListener('pointerdown', () => w.__downs.push(performance.now() - w.__ovTrace.t0), { capture: true })
+      })
+      await page.mouse.click(pt.x, pt.y)
+      await pause(page, 60)
+      // 按在看板左邊的頁面留白上：不點到任何控制項
+      await page.mouse.move(4, 450)
+      await page.mouse.down()
+      await page.mouse.up()
+    })
+    const downs = await page.evaluate(() => (window as unknown as { __downs: number[] }).__downs)
+    expect(downs).toHaveLength(2)
+    const down = downs[1]!
+    const sy = tr.frames.filter((f) => f.t >= tr.at && f.t <= tr.at + 300)
+    const before = sy.filter((f) => f.t < down)
+    const after = sy.filter((f) => f.t > down + 20).map((f) => f.sy)
+    expect(before.at(-1)!.sy, '按下前補償已經在捲（有鑑別力）').toBeLessThan(before[0]!.sy - 5)
+    expect(down, '在舊抽屜收合期間按下（有鑑別力）').toBeLessThan(tr.at + 220)
+    expect(after.length).toBeGreaterThan(3)
+    expect(Math.max(...after) - Math.min(...after), '按下後頁面還在被捲（補償沒停）').toBeLessThanOrEqual(1)
+  })
+
+  test('兩條泳道的換列補償重疊：最後一條結束才還原根元素的 overflow-anchor，且還原成原值', async ({ page }) => {
+    await gotoOverview(page)
+    // 一欄寬時 m5（PMIS / 金流介接）與 m8（客戶入口 / 行動 App）都是兩列；各展開上面那張
+    await page.locator(cardMain('pmis')).click()
+    await idle(page)
+    await page.locator(cardMain('portal')).click()
+    await idle(page)
+    // 補償前的 inline 值（別處也可能設過）：結束後要還原成它，不是清空
+    await page.evaluate(() => (document.documentElement.style.overflowAnchor = 'auto'))
+    const { frames, second } = await page.evaluate(async (P) => {
+      const html = document.documentElement
+      const out: { t: number; v: string }[] = []
+      // 用 element.click()：不產生 pointerdown，第二下不會把第一條泳道的補償當成使用者操作停掉
+      const click = (id: string): void => (document.querySelector(`${P} [data-project="${id}"] .card-main`) as HTMLElement).click()
+      const t0 = performance.now()
+      let second = 0
+      click('payment')
+      setTimeout(() => {
+        second = performance.now() - t0
+        click('app')
+      }, 120)
+      await new Promise<void>((done) => {
+        const tick = (): void => {
+          out.push({ t: performance.now() - t0, v: html.style.overflowAnchor })
+          if (performance.now() - t0 < 900) requestAnimationFrame(tick)
+          else done()
+        }
+        requestAnimationFrame(tick)
+      })
+      return { frames: out, second }
+    }, P)
+    const none = frames.filter((f) => f.v === 'none')
+    expect(none.length, '補償期間關掉 scroll anchoring（有鑑別力）').toBeGreaterThan(3)
+    // 第二條的補償在它開始後約 PANEL_UNMOUNT_MS（320ms）才結束；第一條先結束時不能提早打開
+    expect(none.at(-1)!.t, '第一條結束時就還原了').toBeGreaterThan(second + 320 - 40)
+    expect(frames.filter((f) => f.t > none[0]!.t && f.t < none.at(-1)!.t).every((f) => f.v === 'none'), '補償中途被打開').toBe(true)
+    expect(frames.at(-1)!.v, '還原成補償前的值').toBe('auto')
   })
 })
 

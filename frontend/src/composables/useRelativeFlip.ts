@@ -50,9 +50,13 @@ export function playFlip(el: HTMLElement, from: { dx: number; dy: number; scale:
  * 位移用 Web Animations（composite: 'add'、只動 transform），不寫 inline transition：寫了會蓋掉 class 上的進出場過渡
  * （淡入中的卡直接變實心 T5、列外層的原地收合直接到位），Vue 判斷內建 move 時複製第一個子元素也會連 inline 一起複製。
  * 用法：容器內 TransitionGroup 的 move-class 指到 `ov-card-still` / `ov-row-still`（overview-motion.css）停用內建 move。
- * 時序：本元件的 onBeforeUpdate 在 DOM 更新前記位置；onUpdated 在子元件（TransitionGroup）之後執行，
- * 這時離場元素已被 freezeLeave 釘成 absolute、不佔版面，量到的就是新位置。
- * 離場中的元素不量也不動；同一個 key 離場中又回來的新元素由 useFreezeReenter 接續（它在更新前不在，這裡當新進場略過）。
+ * 時序：本元件的 onBeforeUpdate 在 DOM 更新前記位置；onUpdated 在子元件（TransitionGroup）之後執行，量到的是更新後的版面。
+ * 離場元素在這時的版面依清單而不同：
+ * - 卡片（PmLane）：離場的卡已被 freezeLeave 釘成 absolute、不佔版面，留下的卡量到的就是終點。
+ * - 時間軸的列（TimelineGroup）：原地收合，離場的列不釘位、留在版面流裡，量的當下還是全高（收合從這一幀才開始，見 useCollapseReenter 的 startLeaveNow），
+ *   留下的列量到的位置含著它；之後它收起時，下面的列由版面帶著上移，不是這裡的 FLIP。
+ * 離場中的元素不量也不動；同一個 key 離場中又回來的新元素由 useFreezeReenter（卡片）/ useCollapseReenter（列）接續
+ * （它在更新前不在，這裡當新進場略過）。
  *
  * @param container 清單容器（元素的 offsetParent）
  * @param keyAttr 用來對應新舊元素的屬性名，例如 `data-project`

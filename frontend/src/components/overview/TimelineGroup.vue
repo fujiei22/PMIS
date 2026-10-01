@@ -4,7 +4,7 @@ import { computed, onBeforeUpdate, onUpdated, ref, type ComponentPublicInstance 
 import Avatar from '@/components/common/Avatar.vue'
 import PmCountPill from '@/components/overview/PmCountPill.vue'
 import TimelineProjectRow from '@/components/overview/TimelineProjectRow.vue'
-import { useCollapseReenter } from '@/composables/useCollapseReenter'
+import { startLeaveNow, useCollapseReenter } from '@/composables/useCollapseReenter'
 import { useRelativeFlip } from '@/composables/useRelativeFlip'
 import { useDelayedUnmount } from '@/composables/useDelayedUnmount'
 import { PANEL_UNMOUNT_MS } from '@/constants/overview'
@@ -39,12 +39,15 @@ const listEl = computed(() => list.value?.$el as HTMLElement | undefined)
  *   那時 useRelativeFlip 量留下的列、OverviewTimeline 的群組 move 量群組位置都已經量完，量到的是「回來的列還是 0 高」的版面；
  *   起點一寫上去，下面的列與群組就一幀被推下去約一列收剩的高度（實測 14px）。新進場的列在這裡已經掛上，先寫好再讓它們量。
  *   @enter 仍綁著，當本元件沒更新時的後備；同一個 key 的起點用過就刪掉，不會寫兩次。
+ * - 進場中的列被搬動（群組外層被搬動、或列自己換順序）時進行中的長出會被取消、一幀長完：同樣在這裡、量之前從當下接續（resume）。
  */
 const reenter = useCollapseReenter(listEl, 'data-row-wrap')
 onBeforeUpdate(reenter.snapshot)
 onUpdated(() => {
   for (const el of Array.from(listEl.value?.children ?? [])) {
-    if (el.classList.contains('ov-row-enter-active')) reenter.onEnter(el)
+    if (!el.classList.contains('ov-row-enter-active')) continue
+    reenter.onEnter(el)
+    reenter.resume(el)
   }
 })
 useRelativeFlip(listEl, 'data-row-wrap')
@@ -126,6 +129,7 @@ function onKey(e: KeyboardEvent): void {
           ref="list"
           move-class="ov-row-still"
           @before-leave="leaving"
+          @leave="startLeaveNow"
           @enter="reenter.onEnter"
         >
           <div v-for="r in group.rows" :key="r.p.id" class="r-wrap" :data-row-wrap="r.p.id">

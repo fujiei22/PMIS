@@ -5,10 +5,11 @@
 // 卡片本身不換底色與框色：狀態只看右上角 pill 與進度條色，整頁顏色才不會太雜（user 決定）。
 // 速覽不在卡片裡：是泳道裡插在這張卡所在列下方的抽屜（LaneDrawer，每條泳道一個），展開時卡片大小不變，只換外框；
 // 指向抽屜的箭頭跟著抽屜實際展開的狀態（prop arrow）長出收起，不跟選取。
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import EnterLink from '@/components/overview/EnterLink.vue'
 import PlanActualBar from '@/components/overview/PlanActualBar.vue'
 import ProjectBadge from '@/components/overview/ProjectBadge.vue'
+import { tokenMs } from '@/composables/motionTokens'
 import { BADGE_CLASS } from '@/constants/overview'
 import { gapTone, type ProjectRow } from '@/lib/portfolio'
 import { useOverviewStore } from '@/stores/overview'
@@ -28,6 +29,23 @@ const d = computed(() => props.row.d)
 
 const open = computed(() => overview.isExpanded(p.value.id))
 
+/**
+ * 箭頭收起中（arrow 剛從有變沒有，--t-panel 內）：這段時間 hover 也不上浮。收起時 is-open 與 arrow-on 同一幀拿掉，
+ * 滑鼠還停在剛點的卡上就會立刻上浮 1px，正在淡出的箭頭跟著卡片上移、和收起中的抽屜之間出現縫隙（review code-review #4）。
+ * 換 prop 觸發的 watch 在本元件重新渲染前就跑完，class 和 arrow-on 拿掉是同一幀。
+ */
+const arrowLeaving = ref(false)
+let arrowTimer: ReturnType<typeof setTimeout> | undefined
+watch(
+  () => props.arrow,
+  (on, was) => {
+    clearTimeout(arrowTimer)
+    arrowLeaving.value = !on && !!was
+    if (arrowLeaving.value) arrowTimer = setTimeout(() => (arrowLeaving.value = false), tokenMs('--t-panel'))
+  },
+)
+onBeforeUnmount(() => clearTimeout(arrowTimer))
+
 function toggle(): void {
   overview.toggleExpandedInLane(p.value.id, props.laneIds)
 }
@@ -43,7 +61,7 @@ function onKey(e: KeyboardEvent): void {
 <template>
   <article
     class="card"
-    :class="{ 'is-open': open, 'arrow-on': arrow }"
+    :class="{ 'is-open': open, 'arrow-on': arrow, 'arrow-leaving': arrowLeaving }"
     :data-project="p.id"
   >
     <div
@@ -131,9 +149,10 @@ function onKey(e: KeyboardEvent): void {
 /*
  * 只有滑到主體才浮起；滑到直條時卡片不動，兩種 hover 分得開。
  * hover 只給有滑鼠的裝置：觸控點一下後 :hover 會一直黏著，直到點別的地方。
+ * 箭頭看得到（arrow-on）或正在收起（arrow-leaving）時不浮起：卡片一上移，下緣的箭頭就和抽屜之間出現縫隙。
  */
 @media (hover: hover) {
-  .card:not(.is-open):has(> .card-main:hover) {
+  .card:not(.is-open):not(.arrow-on):not(.arrow-leaving):has(> .card-main:hover) {
     border-color: var(--text-placeholder);
     box-shadow: var(--shadow-card-hover);
     translate: 0 -1px;

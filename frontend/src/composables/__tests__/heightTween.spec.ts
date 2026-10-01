@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { holdHeight, releaseHeight, type Timing } from '@/composables/heightTween'
+import { cancelHeight, holdHeight, releaseHeight, type Timing } from '@/composables/heightTween'
 import { cubicBezier } from '@/lib/easing'
 
 /** 同 --t-panel / --ease；直接給，不依賴 jsdom 讀 CSS 自訂屬性（同批次 A useRowMotion.spec 的做法）。 */
@@ -71,6 +71,64 @@ describe('heightTween', () => {
     vi.advanceTimersToNextFrame()
     expect(el.style.height).toBe('')
     expect(el.getBoundingClientRect().height).toBe(300)
+  })
+
+  it('預設時長與曲線只在真的要補間時才讀（讀 token 要算 computed style）', () => {
+    const spy = vi.spyOn(window, 'getComputedStyle')
+    try {
+      const n = { h: 200 }
+      const el = box(n)
+      releaseHeight(el) // 沒撐住
+      holdHeight(el)
+      releaseHeight(el) // 撐住但內容高度沒變
+      expect(spy).not.toHaveBeenCalled()
+      holdHeight(el)
+      n.h = 100
+      releaseHeight(el) // 要補間：才讀 token（jsdom 讀不到 → 時長 0 → 直接放開）
+      expect(spy).toHaveBeenCalled()
+      expect(el.style.height).toBe('')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('cancelHeight：停掉進行中的補間，高度停在當下（卸載時元素常還看得到，不跳回自然高度），之後不再寫高度、不再撐頁高', () => {
+    const html = document.documentElement
+    const n = { h: 300 }
+    const el = box(n)
+    holdHeight(el)
+    n.h = 100
+    releaseHeight(el, PANEL)
+    for (let i = 0; i < 3; i++) vi.advanceTimersToNextFrame()
+    const now = el.style.height
+    expect(parseFloat(now)).toBeGreaterThan(100)
+    cancelHeight(el)
+    expect(el.style.height).toBe(now)
+    /** 取消之後還有沒有人拿掉 inline height 量自然高度（補間每幀都會量一次）。 */
+    let measured = 0
+    const natural = el.getBoundingClientRect
+    el.getBoundingClientRect = () => {
+      measured++
+      return natural()
+    }
+    const minHeight = vi.spyOn(html.style, 'minHeight', 'set')
+    for (let i = 0; i < 30; i++) vi.advanceTimersToNextFrame()
+    expect(measured).toBe(0)
+    expect(minHeight).not.toHaveBeenCalled()
+    expect(el.style.height).toBe(now)
+    minHeight.mockRestore()
+  })
+
+  it('cancelHeight：沒有補間在跑（只撐住、沒撐住、元素不在）時不動高度、不會出錯', () => {
+    const el = box({ h: 200 })
+    holdHeight(el)
+    cancelHeight(el)
+    expect(el.style.height).toBe('200px')
+    el.style.height = ''
+    cancelHeight(el)
+    cancelHeight(null)
+    cancelHeight(undefined)
+    expect(el.style.height).toBe('')
   })
 
   it('時長 0（reduced motion 把 token 設 0）：release 直接清掉', () => {

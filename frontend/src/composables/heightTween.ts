@@ -1,3 +1,12 @@
+/**
+ * 容器高度撐住再補間（heightTween）：內容要換之前 holdHeight 把高度寫死，換完 releaseHeight 從舊高度補間到新內容的自然高度，
+ * 元件卸載時 cancelHeight 停掉進行中的補間。
+ *
+ * 前提：被撐住的容器不能把多出來的空間分給子元素。撐住期間容器比內容高（或矮），grid 的 align-content 預設 normal、
+ * flex 子元素的 stretch / flex-grow 會把差額分給子元素，留下的內容跟著被拉高（例：泳道卡片網格 142 → 294px），
+ * 而且量自然高度、FLIP 量位置時量到的都是被拉開的樣子。grid 容器要設 `align-content: start`（見 PmLane 的 .lane-body），
+ * block 容器（例：flow-root 的 .ov-stage）沒有這個問題。
+ */
 import { tokenMs, tokenValue } from '@/composables/motionTokens'
 import { parseEasing } from '@/lib/easing'
 
@@ -25,23 +34,31 @@ export function holdHeight(el: HTMLElement | null | undefined): void {
 }
 
 /**
+ * 停掉進行中的補間，高度停在當下（元件卸載時呼叫，onBeforeUnmount）。
+ * 不停的話 rAF 在元件拿掉後照樣跑到時長結束，每幀都撐一次 html 的 min-height、逼一次版面計算（例：進 Dashboard 後約 0.26 秒）。
+ * 不清掉 inline height：卸載當下元素常常還看得到（整條泳道原地收起、切檢視淡出都在 onBeforeUnmount 之後才跑完），
+ * 清掉的話內容一幀跳回自然高度（實測一欄寬時收起中的泳道 290 → 221px）；元素之後跟著元件拿掉，留著的高度不影響別人。
+ */
+export function cancelHeight(el: HTMLElement | null | undefined): void {
+  if (!el) return
+  stop(el)
+}
+
+/**
  * 從寫死的高度補間到內容的自然高度，結束清掉 inline height。
  *
  * 撐高度的四個地方（泳道內卡片網格、卡片 / 時間軸 ↔ 空狀態、切檢視、速覽同列換卡）共用這一套（plan review Design M7）：
  * 每幀重量自然高度——容器裡還有別的過渡（展開中的卡被篩掉、抽屜在收）時目標會變，量一次就釘住會在結束那幀縮掉一截；
- * 時長與曲線預設執行期讀 token（--t-panel、--ease），token 是 0 就直接放開；靠時間收尾、不靠 transitionend，不會卡住。
- * 放開當下內容高度沒變（重新渲染但卡片沒進出）就直接清掉、不補間：每個補間每幀都要逼一次版面計算，
+ * 靠時間收尾、不靠 transitionend，不會卡住。
+ * 放開當下沒有撐住、或內容高度沒變（重新渲染但卡片沒進出）就直接清掉、不補間：每個補間每幀都要逼一次版面計算，
  * 篩選時每條泳道都會重新渲染；之後內容自己的過渡（抽屜開合）不撐住就是逐幀跟著走。
- * timing 可直接給（單元測試用，同批次 A 的 useRowMotion）。
+ * @param timing 時長與曲線；不給就在確定要補間時才讀 token（--t-panel、--ease，要讀 computed style），token 是 0 就直接放開。
+ *   可直接給（單元測試用，同批次 A 的 useRowMotion）。
  */
-export function releaseHeight(el: HTMLElement | null | undefined, timing: Timing = panelTiming()): void {
+export function releaseHeight(el: HTMLElement | null | undefined, timing?: Timing): void {
   if (!el) return
   stop(el)
-  const { duration: dur, ease } = timing
-  if (!dur || !el.style.height) {
-    el.style.height = ''
-    return
-  }
+  if (!el.style.height) return
   const from = parseFloat(el.style.height)
   /**
    * 暫時拿掉 inline height 量自然高度。量的那次強制版面計算裡頁面會變矮：頁面捲在底部時瀏覽器當下就把捲動夾到新的底，
@@ -62,6 +79,11 @@ export function releaseHeight(el: HTMLElement | null | undefined, timing: Timing
     }
   }
   if (Math.abs(natural() - from) < 0.5) {
+    el.style.height = ''
+    return
+  }
+  const { duration: dur, ease } = timing ?? panelTiming()
+  if (!dur) {
     el.style.height = ''
     return
   }

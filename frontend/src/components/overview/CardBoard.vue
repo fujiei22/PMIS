@@ -5,9 +5,9 @@ import OvPanel from '@/components/overview/OvPanel.vue'
 import OvSortControls from '@/components/overview/OvSortControls.vue'
 import PmLane from '@/components/overview/PmLane.vue'
 import { computed, onBeforeUnmount, ref, watch, type ComponentPublicInstance } from 'vue'
-import { holdHeight, releaseHeight } from '@/composables/heightTween'
+import { cancelHeight, holdHeight, releaseHeight } from '@/composables/heightTween'
 import { tokenMs } from '@/composables/motionTokens'
-import { useCollapseReenter } from '@/composables/useCollapseReenter'
+import { startLeaveNow, useCollapseReenter } from '@/composables/useCollapseReenter'
 import { useOverviewStore } from '@/stores/overview'
 
 const overview = useOverviewStore()
@@ -33,6 +33,8 @@ onBeforeUnmount(() => clearTimeout(emptyTimer))
  * 面板底邊與頁高逐幀變，不會在換的那一幀一次跳。
  */
 const stage = ref<HTMLElement | null>(null)
+// 切檢視、離開總覽時停掉進行中的補間：元件拿掉後 rAF 不會自己停
+onBeforeUnmount(() => cancelHeight(stage.value))
 
 /** 泳道清單（TransitionGroup）的根元素：同一位 PM 的泳道在收起途中又回來時，從當下的高度接續長回去。 */
 const boardRef = ref<ComponentPublicInstance | null>(null)
@@ -69,10 +71,17 @@ function leaving(el: Element): void {
           tag="div"
           class="board"
           @before-leave="leaving"
+          @leave="startLeaveNow"
           @enter="reenter.onEnter"
           @vue:before-update="reenter.snapshot"
         >
-          <div v-for="group in overview.groups" :key="group.pm.id" class="lane-wrap" :data-lane-wrap="group.pm.id">
+          <div
+            v-for="group in overview.groups"
+            :key="group.pm.id"
+            class="lane-wrap"
+            :data-lane-wrap="group.pm.id"
+            @vue:updated="reenter.resume"
+          >
             <div class="lane-clip"><PmLane :group="group" /></div>
           </div>
         </TransitionGroup>

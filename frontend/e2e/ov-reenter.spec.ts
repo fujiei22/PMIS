@@ -224,3 +224,72 @@ test.describe('原地收合：反悔後立刻往回長（不停頓）', () => {
     expect(stalled(first, 'grid-template-rows'), '反悔後第一幀還停在起點（往回的過渡還沒開始）').toEqual([])
   })
 })
+
+test.describe('原地收合：進場中被換順序（keyed diff 搬動 DOM 取消進行中的過渡）', () => {
+  const PMS = ['m5', 'm8', 'm9', 'm10']
+
+  /**
+   * 每個外層：單幀透明度跳 > 0.35、單幀高度變化 > 全距 35%（dt < 34 的幀才算，同 opacityJumps；全距 < 4px 視為沒動）都不行
+   * （一幀變實心 / 一幀長完）。
+   * --ease 最陡一幀約走全距一成多、前一幀卡住時約兩成；被搬動一幀到位實測走五到六成。
+   * 不用 speedJumps：更新那一幀常是長幀、後面接一個只有幾 ms 的短幀，正常的一步也會被算成速度突變（實測 8.6px / 6ms）。
+   */
+  function expectNoSnap(tr: Trace, names: string[]): void {
+    for (const name of names) {
+      const s = series(tr, name)
+      expect(opacityJumps(s), `${name} 透明度一幀跳`).toBe(false)
+      const hs = s.map((b) => b.h)
+      const range = Math.max(...hs) - Math.min(...hs)
+      if (range < 4) continue
+      const snaps = s.filter((b, i) => i > 0 && b.dt < 34 && Math.abs(b.h - s[i - 1]!.h) > 0.35 * range)
+      expect(snaps, `${name} 高度一幀長完`).toHaveLength(0)
+    }
+  }
+
+  test('卡片：搜尋 pmis 每 90ms 刪一字，刪到空字串時泳道換順序，進場中的泳道不一幀長完、不一幀變實心（C2 I2）', async ({ page }) => {
+    await gotoOverview(page)
+    const search = page.getByTestId('overview-search')
+    await search.fill('pmis')
+    await idle(page)
+    await search.focus()
+    const tr = await trace(
+      page,
+      Object.fromEntries(PMS.map((pm) => [pm, `${P} .board > [data-lane-wrap="${pm}"]`])),
+      async () => {
+        for (let i = 0; i < 4; i++) {
+          await page.keyboard.press('Backspace')
+          await pause(page, 90)
+        }
+      },
+      { ms: 900 },
+    )
+    await expect(search).toHaveValue('')
+    // 有鑑別力：m8 在「p」時進場，刪到空字串（90ms 後）時還在長
+    const m8 = series(tr, 'm8')
+    expect(m8.some((b) => b.o > 0.05 && b.o < 0.95), 'm8 有進場過程').toBe(true)
+    expectNoSnap(tr, PMS)
+  })
+
+  test('時間軸：「pm」→「p」→ 空字串（間隔 60ms），刪到空字串時群組換順序，進場中的群組不一幀長完、不一幀變實心（T5 e）', async ({ page }) => {
+    await gotoOverview(page, '#timeline')
+    const search = page.getByTestId('overview-search')
+    await search.fill('pm')
+    await idle(page)
+    await search.focus()
+    const tr = await trace(
+      page,
+      Object.fromEntries(PMS.map((pm) => [pm, `${T} .tl-groups > [data-g-wrap="${pm}"]`])),
+      async () => {
+        // 間隔要短：m8 長得越多，被搬動時一幀跳的量越小（長到七成後只跳三成，量不出來）
+        await page.keyboard.press('Backspace')
+        await pause(page, 60)
+        await page.keyboard.press('Backspace')
+      },
+      { ms: 900 },
+    )
+    await expect(search).toHaveValue('')
+    const m8 = series(tr, 'm8')
+    expect(m8.some((b) => b.o > 0.05 && b.o < 0.95), 'm8 有進場過程').toBe(true)
+    expectNoSnap(tr, PMS)
+  })
+})

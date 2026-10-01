@@ -225,6 +225,35 @@ test('逐字打 app（每字 80ms）再逐字刪；100ms 內勾了狀態又取�
   expectLanesContinuous(b, { full, filtered })
 })
 
+/**
+ * 留下的項目外層的上緣在起點與終點之間（各容 2px），回傳超出最多的 px（0 = 沒超出）。
+ * 換順序的項目若先往反方向鼓出再回來（內建 move 當幀起跑、離場項目的收合 / 進場項目的長出晚約 3 幀才開始：
+ * move 的終點是「離場的還沒收、進場的還沒長」時的位置，之後收合 / 長出又把版面拉回），
+ * 起終點一樣時 reverses 看不出來（方向是 0），所以直接看有沒有走出起終點之間。
+ */
+function bulge(tr: Trace, name: string): number {
+  const ys = series(tr, name).map((b) => b.y)
+  const lo = Math.min(ys[0]!, ys[ys.length - 1]!) - 2
+  const hi = Math.max(ys[0]!, ys[ys.length - 1]!) + 2
+  return Math.max(0, ...ys.map((y) => Math.max(lo - y, y - hi)))
+}
+
+test('打 p 再清空：換順序的泳道路徑單調，離場收合、進場長出時都不先往反方向鼓出再回來（N2）', async ({ page }) => {
+  await gotoOverview(page)
+  const search = page.getByTestId('overview-search')
+  const out = await traceLanes(page, () => search.fill('p'))
+  expect([lanesIn(out, 0), lanesIn(out)], '四條泳道收到只剩 m5、m8').toEqual([PMS, ['m5', 'm8']])
+  await idle(page)
+  const back = await traceLanes(page, () => search.fill(''))
+  expect(lanesIn(back), '清空後四條泳道都在').toEqual(PMS)
+  for (const [label, tr] of [['打 p', out], ['清空', back]] as const) {
+    for (const pm of ['m5', 'm8']) {
+      expect(bulge(tr, pm), `${label}：${pm} 走出起點與終點之間（px）`).toBe(0)
+      expect(reverses(series(tr, pm).map((b) => b.y)), `${label}：${pm} 折返`).toBe(false)
+    }
+  }
+})
+
 test('PR #22 回歸：搜尋「入口」→ 清空，泳道與面板不瞬移', async ({ page }) => {
   await gotoOverview(page)
   const search = page.getByTestId('overview-search')
@@ -397,6 +426,22 @@ test.describe('時間軸：群組與列原地收合（T2 / T3）', () => {
     expectTimelineContinuous(tr, reversal)
   })
 
+  test('搜尋 p 再清空：換順序的群組與留下的列路徑單調，離場收合、進場長出時都不先往反方向鼓出再回來（N2）', async ({ page }) => {
+    await gotoOverview(page, '#timeline')
+    const search = page.getByTestId('overview-search')
+    const out = await traceTimeline(page, () => search.fill('p'))
+    expect([shownIn(out, G, 0), shownIn(out, G)], '四個群組收到只剩 m5、m8').toEqual([G, ['g:m5', 'g:m8']])
+    await idle(page)
+    const back = await traceTimeline(page, () => search.fill(''))
+    expect(shownIn(back, R), '清空後七列都在').toEqual(R)
+    for (const [label, tr] of [['搜尋 p', out], ['清空', back]] as const) {
+      for (const name of ['g:m5', 'g:m8', 'r:pmis', 'r:app']) {
+        expect(bulge(tr, name), `${label}：${name} 走出起點與終點之間（px）`).toBe(0)
+        expect(reverses(series(tr, name).map((b) => b.y)), `${label}：${name} 折返`).toBe(false)
+      }
+    }
+  })
+
   test('搜尋 pmis：多個群組同時離場各自原地收合、不重疊、面板結尾不跳；清除後原地長出', async ({ page }) => {
     await gotoOverview(page, '#timeline')
     const out = await traceTimeline(page, () => page.getByTestId('overview-search').fill('pmis'))
@@ -457,4 +502,49 @@ test.describe('時間軸：群組與列原地收合（T2 / T3）', () => {
       expect(Math.abs(vs[vs.length - 1]! - start[pm]!), `${pm} 回到原位`).toBeLessThan(1)
     }
   })
+})
+
+test.describe('離場中的項目不能互動（a11y）', () => {
+  const T = '[data-view-panel="timeline"]'
+
+  /**
+   * 焦點放在 focus 上，不移動焦點地改搜尋字（直接送 input 事件，fill 會把焦點移到搜尋框），下一幀回報離場中的外層 wrap：
+   * 有沒有 inert、焦點還在不在裡面。收起途中的項目仍在版面流裡、看得到，但不能再 Tab 進去、點到或被讀屏讀成兩份。
+   */
+  async function filterWithFocusInside(page: Page, focus: string, wrap: string, q: string) {
+    await page.locator(focus).focus()
+    return page.evaluate(
+      async ({ wrap, q }) => {
+        const w = document.querySelector<HTMLElement>(wrap)!
+        const before = w.contains(document.activeElement)
+        const input = document.querySelector('[data-testid="overview-search"]') as HTMLInputElement
+        input.value = q
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        await new Promise((resolve) => requestAnimationFrame(resolve))
+        return {
+          before,
+          leaving: w.isConnected && Array.from(w.classList).some((k) => k.endsWith('-leave-active')),
+          inert: w.inert,
+          focusInside: w.contains(document.activeElement),
+        }
+      },
+      { wrap, q },
+    )
+  }
+
+  const cases = [
+    { name: '卡片檢視的泳道（m10）', hash: '', focus: `${P} [data-project="wiki"] .card-main`, wrap: `${P} [data-lane-wrap="m10"]` },
+    { name: '時間軸群組（m10）', hash: '#timeline', focus: `${T} [data-pm-group="m10"]`, wrap: `${T} [data-g-wrap="m10"]` },
+    { name: '時間軸的列（金流介接，群組留下）', hash: '#timeline', focus: `${T} [data-project="payment"] .p-row`, wrap: `${T} [data-row-wrap="payment"]` },
+  ]
+  for (const c of cases) {
+    test(`搜尋 pmis 時焦點在離場的${c.name}裡：離場中加上 inert、焦點移開`, async ({ page }) => {
+      await gotoOverview(page, c.hash)
+      const r = await filterWithFocusInside(page, c.focus, c.wrap, 'pmis')
+      expect(r.before, '焦點先在裡面（有鑑別力）').toBe(true)
+      expect(r.leaving, '確實在離場中（有鑑別力）').toBe(true)
+      expect(r.inert, '離場中沒有 inert').toBe(true)
+      expect(r.focusInside, '焦點還留在離場的項目裡').toBe(false)
+    })
+  }
 })

@@ -8,9 +8,9 @@ import OvEmpty from '@/components/overview/OvEmpty.vue'
 import OvPanel from '@/components/overview/OvPanel.vue'
 import OvSortControls from '@/components/overview/OvSortControls.vue'
 import TimelineGroup from '@/components/overview/TimelineGroup.vue'
-import { holdHeight, releaseHeight } from '@/composables/heightTween'
+import { cancelHeight, holdHeight, releaseHeight } from '@/composables/heightTween'
 import { tokenMs } from '@/composables/motionTokens'
-import { useCollapseReenter } from '@/composables/useCollapseReenter'
+import { startLeaveNow, useCollapseReenter } from '@/composables/useCollapseReenter'
 import { useDragPan } from '@/composables/useDragPan'
 import { NARROW_QUERY, useMediaQuery } from '@/composables/useMediaQuery'
 import { TIMELINE_DAY_W, TIMELINE_LEFT_W, TIMELINE_LEFT_W_NARROW } from '@/constants/overview'
@@ -210,6 +210,8 @@ onBeforeUnmount(() => {
   stopToday()
   ro?.disconnect()
   clearTimeout(emptyTimer)
+  // 停掉 stage 進行中的高度補間：元件拿掉後 rAF 不會自己停
+  cancelHeight(stage.value)
 })
 </script>
 
@@ -293,10 +295,11 @@ onBeforeUnmount(() => {
                 tag="div"
                 class="tl-groups"
                 @before-leave="leaving"
+                @leave="startLeaveNow"
                 @enter="reenter.onEnter"
                 @vue:before-update="reenter.snapshot"
               >
-                <div v-for="g in groups" :key="g.pm.id" class="g-wrap" :data-g-wrap="g.pm.id">
+                <div v-for="g in groups" :key="g.pm.id" class="g-wrap" :data-g-wrap="g.pm.id" @vue:updated="reenter.resume">
                   <div class="g-wrap-clip">
                     <TimelineGroup :group="g" :start-idx="range.startIdx" :dw="DW" />
                   </div>

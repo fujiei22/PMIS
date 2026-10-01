@@ -6,7 +6,7 @@ import LoadingState from '@/components/common/LoadingState.vue'
 import CardBoard from '@/components/overview/CardBoard.vue'
 import OverviewTimeline from '@/components/overview/OverviewTimeline.vue'
 import OverviewTopBar from '@/components/overview/OverviewTopBar.vue'
-import { holdHeight, releaseHeight } from '@/composables/heightTween'
+import { cancelHeight, holdHeight, releaseHeight } from '@/composables/heightTween'
 import { useNow } from '@/composables/useNow'
 import { usePortfolioBoot } from '@/composables/usePortfolioBoot'
 import { useOverviewStore } from '@/stores/overview'
@@ -41,7 +41,11 @@ onMounted(() => {
   ro.observe(el)
 })
 
-onBeforeUnmount(() => ro?.disconnect())
+onBeforeUnmount(() => {
+  ro?.disconnect()
+  // 切檢視補間到一半就進 Dashboard：停掉欄高的補間（元件拿掉後 rAF 不會自己停，每幀還在撐 html 的 min-height）
+  cancelHeight(column.value)
+})
 
 /**
  * 切檢視 / 載入完成（ov-view，out-in）：舊檢視拿掉、新的還沒掛上時頁面高度會塌掉、捲動位置被夾回頂端，
