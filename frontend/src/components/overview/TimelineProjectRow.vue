@@ -118,7 +118,8 @@ function onWrapTransitionEnd(e: TransitionEvent): void {
         <div class="quick-clip">
           <div class="qv-pad">
             <div class="qv-box">
-              <Transition name="ov-fade" appear>
+              <!-- 不加 appear：切到時間軸、從 Dashboard 返回時展開中的速覽跟著檢視 / 頁面的淡入一起出現，自己再淡一次會比頁面晚（C14） -->
+              <Transition name="ov-fade">
                 <QuickView v-if="mounted" :row="row" with-head />
               </Transition>
             </div>

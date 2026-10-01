@@ -25,7 +25,16 @@ const props = defineProps<{ group: PmGroup }>()
  */
 const body = ref<ComponentPublicInstance | null>(null)
 const bodyEl = computed(() => body.value?.$el as HTMLElement | undefined)
-useRelativeFlip(bodyEl, 'data-project')
+const flip = useRelativeFlip(bodyEl, 'data-project')
+
+/**
+ * 離場的卡釘在更新前看得到的位置（C5）。速覽開著時篩掉同列的卡，抽屜的 order 在同一次 patch 裡
+ * 先被改掉（keyed diff 先更新留下來的抽屜、才移除離場的卡），freezeLeave 當下量到的已是重排後的 grid，
+ * 那張卡會先瞬移到抽屜下方再淡出；所以用 useRelativeFlip 在更新前記的快照。
+ */
+function freezeAtSnapshot(el: Element): void {
+  freezeLeave(el, flip.snapshotOf)
+}
 
 // 卡片網格的高度撐住再補間（C1 泳道層）：離場的卡釘成 absolute 後網格當幀就是新高度，泳道框會一幀縮掉、卡片畫到框外
 onBeforeUpdate(() => holdHeight(bodyEl.value))
@@ -57,14 +66,14 @@ const openId = ref<string | null>(props.group.rows.find((r) => overview.isExpand
         <span v-if="group.alertCount > 0" class="pm-alert"><b>{{ group.alertCount }}</b>&nbsp;需注意</span>
       </span>
     </div>
-    <!-- 篩選造成卡片進出、排序造成重排（A7 / A8）；離場的卡由 freezeLeave 釘在原位 -->
+    <!-- 篩選造成卡片進出、排序造成重排（A7 / A8）；離場的卡由 freezeLeave 釘在更新前看得到的位置 -->
     <TransitionGroup
       name="ov-card"
       tag="div"
       class="lane-body"
       ref="body"
       move-class="ov-card-still"
-      @before-leave="freezeLeave"
+      @before-leave="freezeAtSnapshot"
     >
       <!-- 卡片與抽屜在同一個 grid 裡，用 order 排位置：第 i 張卡是 2i，抽屜由 LaneDrawer 算出排在哪一列之後 -->
       <ProjectCard
