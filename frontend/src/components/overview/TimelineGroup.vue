@@ -206,7 +206,10 @@ function onKey(e: KeyboardEvent): void {
 }
 
 
-/* 收合摘要條（照 GanttBar .summary） */
+/*
+ * 收合摘要條（照 GanttBar .summary）。收合中被篩選時範圍會變，left / width 要過渡（T13），不然一幀跳到新寬度。
+ * 時長用 --t-panel，跟群組收合同長（甘特的摘要條是 --t-bar，那裡跟的是條的拖曳）。
+ */
 .g-sum {
   position: absolute;
   top: 12px;
@@ -214,6 +217,18 @@ function onKey(e: KeyboardEvent): void {
   border-radius: var(--r-3);
   background: var(--text-3);
   z-index: 2;
+  transition:
+    left var(--t-panel) var(--ease),
+    width var(--t-panel) var(--ease);
+}
+
+/* 淡入淡出（共用 ov-fade）時一併列出 left / width，同時淡入淡出又變寬時兩者不互相蓋掉 */
+.g-sum.ov-fade-enter-active,
+.g-sum.ov-fade-leave-active {
+  transition:
+    opacity var(--t-base) var(--ease),
+    left var(--t-panel) var(--ease),
+    width var(--t-panel) var(--ease);
 }
 
 .g-rows {
