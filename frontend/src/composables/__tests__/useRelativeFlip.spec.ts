@@ -106,6 +106,20 @@ describe('useRelativeFlip', () => {
     expect(callOf(w, 'b')[0]!.frames[0]).toEqual({ transform: 'translate(0px, 30px)' })
   })
 
+  it('縮放中（進場放大、回來的卡）被重排：FLIP 起點帶著看得到的縮放，由這段補到原尺寸', async () => {
+    // Chromium 的 composite add 不疊在進行中的 CSS transform 過渡上：只播位移的話，FLIP 期間進場的縮放整段看不到、當幀變回原尺寸
+    const { w, keys } = setup(['a', 'b'])
+    ;(w.find('[data-k="b"]').element as HTMLElement).style.transform = 'scale(0.97)' // jsdom 的 computed transform 讀 inline
+    keys.value = ['b', 'a']
+    await nextTick()
+    expect(callOf(w, 'b')[0]!.frames).toEqual([
+      { transform: 'translate(0px, 50px) scale(0.97)' },
+      { transform: 'translate(0px, 0px) scale(1)' },
+    ])
+    // 沒有縮放的照舊只播位移
+    expect(callOf(w, 'a')[0]!.frames).toEqual([{ transform: 'translate(0px, -50px)' }, { transform: 'translate(0px, 0px)' }])
+  })
+
   it('位移中、版面位置沒變的更新（打字但篩選結果不變）：上一段 FLIP 照跑，不從 0 速重新起跳', async () => {
     const { w, keys } = setup(['a', 'b'])
     const b = w.find('[data-k="b"]').element as HTMLElement

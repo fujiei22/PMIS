@@ -25,6 +25,7 @@
  * 指到不存在的 class 會讓它照元素自己的 transition 判斷。!important：元素自己的 class 宣告了 transform 過渡時也停得住。
  */
 .ov-card-still, .ov-row-still { transition: none !important; }
+/* 卡片同一個 key 在離場途中又回來時，由 composables/useFreezeReenter.ts 從舊卡當下的位置、透明度與縮放接續（它會先拿掉 ov-card-enter-from）。 */
 .ov-card-enter-active, .ov-card-leave-active { transition: opacity var(--t-panel) var(--ease), transform var(--t-panel) var(--ease); }
 .ov-card-enter-from, .ov-card-leave-to { opacity: 0; transform: scale(0.96); }
 /*

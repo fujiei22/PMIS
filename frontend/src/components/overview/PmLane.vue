@@ -11,6 +11,7 @@ import ProjectCard from '@/components/overview/ProjectCard.vue'
 import { computed, onBeforeUpdate, onUpdated, ref, watch, type ComponentPublicInstance } from 'vue'
 import { freezeLeave } from '@/composables/freezeLeave'
 import { holdHeight, releaseHeight } from '@/composables/heightTween'
+import { useFreezeReenter } from '@/composables/useFreezeReenter'
 import { useGridColumns } from '@/composables/useGridColumns'
 import { useRelativeFlip } from '@/composables/useRelativeFlip'
 import type { PmGroup } from '@/lib/portfolio'
@@ -35,6 +36,9 @@ const flip = useRelativeFlip(bodyEl, 'data-project')
 function freezeAtSnapshot(el: Element): void {
   freezeLeave(el, flip.snapshotOf)
 }
+
+// 淡出途中的卡又被加回來（打錯字馬上刪）：從舊卡當下的位置、透明度與大小接續，不先消失再從頭淡入（R3）
+useFreezeReenter(bodyEl, 'data-project')
 
 // 卡片網格的高度撐住再補間（C1 泳道層）：離場的卡釘成 absolute 後網格當幀就是新高度，泳道框會一幀縮掉、卡片畫到框外
 onBeforeUpdate(() => holdHeight(bodyEl.value))

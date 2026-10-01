@@ -87,7 +87,8 @@ test('搜尋打一個字 80ms 內刪掉：移動中的卡從半路折返，不�
   expect(Math.min(...app.map((p) => Math.abs(p.v - dest))), '先瞬移到原本的終點').toBeGreaterThan(0.1 * dist)
   // 一直留在畫面上的卡（符合 p 的兩張）都不瞬移。用速度判斷、不用 jumpCount（佔全距比例）：泳道原地收合後被打斷得早，
   // 全距只剩約 85px，一步正常的緩動（約 44px）就超過一半而被誤判；速度判斷只抓「這一幀比前後都快很多」的真瞬移。
-  // 被篩掉又在離場中回來的卡（portal、payment…）是新元素從 0 重新淡入（稽核 C2 c），不在本 task 範圍，不在這裡量。
+  // 被篩掉又在離場中回來的卡（portal、payment…）是新元素，從舊卡當下的位置、透明度與大小接續（useFreezeReenter），
+  // 在 ov-reenter.spec 量，不在這裡量。
   for (const id of ['pmis', 'app']) expect(speedJumps(relative(tr, id)), id).toBe(0)
 })
 

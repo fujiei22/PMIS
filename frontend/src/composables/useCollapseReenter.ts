@@ -38,6 +38,14 @@ export function useCollapseReenter(
     leaving = next
   }
 
+  /**
+   * 同 key 回來的新元素：以 snapshot 量到的高度比例（fr）與透明度當起點，立刻往 1fr / 1 過渡。
+   * 1. 先關掉過渡再寫起點、強制算一次樣式：上面量完整高度時，瀏覽器已經用 enter-from（0fr、透明）算過一次樣式，
+   *    直接改 inline 會從 0 過渡到起點，等於從 0 重長。
+   * 2. 交還 class 的過渡，同時拿掉 enter-from、清掉 inline：目標直接是 1fr / 1，下一次算樣式就從起點往回長。
+   *    不等 Vue 兩幀後才把 enter-from 換成 enter-to：等的話反悔後多停在起點，實測第 3–4 幀才往回；立刻放開是第 2–3 幀，
+   *    和一次全新的篩選一樣快（剩下的一兩幀是瀏覽器新建過渡的起步）。之後 Vue 再拿 enter-from 是空操作。
+   */
   function onEnter(el: Element): void {
     const node = el as HTMLElement
     const key = node.getAttribute(keyAttr)
@@ -48,20 +56,14 @@ export function useCollapseReenter(
     if (!inner) return
     const full = inner.offsetHeight + (parseFloat(getComputedStyle(inner).marginBottom) || 0)
     if (!full) return
-    // 上面量高度時，瀏覽器已經用 enter-from（0fr、透明）算過一次樣式；這時直接改 inline 會從 0 過渡到起點，
-    // 兩幀後放開時才走到一點點，等於從 0 重長。先關掉過渡、讓起點直接生效，再交還 class 的過渡
     node.style.transition = 'none'
     node.style.gridTemplateRows = `${Math.min(1, snap.h / full)}fr`
     node.style.opacity = String(snap.o)
     void node.offsetHeight
     node.style.transition = ''
-    // 兩幀後放開：同一幀 Vue 把 enter-from 換成 enter-to，從這個起點過渡到 1fr / 1
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        node.style.gridTemplateRows = ''
-        node.style.opacity = ''
-      }),
-    )
+    for (const k of Array.from(node.classList)) if (k.endsWith('-enter-from')) node.classList.remove(k)
+    node.style.gridTemplateRows = ''
+    node.style.opacity = ''
   }
 
   return { onEnter, snapshot }
