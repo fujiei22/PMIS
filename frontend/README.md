@@ -186,7 +186,8 @@ frontend/
 │   │                            useScrollLock（鎖頁面捲動：先停平滑捲動、補捲軸寬、參考計數）/
 │   │                            useCloseOnScroll（fixed 浮層的觸發元素被捲走時關閉）/
 │   │                            motionTokens（執行期讀動畫 token：JS 動畫與 CSS 同源）/
-│   │                            heightTween（容器高度雙向補間：holdHeight 撐住、releaseHeight 每幀追自然高度）
+│   │                            heightTween（容器高度雙向補間：holdHeight 撐住、releaseHeight 每幀追自然高度）/
+│   │                            useCollapseReenter（原地收合清單：同 key 離場中又回來時從當下高度 / 透明度接續）
 │   ├── constants/         畫面用常數（dashboard.ts：狀態 / 優先度 / 等級的標籤與顏色；overview.ts：總覽的排序鍵、標籤、尺寸；api.ts：API_ERROR_TEXT）
 │   ├── lib/               純函式（日期、月曆格、排程連動、篩選、排序、格式化、id、CSS 時長 / 曲線 token 轉 JS（easing.ts）…）
 │   ├── mocks/             範例資料
