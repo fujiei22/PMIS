@@ -10,6 +10,7 @@ import MemberPicker from '@/components/layout/MemberPicker.vue'
 import { DELAYED, ISSUE_LEVEL, ISSUE_STATUS, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
 import { useDomRegistry } from '@/composables/useDomRegistry'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
+import { parseDuration } from '@/lib/easing'
 import { toggleIn } from '@/lib/filter'
 import { fmtDate } from '@/lib/format'
 import { useFilterStore } from '@/stores/filter'
@@ -57,11 +58,95 @@ function measureFit(): void {
   row.classList.add('measuring')
   // 比最右一項的右緣與篩選器右緣（含小數）：只差不到 1px 也會讓 flex 換行，整數的 scrollWidth 量不準
   const edge = box.getBoundingClientRect().right
-  const overflow = filterItems(box).some((el) => el.getBoundingClientRect().right > edge + 0.01)
+  const overflow = filterItems(box).some((el) => layoutRight(el) > edge + 0.01)
   row.classList.remove('measuring')
   if (stacked.value) row.classList.add('stacked')
+  // 一行 / 兩列要切換：滑到一半的位移補間直接停掉，版型直接到位
+  if (overflow !== stacked.value) cancelSlides()
   stacked.value = overflow
 }
+
+/**
+ * 篩選項在版面上的右緣，不算位移補間（G7，見下方 slides）的 translateX：
+ * 補間途中看得到的位置不是版面位置，拿它判斷放不放得下會誤判。
+ */
+function layoutRight(el: HTMLElement): number {
+  const right = el.getBoundingClientRect().right
+  if (!slides.has(el)) return right
+  return right - new DOMMatrixReadOnly(getComputedStyle(el).transform).m41
+}
+
+/**
+ * 一行時篩選項變寬的位移補間（動畫稽核 G7）。
+ * 一行時篩選器靠右排（flex-end），某一項變寬（選日期「介於」多出兩顆膠囊與「～」、下拉標籤多了數字），
+ * 它左邊的整排往左移；原本一幀跳過去（1920 選「介於」整排 −248px），改成 FLIP 滑過去：
+ * 篩選條件一變，DOM 更新前記下每一項看得到的右緣，更新後量新的右緣，
+ * 先用 translateX 移回舊位置，再補間回 0（Web Animations，`--t-panel` / `--ease`）。
+ *
+ * 比右緣、不比左緣：一行時變寬是左緣往左長、右緣不動（同 popAlign 的 end），變寬的那一項自己不動，
+ * 它開著的選單（錨在右緣）也就不會被帶著跑。新出現的項目（日期膠囊）沒有舊位置，直接出現在新位置。
+ * 只在這次更新前後都是一行時做：縮放視窗不是篩選條件變了，不經過這裡；
+ * 一行 / 兩列切換時整排換位置，直接到位（measureFit 切換時也會停掉進行中的補間）。
+ */
+const slides = new Map<HTMLElement, Animation>()
+/** DOM 更新前記下的右緣（看得到的位置，含進行中的補間）；null＝這次不做。 */
+let slideFrom: Map<HTMLElement, number> | null = null
+
+function cancelSlides(): void {
+  for (const a of slides.values()) a.cancel()
+  slides.clear()
+}
+
+/** 會改變篩選項寬度的篩選條件：下拉標籤、成員頭像、日期膠囊都跟著它們變。 */
+const slideSources = [() => filter.filter, () => filter.issueLevels, () => filter.issueStatuses]
+
+watch(
+  slideSources,
+  () => {
+    const box = filtersEl.value
+    // jsdom 沒有 Web Animations
+    slideFrom =
+      box && !stacked.value && typeof box.animate === 'function'
+        ? new Map(filterItems(box).map((el) => [el, el.getBoundingClientRect().right]))
+        : null
+  },
+  { flush: 'pre' },
+)
+
+watch(
+  slideSources,
+  () => {
+    const from = slideFrom
+    slideFrom = null
+    const box = filtersEl.value
+    if (!from || !box) return
+    // MutationObserver 觸發的 measureFit 在這之後才跑：先自己量一次，以這次更新完成後的版型為準
+    measureFit()
+    if (stacked.value) return
+    // 進行中的補間先停掉，下面量到的才是版面位置（看得到的舊位置已經記在 from）
+    cancelSlides()
+    const moves = filterItems(box).map((el) => ({
+      el,
+      dx: (from.get(el) ?? NaN) - el.getBoundingClientRect().right,
+    }))
+    const cs = getComputedStyle(document.documentElement)
+    const timing = {
+      duration: parseDuration(cs.getPropertyValue('--t-panel')),
+      easing: cs.getPropertyValue('--ease').trim() || 'ease',
+    }
+    if (!timing.duration) return
+    for (const { el, dx } of moves) {
+      // NaN＝新出現的項目；不到半像素＝沒動
+      if (!(Math.abs(dx) >= 0.5)) continue
+      const anim = el.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], timing)
+      slides.set(el, anim)
+      anim.onfinish = () => {
+        if (slides.get(el) === anim) slides.delete(el)
+      }
+    }
+  },
+  { flush: 'post' },
+)
 
 /**
  * 浮層錨在觸發鈕的哪一側：一行時篩選器靠右排（flex-end），某項變寬是它左緣往左長、右緣不動，錨右緣（end）；

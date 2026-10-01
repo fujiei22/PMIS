@@ -210,10 +210,16 @@ useFocusRequest((req) => {
   flex: 1;
 }
 
+/*
+ * 排序選單的定位基準（SortMenu 以開啟當下觸發鈕的位置為 left，開著期間不跟著觸發鈕跑，動畫稽核 G6）。
+ * --sorts-gap：排序 chip 進出場寬度收到 0 時，用它把 gap 一起抵掉（SortChips）。
+ */
 .tools {
+  --sorts-gap: var(--r-badge);
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--r-badge);
+  gap: var(--sorts-gap);
   flex-wrap: nowrap;
   min-width: 0;
 }

@@ -6,7 +6,10 @@ import { DashboardPage } from './helpers/dashboardPage'
  * 對應 spec §目標 行為 1、2、3、6、8 的非拖曳部分；拖曳（4、5）在 S5、詳細視窗（7）在 S6。
  */
 
-/** 讀出一排排序 chip 的「層級 標籤 方向」，用來比對多鍵排序狀態。 */
+/**
+ * 讀出一排排序 chip 的「層級 標籤 方向」，用來比對多鍵排序狀態。
+ * chip 有進出場過渡（動畫稽核 G6）：移除的 chip 收起來之前還在 DOM 裡，比對要用 expect.poll 等它收完。
+ */
 async function chipTexts(chips: Locator): Promise<string[]> {
   return chips.evaluateAll((els) =>
     els.map((el) =>
@@ -115,20 +118,20 @@ test('看板多鍵排序 chip 與 reset 回時程 asc', async ({ page }) => {
   await app.goto()
 
   const chips = app.sortChips('kanban')
-  expect(await chipTexts(chips)).toEqual(['1 時程 ↑'])
+  await expect.poll(() => chipTexts(chips)).toEqual(['1 時程 ↑'])
 
   // 加第二層：工期（預設 desc）
   await app.sortTrigger('kanban').click()
   await app.sortMenu('kanban').locator('.sort-option', { hasText: '工期' }).click()
-  expect(await chipTexts(chips)).toEqual(['1 時程 ↑', '2 工期 ↓'])
+  await expect.poll(() => chipTexts(chips)).toEqual(['1 時程 ↑', '2 工期 ↓'])
 
   // 點 chip 本身翻方向
   await chips.nth(0).click()
-  expect(await chipTexts(chips)).toEqual(['1 時程 ↓', '2 工期 ↓'])
+  await expect.poll(() => chipTexts(chips)).toEqual(['1 時程 ↓', '2 工期 ↓'])
 
   // ✕ 移掉第一層後只剩工期，卡片依工期由大到小
   await chips.nth(0).locator('.chip-x').click()
-  expect(await chipTexts(chips)).toEqual(['1 工期 ↓'])
+  await expect.poll(() => chipTexts(chips)).toEqual(['1 工期 ↓'])
   const days = await page
     .locator('[data-col="todo"] [data-card] .days-num')
     .evaluateAll((els) => els.map((el) => Number(el.textContent)))
@@ -139,7 +142,7 @@ test('看板多鍵排序 chip 與 reset 回時程 asc', async ({ page }) => {
   await app.sortTrigger('kanban').click()
   await app.sortMenu('kanban').locator('.sort-clear').click()
   await expect(app.sortMenu('kanban')).toHaveCount(0)
-  expect(await chipTexts(chips)).toEqual(['1 時程 ↑'])
+  await expect.poll(() => chipTexts(chips)).toEqual(['1 時程 ↑'])
 })
 
 test('雙擊改名逐鍵即時寫入，Esc 只關框不還原', async ({ page }) => {
