@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { gotoOverview, idle, jumpCount, opacityJumps, pause, trace, type Trace } from './helpers/ovMotion'
+import { gotoOverview, idle, jumpCount, opacityJumps, pause, speedJumps, trace, type Trace } from './helpers/ovMotion'
 
 /** 泳道內卡片的重排中斷（動畫稽核 R3：C2 a、T4、T5）。量卡片相對自己泳道 .lane-body 的位置：泳道本身的移動由 Task 4a 另外量。 */
 test.use({ viewport: { width: 1920, height: 1080 } })
@@ -85,9 +85,10 @@ test('搜尋打一個字 80ms 內刪掉：移動中的卡從半路折返，不�
   expect(Math.max(...app.map((p) => Math.abs(p.v - start))), '有在移動途中被打斷').toBeGreaterThan(0.1 * dist)
   // 修正前：起點不含進行中的位移，Backspace 那一幀先跳到原本的終點（第一格）再滑回第二格
   expect(Math.min(...app.map((p) => Math.abs(p.v - dest))), '先瞬移到原本的終點').toBeGreaterThan(0.1 * dist)
-  // 一直留在畫面上的卡（符合 p 的兩張）都不瞬移。
+  // 一直留在畫面上的卡（符合 p 的兩張）都不瞬移。用速度判斷、不用 jumpCount（佔全距比例）：泳道原地收合後被打斷得早，
+  // 全距只剩約 85px，一步正常的緩動（約 44px）就超過一半而被誤判；速度判斷只抓「這一幀比前後都快很多」的真瞬移。
   // 被篩掉又在離場中回來的卡（portal、payment…）是新元素從 0 重新淡入（稽核 C2 c），不在本 task 範圍，不在這裡量。
-  for (const id of ['pmis', 'app']) expect(jumpCount(relative(tr, id)), id).toBe(0)
+  for (const id of ['pmis', 'app']) expect(speedJumps(relative(tr, id)), id).toBe(0)
 })
 
 test('逐字打 app（每字 80ms）再逐字刪：卡片不瞬移、移動途中不頓、透明度不跳', async ({ page }) => {
