@@ -246,6 +246,39 @@ test.describe('G7 一行時篩選項變寬：左邊的項目滑到新位置', ()
 })
 
 /**
+ * 兩列時（日期那一組靠左排）從「介於」切到「大於」：「～」與第二顆膠囊淡出時釘在原位。
+ * 逐顆釘的話，後面那顆被量到時前一顆已經脫離版面、下拉標籤也換了字，會先往左跳再淡出（review）。
+ */
+test.describe('兩列時日期膠囊淡出', () => {
+  test.use({ viewport: { width: 1366, height: 900 } })
+
+  test('從「介於」切到「大於」：「～」與第二顆膠囊在原位淡出（≤ 1px），不先往左跳', async ({ page }) => {
+    const pills = {
+      tilde: '.top-row .date-group > .tilde',
+      d2: '.top-row .date-group > .date-pill:nth-child(2 of .date-pill)',
+    }
+    await openDashboard(page)
+    await expect(page.locator('.top-row.stacked'), '前提：兩列').toHaveCount(1)
+    await openCalendar(page, '介於')
+    await expect(page.locator('.top-row .date-pill'), '前提：兩顆膠囊').toHaveCount(2)
+    await page.locator('.top-row .dd-trigger', { hasText: '日期' }).click()
+    const menu = page.locator('.top-row .dd-menu')
+    await expect(menu).not.toHaveClass(/pop-enter/)
+    await expect(menu.locator('.dd-item').nth(1), '前提：第 2 項是「大於」').toHaveText(/大於/)
+
+    const tr = await trace(page, pills, () => clickInPage(page, '.top-row .dd-menu .dd-item:nth-child(2)'))
+    await expect(page.locator('.top-row .date-pill'), '前提：剩一顆膠囊').toHaveCount(1)
+    for (const name of Object.keys(pills)) {
+      const s = series(tr, name)
+      const x0 = s[0]!.x
+      const drift = Math.max(...s.map((b) => Math.abs(b.x - x0)))
+      expect(s.some((b) => b.t > tr.at && b.o > 0 && b.o < 1), `${name}：前提：量到淡出途中`).toBe(true)
+      expect(drift, `${name}：淡出期間離原位最遠（px）`).toBeLessThanOrEqual(1)
+    }
+  })
+})
+
+/**
  * G6：看板 / Issue 看板的排序選單開著時加 / 移除一層排序。chip 插在觸發鈕前面，
  * 原本觸發鈕與選單（錨在觸發鈕）一起一幀橫移約 99px，游標下的選項跑掉。
  * 改成：選單開著時位置固定；chip 原地展開 / 收起，觸發鈕跟著版面連續滑動。

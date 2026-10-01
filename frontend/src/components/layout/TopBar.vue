@@ -117,6 +117,7 @@ watch(
       box && !stacked.value && typeof box.animate === 'function'
         ? new Map(filterItems(box).map((el) => [el, el.getBoundingClientRect().right]))
         : null
+    pillsBefore = box ? snapshotPills(box) : null
   },
   { flush: 'pre' },
 )
@@ -126,6 +127,8 @@ watch(
   () => {
     const from = slideFrom
     slideFrom = null
+    // 離場的膠囊在 DOM 更新途中（before-leave）已經照它釘好了
+    pillsBefore = null
     const box = filtersEl.value
     if (!from || !box) return
     // MutationObserver 觸發的 measureFit 在這之後才跑：先自己量一次，以這次更新完成後的版型為準
@@ -308,9 +311,48 @@ function openCalendar(target: 'd1' | 'd2'): void {
  */
 const leavingPills = new Set<HTMLElement>()
 
+interface PillRect {
+  top: number
+  left: number
+  width: number
+  height: number
+}
+
+/**
+ * DOM 更新前日期膠囊 / ～ 看得到的位置（相對各自的定位基準，含進行中的位移補間）。離場時照這份釘，不逐顆現量：
+ * 同一次更新裡 Vue 依序呼叫每顆的 before-leave，後面那顆被量到時，前一顆已經釘成 absolute 脫離版面、
+ * 「日期」下拉的標籤也已經換字；兩列時日期那一組靠左排，後面的膠囊因此先往左跳再淡出（review）。
+ */
+let pillsBefore: Map<HTMLElement, PillRect> | null = null
+
+function snapshotPills(box: HTMLElement): Map<HTMLElement, PillRect> {
+  const rects = new Map<HTMLElement, PillRect>()
+  for (const el of filterItems(box)) {
+    if (!el.classList.contains('date-pill') && !el.classList.contains('tilde')) continue
+    const t = getComputedStyle(el).transform
+    // jsdom 沒有 DOMMatrixReadOnly
+    const dx = t && t !== 'none' && typeof DOMMatrixReadOnly !== 'undefined' ? new DOMMatrixReadOnly(t).m41 : 0
+    rects.set(el, { top: el.offsetTop, left: el.offsetLeft + dx, width: el.offsetWidth, height: el.offsetHeight })
+  }
+  return rects
+}
+
 function pinLeaving(el: Element): void {
-  freezeLeave(el)
-  leavingPills.add(el as HTMLElement)
+  const node = el as HTMLElement
+  const r = pillsBefore?.get(node)
+  // 釘的位置已含位移補間，補間要停掉，不然位移算兩次
+  slides.get(node)?.cancel()
+  slides.delete(node)
+  if (r) {
+    node.style.position = 'absolute'
+    node.style.top = `${r.top}px`
+    node.style.left = `${r.left}px`
+    node.style.width = `${r.width}px`
+    node.style.height = `${r.height}px`
+  } else {
+    freezeLeave(el)
+  }
+  leavingPills.add(node)
 }
 
 function unpinLeaving(el: Element): void {
