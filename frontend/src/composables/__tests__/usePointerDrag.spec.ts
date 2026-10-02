@@ -663,6 +663,21 @@ describe('條的拖曳依排程規則', () => {
     unmount()
   })
 
+  // review：被推動的下游不是這段拖曳改的（它的存的值沒變），取消時不能清掉它還沒送出的改名
+  it('拖曳中止：被推動的下游任務，改名草稿照留', () => {
+    const tasks = useTaskStore()
+    const { api: drag, unmount } = mountDrag()
+    tasks.applyLocalPatch('t25', { name: '打到一半' })
+    const dw = useUiStore().dayWidth
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't24', 'move')
+    document.dispatchEvent(pointer('pointermove', 500 + 3 * dw, 0))
+    expect(tasks.taskById('t25')!.start).toBe('2026-10-20')
+    document.dispatchEvent(pointer('pointercancel', 500 + 3 * dw, 0))
+    expect(tasks.taskById('t24')!.start).toBe('2026-10-08')
+    expect(tasks.taskById('t25')!.name).toBe('打到一半')
+    unmount()
+  })
+
   it('t3（進行中、逾期）右把手往後 3 天：工期 10，結束日 09-21', () => {
     const { api: drag, unmount } = mountDrag()
     dragBy(drag, 't3', 'resR', 3)

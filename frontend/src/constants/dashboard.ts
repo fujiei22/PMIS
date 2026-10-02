@@ -178,6 +178,8 @@ export const BASELINE_ROW_TEXT = {
 export const PICK_LIMIT_TEXT = {
   startAfterToday: '已開始：開始日最晚是今天',
   doneBeforeStart: '完成日不能早於開始日',
+  /** 已完成任務的完成日選擇器：「清除」停用的原因。 */
+  doneRequired: '已完成的任務一定有完成日；要清掉請先改狀態',
 } as const
 
 /** 日期選擇器底部的本月假日；list 是已組好的「M/D 名稱」清單（以頓號連接）。 */

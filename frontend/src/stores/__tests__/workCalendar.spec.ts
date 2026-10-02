@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mockApi as maybeMockApi } from '@/api'
+import { api, mockApi as maybeMockApi } from '@/api'
 import { ApiError } from '@/api/types'
 import { dayIndex } from '@/lib/date'
 import { sampleCalendar } from '@/mocks/sampleCalendar'
@@ -59,6 +59,22 @@ describe('workCalendarStore', () => {
     const cal = useWorkCalendarStore()
     await cal.load()
     expect(cal.status).not.toBe('error')
+  })
+
+  // review：快速進出 Dashboard 會有兩發同時在飛；較早發出、較晚回來的那一發不蓋掉較新的
+  it('重疊的載入：較舊的回應晚回來，不蓋掉較新的日曆', async () => {
+    const store = useWorkCalendarStore()
+    const older = { ...structuredClone(sampleCalendar), coveredYears: [2026] }
+    const newer = structuredClone(sampleCalendar)
+    let releaseOlder!: () => void
+    vi.spyOn(api, 'getCalendar')
+      .mockImplementationOnce(() => new Promise((r) => (releaseOlder = () => r(older))))
+      .mockImplementationOnce(() => Promise.resolve(newer))
+    const first = store.load()
+    await store.load()
+    releaseOlder()
+    await first
+    expect(store.data!.coveredYears).toEqual(newer.coveredYears)
   })
 
   it('setAll：同步設好資料', () => {

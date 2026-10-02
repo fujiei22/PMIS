@@ -15,14 +15,7 @@ import {
 import { monthGrid, WEEK_LABELS, type CalendarCell } from '@/lib/calendar'
 import { dayIndex, shiftMonth } from '@/lib/date'
 import { fmtDate, WORKDAY_UNIT } from '@/lib/format'
-import {
-  DURATION_MAX,
-  durationBlock,
-  durationOf,
-  isOverdue,
-  predecessorIds,
-  startBlock,
-} from '@/lib/schedule'
+import { DURATION_MAX, durationBlock, durationOf, isOverdue, startBlock } from '@/lib/schedule'
 import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'
@@ -83,7 +76,7 @@ const dCalEl = ref<HTMLElement | null>(null)
 
 /** 開始日能不能改：有前置、未開始的不能（開始日由前置決定）。 */
 const dStartBlock = computed(() =>
-  dTask.value ? startBlock(dTask.value, predecessorIds(taskStore.deps)) : null,
+  dTask.value ? startBlock(dTask.value, taskStore.hasPred) : null,
 )
 /** 工期 / 結束日能不能改：已完成的不能（結束日就是完成日）。 */
 const dDurationBlock = computed(() => (dTask.value ? durationBlock(dTask.value) : null))
@@ -253,8 +246,19 @@ const iCells = computed<Cell[]>(() => {
 })
 
 const iHolidays = computed(() => monthHolidays(iCells.value))
-/** 說明行：任務模式寫出完成日的下限。 */
-const iNote = computed(() => (iTask.value ? PICK_LIMIT_TEXT.doneBeforeStart : ''))
+/**
+ * 已完成任務的完成日不能清掉：結束日就是完成日，清掉會變成「完成卻沒有完成日」
+ * （規則見 docs/reference/scheduling.md〈不會生效的輸入不寫進資料〉；store 也會擋）。
+ */
+const iClearBlocked = computed(() => iTask.value?.status === 'done')
+/** 說明行：任務模式寫出完成日的下限；已完成時再寫「清除」為什麼不能用。 */
+const iNotes = computed(() =>
+  !iTask.value
+    ? []
+    : iClearBlocked.value
+      ? [PICK_LIMIT_TEXT.doneBeforeStart, PICK_LIMIT_TEXT.doneRequired]
+      : [PICK_LIMIT_TEXT.doneBeforeStart],
+)
 
 function iShift(n: number): void {
   const cal = ui.issueDatePicker
@@ -377,10 +381,19 @@ function iPick(cell: Cell): void {
     >
       <div class="cal-head">
         <div class="cal-name">{{ iCal.field === 'due' ? '期限' : '實際完成日期' }}</div>
-        <div class="cal-clear" role="button" @click="iSet('')">清除</div>
+        <div
+          class="cal-clear"
+          :class="{ disabled: iClearBlocked }"
+          role="button"
+          :aria-disabled="iClearBlocked"
+          :title="iClearBlocked ? PICK_LIMIT_TEXT.doneRequired : undefined"
+          @click="!iClearBlocked && iSet('')"
+        >
+          清除
+        </div>
       </div>
       <div class="cal-value">{{ fmtDate(iValue) }}</div>
-      <div v-if="iNote" class="cal-note">{{ iNote }}</div>
+      <div v-for="n in iNotes" :key="n" class="cal-note">{{ n }}</div>
       <div class="cal-bar">
         <div class="cal-title">{{ monthTitle(iCal.month) }}</div>
         <div class="cal-nav" role="button" @click="iToday()">今天</div>
@@ -497,9 +510,15 @@ function iPick(cell: Cell): void {
   border-radius: var(--r-badge);
 }
 
-.cal-clear:hover {
+.cal-clear:not(.disabled):hover {
   color: var(--danger-text);
   background: var(--danger-bg);
+}
+
+/* 停用（已完成任務的完成日）：沿用其他停用的寫法——字轉淡、游標不變、沒有 hover */
+.cal-clear.disabled {
+  color: var(--text-placeholder);
+  cursor: default;
 }
 
 .cal-value {

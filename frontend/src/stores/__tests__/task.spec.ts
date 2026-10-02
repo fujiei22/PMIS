@@ -814,6 +814,29 @@ describe('taskStore', () => {
       expect(s.taskById('t24')!.name).toBe('改名')
     })
 
+    // review：拖曳中（被拖的那一筆還是 dirty）別處觸發的寫回，不送被它推動的下游的暫時位置
+    it('拖曳中別處觸發寫回：被拖條的下游不跟著送', async () => {
+      const s = useTaskStore()
+      const many = vi.spyOn(api, 'updateTasks')
+      s.applyLocalPatch('t24', { start: '2026-10-12' })
+      expect(s.taskById('t25')!.start).toBe('2026-10-20')
+      await s.commitSchedule([])
+      const sent = many.mock.calls.flatMap((c) => c[0].map((t) => t.id))
+      expect(sent).not.toContain('t24')
+      expect(sent).not.toContain('t25')
+    })
+
+    it('刪分類：分類外失去所有前置的後續任務，保留刪除當下推算的開始日', async () => {
+      const s = useTaskStore()
+      // t30（g6，11/10 結束）→ t24（g5 的根任務）：t24 改從 11/11 開始
+      expect(s.addDep('t30', 't24')).toBe(true)
+      await vi.waitFor(async () => expect((await serverTask('t24'))!.start).toBe('2026-11-11'))
+      // 刪 g6：t24 失去唯一的前置，變成根任務；沒記下來的話會退回存的 10/08
+      await s.removeGroup('g6')
+      expect(s.taskById('t24')!.start).toBe('2026-11-11')
+      expect((await serverTask('t24'))!.start).toBe('2026-11-11')
+    })
+
     it('建立還在飛時改了工期：create 回來後補送一次', async () => {
       const s = useTaskStore()
       mockApi.setLatency(50)
@@ -920,6 +943,52 @@ describe('taskStore', () => {
       const t = s.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-10-01', duration: 3 })!
       expect(s.inputs.find((x) => x.id === t.id)!.baselineEnd).toBe('')
       expect(s.taskById(t.id)!.baselineEnd).toBe('2026-10-05')
+    })
+
+    // review：上鎖只送 server 已有的任務；別處還沒送出的編輯不跟著送
+    it('上鎖：改名還沒送出的任務，送的是 server 的名稱（只帶推算起訖與基準）', async () => {
+      const s = useTaskStore()
+      await s.unlockBaseline()
+      s.applyLocalPatch('t5', { name: '打到一半' })
+      const lock = vi.spyOn(api, 'lockBaseline')
+      await s.lockBaseline()
+      const sent = lock.mock.calls[0]![2].find((t) => t.id === 't5')!
+      expect(sent.name).toBe(sampleProject.tasks.find((t) => t.id === 't5')!.name)
+      expect([sent.baselineStart, sent.baselineEnd]).toEqual([sent.start, sent.end])
+      // 本地的草稿還在
+      expect(s.taskById('t5')!.name).toBe('打到一半')
+    })
+
+    it('上鎖：建立中的任務不送（不讓整個上鎖失敗），建立完成後補送它的基準', async () => {
+      const s = useTaskStore()
+      await s.unlockBaseline()
+      // createTask 卡住，直到上鎖完成後才放行
+      const realCreate = api.createTask
+      let finishCreate!: () => void
+      vi.spyOn(api, 'createTask').mockImplementationOnce(
+        (task) => new Promise((r) => (finishCreate = () => r(realCreate(task)))),
+      )
+      const lock = vi.spyOn(api, 'lockBaseline')
+      const t = s.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-10-01', duration: 3 })!
+      await s.lockBaseline()
+      expect(useProjectStore().meta.baselineLockedOn).toBe('2026-09-18')
+      expect(lock.mock.calls[0]![2].some((x) => x.id === t.id)).toBe(false)
+      finishCreate()
+      await vi.waitFor(async () => expect((await serverTask(t.id))?.baselineEnd).toBe('2026-10-05'))
+    })
+
+    it('上鎖失敗：只還原鎖定日，在飛期間推來的專案改名照留', async () => {
+      const s = useTaskStore()
+      await s.unlockBaseline()
+      const project = useProjectStore()
+      mockApi.setLatency(5)
+      mockApi.failNext('lockBaseline')
+      const pending = s.lockBaseline()
+      project.setMeta({ ...project.meta, name: '別人改的專案名' })
+      await pending
+      mockApi.setLatency(0)
+      expect(project.meta.baselineLockedOn).toBe('')
+      expect(project.meta.name).toBe('別人改的專案名')
     })
 
     it('explain：說明起訖是哪條規則決定的', () => {

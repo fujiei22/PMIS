@@ -508,11 +508,13 @@ def test_override_note_length(db: Session) -> None:
 
 @pytest.mark.parametrize("days", [1, TASK_DURATION_MAX])
 def test_task_duration_accepts_both_ends(db: Session, days: int) -> None:
+    """工期的兩端（1 與上限）都收：CHECK 是 BETWEEN，邊界值不能被誤擋。"""
     assert_accepted(db, lambda: make_task(db, duration_days=days))
 
 
 @pytest.mark.parametrize("days", [0, TASK_DURATION_MAX + 1])
 def test_task_duration_must_be_in_range(db: Session, days: int) -> None:
+    """工期超出 1–上限就拒絕：0 天或超過上限的工期排不出結束日（前端會夾值，這裡是最後一道）。"""
     assert_rejected(db, lambda: make_task(db, duration_days=days), "ck_tasks_duration_days_range")
 
 

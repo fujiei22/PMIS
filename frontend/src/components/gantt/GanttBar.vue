@@ -21,7 +21,7 @@ import {
 } from '@/constants/dashboard'
 import { dayIndex, isoFromIndex, lengthOf } from '@/lib/date'
 import { fmtDate, fmtWorkdays } from '@/lib/format'
-import { durationBlock, durationOf, isLate, moveBlock, predecessorIds } from '@/lib/schedule'
+import { durationBlock, durationOf, isLate, moveBlock, plannedEndIdx } from '@/lib/schedule'
 import { useIssueStore } from '@/stores/issue'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
@@ -77,7 +77,7 @@ const selected = computed(() => props.kind === 'task' && selection.taskId === pr
 
 /** 不能整條拖、拉左把手的原因（開始日由前置決定／已完成）；null＝可以。摘要條沒有。 */
 const blockMove = computed(() =>
-  props.kind === 'task' ? moveBlock(props.task, predecessorIds(taskStore.deps)) : null,
+  props.kind === 'task' ? moveBlock(props.task, taskStore.hasPred) : null,
 )
 
 /** 不能拉右把手（改工期）的原因；null＝可以。 */
@@ -183,9 +183,7 @@ function reasonLine(t: Task): string {
   // 逾期：原定結束日＝照工期推算的那天
   const end =
     r.endBy === 'overdue'
-      ? END_REASON_TEXT.overdue(
-          fmtDate(isoFromIndex(calendar.workdays.addWorkdays(dayIndex(t.start), t.duration))),
-        )
+      ? END_REASON_TEXT.overdue(fmtDate(isoFromIndex(plannedEndIdx(t, calendar.workdays))))
       : END_REASON_TEXT[r.endBy]
   return `開始：${start}｜結束：${end}`
 }

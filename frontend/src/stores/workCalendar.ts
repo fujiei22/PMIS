@@ -27,14 +27,19 @@ export const useWorkCalendarStore = defineStore('workCalendar', () => {
     status.value = 'ready'
   }
 
+  /** 請求序號：快速進出 Dashboard 會有好幾發同時在飛，只採用最後發出的那一發（較舊的晚回來就丟掉）。 */
+  let seq = 0
+
   /** 載入日曆；失敗時依上面的規則處理，不 reject。 */
   async function load(): Promise<void> {
+    const ticket = ++seq
     if (!data.value) status.value = 'loading'
     try {
-      setAll(await api.getCalendar())
+      const cal = await api.getCalendar()
+      if (ticket === seq) setAll(cal)
     } catch (error) {
       console.error('[api]', '載入工作日曆', error)
-      if (data.value) return
+      if (ticket !== seq || data.value) return
       const unauthorized = error instanceof ApiError && error.code === 'unauthorized'
       status.value = unauthorized ? 'idle' : 'error'
     }

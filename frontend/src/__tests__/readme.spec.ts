@@ -2,7 +2,14 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { dayIndex } from '@/lib/date'
-import { isLate, isPlannedDone, lateDays, scheduleTasks, withBaselineMode } from '@/lib/schedule'
+import {
+  DURATION_MAX,
+  isLate,
+  isPlannedDone,
+  lateDays,
+  scheduleTasks,
+  withBaselineMode,
+} from '@/lib/schedule'
 import { createWorkdays } from '@/lib/workdays'
 import { sampleCalendar } from '@/mocks/sampleCalendar'
 import { sampleProject } from '@/mocks/sampleProject'
@@ -217,5 +224,18 @@ describe('docs/reference/scheduling.md 的檢查點', () => {
       )
       expect(endCell, `${today} 的專案結束日`).toBe(ends[ends.length - 1])
     }
+  })
+})
+
+/**
+ * 工期上限前後端各寫一份：前端 `DURATION_MAX`（夾值、日期選擇器），後端 `TASK_DURATION_MAX`（tasks.duration_days 的 CHECK）。
+ * 改一邊忘了另一邊時，超出的工期會在寫回時被後端拒絕。
+ */
+describe('工期上限前後端一致', () => {
+  it('backend/app/models.py 的 TASK_DURATION_MAX 等於前端的 DURATION_MAX', () => {
+    const models = readFileSync(resolve(ROOT, '../backend/app/models.py'), 'utf8')
+    const m = /^TASK_DURATION_MAX = (\d+)$/m.exec(models)
+    expect(m, 'models.py 找不到 TASK_DURATION_MAX').not.toBeNull()
+    expect(Number(m![1])).toBe(DURATION_MAX)
   })
 })

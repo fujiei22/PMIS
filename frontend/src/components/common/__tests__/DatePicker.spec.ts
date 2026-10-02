@@ -180,6 +180,31 @@ describe('完成日選擇器（任務模式）', () => {
     expect(done).toHaveBeenCalledWith('t2', '2026-09-03')
   })
 
+  // review：已完成任務的結束日就是完成日，清掉會變成「完成卻沒有完成日」的舊資料狀態
+  it('已完成的 t2：「清除」停用、點了不送，第二行說明寫出原因；進行中的 t3 可以清', async () => {
+    const done = vi.spyOn(useTaskStore(), 'setTaskDoneDirect').mockResolvedValue()
+    const w = mount(DatePicker)
+    useMenus().openIssueDatePicker(click(), 't2', 'done', '2026-09-08', 'task')
+    await nextTick()
+    const clear = w.find('.issue-date-picker .cal-clear')
+    expect(clear.classes()).toContain('disabled')
+    expect(clear.attributes('aria-disabled')).toBe('true')
+    expect(w.findAll('.issue-date-picker .cal-note').map((n) => n.text())).toEqual([
+      PICK_LIMIT_TEXT.doneBeforeStart,
+      PICK_LIMIT_TEXT.doneRequired,
+    ])
+    await clear.trigger('click')
+    expect(done).not.toHaveBeenCalled()
+
+    useUiStore().issueDatePicker = null
+    useMenus().openIssueDatePicker(click(), 't3', 'done', '', 'task')
+    await nextTick()
+    const clear3 = w.find('.issue-date-picker .cal-clear')
+    expect(clear3.classes()).not.toContain('disabled')
+    await clear3.trigger('click')
+    expect(done).toHaveBeenCalledWith('t3', '')
+  })
+
   it('Issue 模式不限制日期', async () => {
     const w = mount(DatePicker)
     useMenus().openIssueDatePicker(click(), 'i1', 'due', '2026-09-08')

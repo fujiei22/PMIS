@@ -4,14 +4,7 @@ import { useDomRegistry } from '@/composables/useDomRegistry'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex, isoFromIndex } from '@/lib/date'
 import { parseDuration } from '@/lib/easing'
-import {
-  DURATION_MAX,
-  durationBlock,
-  isOverdue,
-  isStarted,
-  moveBlock,
-  predecessorIds,
-} from '@/lib/schedule'
+import { DURATION_MAX, durationBlock, isOverdue, isStarted, moveBlock } from '@/lib/schedule'
 import { useClockStore } from '@/stores/clock'
 import { useRowsStore } from '@/stores/rows'
 import { useSelectionStore } from '@/stores/selection'
@@ -115,9 +108,9 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   let downAt = { x: 0, y: 0 }
   let hoverTimer: ReturnType<typeof setTimeout> | undefined
   /**
-   * 這一段拖曳碰過的任務 id（被拖的那一筆，加上推算結果跟著變的下游）。
-   * review F2：中止時只放棄**自己**標的那幾筆，別處還在 debounce 的改名不能一起被抹掉；
-   * 放開時這些 id 就是 `commitSchedule` 的 include。
+   * 這一段拖曳改到的任務 id——只有被拖的那一筆：下游是跟著重排的推算結果，存的值沒變、不是 dirty。
+   * review F2：中止時只放棄**自己**標的那幾筆，別處還在 debounce 的改名（包括被推動的下游）不能一起被抹掉；
+   * 放開時這些 id 就是 `commitSchedule` 的 include，被推動的下游由寫回集合帶上。
    */
   const dragged = new Set<string>()
 
@@ -168,7 +161,10 @@ export function usePointerDrag(els: DragElements): PointerDrag {
       d.last = delta
       const t = taskStore.taskById(d.id)
       const patch = t ? barPatch(d, t, delta) : null
-      if (patch) track(d.id, taskStore.applyLocalPatch(d.id, patch))
+      if (patch) {
+        taskStore.applyLocalPatch(d.id, patch)
+        track(d.id)
+      }
     }
     // 動畫稽核 D6：自動捲動時 scrollLeft 連續在變、條卻以整天吸附，條在游標下鋸齒抖動。
     // 補上「捲動造成、還沒湊滿一天」的差，條在畫面上只跟著游標的位移走；放開才吸附（finish）。縮放只補被拖的那一端（D6 延伸）
@@ -311,12 +307,11 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   }
 
   /**
-   * 記下這一段拖曳碰過的任務（review F2）。被拖的那一筆一律記：存的值改了、推算結果卻可能沒變
-   * （例：未開始的任務拖到今天以前，被夾回今天），不記的話它的 dirty 放開後清不掉。
+   * 記下這一段拖曳改到的任務（review F2）。存的值改了、推算結果卻可能沒變
+   * （例：未開始的任務拖到今天以前，被夾回今天），所以不看 applyLocalPatch 的回傳，一律記。
    */
-  function track(id: string, changed: { id: string }[]): void {
+  function track(id: string): void {
     dragged.add(id)
-    for (const t of changed) dragged.add(t.id)
   }
 
   /** 相依預覽線 + 目前壓在哪一列。legacy :2497-2505 */
@@ -455,8 +450,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     const t = taskStore.taskById(id)
     if (!t) return
     // 排程規則擋下的（開始日由前置決定、已完成）同樣不開始、不攔下事件（規則見 docs/reference/scheduling.md〈編輯限制〉）
-    const blocked =
-      kind === 'resR' ? durationBlock(t) : moveBlock(t, predecessorIds(taskStore.deps))
+    const blocked = kind === 'resR' ? durationBlock(t) : moveBlock(t, taskStore.hasPred)
     if (blocked) return
     e.stopPropagation()
     begin(

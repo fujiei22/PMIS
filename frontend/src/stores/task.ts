@@ -10,6 +10,7 @@ import {
   projectRange,
   reachable,
   sameTask,
+  SCHEDULE_FIELDS,
   scheduleTasks,
   withBaselineMode,
 } from '@/lib/schedule'
@@ -41,9 +42,6 @@ import type { Dependency, DropTarget, Group, ISODate, ProjectData, Task } from '
 const TASK_ORDER_KEY = 'tasks:order'
 const GROUP_ORDER_KEY = 'groups:order'
 
-/** 會牽動排程的欄位：patch 帶了其中任何一個就整批寫回推算結果，否則只送單筆 patch。 */
-const SCHEDULE_FIELDS = ['start', 'duration', 'status', 'done'] as const
-
 /**
  * 分類、任務與相依——Dashboard 的主資料。
  * 它也是 load() 的入口：一次把 ProjectData 分給 member / issue / comment / budget / project store；
@@ -73,7 +71,10 @@ export const useTaskStore = defineStore('task', () => {
   const groupTracker = createTracker<Group>()
   const depTracker = createTracker<Dependency>()
 
-  /** 有前置的任務 id（未開始時開始日由前置決定，`applyTaskEdit` 會丟掉它的 start）。 */
+  /**
+   * 有前置的任務 id（未開始時開始日由前置決定，`applyTaskEdit` 會丟掉它的 start）。
+   * 編輯限制（`startBlock`／`moveBlock`）的呼叫端都讀這一份，不各自重建。
+   */
   const hasPred = computed(() => predecessorIds(deps.value))
   /** 基準上鎖了嗎（整個專案一把鎖）。 */
   const locked = computed(() => !!useProjectStore().meta.baselineLockedOn)
@@ -116,6 +117,8 @@ export const useTaskStore = defineStore('task', () => {
 
   /** id → 物件的索引；legacy 每次 render 重建一次 Map（:1901），這裡交給 computed 快取。 */
   const taskIndex = computed(() => new Map(tasks.value.map((t) => [t.id, t])))
+  /** id → 存的值（`explain` 要看原始輸入；每條甘特條都會查，不用線性搜尋）。 */
+  const inputIndex = computed(() => new Map(inputs.value.map((t) => [t.id, t])))
   const groupIndex = computed(() => new Map(groups.value.map((g) => [g.id, g])))
 
   /** 推算後的任務（畫面看的值）。 */
@@ -324,14 +327,32 @@ export const useTaskStore = defineStore('task', () => {
    * - `include` 裡的（這次編輯的對象）：不同就送；server 還沒有（建立中）就先不送，dirty 留著，
    *   等 create 回來由 `addTask` 補送。
    * - 其他：不同、而且不在 dirty 才送——dirty 的是別處還沒送出的編輯（拖曳中、改名 debounce 中），
-   *   由它自己的 commit 送。漂移（跨日重排、被這次編輯推動的下游）都走這條。
+   *   由它自己的 commit 送。dirty 的下游也先不送：它們的推算位置來自那筆還沒送出的編輯（例如拖曳中途），
+   *   等那筆送出時一起送。漂移（跨日重排、被這次編輯推動的下游）都走這條。
    */
   function scheduleWriteSet(include: Set<string>): Task[] {
+    const held = downstreamOfPending(include)
     const out: Task[] = []
     for (const t of tasks.value) {
       const server = taskTracker.server.get(t.id)
       if (!server || sameTask(t, server)) continue
-      if (include.has(t.id) || !taskTracker.dirty.has(t.id)) out.push(t)
+      if (include.has(t.id) || (!taskTracker.dirty.has(t.id) && !held.has(t.id))) out.push(t)
+    }
+    return out
+  }
+
+  /** 還沒送出的編輯（dirty 而且不在這次的 include）沿相依往下走得到的任務。 */
+  function downstreamOfPending(include: Set<string>): Set<string> {
+    const next = new Map<string, string[]>()
+    for (const d of deps.value) next.set(d.from, [...(next.get(d.from) ?? []), d.to])
+    const out = new Set<string>()
+    const stack = [...taskTracker.dirty].filter((id) => !include.has(id))
+    while (stack.length) {
+      for (const to of next.get(stack.pop()!) ?? []) {
+        if (out.has(to)) continue
+        out.add(to)
+        stack.push(to)
+      }
     }
     return out
   }
@@ -936,7 +957,7 @@ export const useTaskStore = defineStore('task', () => {
 
   /** 起訖是哪條規則決定的（甘特提示、屬性面板用）；任務不存在回 null。 */
   function explain(id: string): ReturnType<typeof explainSchedule> {
-    const input = inputs.value.find((t) => t.id === id)
+    const input = inputIndex.value.get(id)
     if (!input) return null
     return explainSchedule(
       input,
@@ -953,7 +974,11 @@ export const useTaskStore = defineStore('task', () => {
    * 上鎖：把此刻的推算起訖存成每個任務的基準，記下鎖定日（今天）。之後推算結束晚於基準就是延遲。
    *
    * 前提：可編輯、工作日曆已載入（日曆失敗時排程只看週末，鎖下去的基準會是錯的）、目前是解鎖。
-   * 樂觀更新：先改本地（基準與鎖定日），失敗時兩者都還原。送的是整批推算結果（`api.lockBaseline`）。
+   * 樂觀更新：先改本地（基準與鎖定日），失敗時兩者都還原。
+   *
+   * 送出（`api.lockBaseline`）的只有 server 已經有的任務，內容是 server 的值換上推算起訖與基準——
+   * 別處還沒送出的編輯（改名 debounce 中）不跟著送。建立中的任務不送（後端還不認得它，整個上鎖會失敗），
+   * 改標 dirty：建立完成後 `addTask` 會補送一次，基準就跟著上去。
    */
   async function lockBaseline(): Promise<void> {
     const project = useProjectStore()
@@ -961,15 +986,31 @@ export const useTaskStore = defineStore('task', () => {
     if (useWorkCalendarStore().status !== 'ready') return
     if (locked.value) return
     const lockedOn = useClockStore().todayIso
-    const prevMeta = { ...project.meta }
-    // 解鎖時推算結果的基準已經等於推算起訖（withBaselineMode），直接整份存
-    const snapshot = tasks.value.map((t) => cloneEntity(t))
-    const base = new Map(snapshot.map((t) => [t.id, t]))
+    const projectId = project.meta.id
+    // 解鎖時推算結果的基準已經等於推算起訖（withBaselineMode）
+    const base = new Map(tasks.value.map((t) => [t.id, t]))
+    const snapshot: Task[] = []
+    const creating: string[] = []
+    for (const t of tasks.value) {
+      const server = taskTracker.server.get(t.id)
+      if (!server) creating.push(t.id)
+      else
+        snapshot.push(
+          cloneEntity({
+            ...server,
+            start: t.start,
+            end: t.end,
+            baselineStart: t.baselineStart,
+            baselineEnd: t.baselineEnd,
+          }),
+        )
+    }
     inputs.value = inputs.value.map((t) => {
       const b = base.get(t.id)
       return b ? { ...t, baselineStart: b.baselineStart, baselineEnd: b.baselineEnd } : t
     })
-    project.setMeta({ ...prevMeta, baselineLockedOn: lockedOn })
+    markDirty(taskTracker, creating)
+    setLockedOn(lockedOn)
 
     const epoch = taskTracker.epoch
     let ok = false
@@ -978,14 +1019,28 @@ export const useTaskStore = defineStore('task', () => {
       ids: snapshot.map((t) => t.id),
       label: '鎖定基準',
       call: async () => {
-        await api.lockBaseline(prevMeta.id, lockedOn, snapshot)
+        await api.lockBaseline(projectId, lockedOn, snapshot)
         ok = true
         for (const t of snapshot) taskTracker.server.set(t.id, cloneEntity(t))
       },
       // 成功：存的值對齊到送出的推算結果；失敗：基準放回 server 的值
       reconcile: reconcileTask,
     })
-    if (!ok && taskTracker.epoch === epoch) project.setMeta(prevMeta)
+    if (!ok && taskTracker.epoch === epoch) revertLockedOn(lockedOn, '')
+  }
+
+  /** 樂觀地改鎖定日（專案的其他欄位不動）。 */
+  function setLockedOn(on: ISODate | ''): void {
+    const project = useProjectStore()
+    project.setMeta({ ...project.meta, baselineLockedOn: on })
+  }
+
+  /**
+   * 上鎖／解鎖失敗時還原鎖定日：只改這一欄，而且只在它還是我們樂觀設的值時才改——
+   * 在飛期間推來的 `project.updated`（例如別的分頁改了專案名或鎖定日）是 server 的新值，不能被蓋掉。
+   */
+  function revertLockedOn(optimistic: ISODate | '', prev: ISODate | ''): void {
+    if (useProjectStore().meta.baselineLockedOn === optimistic) setLockedOn(prev)
   }
 
   /**
@@ -996,8 +1051,9 @@ export const useTaskStore = defineStore('task', () => {
     const project = useProjectStore()
     if (!project.canEdit) return
     if (!locked.value) return
-    const prevMeta = { ...project.meta }
-    project.setMeta({ ...prevMeta, baselineLockedOn: '' })
+    const projectId = project.meta.id
+    const prevOn = project.meta.baselineLockedOn
+    setLockedOn('')
 
     const epoch = taskTracker.epoch
     let ok = false
@@ -1006,12 +1062,12 @@ export const useTaskStore = defineStore('task', () => {
       ids: [],
       label: '解鎖基準',
       call: async () => {
-        await api.unlockBaseline(prevMeta.id)
+        await api.unlockBaseline(projectId)
         ok = true
       },
       reconcile: () => {},
     })
-    if (!ok && taskTracker.epoch === epoch) project.setMeta(prevMeta)
+    if (!ok && taskTracker.epoch === epoch) revertLockedOn('', prevOn)
   }
 
   // ── 事件（契約 B）────────────────────────────────────────────────────────
@@ -1047,6 +1103,7 @@ export const useTaskStore = defineStore('task', () => {
     inputs,
     tasks,
     deps,
+    hasPred,
     taskById,
     groupById,
     load,

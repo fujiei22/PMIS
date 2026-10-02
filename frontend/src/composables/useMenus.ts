@@ -1,5 +1,5 @@
 import { anchorCalendar, anchorOptionMenu, anchorRowMenu, viewport } from '@/lib/anchor'
-import { predecessorIds, startBlock } from '@/lib/schedule'
+import { startBlock } from '@/lib/schedule'
 import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
@@ -113,7 +113,7 @@ export function useMenus(): Menus {
     e.stopPropagation()
     const t = taskStore.taskById(taskId)
     if (!t) return
-    const target = startBlock(t, predecessorIds(taskStore.deps)) ? 'end' : 'start'
+    const target = startBlock(t, taskStore.hasPred) ? 'end' : 'start'
     ui.taskDatePicker = {
       id: taskId,
       target,

@@ -230,6 +230,20 @@ describe('applyTaskEdit', () => {
     const list = [task('a')]
     expect(applyTaskEdit(list, hasPred, 'a', { name: 'a' }, today)).toBe(list)
   })
+
+  // review：已完成的結束日就是完成日，工期與「清掉完成日」都不會生效，不寫進資料
+  it('已完成：改工期不生效、清掉完成日不生效（回原陣列）', () => {
+    const list = [
+      task('a', { status: 'done', start: '2026-10-01', done: '2026-10-05', duration: 3 }),
+    ]
+    expect(applyTaskEdit(list, hasPred, 'a', { duration: 9 }, today)).toBe(list)
+    expect(applyTaskEdit(list, hasPred, 'a', { done: '' }, today)).toBe(list)
+  })
+
+  it('已完成而且完成日是空的舊資料：任何編輯都補上完成日（今天）', () => {
+    const legacy = task('a', { status: 'done', start: '2026-10-01', done: '' })
+    expect(edit(legacy, { name: '改名' }).done).toBe(today)
+  })
 })
 
 describe('withBaselineMode', () => {

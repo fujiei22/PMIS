@@ -70,8 +70,14 @@ export function projectRange(
 // ═══ 前推排程（規則見 docs/reference/scheduling.md）════════════════════════════
 // 工期是工作天、完成到開始、以實際進度推下游、延遲與計畫進度看計畫基準。
 
-/** 工期（工作天）的上限；跟後端 tasks.duration_days 的 CHECK、日期選擇器的上限一致。 */
+/** 工期（工作天）的上限；跟後端 tasks.duration_days 的 CHECK、日期選擇器的上限一致（readme.spec 守）。 */
 export const DURATION_MAX = 3650
+
+/**
+ * 會牽動排程的欄位：編輯帶了其中任何一個，就要整批寫回推算結果（task store 的 `updateTask`）；
+ * 其他欄位（名稱、優先度、負責人…）只送單筆 patch。加新的排程欄位時一併加進來。
+ */
+export const SCHEDULE_FIELDS = ['start', 'duration', 'status', 'done'] as const
 
 /** 不能編輯的原因（null＝可以）。第 3 個 branch（三層任務）會加 'rollup'（由下層彙總、唯讀）。 */
 export type EditBlock = 'predecessor' | 'done' | null
@@ -227,6 +233,7 @@ export function explainSchedule(
  * - 有前置、未開始的任務：start 不生效，丟掉。
  * - 夾值：工期 1–3650（NaN 丟掉）；進行中／暫停的開始日不晚於今天；完成的開始日不晚於完成日；
  *   完成日不早於開始日。
+ * - 已完成：工期不生效（結束日就是完成日）、完成日不能清掉。
  */
 export function applyTaskEdit(
   tasks: Task[],
@@ -255,6 +262,11 @@ export function applyTaskEdit(
   // 已開始的開始日上限：進行中／暫停不晚於今天；完成不晚於完成日
   if ((next.status === 'doing' || next.status === 'paused') && next.start > todayIso)
     next.start = todayIso
+  // 已完成：結束日就是完成日，改工期不會生效；完成日也不能清掉（缺的舊資料補上今天）
+  if (next.status === 'done') {
+    next.duration = target.duration
+    if (!next.done) next.done = target.status === 'done' && target.done ? target.done : todayIso
+  }
   // 完成的起訖：改的是完成日就把完成日夾到開始日以後；其他情況把開始日夾到完成日以前
   if (next.status === 'done' && next.done) {
     if ('done' in clean && next.done < next.start) next.done = next.start
@@ -280,11 +292,16 @@ export function durationBlock(t: Task): EditBlock {
   return t.status === 'done' ? 'done' : null
 }
 
+/** 照工期該結束的那天（日索引）：從開始日起算第「工期」個工作天；逾期的「原定結束日」就是它。 */
+export function plannedEndIdx(t: Task, wd: Workdays): number {
+  return wd.addWorkdays(dayIndex(t.start), clampDuration(t.duration))
+}
+
 /** 逾期未完成：進行中或暫停，而且照工期該結束的日子早於今天。 */
 export function isOverdue(t: Task, wd: Workdays, todayIdx: number): boolean {
   if (t.status !== 'doing' && t.status !== 'paused') return false
   if (!t.start) return false
-  return wd.addWorkdays(dayIndex(t.start), clampDuration(t.duration)) < todayIdx
+  return plannedEndIdx(t, wd) < todayIdx
 }
 
 /**
