@@ -68,6 +68,8 @@ ISSUE_ITEMS = ("C", "R", "F", "O")
 ISSUE_LEVELS = ("A", "B", "C", "D")
 ISSUE_STATUSES = ("open", "doing", "paused", "closed")
 COMMENT_TARGET_KINDS = ("task", "issue")
+# 任務工期（工作天）的上限，跟前端 lib/schedule.ts 的 DURATION_MAX、日期選擇器的工期上限一致。
+TASK_DURATION_MAX = 3650
 DELETION_ROOT_KINDS = ("project", "group", "task", "issue", "comment")
 
 
@@ -167,6 +169,8 @@ class Project(SoftDeleteMixin, TimestampMixin, Base):
     pm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("members.id"))
     # 匯入的人。
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("members.id"))
+    # 計畫基準的鎖定日；NULL＝解鎖（規劃中，基準跟著排程走）。規則見 docs/reference/scheduling.md
+    baseline_locked_on: Mapped[date | None]
 
     groups: Mapped[list["TaskGroup"]] = relationship(
         order_by=lambda: (TaskGroup.position, TaskGroup.id), passive_deletes=True
@@ -210,6 +214,13 @@ class Task(SoftDeleteMixin, TimestampMixin, Base):
         _max_length("name", 200),
         _one_of("status", TASK_STATUSES),
         _one_of("priority", PRIORITIES),
+        CheckConstraint(
+            f"duration_days BETWEEN 1 AND {TASK_DURATION_MAX}", name="duration_days_range"
+        ),
+        # 基準起訖一起有值或一起是 NULL
+        CheckConstraint(
+            "(baseline_start_on IS NULL) = (baseline_end_on IS NULL)", name="baseline_pair"
+        ),
         Index("ix_tasks_project_id_live", "project_id", **_live_only()),
         *soft_delete_table_args(),
     )
@@ -220,9 +231,16 @@ class Task(SoftDeleteMixin, TimestampMixin, Base):
     name: Mapped[str]
     # wire 的 created；建立時由 server 填今天（app.core.time.today()），不信 client。
     created_on: Mapped[date]
+    # 起訖的語意（規則見 docs/reference/scheduling.md）：已開始＝實際開始日；未開始的根任務＝設定的開始日；
+    # 其他＝前端依相依、工作日曆與今天推算後寫回的快照（後端不跑排程）。
     start_on: Mapped[date | None]
     end_on: Mapped[date | None]
     done_on: Mapped[date | None]
+    # 工期（工作天，1–TASK_DURATION_MAX）。結束日由工期推算，不是輸入值。
+    duration_days: Mapped[int]
+    # 計畫基準：判斷延遲用的原計畫起訖；專案上鎖時寫入
+    baseline_start_on: Mapped[date | None]
+    baseline_end_on: Mapped[date | None]
     status: Mapped[str]
     priority: Mapped[str]
     # 排序鍵：專案內的全域順序（前端 tasks 陣列的順序），規則同 TaskGroup.position。
