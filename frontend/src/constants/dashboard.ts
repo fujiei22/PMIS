@@ -152,6 +152,9 @@ export const BASELINE_LOCK_TEXT = {
   unlocked: '規劃中',
   lockedTitle: (on: string) => `基準鎖定於 ${on}；點擊解鎖`,
   unlockedTitle: '基準跟著排程走；點擊上鎖',
+  /** 唯讀時只說明狀態，不叫人點。 */
+  lockedReadonlyTitle: (on: string) => `基準鎖定於 ${on}`,
+  unlockedReadonlyTitle: '基準跟著排程走',
   calendarError: '假日資料載入失敗，暫時不能上鎖',
 } as const
 

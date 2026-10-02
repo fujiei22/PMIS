@@ -16,11 +16,12 @@ import { usePointerDrag } from '@/composables/usePointerDrag'
 import { useRowMotion } from '@/composables/useRowMotion'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
 import { useTaskActions } from '@/composables/useTaskActions'
-import { CALENDAR_NOTICE, ROW_HEIGHT } from '@/constants/dashboard'
+import { BASELINE_LOCK_TEXT, CALENDAR_NOTICE, ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex } from '@/lib/date'
-import { fmtYears } from '@/lib/format'
+import { fmtDate, fmtYears } from '@/lib/format'
 import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
+import { useProjectStore } from '@/stores/project'
 import { useRowsStore } from '@/stores/rows'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
@@ -42,6 +43,7 @@ const taskStore = useTaskStore()
 const filter = useFilterStore()
 const selection = useSelectionStore()
 const calendar = useWorkCalendarStore()
+const project = useProjectStore()
 const sticky = useStickyOffsetsContext()
 const registry = useDomRegistry()
 
@@ -153,6 +155,31 @@ const days = computed<RulerDay[]>(() => {
   return out
 })
 
+// ── 基準鎖（規則見 docs/reference/scheduling.md〈基準與基準鎖〉）──────────────
+/** 整個專案一把鎖：鎖定日有值＝上鎖。 */
+const baselineLocked = computed(() => !!project.meta.baselineLockedOn)
+const lockText = computed(() =>
+  baselineLocked.value ? BASELINE_LOCK_TEXT.locked : BASELINE_LOCK_TEXT.unlocked,
+)
+/**
+ * 停用：唯讀（照樣顯示狀態）；或規劃中而日曆不能用——日曆失敗時排程只排除週末，鎖下去的基準是錯的
+ * （還沒載入完也先停用，store 的 lockBaseline 同樣會擋）。解鎖不需要日曆。
+ */
+const lockDisabled = computed(
+  () => !ui.canEdit || (!baselineLocked.value && calendar.status !== 'ready'),
+)
+/** 說明：狀態（含鎖定日）＋點了會做什麼；唯讀時只說狀態，日曆失敗時說為什麼不能上鎖。 */
+const lockTitle = computed(() => {
+  const on = fmtDate(project.meta.baselineLockedOn)
+  if (!ui.canEdit)
+    return baselineLocked.value
+      ? BASELINE_LOCK_TEXT.lockedReadonlyTitle(on)
+      : BASELINE_LOCK_TEXT.unlockedReadonlyTitle
+  if (baselineLocked.value) return BASELINE_LOCK_TEXT.lockedTitle(on)
+  if (calendar.status === 'error') return BASELINE_LOCK_TEXT.calendarError
+  return BASELINE_LOCK_TEXT.unlockedTitle
+})
+
 /**
  * 標題列的日曆提示（規則見 docs/reference/scheduling.md〈工作天〉）：日曆載入失敗、或任務期間碰到
  * 官方還沒公布假日的年份時，排程只排除週末，要讓人知道。還沒載入（idle／loading）不提示。
@@ -259,6 +286,24 @@ function toggleAllGroups(): void {
       <div class="cal-notice" data-testid="cal-notice" :title="calendarNotice || undefined">
         {{ calendarNotice }}
       </div>
+      <!-- 基準鎖：顯示目前狀態，點了開確認框（上鎖一步、解鎖兩步，見 useConfirmProps）；窄版只留圖示 -->
+      <button
+        class="mini lock-btn"
+        data-testid="baseline-lock"
+        :class="{ locked: baselineLocked }"
+        :aria-pressed="baselineLocked"
+        :aria-label="lockText"
+        :disabled="lockDisabled"
+        :title="lockTitle"
+        @click="ui.askBaselineLock()"
+      >
+        <svg class="lock-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+          <rect x="2" y="5.5" width="8" height="5.5" rx="1.2" />
+          <path v-if="baselineLocked" d="M4 5.5V4a2 2 0 0 1 4 0v1.5" />
+          <path v-else d="M4 5.5V3.5a2 2 0 0 1 4 0" />
+        </svg>
+        <span class="lock-text">{{ lockText }}</span>
+      </button>
       <div class="zoom">
         <input
           type="range"
@@ -498,6 +543,29 @@ function toggleAllGroups(): void {
   }
 }
 
+/* 基準鎖：沿用 .mini 的外框與 hover；鎖頭是線條圖示，跟著字色 */
+.lock-btn {
+  gap: var(--sp-3);
+}
+
+.lock-icon {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+/* 停用（唯讀、日曆失敗時不能上鎖）：同其他 :disabled——字轉淡、游標不變、沒有 hover */
+.mini.lock-btn:disabled {
+  color: var(--text-placeholder);
+  background: var(--surface-1);
+  border-color: var(--border-control);
+  cursor: default;
+}
+
 /* 左欄展開鈕：和欄頭按鈕同一套外框的正方形；單一圖示旋轉表示方向（同其他收合箭頭，A24） */
 .mini.left-toggle {
   justify-content: center;
@@ -669,6 +737,11 @@ function toggleAllGroups(): void {
 
   .mini {
     padding: 0 var(--sp-3);
+  }
+
+  /* 窄版標題列放不下文字：基準鎖只留圖示（文字在 aria-label 與 title） */
+  .lock-text {
+    display: none;
   }
 
   /*

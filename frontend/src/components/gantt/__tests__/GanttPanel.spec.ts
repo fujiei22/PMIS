@@ -2,10 +2,12 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { loadSample } from '@/__tests__/loadSample'
 import GanttPanel from '@/components/gantt/GanttPanel.vue'
-import { CALENDAR_NOTICE } from '@/constants/dashboard'
+import { BASELINE_LOCK_TEXT, CALENDAR_NOTICE } from '@/constants/dashboard'
 import { dayIndex } from '@/lib/date'
 import { sampleCalendar } from '@/mocks/sampleCalendar'
 import { sampleProject } from '@/mocks/sampleProject'
+import { useProjectStore } from '@/stores/project'
+import { useUiStore } from '@/stores/ui'
 import { useWorkCalendarStore } from '@/stores/workCalendar'
 import type { ProjectData, WorkCalendar } from '@/types/models'
 
@@ -98,5 +100,51 @@ describe('GanttPanel 的日曆提示', () => {
     useWorkCalendarStore().setAll({ ...structuredClone(sampleCalendar), coveredYears: [2026] })
     const notice = mountPanel().find('[data-testid="cal-notice"]')
     expect(notice.text()).toBe(CALENDAR_NOTICE.uncovered('2027–2028'))
+  })
+})
+
+// 基準鎖按鈕：顯示目前狀態，點了開確認框（上鎖一步、解鎖兩步，見 useConfirmProps）
+describe('GanttPanel 的基準鎖按鈕', () => {
+  beforeEach(async () => {
+    await loadSample()
+  })
+
+  const lockBtn = (w: VueWrapper) => w.find('[data-testid="baseline-lock"]')
+
+  it('上鎖中：寫「基準已鎖定」，title 帶鎖定日，aria-pressed=true；點了開解鎖確認', async () => {
+    const btn = lockBtn(mountPanel())
+    expect(btn.attributes('aria-label')).toBe(BASELINE_LOCK_TEXT.locked)
+    expect(btn.text()).toContain(BASELINE_LOCK_TEXT.locked)
+    expect(btn.attributes('title')).toBe(BASELINE_LOCK_TEXT.lockedTitle('2026/08/24'))
+    expect(btn.attributes('aria-pressed')).toBe('true')
+    expect(btn.attributes('disabled')).toBeUndefined()
+    await btn.trigger('click')
+    expect(useUiStore().confirm).toEqual({ kind: 'baselineUnlock', step: 1 })
+  })
+
+  it('規劃中（解鎖）：寫「規劃中」，aria-pressed=false', () => {
+    const project = useProjectStore()
+    project.setMeta({ ...project.meta, baselineLockedOn: '' })
+    const btn = lockBtn(mountPanel())
+    expect(btn.text()).toContain(BASELINE_LOCK_TEXT.unlocked)
+    expect(btn.attributes('title')).toBe(BASELINE_LOCK_TEXT.unlockedTitle)
+    expect(btn.attributes('aria-pressed')).toBe('false')
+  })
+
+  it('唯讀：照樣顯示狀態，但停用', () => {
+    const project = useProjectStore()
+    project.setAll(project.meta, false)
+    const btn = lockBtn(mountPanel())
+    expect(btn.text()).toContain(BASELINE_LOCK_TEXT.locked)
+    expect(btn.attributes('disabled')).toBeDefined()
+  })
+
+  it('日曆載入失敗而且解鎖中：停用，title 說明暫時不能上鎖', () => {
+    const project = useProjectStore()
+    project.setMeta({ ...project.meta, baselineLockedOn: '' })
+    useWorkCalendarStore().status = 'error'
+    const btn = lockBtn(mountPanel())
+    expect(btn.attributes('disabled')).toBeDefined()
+    expect(btn.attributes('title')).toBe(BASELINE_LOCK_TEXT.calendarError)
   })
 })

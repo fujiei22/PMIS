@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { loadSample } from '@/__tests__/loadSample'
 import { useConfirmProps } from '@/composables/useConfirmProps'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useIssueStore } from '@/stores/issue'
@@ -169,6 +170,56 @@ describe('useConfirmProps 行為', () => {
     ui.confirm = { kind: 'issue', id: 'i1', step: 2 }
     view.value!.onConfirm()
     expect(issueStore.byId('i1')).toBeUndefined()
+    expect(ui.confirm).toBeNull()
+  })
+})
+
+// 基準鎖：上鎖一步（第一步的按鈕直接執行）、解鎖兩步（重新上鎖會覆蓋原本的基準，無法復原）
+describe('useConfirmProps 基準鎖', () => {
+  beforeEach(async () => {
+    await loadSample()
+  })
+
+  it('上鎖一步：文案與按鈕「鎖定」，按下就呼叫 lockBaseline 並關掉', () => {
+    const { ui, taskStore } = stores()
+    const lock = vi.spyOn(taskStore, 'lockBaseline').mockResolvedValue()
+    const view = useConfirmProps()
+    ui.confirm = { kind: 'baselineLock', step: 1 }
+    expect(view.value).toMatchObject({
+      open: true,
+      step: 1,
+      title: '鎖定計畫基準？',
+      body: '把目前的排程鎖成基準，之後晚於基準的任務會標成已延遲。',
+      confirmLabel: '鎖定',
+    })
+    expect(view.value!.extra).toBeUndefined()
+    view.value!.onNext()
+    expect(lock).toHaveBeenCalledTimes(1)
+    expect(ui.confirm).toBeNull()
+  })
+
+  it('解鎖兩步：第一步寫目前延遲幾個任務，第二步說明會覆蓋原本的基準', () => {
+    const { ui, taskStore } = stores()
+    const unlock = vi.spyOn(taskStore, 'unlockBaseline').mockResolvedValue()
+    const view = useConfirmProps()
+    ui.confirm = { kind: 'baselineUnlock', step: 1 }
+    expect(view.value).toMatchObject({
+      step: 1,
+      title: '解除基準鎖？',
+      body: '解鎖後基準跟著排程走，不再標示延遲。',
+      extra: '目前 2 個任務已延遲',
+      confirmLabel: '繼續',
+    })
+    view.value!.onNext()
+    expect(unlock).not.toHaveBeenCalled()
+    expect(view.value).toMatchObject({
+      step: 2,
+      title: '再次確認',
+      body: '重新上鎖時，原本的基準會被覆蓋，無法復原。',
+      confirmLabel: '確認解鎖',
+    })
+    view.value!.onConfirm()
+    expect(unlock).toHaveBeenCalledTimes(1)
     expect(ui.confirm).toBeNull()
   })
 })
