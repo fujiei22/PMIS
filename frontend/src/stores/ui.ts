@@ -54,6 +54,14 @@ export type OptionMenuKind =
 
 /** 任務 ↔ Issue 切換動畫的長度（ms）。legacy `navAnim()` :2270 */
 const NAV_ANIM_MS = 280
+/** 甘特一天的預設寬度（px）；登出重置時回到它。 */
+const DEFAULT_DAY_WIDTH = 32
+
+/** 三個面板都展開（`panelOff` 的初始值）。 */
+function noPanelsOff(): { gantt: boolean; kanban: boolean; issues: boolean } {
+  return { gantt: false, kanban: false, issues: false }
+}
+
 /** 錯誤條最多留幾筆、同 label 多久內算同一筆（契約 C）。 */
 const MAX_ERRORS = 5
 const MERGE_WINDOW_MS = 5000
@@ -132,11 +140,11 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   /** 甘特圖一天的寬度（px）。legacy `dayW()` :1898 */
-  const dayWidth = ref(32)
+  const dayWidth = ref(DEFAULT_DAY_WIDTH)
   /** 滑桿拖動中；true 的 160ms 內關掉甘特條的 transition，免得跟著補間。 */
   const zooming = ref(false)
   /** 三個面板的收合狀態。legacy `panelOff` :1579 */
-  const panelOff = ref({ gantt: false, kanban: false, issues: false })
+  const panelOff = ref(noPanelsOff())
   /**
    * 甘特左欄展開：平板直向（< 900px）左欄平常縮成只寫工期的窄版，展開就回到完整寬度（起訖日＋工期）。
    * 900px 以上左欄一律完整，不看這個值。
@@ -345,6 +353,23 @@ export const useUiStore = defineStore('ui', () => {
     errors.value = []
   }
 
+  /**
+   * 登出 / 換使用者：整個回到剛開網頁的樣子（`composables/useSession.ts` 的 `resetSession()`）。
+   * 比 `resetTransient` 多清載入狀態與版面偏好：下一位不該沿用上一位的縮放、面板收合、分類收合
+   * （收合的分類 id 也是上一位看的專案的）；載入狀態回 idle，下一位進 Dashboard 是「載入中」，不是背景重載。
+   */
+  function reset(): void {
+    resetTransient()
+    loadState.value = 'idle'
+    loadError.value = null
+    dayWidth.value = DEFAULT_DAY_WIDTH
+    panelOff.value = noPanelsOff()
+    ganttLeftExpanded.value = false
+    ganttLeftDates.value = false
+    collapsedGroups.value = new Set()
+    expandedIssues.value = {}
+  }
+
   // ── 懸空 id 清理（契約 E）──────────────────────────────────────────────────
 
   /** 這個 kind / id 的實體還在嗎。 */
@@ -436,6 +461,7 @@ export const useUiStore = defineStore('ui', () => {
     closeDetail,
     detailBack,
     resetTransient,
+    reset,
     confirm,
     depEditFor,
     optionMenu,

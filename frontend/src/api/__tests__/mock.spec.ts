@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { onUnauthorized } from '@/api/authEvents'
 import { createMockApi } from '@/api/mock'
 import { ApiError, type MockApi, type ProjectEvent } from '@/api/types'
 import { sampleProject } from '@/mocks/sampleProject'
@@ -446,5 +447,100 @@ describe('listProjects', () => {
     const api = createMockApi()
     api.failNext('listProjects')
     await expect(api.listProjects()).rejects.toMatchObject({ code: 'network' })
+  })
+})
+
+// ── 登入（F3）：getSession / login / logout / setSession 與 401 通知 ────────────
+describe('mock api：登入', () => {
+  const ME = { memberId: 'm11', name: '成員11', role: 'PM 主管' }
+  let off: (() => void) | undefined
+
+  afterEach(() => {
+    off?.()
+    off = undefined
+  })
+
+  it('預設已登入（總覽的登入者 m11）；logout 後 getSession 回 null，不拋錯', async () => {
+    const api = createMockApi()
+    expect(await api.getSession()).toEqual(ME)
+    await api.logout()
+    expect(await api.getSession()).toBeNull()
+    // 沒登入時登出也成功
+    await expect(api.logout()).resolves.toBeUndefined()
+  })
+
+  it('login：帳號去空白、轉小寫後驗格式，密碼不能空；固定失敗的四個帳號各回一種原因', async () => {
+    const api = createMockApi()
+    api.setSession(null)
+    expect(await api.login('', 'pw')).toEqual({ ok: false, reason: 'invalid' })
+    expect(await api.login('chen_daming', '')).toEqual({ ok: false, reason: 'invalid' })
+    expect(await api.login('chen daming', 'pw')).toEqual({ ok: false, reason: 'invalid' })
+    expect(await api.login('wrong_password', 'pw')).toEqual({ ok: false, reason: 'invalid' })
+    expect(await api.login('outsider', 'pw')).toEqual({ ok: false, reason: 'forbidden' })
+    expect(await api.login('locked_out', 'pw')).toEqual({ ok: false, reason: 'locked' })
+    expect(await api.login('ad_down', 'pw')).toEqual({ ok: false, reason: 'unavailable' })
+    // 物件原型上的名字不是失敗帳號（查表不能被 __proto__ 騙到）
+    expect(await api.login('__proto__', 'pw')).toEqual({ ok: true, session: ME })
+    expect(await api.getSession()).toEqual(ME)
+  })
+
+  it('login 成功：以預設登入者登入，之後資料端點恢復正常', async () => {
+    const api = createMockApi()
+    api.setSession(null)
+    await expect(api.loadProject('pmis')).rejects.toMatchObject({ code: 'unauthorized' })
+    expect(await api.login('  Chen_Daming ', 'pw')).toEqual({ ok: true, session: ME })
+    expect((await api.loadProject('pmis')).tasks).toHaveLength(30)
+  })
+
+  it('沒登入時資料端點回 401 並通知 onUnauthorized；登入相關三支不通知', async () => {
+    const api = createMockApi()
+    const heard = vi.fn()
+    off = onUnauthorized(heard)
+    api.setSession(null)
+
+    await expect(api.listProjects()).rejects.toMatchObject({ code: 'unauthorized', status: 401 })
+    expect(heard).toHaveBeenCalledTimes(1)
+    await expect(api.updateTask('t1', { name: 'x' })).rejects.toMatchObject({
+      code: 'unauthorized',
+    })
+    expect(heard).toHaveBeenCalledTimes(2)
+
+    await api.getSession()
+    await api.login('wrong_password', 'pw')
+    await api.logout()
+    expect(heard).toHaveBeenCalledTimes(2)
+  })
+
+  it('401 不動資料：沒登入時的寫入被擋下', async () => {
+    const api = createMockApi()
+    api.setSession(null)
+    await expect(api.updateTask('t1', { name: '不該寫進去' })).rejects.toMatchObject({
+      code: 'unauthorized',
+    })
+    api.setSession(ME)
+    const t1 = (await api.loadProject('pmis')).tasks.find((t) => t.id === 't1')!
+    expect(t1.name).not.toBe('不該寫進去')
+  })
+
+  it('failNext 注入的 401 也通知（同真後端：任何一支回 401 都導回登入頁）；其他錯誤不通知', async () => {
+    const api = createMockApi()
+    const heard = vi.fn()
+    off = onUnauthorized(heard)
+    api.failNext('loadProject', new ApiError('unauthorized', 'x', 401))
+    await expect(api.loadProject('pmis')).rejects.toMatchObject({ code: 'unauthorized' })
+    expect(heard).toHaveBeenCalledTimes(1)
+    api.failNext('loadProject', new ApiError('forbidden', 'x', 403))
+    await expect(api.loadProject('pmis')).rejects.toMatchObject({ code: 'forbidden' })
+    expect(heard).toHaveBeenCalledTimes(1)
+  })
+
+  it('setSession 換成別人；reset() 回到預設的已登入', async () => {
+    const api = createMockApi()
+    const other = { memberId: 'm5', name: '成員5', role: '專案經理' }
+    api.setSession(other)
+    expect(await api.getSession()).toEqual(other)
+    api.setSession(null)
+    api.reset()
+    expect(await api.getSession()).toEqual(ME)
   })
 })

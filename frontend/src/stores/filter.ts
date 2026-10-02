@@ -139,6 +139,19 @@ export const useFilterStore = defineStore('filter', () => {
     issueSort.value = DEFAULT_ISSUE_SORT.map((s) => ({ ...s }))
   }
 
+  /**
+   * 登出 / 換使用者：全部回到初始值，連排序、「只顯示篩選結果」、Issue 分組、日曆也是
+   * （`composables/useSession.ts` 的 `resetSession()`；平常換專案只呼叫 `clear()`）。
+   */
+  function reset(): void {
+    clear()
+    onlyFiltered.value = true
+    resetTaskSort()
+    resetIssueSort()
+    issueGroupBy.value = 'status'
+    calendarTarget.value = 'd1'
+  }
+
   return {
     memberIds,
     statuses,
@@ -170,5 +183,6 @@ export const useFilterStore = defineStore('filter', () => {
     bumpIssueSort,
     dropIssueSort,
     resetIssueSort,
+    reset,
   }
 })

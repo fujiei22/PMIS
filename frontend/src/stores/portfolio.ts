@@ -38,10 +38,21 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     currentUserId.value = next.currentUserId
   }
 
+  /**
+   * 清空（登出 / 換使用者，`composables/useSession.ts` 的 `resetSession()`）。
+   * 還在飛的 load 一律作廢：上一位使用者的清單晚回來也不會灌進來。
+   */
+  function reset(): void {
+    appliedSeq = ++loadSeq
+    projects.value = []
+    members.value = []
+    currentUserId.value = ''
+  }
+
   /** 依 id 取成員，查不到回 undefined。 */
   function byId(id: string): Member | undefined {
     return members.value.find((m) => m.id === id)
   }
 
-  return { projects, members, currentUserId, load, byId }
+  return { projects, members, currentUserId, load, reset, byId }
 })

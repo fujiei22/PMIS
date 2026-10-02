@@ -63,12 +63,28 @@ function clearProject(): void {
 }
 
 /**
+ * 背景重載失敗時依原因處理（README〈還沒做的〉authn 那段）：
+ * - `network`：連不上，舊資料仍然可用，維持畫面（只記 console）。
+ * - `unauthorized`：登入失效。api 層已經通知 `onUnauthorized`，畫面正要導到登入頁，這裡不動。
+ * - 其他（`forbidden` 被拿掉權限、`not_found` 專案被刪、其他錯誤）：舊資料已經不可信，
+ *   清掉資料與畫面狀態、切成錯誤畫面（可重試）。
+ */
+function backgroundFailed(error: unknown): void {
+  const code = apiErrorCode(error)
+  if (code === 'network' || code === 'unauthorized') return
+  clearProject()
+  const ui = useUiStore()
+  ui.loadError = API_ERROR_TEXT[code]
+  ui.loadState = 'error'
+}
+
+/**
  * 載入整包資料並維護載入狀態；失敗不 throw。
  *
  * 重進 Dashboard 時畫面不能閃（G8，比照總覽的 `usePortfolioBoot`）：
  * - 還沒有資料（idle / loading / error）→ 顯示載入中，失敗顯示重試。
  * - 已經有資料（ready）→ 背景重載，全程維持 ready；資料到了就地更新（列以 id 為 key，元素不換）。
- *   背景失敗不蓋掉畫面，只記 console——舊資料仍然可用。
+ *   背景失敗只有連不上（`network`）才維持舊資料；其他原因見 `backgroundFailed`。
  * - 換了專案 → 先 `clearProject()` 再走載入中；等的時候又換到別的專案，這一發的結果（成功或失敗）都不算數。
  *
  * @param id 要載的專案（路由的 `:id`）；跟 store 裡的不是同一個就先清空、不走背景重載。
@@ -91,6 +107,9 @@ async function load(id: string, mounted: boolean): Promise<void> {
       await taskStore.load(id)
     } catch (error) {
       console.error('[api]', '載入專案（背景）', error)
+      // 換了專案、有更新的一發，或登出重置過了：這一發的失敗不影響畫面
+      if (id !== loadedId || ticket !== reloadSeq) return
+      backgroundFailed(error)
     }
     return
   }
@@ -122,6 +141,17 @@ async function load(id: string, mounted: boolean): Promise<void> {
  */
 export function preloadProject(id: string): void {
   preloaded = { id, promise: load(id, false) }
+}
+
+/**
+ * 登出 / 換使用者時（`composables/useSession.ts` 的 `resetSession()`）忘掉模組層的狀態：
+ * 先載的那一發不留給下一位、「store 裡是哪個專案」歸零（下一位進 Dashboard 一律走載入中），
+ * 還在飛的那幾發回來時不再碰畫面狀態（`loadedId` 對不上、序號也對不上）。
+ */
+export function resetProjectBoot(): void {
+  reloadSeq++
+  preloaded = null
+  loadedId = null
 }
 
 /**

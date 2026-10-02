@@ -186,6 +186,21 @@ export interface ProjectSummary {
   upcoming: UpcomingTask[]
 }
 
+/* ── 登入 ─────────────────────────────────────────── */
+
+/**
+ * 登入中的使用者（`api.getSession()` / 登入成功的回傳）。登入的人一定是成員，`memberId` 就是成員 id。
+ * 只給畫面顯示與導頁用；權限一律由後端判斷（每支端點自己驗 session），前端不拿它做授權。
+ */
+export interface SessionInfo {
+  /** 成員 id */
+  memberId: string
+  /** 姓名 */
+  name: string
+  /** 角色：後端填部門 */
+  role: string
+}
+
 /** `api.listProjects()` 的回傳：專案摘要清單、成員名錄、登入者 */
 export interface PortfolioData {
   /** 所有專案摘要 */

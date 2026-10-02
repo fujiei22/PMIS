@@ -1,10 +1,10 @@
 <script setup lang="ts">
-// 總覽頂欄：標題、檢視切換、專案名稱搜尋、成員 / 狀態 / 需注意篩選、清除篩選、登入者。
+// 總覽頂欄：標題、檢視切換、專案名稱搜尋、成員 / 狀態 / 需注意篩選、清除篩選、登入者（UserMenu）。
 // 版面照 Dashboard TopBar 的單列與 B2；專案計數只放在面板標題列，頂欄不放（spec 目標 3）。
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import Avatar from '@/components/common/Avatar.vue'
 import OvDropdown from '@/components/overview/OvDropdown.vue'
 import PmFilter from '@/components/overview/PmFilter.vue'
+import UserMenu from '@/components/overview/UserMenu.vue'
 import {
   PROJECT_ALERT_LABEL,
   PROJECT_STATUS_LABEL,
@@ -12,11 +12,9 @@ import {
 } from '@/constants/overview'
 import { parseDuration } from '@/lib/easing'
 import { useOverviewStore, type OverviewView } from '@/stores/overview'
-import { usePortfolioStore } from '@/stores/portfolio'
 import type { ProjectAlert, ProjectStatus } from '@/types/models'
 
 const overview = useOverviewStore()
-const portfolio = usePortfolioStore()
 
 const views: { key: OverviewView; label: string; icon: string }[] = [
   { key: 'cards', label: '卡片', icon: '▦' },
@@ -68,8 +66,6 @@ function onSearchKey(e: KeyboardEvent): void {
 function ddLabel(name: string, n: number): string {
   return n ? `${name} ${n}` : name
 }
-
-const me = computed(() => portfolio.byId(portfolio.currentUserId))
 
 /**
  * 篩選項變寬 / 變窄時，它左邊的項目滑過去（動畫稽核批次 C，同 Dashboard TopBar 的 G7 位移補間）。
@@ -280,11 +276,7 @@ onBeforeUnmount(cancelSlides)
       </div>
 
       <div class="tail">
-        <template v-if="me">
-          <span class="me-name">{{ me.name }}</span>
-          <span class="me-role">{{ me.role }}</span>
-          <Avatar class="me-av" :member="me" :size="30" />
-        </template>
+        <UserMenu />
       </div>
     </div>
   </header>
@@ -586,7 +578,7 @@ onBeforeUnmount(cancelSlides)
   font-size: var(--fs-pill);
 }
 
-/* 登入者：左側分隔線，名字、職稱、頭像（照 B2 .tail） */
+/* 登入者：左側分隔線，裡面是 UserMenu（名字、角色、頭像，照 B2 .tail） */
 .tail {
   display: flex;
   align-items: center;
@@ -594,21 +586,5 @@ onBeforeUnmount(cancelSlides)
   flex: 0 0 auto;
   padding-left: var(--sp-4);
   border-left: 1px solid var(--border-1);
-}
-
-.me-name {
-  font-size: var(--fs-control);
-  font-weight: var(--fw-medium);
-  color: var(--text-2);
-}
-
-.me-role {
-  font-size: var(--fs-date);
-  color: var(--text-muted);
-}
-
-/* 30px 頭像的縮寫字放大一階（B2 .avatar.lg） */
-.me-av :deep(.glyph) {
-  font-size: var(--fs-control);
 }
 </style>

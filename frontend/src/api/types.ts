@@ -5,6 +5,7 @@ import type {
   Issue,
   PortfolioData,
   ProjectData,
+  SessionInfo,
   Task,
 } from '@/types/models'
 
@@ -40,7 +41,15 @@ import type {
  *   廣播含發起者；client 對同 id 同值事件 no-op。事件可能早於或晚於對應 response 到達，兩種順序 client 都正確——
  *   這是 client 的責任，後端不必為此排順序。事件的 payload 同樣要走 adapter 轉換（null ↔ ''、日期、Attachment.id）。
  * - project.reloaded 由 adapter 自己造：偵測到重連（EventSource.onopen 第二次起 / WS reconnect）就 loadProject(id) 後 emit，後端不需要做。
- * - Group 沒有 collapsed（UI 狀態）；currentUserId 由 adapter 填（登入未做），只是顯示用，不是身分——authn / authz 每支端點後端自己做。
+ * - 登入（session 放在 HttpOnly cookie，前端碰不到 token）：
+ *   - getSession() = GET /api/auth/me；401 是「沒登入」，回 null，不拋錯。
+ *   - login(account, password) = POST /api/auth/login；失敗是預期結果，不拋錯，轉成 { ok: false, reason }：
+ *     401 → 'invalid'（帳號或密碼錯，不分哪個錯）、403 → 'forbidden'（不在可登入名單）、
+ *     429 → 'locked'（失敗太多次）、503 → 'unavailable'（AD 驗證服務連不上）。其他照一般錯誤拋 ApiError。
+ *   - logout() = POST /api/auth/logout，沒登入也是 204。
+ *   - 其他每一支遇到 401 都要先呼叫 notifyUnauthorized()（api/authEvents.ts）再拋 ApiError('unauthorized')：
+ *     畫面靠它導回登入頁、登入後回原頁。getSession / login / logout 自己的 401 不通知。
+ * - Group 沒有 collapsed（UI 狀態）；currentUserId 由 adapter 填（後端填登入者的成員 id），只是顯示用，不是身分——authn / authz 每支端點後端自己做。
  */
 
 /**
@@ -88,6 +97,13 @@ export class ApiError extends Error {
   }
 }
 
+/** 登入失敗的原因：帳號或密碼錯、不在可登入名單、失敗太多次被暫時擋下、驗證服務無法使用。 */
+export type LoginFailReason = 'invalid' | 'forbidden' | 'locked' | 'unavailable'
+
+/** `login()` 的結果。登入失敗是預期中的結果，不當成例外（連不上之類的意外才拋 `ApiError`）。 */
+export type LoginResult =
+  { ok: true; session: SessionInfo } | { ok: false; reason: LoginFailReason }
+
 /**
  * 資料進出的唯一介面。store 只認這個介面，換後端就是換一份實作（`src/api/index.ts` 選）。
  *
@@ -95,6 +111,13 @@ export class ApiError extends Error {
  * 介面本身（參數、回傳、錯誤碼）才是契約。
  */
 export interface ProjectApi {
+  /** 目前登入的是誰；沒登入（401）回 null，不拋錯。 */
+  getSession(): Promise<SessionInfo | null> //                              GET    /api/auth/me
+  /** 用網域帳號（例 `chen_daming`）與密碼登入；成功時後端設 session cookie。 */
+  login(account: string, password: string): Promise<LoginResult> //           POST   /api/auth/login
+  /** 登出：後端刪 session、清 cookie；沒登入也成功。 */
+  logout(): Promise<void> //                                                 POST   /api/auth/logout
+
   /** 整包專案資料（含 `project` 與 `canEdit`）；陣列順序就是顯示順序。 */
   loadProject(id: string): Promise<ProjectData> //                           GET    /api/projects/:id
   /** 所有專案的摘要清單與成員名錄；總覽頁用。 */
@@ -154,6 +177,11 @@ export interface MockApi extends ProjectApi {
   failNext(method: keyof ProjectApi, err?: ApiError, times?: number): void
   /** 每個呼叫的 response 延遲（ms）；事件仍然同步發出，不等延遲。 */
   setLatency(ms: number): void
-  /** 回到初始資料（或換一份），並清掉注入的延遲與失敗。訂閱不受影響。 */
+  /** 回到初始資料（或換一份），並清掉注入的延遲與失敗；登入狀態回到預設的已登入。訂閱不受影響。 */
   reset(data?: ProjectData): void
+  /**
+   * 換登入狀態（mock 預設已登入）。null = 登出（等同 session 過期或被移出名單）：
+   * 之後除了 getSession / login / logout 的每一發都回 401 並通知 `onUnauthorized`。
+   */
+  setSession(info: SessionInfo | null): void
 }

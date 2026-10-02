@@ -1,8 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockApi as maybeMockApi } from '@/api'
+import { onUnauthorized } from '@/api/authEvents'
 import { ApiError } from '@/api/types'
-import { preloadProject, useProjectBoot } from '@/composables/useProjectBoot'
+import { preloadProject, resetProjectBoot, useProjectBoot } from '@/composables/useProjectBoot'
+import { API_ERROR_TEXT } from '@/constants/api'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useBudgetStore } from '@/stores/budget'
 import { useCommentStore } from '@/stores/comment'
@@ -343,5 +345,87 @@ describe('useProjectBoot', () => {
     boot.stop()
     mockApi.emit({ type: 'task.updated', payload: { ...tasks.taskById('t3')!, name: '停掉之後' } })
     expect(tasks.taskById('t3')!.name).toBe('別人改的')
+  })
+})
+
+/**
+ * 背景重載失敗的分類（F3，README〈還沒做的〉authn 那段）：只有連不上（network）才維持舊資料
+ * （見上面「背景重載失敗：維持 ready」）；撤權、專案被刪等清掉資料切成錯誤；登入失效交給 onUnauthorized 導頁。
+ */
+describe('useProjectBoot：背景重載失敗的分類', () => {
+  let off: (() => void) | undefined
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    resetProjectBoot()
+    mockApi.reset(structuredClone(sampleProject))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    off?.()
+    off = undefined
+    vi.restoreAllMocks()
+    mockApi.reset()
+  })
+
+  it.each(['forbidden', 'not_found', 'unknown'] as const)(
+    '%s：清掉資料、選取與篩選，切成錯誤畫面；按重試會再載',
+    async (code) => {
+      const ui = useUiStore()
+      await useProjectBoot('pmis').reload()
+      useSelectionStore().selectTask('t3')
+      useFilterStore().statuses = ['doing']
+
+      mockApi.failNext('loadProject', new ApiError(code, 'x'))
+      await useProjectBoot('pmis').reload()
+
+      expect(ui.loadState).toBe('error')
+      expect(ui.loadError).toBe(API_ERROR_TEXT[code])
+      expect(useTaskStore().tasks).toEqual([])
+      expect(useProjectStore().meta.id).toBe('')
+      expect(useSelectionStore().taskId).toBeNull()
+      expect(useFilterStore().statuses).toEqual([])
+
+      await useProjectBoot('pmis').reload()
+      expect(ui.loadState).toBe('ready')
+      expect(useTaskStore().tasks).toHaveLength(30)
+    },
+  )
+
+  it('unauthorized：畫面不動、不顯示錯誤（api 層已通知 onUnauthorized，導到登入頁由它處理）', async () => {
+    const heard = vi.fn()
+    off = onUnauthorized(heard)
+    const ui = useUiStore()
+    await useProjectBoot('pmis').reload()
+
+    mockApi.setSession(null)
+    await useProjectBoot('pmis').reload()
+
+    expect(heard).toHaveBeenCalledTimes(1)
+    expect(ui.loadState).toBe('ready')
+    expect(ui.loadError).toBeNull()
+    expect(useTaskStore().tasks).toHaveLength(30)
+  })
+
+  it('較舊的背景重載晚失敗（forbidden）：已經有更新的一發成功，不清掉畫面', async () => {
+    const ui = useUiStore()
+    await useProjectBoot('pmis').reload()
+    let failOld!: (e: unknown) => void
+    const spy = vi.spyOn(mockApi, 'loadProject').mockImplementationOnce(
+      () =>
+        new Promise((_, rej) => {
+          failOld = rej
+        }),
+    )
+    const older = useProjectBoot('pmis').reload()
+    const newer = useProjectBoot('pmis').reload()
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(2))
+    await newer
+
+    failOld(new ApiError('forbidden', 'x'))
+    await older
+    expect(ui.loadState).toBe('ready')
+    expect(useTaskStore().tasks).toHaveLength(30)
   })
 })
