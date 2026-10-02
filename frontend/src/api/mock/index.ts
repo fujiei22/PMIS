@@ -1,9 +1,49 @@
+import { notifyUnauthorized } from '@/api/authEvents'
 import { buildPortfolio } from '@/api/mock/portfolio'
 import { createMockStore } from '@/api/mock/store'
-import { ApiError, type MockApi, type ProjectApi, type ProjectEvent } from '@/api/types'
+import {
+  ApiError,
+  type LoginFailReason,
+  type LoginResult,
+  type MockApi,
+  type ProjectApi,
+  type ProjectEvent,
+} from '@/api/types'
 import { isoFromIndex, todayIndex } from '@/lib/date'
+import { PORTFOLIO_CURRENT_USER, PORTFOLIO_MEMBERS } from '@/mocks/samplePortfolio'
 import { sampleProject } from '@/mocks/sampleProject'
-import type { Comment, Dependency, Group, Issue, ProjectData, Task } from '@/types/models'
+import type {
+  Comment,
+  Dependency,
+  Group,
+  Issue,
+  ProjectData,
+  SessionInfo,
+  Task,
+} from '@/types/models'
+
+/** 不需要登入就能呼叫的三支；其他每一支在沒登入時都回 401。 */
+const AUTH_METHODS: ReadonlySet<keyof ProjectApi> = new Set(['getSession', 'login', 'logout'])
+
+/** 帳號格式（同後端 `members.account`）：去空白、轉小寫後只能有英數與 `.` `_` `-`，最多 64 字。 */
+const ACCOUNT_RE = /^[a-z0-9._-]{1,64}$/
+
+/**
+ * mock 沒有 AD：密碼不檢查（但不能空）、帳號格式要對；這幾個帳號固定登入失敗，給 e2e 與手動看各種文案。
+ * 其他帳號一律以預設登入者登入（mock 不分使用者，見 `defaultSession`）。
+ */
+export const MOCK_LOGIN_FAILURES: ReadonlyMap<string, LoginFailReason> = new Map([
+  ['wrong_password', 'invalid'],
+  ['outsider', 'forbidden'],
+  ['locked_out', 'locked'],
+  ['ad_down', 'unavailable'],
+])
+
+/** mock 預設的登入者：總覽的登入者（PM 主管），跟 `listProjects()` 的 `currentUserId` 同一個人。 */
+function defaultSession(): SessionInfo {
+  const me = PORTFOLIO_MEMBERS.find((m) => m.id === PORTFOLIO_CURRENT_USER)!
+  return { memberId: me.id, name: me.name, role: me.role }
+}
 
 /**
  * 記憶體版的 `ProjectApi`：後端還不存在時的唯一實作，也是單元測試與 e2e 的替身。
@@ -23,6 +63,8 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
   /** 方法 → 還要擋幾次、擋的時候丟什麼。 */
   const failures = new Map<keyof ProjectApi, { times: number; err?: ApiError }>()
   let latency = 0
+  /** 登入中的人；null = 沒登入（`setSession(null)` 或 `logout()` 之後）。 */
+  let session: SessionInfo | null = defaultSession()
 
   function emit(e: ProjectEvent): void {
     // review M4：一個 handler 拋錯不能連累其他 handler，更不能讓呼叫端的 promise 變成 reject
@@ -59,24 +101,32 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
   }
 
   /**
-   * 一次呼叫的完整流程：注入的失敗 → 動資料（同時發事件）→ 依 latency resolve。
+   * 一次呼叫的完整流程：注入的失敗 → 沒登入就 401 → 動資料（同時發事件）→ 依 latency resolve。
    * `work` 拋錯（409 / 404 / 422）時資料不會被改到，錯誤照樣走 latency 才 reject。
    */
   function call<T>(method: keyof ProjectApi, work: () => T): Promise<T> {
     const injected = takeFailure(method)
-    if (injected)
-      return settle<T>(() => {
-        throw injected
-      })
+    if (injected) return fail(method, injected)
+    if (!session && !AUTH_METHODS.has(method))
+      return fail(method, new ApiError('unauthorized', '沒有登入（mock）', 401, method))
     let result: T
     try {
       result = work()
     } catch (err) {
-      return settle<T>(() => {
-        throw asApiError(err, method)
-      })
+      return fail(method, asApiError(err, method))
     }
     return settle(() => result)
+  }
+
+  /**
+   * 依 latency reject。401 照真後端的 adapter 的規矩：除了登入相關的三支，reject 之前先通知
+   * `onUnauthorized`（畫面導回登入頁）；`failNext` 注入的 401 也一樣。
+   */
+  function fail<T>(method: keyof ProjectApi, err: ApiError): Promise<T> {
+    return settle<T>(() => {
+      if (err.code === 'unauthorized' && !AUTH_METHODS.has(method)) notifyUnauthorized()
+      throw err
+    })
   }
 
   /** store 丟出來的已經是 ApiError；其他意外包成 unknown，並補上是哪個方法出的事。 */
@@ -94,6 +144,25 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
   }
 
   return {
+    getSession: () => call('getSession', () => (session ? { ...session } : null)),
+
+    login: (account: string, password: string) =>
+      call('login', (): LoginResult => {
+        const normalized = account.trim().toLowerCase()
+        const reason =
+          !ACCOUNT_RE.test(normalized) || !password
+            ? 'invalid'
+            : MOCK_LOGIN_FAILURES.get(normalized)
+        if (reason) return { ok: false, reason }
+        session = defaultSession()
+        return { ok: true, session: { ...session } }
+      }),
+
+    logout: () =>
+      call('logout', () => {
+        session = null
+      }),
+
     // mock 只有一份完整專案：不看 id、任何 id 都回它（README〈現況〉）；
     // 權限也不判斷，canEdit 照資料（範例是 true）
     loadProject: () => call('loadProject', () => store.snapshot()),
@@ -239,6 +308,11 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
       store.reset(data ?? initial)
       failures.clear()
       latency = 0
+      session = defaultSession()
+    },
+
+    setSession(info: SessionInfo | null): void {
+      session = info ? { ...info } : null
     },
   }
 

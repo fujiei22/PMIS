@@ -1,9 +1,19 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { preloadPortfolio } from '@/composables/usePortfolioBoot'
 import { preloadProject } from '@/composables/useProjectBoot'
+import { loginLocation } from '@/composables/useSession'
 import { waitForPageSwap } from '@/router/pageSwap'
+import { useSessionStore } from '@/stores/session'
 import DashboardView from '@/views/DashboardView.vue'
+import LoginView from '@/views/LoginView.vue'
 import ProjectsOverviewView from '@/views/ProjectsOverviewView.vue'
+
+declare module 'vue-router' {
+  interface RouteMeta {
+    /** 不用登入就能進（登入頁）。沒標的一律要登入，登入守衛會導到登入頁。 */
+    public?: boolean
+  }
+}
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -13,6 +23,13 @@ const router = createRouter({
       path: '/',
       name: 'overview',
       component: ProjectsOverviewView,
+    },
+    {
+      // 登入頁；登入後回到 ?redirect= 的原路徑（沒有就回總覽）
+      path: '/login',
+      name: 'login',
+      component: LoginView,
+      meta: { public: true },
     },
     {
       // 單一專案的 Dashboard，依 `id` 載入（api.loadProject(id)）；
@@ -39,7 +56,28 @@ const router = createRouter({
 })
 
 /*
+ * 登入守衛：沒登入的導航導到登入頁（`?redirect=` 帶原路徑，登入後回去）。
+ *
+ * **必須註冊在下面的先載守衛之前**（守衛依註冊順序執行）：被導去登入頁的導航不會先打出要登入的請求。
+ * 只有第一次導航（或登出 / 401 重置之後）問後端（`session.load()` → `api.getSession()`），
+ * 之後的導航直接看 store，切頁不多等一發。問不到（連不上）就當沒登入、到登入頁，下次導航再問。
+ */
+router.beforeEach(async (to) => {
+  const session = useSessionStore()
+  if (!session.checked) {
+    try {
+      await session.load()
+    } catch (error) {
+      console.error('[api]', '確認登入狀態', error)
+    }
+  }
+  if (to.meta.public || session.info) return true
+  return loginLocation(to.fullPath)
+})
+
+/*
  * G16 / C13：切頁一開始就先載目標頁的資料，不等新頁掛上、也不阻塞導航（守衛不 await）。
+ * 只對總覽與 Dashboard 先載；登入頁不載任何東西（登入守衛已經擋掉沒登入的導航）。
  * out-in 過渡裡舊頁淡出的這段時間資料就在路上，新頁掛上時多半已經 ready，不閃「載入中」。
  *
  * 同一次進頁只打一次 load（e2e 的 failNext 只擋一發，靠這個維持語意）：

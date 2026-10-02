@@ -113,6 +113,12 @@ export const useSelectionStore = defineStore('selection', () => {
     ui.pickerFor = null
   }
 
+  /** 登出 / 換使用者：連還沒被面板取走的捲動請求一起清（`composables/useSession.ts` 的 `resetSession()`）。 */
+  function reset(): void {
+    clear()
+    focusRequest.value = null
+  }
+
   /**
    * 懸空 id 清理（契約 E）。
    *
@@ -152,6 +158,7 @@ export const useSelectionStore = defineStore('selection', () => {
     selectIssue,
     toggleGroup,
     clear,
+    reset,
     focusRequest,
   }
 })

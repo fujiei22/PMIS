@@ -16,7 +16,7 @@
 
 - 由 `legacy/Dashboard.html` 的 React 原型改寫而成，行為已用 `e2e/compare.spec.ts` 逐項和原型對照過；新舊有差異時改 `src/`，不改 `legacy/`。
 - 資料全在記憶體 mock（`src/api/mock/`），重新整理就回到範例資料。後端待建，前端已整成「換掉 `src/api/` 的實作就能接」。
-- 沒有登入。`currentUserId` 是範例資料裡固定的成員，只決定留言掛誰。總覽頂欄右端顯示的登入者也是它。
+- 有登入頁（`/login`）：沒登入時任何頁面都會導到登入頁，登入後回原頁。mock 預設已登入（登入者是總覽的 m11「成員11」）；登出後任何格式正確的帳號（英數與 `.` `_` `-`）、不空的密碼都登得進去，`wrong_password` / `outsider` / `locked_out` / `ad_down` 四個帳號固定登入失敗，用來看各種失敗文案。總覽頂欄右端的登入者點了有選單（目前只有「登出」）。Dashboard 的 `currentUserId` 仍是範例資料裡固定的成員（m1），只決定留言掛誰。
 - Dashboard 依路由的 `/projects/:id` 載入（`api.loadProject(id)`），換專案時先清空資料層與選取、篩選（`useProjectBoot`）。mock 只有一份完整專案資料（`mocks/sampleProject.ts`），任何 id 都回這一份；頂欄的專案名來自它的 `project.name`（`My Project`）。
 - 總覽裡 PMIS 的摘要，是由那份範例專案即時彙整出來的（`api/mock/portfolio.ts` 的 `summarizeProject()`），所以在 Dashboard 改了任務，回到總覽看得到。
   - 其他 6 個專案是靜態摘要（`mocks/samplePortfolio.ts`）。
@@ -31,10 +31,12 @@
               失敗：放回最後已知的 server 狀態，錯誤條經注入的 sink 顯示
 讀取  元件 ◀── 派生層 store（rows / filter / selection / ui）◀── 資料層
 事件  api.subscribe ──▶ stores/_sync.ts ──▶ 各資料層 store 的 applyEvent
+登入  router.beforeEach（登入守衛，排在先載守衛之前）──▶ 第一次導航問 api.getSession()；沒登入導到 /login?redirect=原路徑
+      api 遇到 401 ──▶ api/authEvents.ts 的 onUnauthorized ──▶ main.ts 導到登入頁；登入頁掛上時 resetSession() 整個重置
 啟動  router.beforeEach ──▶ preloadProject(id) / preloadPortfolio()：切頁一開始就先載目標頁（不阻塞導航）
       DashboardView ──▶ useProjectBoot(id)：注入 sink、沿用先載的那一發（loadProject(id)）、訂閱這個專案的事件
       ProjectsOverviewView ──▶ usePortfolioBoot()：沿用先載的那一發 ──▶ api.listProjects()
-      兩頁都是第一次顯示載入中、之後背景重載（畫面維持 ready，失敗只記 console）
+      兩頁都是第一次顯示載入中、之後背景重載（畫面維持 ready；背景失敗只有連不上才維持舊資料，其他清掉切成錯誤）
 ```
 
 演算法（日期、cascade、篩選、排序）是 `src/lib/` 的純函式，store 只存狀態並把它們接起來。
@@ -58,7 +60,7 @@
 
 | 畫面區塊 | 元件 |
 |---|---|
-| 頂欄：檢視切換、篩選、登入者 | `OverviewTopBar`（PmFilter、OvDropdown） |
+| 頂欄：檢視切換、篩選、登入者 | `OverviewTopBar`（PmFilter、OvDropdown、UserMenu：登入者與它的選單，入口都放這裡） |
 | 卡片檢視 | `CardBoard`（PmLane → ProjectCard、LaneDrawer → QuickView、EnterLink；泳道標頭與時間軸群組共用 PmCountPill） |
 | 時間軸檢視 | `OverviewTimeline`（TimelineGroup → TimelineProjectRow → QuickView） |
 | 兩種檢視共用 | `OvPanel`（面板外殼與計數）、`OvSortControls`（排序 chip 與選單）、`ProjectBadge`（狀態 pill）、`OvEmpty`（空狀態） |
@@ -72,6 +74,8 @@
 | `OvPanel` | `PanelShell` |
 
 分開的原因是狀態來源和尺寸不同：Dashboard 版綁著 Dashboard 的 `ui` / `filter` store；總覽版讀 `overview` store，尺寸照總覽的設計稿。
+
+`views/LoginView.vue`（登入頁）是單一元件，外觀沿用總覽的控制項與面板（輸入框照搜尋框、卡片照 `OvPanel`）。
 ### 改動時要碰的檔
 
 | 要做的事 | 依序碰 |
@@ -79,6 +83,8 @@
 | 加或改資料欄位 | `types/models.ts` → `api/types.ts`（檔頭 wire 約定）→ `api/mock/store.ts` → 對應資料層 store 的 action → 元件 → 各自旁邊的 `__tests__/` → 本檔〈端點對照表〉 |
 | 加一支 api 方法 | `api/types.ts` 的 `ProjectApi` → `api/mock/index.ts` → store action → 本檔〈端點對照表〉（`readme.spec.ts` 會比對兩邊） |
 | 加畫面狀態（開關、選取、篩選） | 派生層 store 加欄位，元件直接寫：Dashboard 是 `ui` / `filter` / `selection`，總覽是 `overview` |
+| 加 store，或在 store 加欄位 | 該 store 的 `reset()`（或既有的清空函式）要清得到它，`composables/useSession.ts` 的 `resetSession()` 要呼叫到；登出後下一位使用者不能看到上一位的東西。`composables/__tests__/useSession.spec.ts` 檢查重置後每個 store 都等於全新的初始狀態，漏了就紅 |
+| 加登入者選單的項目（回收桶、匯入專案…） | `components/overview/UserMenu.vue`（加在「登出」上面） |
 | 改純邏輯 | `lib/` 加純函式 + 單元測試，再由 store 或元件呼叫 |
 | 加設計值（顏色、間距） | 先加 `assets/tokens.css` 的變數，再在 `<style scoped>` 引用；不直接寫色碼 |
 | 改使用者操作流程 | 對應的 `e2e/*.spec.ts`；選擇器只用〈DOM 鉤子〉表裡的屬性 |
@@ -88,7 +94,7 @@
 | 加 Dashboard 的浮層（選單、日期選擇器、對話框） | 元件包 `<Transition name="pop \| dialog \| fade">`（根元素與對話框本體不寫 transition / animation / opacity / transform）；fixed 浮層接 `useCloseOnScroll`、開啟函式放 `useMenus`（記觸發元素）；鎖頁面捲動用 `useScrollLock`；`e2e/popover-motion.spec.ts` / `dialog-motion.spec.ts` 加一條離場守衛。頂欄的篩選下拉 / 成員面板 / 日期日曆、看板與 Issue 的排序選單、Issue 分欄下拉也是 `pop`（absolute 掛在觸發鈕或容器下，不是 fixed）：頂欄一行時傳 `align="end"`（右緣對齊，觸發鈕往左變寬時選單不動）、兩列時 `start`；排序選單以 `.sorts` / `.tools` 為定位基準、打開當下量好位置（`--menu-x` / `--menu-y`），開著期間不跟著觸發鈕；點了不該關掉浮層的觸發元件（例：日期膠囊）標 `data-keep-popup`。守衛在 `e2e/dash-menu-motion.spec.ts` |
 | 改 Dashboard 頂欄篩選項或排序 chip 的版面 | 頂欄一行時篩選條件變動會把篩選項 FLIP 到新位置（`TopBar` 的 pre / post watcher，比右緣；一行 / 兩列切換與縮放不做；`measureFit` 扣掉補間中的位移再量）；日期膠囊與「～」用 `fade` 淡入淡出，離場中的由 `freezeLeave` 釘成 absolute（不佔版面、不算進 `measureFit` 與位移補間，一行 / 兩列切換時直接藏起來）；排序 chip 是 `TransitionGroup` ＋ `.sort-chip-slot > .sort-chip-clip` 原地橫向展開 / 收起，父層要提供 `--sorts-gap`；離場中的 chip 還在 DOM，測試讀 chip 要用會重試的寫法（`expect.poll`） |
 | 改總覽頂欄的篩選項、下拉或排序 chip | 下拉（`OvDropdown`）與排序選單用 `base.css` 的 `pop`；下拉一律右緣對齊（總覽頂欄在所有寬度都靠右排，觸發鈕變寬 / 變窄是左緣在動）；排序選單以 `.sort-bar` 為定位基準、打開當下量好位置（`--menu-x` / `--menu-r` / `--menu-y`），開著期間不跟著排序鈕；篩選條件變動時 `OverviewTopBar` 把篩選項 FLIP 到新位置（pre / post watcher，比右緣）；排序 chip 與成員觸發鈕的頭像、「…」、人數是 `.ov-slot > .ov-slot-clip` 原地橫向展開 / 收起（`ov-chip` / `ov-av`，離場的留在版面流裡、不釘位），右邊界用 `--ov-slot-mr`（平常，例：頭像重疊 -7px）/ `--ov-slot-mr0`（寬度 0 時，抵掉父層 flex gap）設，不要直接寫 `margin-right`（會蓋掉進出場的值）；成員面板「清除勾選」那列是 `ov-fold` 原地長出 / 收起；平板直向新 chip 進場時 `.sorts` 逐幀捲到看得到它。守衛在 `e2e/ov-chrome-motion.spec.ts` |
-| 改切頁過渡或頁面的載入流程 | 切頁淡入淡出是 `assets/base.css` 的 `page-view-*`（transition，淡入途中切走會從當下的透明度往回淡出；頁面根元素 `.dash` / `.ov` 不寫 opacity / transition / animation，會蓋掉它）；`router/pageSwap.ts` 等新頁插入（`@enter`）才還原捲動，新頁插入當下要已經是最終高度。掛載成本（K1）：從別頁切進 Dashboard、又不還原到非 0 的捲動位置時（`isPageSwapping()` 且非 `swapRestoresScroll()`），首屏外的看板與 Issue 面板延後掛（`composables/useDeferredPanels.ts`）：等切頁淡入真的全亮（`onPageSettled` 之後再看根元素透明度，after-enter 可能靠 Vue 的保險計時器提早到）、瀏覽器空閒才一個一個掛；使用者先動手（滾輪、按下、按鍵、觸控，不含 scroll）立刻掛；首屏看得到的（甘特下緣在視窗內）掛載當下同步掛；直接開頁 / 重新整理不延後。要捲到看板 / Issue 的程式（例：頂欄捷徑）先 `await useDeferredPanels().ensure()` 再量。甘特第一次捲到今天在掛載當下（資料已到）或任務到齊時，不再等 60ms——淡入期間不能有 App 的長任務。載入：`router/index.ts` 的 `beforeEach` 在 path 變或初始導航時呼叫 `preloadProject` / `preloadPortfolio`，頁面掛載時 boot 的 `reload()` 取走沿用——**同一次進頁只打一次 load**（`failNext` 類測試只擋一發，靠這個維持語意）；已經 ready 時背景重載、失敗不蓋掉內容。守衛 `e2e/page-motion.spec.ts`（K1 淡入中間值 ≥ 3 幀，前提檢查只對外部慢幀重來）、`e2e/deferred-panels.spec.ts`、`e2e/load-motion.spec.ts` |
+| 改切頁過渡或頁面的載入流程 | 切頁淡入淡出是 `assets/base.css` 的 `page-view-*`（transition，淡入途中切走會從當下的透明度往回淡出；頁面根元素 `.dash` / `.ov` 不寫 opacity / transition / animation，會蓋掉它）；`router/pageSwap.ts` 等新頁插入（`@enter`）才還原捲動，新頁插入當下要已經是最終高度。掛載成本（K1）：從別頁切進 Dashboard、又不還原到非 0 的捲動位置時（`isPageSwapping()` 且非 `swapRestoresScroll()`），首屏外的看板與 Issue 面板延後掛（`composables/useDeferredPanels.ts`）：等切頁淡入真的全亮（`onPageSettled` 之後再看根元素透明度，after-enter 可能靠 Vue 的保險計時器提早到）、瀏覽器空閒才一個一個掛；使用者先動手（滾輪、按下、按鍵、觸控，不含 scroll）立刻掛；首屏看得到的（甘特下緣在視窗內）掛載當下同步掛；直接開頁 / 重新整理不延後。要捲到看板 / Issue 的程式（例：頂欄捷徑）先 `await useDeferredPanels().ensure()` 再量。甘特第一次捲到今天在掛載當下（資料已到）或任務到齊時，不再等 60ms——淡入期間不能有 App 的長任務。載入：`router/index.ts` 的 `beforeEach` 在 path 變或初始導航時呼叫 `preloadProject` / `preloadPortfolio`，頁面掛載時 boot 的 `reload()` 取走沿用——**同一次進頁只打一次 load**（`failNext` 類測試只擋一發，靠這個維持語意）；已經 ready 時背景重載、連不上（`network`）不蓋掉內容（其他失敗清掉資料切成錯誤，見〈還沒做的〉authn 那段）；`router/index.ts` 的登入守衛排在先載守衛前面，只在第一次導航多等一發 `getSession`。守衛 `e2e/page-motion.spec.ts`（K1 淡入中間值 ≥ 3 幀，前提檢查只對外部慢幀重來）、`e2e/deferred-panels.spec.ts`、`e2e/load-motion.spec.ts` |
 | 改錯誤條的內容或版面 | `common/ErrorBar.vue`：在 TopBar 第二列、文件流裡（不是浮層，契約 C），兩層 `.error-slot`（`overflow: clip`，`v-if` 拿掉的是這層）/ `.error-bar`（`role="alert"`、`data-errorbar`）；進場、離場、筆數變了而換行三種高度變化都用 Web Animations 在 `.error-slot` 補間 `height` ＋透明度（`<Transition :css="false">` 的 `onEnter` / `onLeave` 與內容 watcher 共用 `tween()`，時長 `--t-panel`、曲線 `--ease`），每次從畫面上看得到的高度與透明度起步，中途接手（進場途中換行、少一行途中關掉最後一筆）不跳；不用 grid `0fr ↔ 1fr`（裡層被補間寫上 px 高度時會撐住外層的 `0fr`）；每次從沒有錯誤變成有錯誤換一個 key（收起途中又來一筆時舊的照收完）。下面的內容與 sticky 面板頭因此逐幀被推開 / 收回；捲到中段時 Chrome 的 scroll anchoring 會補償，內容不動、頂欄往下蓋。守衛 `e2e/errorbar-motion.spec.ts` |
 | 改 Dashboard 或總覽在平板上的版面或手指操作 | 見下方〈平板與觸控〉；`e2e/tablet.spec.ts`（Dashboard）、`e2e/overview-tablet.spec.ts`（總覽），都是 768×1024 觸控；Dashboard 1200px 以上的版面要跟 legacy 對得上（`compare.spec.ts` 在 1440 / 1920 對照 legacy 幾何；頂欄例外，見〈刻意保留的差異〉） |
 | 改 Dashboard 頂欄的篩選器（加減項目、改文字） | `layout/TopBar.vue`：一行放不下時整排移到第二列，由 `measureFit` 量實際寬度切 `.stacked`（不靠斷點，不用另調寬度）；兩列時日期日曆以日期那一組（`.date-group`）為基準、左緣對齊（`FilterCalendar` 的 `align`），這一組比日曆窄時往左挪到不超出視窗（可超出的量 `--cal-overhang` 取自列的左右留白 `--top-row-pad-x`，改留白只改這個變數）；`e2e/topbar-layout.spec.ts` 守版型與日曆位置，加了篩選項讓 1536 也放不下時要改它的寬度 |
@@ -132,6 +138,7 @@ Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<s
 | `src/assets/__tests__/tokens.spec.ts` | `tokens.css` 必須含有程式用到的每個變數與約定值，改名或刪 token 會紅 |
 | `src/mocks/__tests__/portfolio.spec.ts` | 總覽靜態專案算出的實際 / 理論 % 與需注意等於設計稿；m1–m7 與 `sampleProject` 的成員是同一份 |
 | `src/api/__tests__/openapi-schema.spec.ts` | `src/api/http/schema.ts` 是由 `openapi.json` 產生的最新版（見〈型別從後端產生（OpenAPI）〉） |
+| `src/composables/__tests__/useSession.spec.ts` | 登出重置（`resetSession()`）之後，`src/stores/` 底下每個 store（時鐘層除外）都等於全新 pinia 的初始狀態：新增的 store 或欄位沒跟著重置就紅 |
 | `e2e/overview-motion.spec.ts` | spec〈動畫清單〉每一項至少有一條守衛：宣告了 transition / animation，或過渡 class 真的出現（A19 hover / focus 另以瀏覽器逐一量測稽核）。重排時逐幀量位置，沒有動畫（直接跳到新位置）或位移算了兩次（先跳過頭再回彈），都會紅 |
 
 ### 閱讀指引
@@ -166,7 +173,8 @@ frontend/
 ├── src/
 │   ├── api/               資料存取層；接後端時只換這一層
 │   │   ├── types.ts       ProjectApi / ProjectEvent / ApiError 契約，檔頭是給後端看的 wire 約定
-│   │   ├── mock/          記憶體實作（store.ts + index.ts）；可注入延遲與失敗；portfolio.ts 是總覽摘要的彙整
+│   │   ├── authEvents.ts  登入失效（401）的通知：api 實作 notifyUnauthorized()，main.ts 用 onUnauthorized 接了導到登入頁
+│   │   ├── mock/          記憶體實作（store.ts + index.ts）；可注入延遲與失敗、換登入狀態；portfolio.ts 是總覽摘要的彙整
 │   │   ├── http/          由後端產生的 openapi.json 與 schema.ts（產生檔，見〈型別從後端產生（OpenAPI）〉）
 │   │   └── index.ts       挑實作的唯一出口（VITE_API 未設或 'mock' 用 mock；dev build 掛 window.__mockApi）
 │   ├── assets/            tokens.css（設計 token）、base.css（全域樣式、keyframes、Dashboard 浮層共用的 pop / dialog / fade 過渡）、overview-motion.css（總覽的過渡 class；泳道 / 群組 / 列原地收合）
@@ -174,6 +182,7 @@ frontend/
 │   ├── composables/       可重用的組合式函式
 │   │   ├── useProjectBoot.ts    啟動層：注入 error sink、載入狀態（第一次載入中、之後背景重載；換專案先清空）、訂閱事件；preloadProject 給 router 切頁先載
 │   │   ├── usePortfolioBoot.ts  總覽的啟動層：第一次顯示載入中，之後背景重載不閃；preloadPortfolio 給 router 切頁先載
+│   │   ├── useSession.ts        登入：resetSession（登出 / 401 後整個前端回到剛開網頁的樣子，登入頁掛上時呼叫）、expireSession（401 導到登入頁）、登出動作
 │   │   ├── useDomRegistry.ts    DOM 登錄表（執行期不再用選擇器找元素）
 │   │   ├── useTaskActions.ts    新增任務 / Issue 的預設值（派生層讀取集中在這）
 │   │   ├── useEditDraft.ts      逐鍵編輯：本地即時 + api debounce
@@ -194,19 +203,20 @@ frontend/
 │   │                            useFreezeReenter（釘位離場清單：同 key 離場中又回來時從舊元素當下的位置 / 透明度 / 縮放接續）/
 │   │                            useDeferredPanels（Dashboard 首屏外的看板 / Issue 延後掛：淡入跑完＋空閒才掛，先動手或捷徑 ensure() 立刻掛）
 │   ├── constants/         畫面用常數（dashboard.ts：狀態 / 優先度 / 等級的標籤與顏色；overview.ts：總覽的排序鍵、標籤、尺寸；api.ts：API_ERROR_TEXT）
-│   ├── lib/               純函式（日期、月曆格、排程連動、篩選、排序、格式化、id、CSS 時長 / 曲線 token 轉 JS（easing.ts）、元素目前的 translate（transform.ts）、程式平滑捲動的時長與曲線（scrollTween.ts，甘特與總覽時間軸共用）、啟動時預載晚出現符號的字型子集（fontPreload.ts：甘特收合鈕的 ▶，免得第一次收合才下載、整頁重排）…）
+│   ├── lib/               純函式（日期、月曆格、排程連動、篩選、排序、格式化、id、CSS 時長 / 曲線 token 轉 JS（easing.ts）、元素目前的 translate（transform.ts）、程式平滑捲動的時長與曲線（scrollTween.ts，甘特與總覽時間軸共用）、啟動時預載晚出現符號的字型子集（fontPreload.ts：甘特收合鈕的 ▶，免得第一次收合才下載、整頁重排）、登入後回原頁的網址檢查（redirect.ts：只接受站內路徑）…）
 │   ├── mocks/             範例資料
-│   ├── router/            路由（index.ts：切頁時先載目標頁資料；pageSwap.ts：切頁過渡結束後才還原捲動位置）
+│   ├── router/            路由（index.ts：登入守衛、切頁時先載目標頁資料；pageSwap.ts：切頁過渡結束後才還原捲動位置）
 │   ├── stores/            Pinia store（三層，見下）
 │   │   ├── clock.ts                           時鐘層
 │   │   ├── task / issue / comment / member / budget / project.ts   資料層（單一專案；project 是專案本身與 canEdit）
 │   │   ├── portfolio.ts                       資料層（總覽的專案摘要與成員名錄）
+│   │   ├── session.ts                         資料層（登入者；給登入守衛與畫面顯示用，不做授權）
 │   │   ├── _optimistic.ts                     樂觀更新的共用機制（tracker / runOptimistic / error sink）
 │   │   ├── _sync.ts                           api.subscribe 的唯一訂閱點，把事件路由到各資料 store
 │   │   ├── rows / filter / selection / ui.ts  派生層（Dashboard）
 │   │   └── overview.ts                        派生層（總覽）
 │   ├── types/             資料模型型別（models.ts）與畫面層共用型別（ui.ts：LoadState）
-│   ├── views/             頁面
+│   ├── views/             頁面（總覽、Dashboard、登入）
 │   └── __tests__/         跨目錄的結構守衛（readme / no-query-selector）
 └── e2e/                   Playwright 測試與 helper
 ```
@@ -284,17 +294,20 @@ store 分三層，依賴**只能由上往下**：
 | 層 | 檔 | 職責 | 可以 import 誰 |
 |---|---|---|---|
 | 時鐘層 | `clock.ts` | `now` / `todayIdx` / `todayIso`（60 秒 tick） | 誰都不用 |
-| 資料層 | `task.ts`、`issue.ts`、`comment.ts`、`member.ts`、`budget.ts`、`project.ts`（＋共用的 `_optimistic.ts`、`_sync.ts`）；總覽的 `portfolio.ts` | 專案資料的唯一擁有者；所有寫入都經 `@/api` | `@/api/*`、`@/lib/*`、`@/types/*`、`@/stores/clock`、其他資料 store、`_optimistic` / `_sync` |
+| 資料層 | `task.ts`、`issue.ts`、`comment.ts`、`member.ts`、`budget.ts`、`project.ts`（＋共用的 `_optimistic.ts`、`_sync.ts`）；總覽的 `portfolio.ts`；登入者 `session.ts` | 專案資料的唯一擁有者；所有寫入都經 `@/api` | `@/api/*`、`@/lib/*`、`@/types/*`、`@/stores/clock`、其他資料 store、`_optimistic` / `_sync` |
 | 派生層 | `rows.ts`、`filter.ts`、`selection.ts`、`ui.ts`；總覽的 `overview.ts` | 從資料層算出畫面要的東西（可見列、篩選、選取、浮層 / 錯誤條 / 收合） | 所有層 |
 
 成員名錄有兩份：`portfolio.members`（總覽，含各專案的 PM）與 `member.members`（Dashboard，單一專案的成員）。總覽元件查成員一律用 `portfolio.byId`。指派類的下拉（＋指派、Issue 提出人與負責人）只列沒停用的人，用 `member.assignable(原本選的 id)`；頂欄成員篩選只列這個專案有被指派任務的人（`lib/filter.ts` 的 `filterableMembers`）。
 
 `project.ts` 存專案本身（`meta`：id / 名稱 / 擁有者）與 `canEdit`（後端算的「登入者能不能改」，前端不自己比對 `pmId`）。`taskStore.load(id)` 一次灌進所有資料 store，`taskStore.reset()` 一次清掉（換專案時由 `useProjectBoot` 呼叫，再清選取、篩選與暫態）。
 
+`session.ts` 存登入者（`info`：成員 id / 姓名 / 角色）與「問過後端了沒」（`checked`），只給登入守衛導頁與畫面顯示用；權限一律由後端判斷。
+
 離開頁面時，兩邊的狀態處理方式不同：
 - `overview` store 會保留：從 Dashboard 回到總覽時，篩選、排序、展開與檢視都還在。
 - Dashboard 卸載時，`ui.resetTransient()` 會清掉詳細視窗與浮層這類暫態，回來時不會自己打開。
 - 進的是另一個專案時，資料層、選取、篩選條件也一起清掉；排序、面板收合、縮放這些版面偏好留著。
+- 登出或登入失效（到了登入頁）時，`composables/useSession.ts` 的 `resetSession()` 把**所有** store（時鐘層除外）連同版面偏好都清回初始值，兩個 boot 模組的模組層狀態也歸零：下一位使用者進頁時是「載入中」，不是背景重載，看不到上一位的資料。
 
 **資料層不知道派生層存在**，所以三件原本會反向依賴的事改成這樣：
 
@@ -362,9 +375,18 @@ store 分三層，依賴**只能由上往下**：
 | `data-row-wrap` | 時間軸專案列的外層 `.r-wrap`：原地收合與重排的單位（`useRelativeFlip` 也以它對應）；`data-project` 仍在裡面的 `.p-block` | projectId |
 | `data-pm-option` | 成員篩選面板的一列（帶 `aria-pressed`） | 成員 id |
 | `data-ov-dd` | 總覽頂欄的下拉根元素（見表下說明） | `pm` / `status` / `alert` |
-| `data-testid` | 面板計數 `overview-count`、搜尋框 `overview-search`、清除篩選 `overview-clear`、空狀態 `overview-empty`、時間軸「今天」`overview-today` | 固定字串 |
+| `data-testid` | 面板計數 `overview-count`、搜尋框 `overview-search`、清除篩選 `overview-clear`、空狀態 `overview-empty`、時間軸「今天」`overview-today`、登入者選單的觸發鈕 `user-menu` | 固定字串 |
 
 `data-ov-dd` 刻意和 Dashboard 的 `data-dd` 分開：它不在 `useClickOutside` 的保留清單裡，總覽的浮層改由 `useDismiss` 關閉。
+
+登入頁的屬性（legacy 沒有這一頁）：
+
+| 屬性 | 掛在 | 值 |
+|---|---|---|
+| `data-view` | 登入頁根元素 | `login` |
+| `data-testid` | 登入失敗的訊息 `login-error`（同一元素帶 `role="alert"`） | 固定字串 |
+
+帳號、密碼輸入框與「登入」鈕用 label 與按鈕文字找（`getByLabel('帳號')`、`getByRole('button', { name: '登入' })`），不另外加屬性。
 
 總覽 e2e 還依賴下表這些 class，**改名時要同步改測試**。用到的檔是 `e2e/overview.spec.ts`、`e2e/overview-motion.spec.ts`、`e2e/overview-tablet.spec.ts`、`e2e/page-motion.spec.ts`、`e2e/ov-*.spec.ts`（逐幀量測）、`e2e/helpers/overviewPage.ts`、`e2e/helpers/ovMotion.ts`：
 
@@ -398,7 +420,7 @@ store 分三層，依賴**只能由上往下**：
    | `Comment.at` | `'YYYY-MM-DDTHH:mm'`（**本地**時間、到分鐘） | ISO 8601 含 offset | adapter 兩邊轉，前端不做時區運算 |
    | `Attachment.at` | `'YYYY-MM-DD'`（本地日） | ISO 8601 | adapter |
    | `Group` | 只有 `id` / `name` | 後端若存了收合狀態要忽略 | 收合是畫面狀態，在 `ui.collapsedGroups`，不上 wire |
-   | `ProjectData.currentUserId`、`PortfolioData.currentUserId` | 必填字串 | 登入還沒做 | adapter 從 session / token 填；沒有登入就先填一個固定成員 id |
+   | `ProjectData.currentUserId`、`PortfolioData.currentUserId` | 必填字串 | 登入者的成員 id（同 `getSession()` 的 `memberId`） | 後端填；只是顯示用（留言掛誰、頭像），不是身分 |
    | `ProjectData.project`、`ProjectData.canEdit` | `{ id, name, pmId }`、`boolean` | `canEdit` = 登入者是不是這個專案的 PM | 後端算；前端不自己拿 `pmId` 比對登入者（權限規則只留在後端一處） |
    | `Member.active` | `boolean`（沒停用） | 後端的停用旗標 | 後端；指派類下拉只列 `active`，原本就指派給停用者的照樣顯示 |
    | `ProjectData.budget` | `{ total, actual }`（數字，只讀；剩餘與使用率由 `lib/budget.ts` 算） | 後端的預算欄位 | adapter 填進 `loadProject(id)` 與 `project.reloaded` 的 payload；目前沒有寫入端點 |
@@ -418,6 +440,9 @@ store 分三層，依賴**只能由上往下**：
 
 | 方法 | HTTP | 路徑 | request | response |
 |---|---|---|---|---|
+| `getSession()` | GET | `/api/auth/me` | — | `SessionInfo`（`{ memberId, name, role }`，`role` 是部門）；401 = 沒登入，adapter 回 `null` |
+| `login(account, password)` | POST | `/api/auth/login` | `{ account, password }`（網域帳號，例 `chen_daming`） | 200 `SessionInfo` ＋ Set-Cookie；失敗由 adapter 轉成 `{ ok: false, reason }`（見表下〈登入〉） |
+| `logout()` | POST | `/api/auth/logout` | — | 204、清 cookie（沒登入也是 204） |
 | `loadProject(id)` | GET | `/api/projects/:id` | — | `ProjectData`（整包，含 `project` 與 `canEdit`；`tasks` / `groups` 的陣列順序就是顯示順序） |
 | `listProjects()` | GET | `/api/projects` | — | `PortfolioData`（所有專案的 `ProjectSummary` ＋ 成員名錄 ＋ `currentUserId`；`projects` 順序無意義，`members` 順序就是顯示順序） |
 | `createTask()` | POST | `/api/tasks` | `Task`（含 client 產的 `id`） | `Task` |
@@ -446,6 +471,12 @@ store 分三層，依賴**只能由上往下**：
 - **連動刪除由後端做**：`deleteTask` 連帶刪它的 issue / dep / comment，`deleteGroup` 連帶刪底下的任務（以及那些任務的 issue / dep / comment），`deleteIssue` 連帶刪它的留言。事件順序見下。
 - **事件與 response 的到達順序後端不必保證**。client 兩種順序都正確（機制見〈樂觀更新怎麼運作〉的 in-flight 規則）：事件先到就只更新「最後已知的 server 狀態」，等該 id 的請求全部結束才對齊本地。不要為了排順序而延後廣播或延後回應。
 
+登入（表上前三支）：
+
+- session 放在 HttpOnly cookie，前端碰不到 token；每一支資料端點由後端自己驗 session 與權限。
+- `login()` 的失敗是預期結果，**不拋錯**，adapter 依狀態碼轉成 `{ ok: false, reason }`：401 → `invalid`（帳號或密碼錯，不分哪個錯）、403 → `forbidden`（不在 PMIS 的可登入名單）、429 → `locked`（失敗太多次，暫時擋下）、503 → `unavailable`（AD 驗證服務連不上）；其他照一般錯誤拋 `ApiError`。登入頁的文案在 `constants/api.ts` 的 `LOGIN_FAIL_TEXT`。
+- **其他每一支遇到 401**：adapter 先呼叫 `notifyUnauthorized()`（`src/api/authEvents.ts`）再拋 `ApiError('unauthorized')`。`main.ts` 收到通知就導到登入頁、登入後回原頁；`getSession` / `login` / `logout` 自己的 401 不通知。mock 照同一套規矩做（`setSession(null)` 之後的下一發）。
+
 ### 錯誤碼對照表
 
 api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`code` 決定畫面文案，`message`（server 原文）只進 console，不上畫面。
@@ -459,6 +490,8 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 | `not_found` | 404 | 資料已不存在 |
 | `conflict` | 409 | 與伺服器狀態衝突 |
 | `unknown` | 其他 | 發生錯誤 |
+
+`unauthorized` 另外會導到登入頁（見〈端點對照表〉表下的〈登入〉），畫面多半來不及顯示這句。
 
 對照表在 `src/constants/api.ts`（`API_ERROR_TEXT` / `apiErrorCode()`，Dashboard 與總覽共用）。錯誤條 `ErrorBar` 顯示的是「操作名稱（`label`，例如『更新任務』）＋ 上表文案」，同 label 會合併成 `×N`，最多留 5 筆、畫面顯示 3 筆，不自動關閉。
 
@@ -507,7 +540,9 @@ dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (im
 
 接上真後端之後 `window.__mockApi` 會是 `undefined`，這幾條開頭就是 `test.skip(!__mockApi)`，會自動跳過，其餘照跑：`e2e/interactions.spec.ts` 的**那兩條**（api 失敗後還原並顯示錯誤條、載入失敗後重試）、`e2e/errorbar-motion.spec.ts` 的頁頂與捲到中段兩條（`failNext('updateTask')` 讓錯誤條出現；另四條直接呼叫 `ui.pushError`，不需要 mock）、`e2e/load-motion.spec.ts` 的重進 Dashboard（`setLatency`）與載入次數守門。要在真後端上也測失敗路徑，就換成在 `page.route()` 攔 HTTP 回錯誤碼。
 
-**每次進頁只打一次 load**：`failNext` 只擋下一發，切頁先載（`router` 的 `beforeEach`）與頁面掛載的 `reload()` 共用同一發，失敗與重試的測試才有意義；`load-motion.spec` 的次數守門守這一點。
+**每次進頁只打一次 load**：`failNext` 只擋下一發，切頁先載（`router` 的 `beforeEach`）與頁面掛載的 `reload()` 共用同一發，失敗與重試的測試才有意義；`load-motion.spec` 的次數守門守這一點（計的是 `loadProject` / `listProjects`，登入守衛第一次導航打的 `getSession` 不算）。
+
+**登入狀態**：mock 預設已登入，`reset()` 也回到已登入。`setSession(null)` 等同 session 過期：之後除了登入相關三支，每一發都回 401 並觸發導回登入頁。要整頁從「沒登入」開始，得在 `__mockApi` 掛上的當下就 `setSession(null)`（登入守衛在第一次導航就會問 `getSession`，`page.evaluate` 來不及），寫法照 `e2e/login.spec.ts` 的 `addInitScript`。`login.spec` 一樣靠 `__mockApi`，接上真後端時跳過。
 
 ### 型別從後端產生（OpenAPI）
 
@@ -534,10 +569,13 @@ npm run gen:api
 ### 還沒做的（接後端時要補）
 
 - **逾時與取消**：`ProjectApi` 目前沒有 `AbortSignal`，也沒有逾時。網路實作至少要給每個請求一個逾時（逾時 → `ApiError('network')`）；離開頁面或連續改動時要能取消前一發。
-- **authn / authz**：`ProjectApi` 完全沒有身分概念，**每一支端點都要後端自己做認證與授權**。`ProjectData.currentUserId` 只是「留言掛誰、頭像顯示誰」的顯示用欄位，是 client 送什麼就是什麼，**絕對不能拿它當身分**。
-  - 兩頁重進時的背景重載失敗**只記 console、畫面維持舊資料**（Dashboard 的 `useProjectBoot`、總覽的 `usePortfolioBoot`）。加上登入之後，session 過期 / 撤權 / 專案被刪（401 / 403 / 404）不能也這樣吞掉：`ApiErrorCode` 已經有 `unauthorized` / `forbidden`，還要做的是背景失敗遇到這幾種就清掉資料、切成錯誤或導回登入頁，只有 `network` 才維持舊資料。
-  - 登出 / 換使用者要有明確的重置：清資料層（task / issue / comment / member / portfolio）與 `selection` / `filter`，兩個 `loadState` 設回 `idle`；不然下一位進頁時是背景重載，會先看到上一位的資料。
-  - 加登入守衛時，`router/index.ts` 的先載守衛要排在它**後面**（守衛依註冊順序執行），未登入或被擋下的導航才不會先打出需要認證的請求。
+- **authn / authz**：前端的登入只管導頁與顯示，**每一支端點都要後端自己做認證與授權**（驗 session cookie、驗是不是該專案的 PM）。`ProjectData.currentUserId` 與 `session` store 的登入者都只是「留言掛誰、頭像顯示誰、要不要導到登入頁」的顯示用資料，client 改得動，**絕對不能拿它當身分**。已經做好的：
+  - 登入頁（`/login`）與登入守衛：`router/index.ts` 的登入守衛排在先載守衛**前面**（守衛依註冊順序執行），沒登入的導航不會先打出需要認證的請求；只有第一次導航（或重置之後）問 `getSession()`，之後切頁不多等一發。
+  - 401：api 層 `notifyUnauthorized()` → `main.ts` 導到登入頁（`?redirect=` 帶原路徑，登入後回去；`lib/redirect.ts` 只接受站內路徑）。
+  - 登出 / 換使用者的重置：登入頁掛上時 `resetSession()`（`composables/useSession.ts`）把資料層、派生層、兩個 `loadState`、兩個 boot 模組的狀態全部清回初始值，還在飛的載入作廢，錯誤條的出口拿掉；下一位進頁是「載入中」，不會先看到上一位的資料。
+  - 背景重載失敗分類（Dashboard 的 `useProjectBoot`、總覽的 `usePortfolioBoot`）：只有 `network` 維持舊資料；`unauthorized` 交給上面的 401 導頁；`forbidden`（撤權）、`not_found`（專案被刪）與其他錯誤清掉資料、切成錯誤畫面（可重試）。
+
+  還沒做的：http adapter（F10）要照〈端點對照表〉表下〈登入〉的規矩做（401 先通知再拋、`login()` 的 401 / 403 / 429 / 503 轉成結果），mock 已經照做；登入頁「嘗試太多次」文案寫死「15 分鐘」，跟後端 `LOGIN_LOCK_MINUTES` 的預設值一致，改設定時要一起改 `constants/api.ts`。
 - **PATCH body 要用 schema 白名單驗欄位**：`updateTask` / `updateGroup` / `updateIssue` 送的是 JSON merge patch，後端必須逐欄位比對允許清單再寫入，**不可以整包 merge 進實體**（mass-assignment；也要擋 `__proto__` / `constructor` / `prototype` 這類鍵造成的原型污染）。同理 `createTask` 這些帶完整實體的端點也要過一次 schema。
 - **多人衝突**：現在是「後到的覆蓋先到的」，沒有版本號或 `If-Match`。同時編輯同一筆的情境沒有處理（spec 已排除）。附帶一提：`dirty`（本地改了還沒送出）只保護**本地**不被 reconcile 蓋掉，**不保護 server 端**——那段值還沒上 wire，別的 client 這段時間寫進去的東西，等它送出時一樣會被覆蓋。
 - **附件上傳驗證**：`comment.addDraftFiles` 直接 `URL.createObjectURL`，沒有任何檢查。要補檔案大小上限、MIME 型別與副檔名白名單（三者都要，只擋副檔名擋不住偽裝的檔案），**伺服器端再驗一次**。

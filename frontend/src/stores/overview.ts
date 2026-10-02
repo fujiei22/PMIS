@@ -189,6 +189,22 @@ export const useOverviewStore = defineStore('overview', () => {
   function toggleGroup(pmId: string): void {
     collapsedPmIds.value = toggleIn(collapsedPmIds.value, pmId)
   }
+
+  /**
+   * 登出 / 換使用者：整個回到剛開網頁的樣子（`composables/useSession.ts` 的 `resetSession()`）。
+   * 平常跨路由保留的篩選、排序、展開、檢視也清掉：那是上一位使用者的。
+   */
+  function reset(): void {
+    clearFilters()
+    resetSort()
+    view.value = 'cards'
+    openDropdown.value = null
+    expandedIds.value = []
+    collapsedPmIds.value = []
+    panelOpen.value = true
+    loadState.value = 'idle'
+    loadError.value = null
+  }
   function isCollapsed(pmId: string): boolean {
     return collapsedPmIds.value.includes(pmId)
   }
@@ -233,5 +249,6 @@ export const useOverviewStore = defineStore('overview', () => {
     keepLastExpandedInLane,
     toggleGroup,
     isCollapsed,
+    reset,
   }
 })
