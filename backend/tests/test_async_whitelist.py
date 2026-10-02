@@ -1,4 +1,4 @@
-"""守住「一般 API 用 def，只有 SSE 與 AI 串流回應用 async def」。
+"""守住「一般 API 用 def，只有 SSE、AI 串流回應與 lifespan 用 async def」。
 
 FastAPI 把 `def` 端點放到 thread pool 執行，一支卡住不影響別支；`async def` 則直接跑在
 唯一的 event loop 上，裡面只要呼叫同步的資料庫套件（SQLAlchemy ＋ psycopg 同步模式），
@@ -14,13 +14,14 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parents[1] / "app"
 
 # 允許出現 async def 的檔案，路徑相對於 backend/app/、用 / 分隔，例如 "api/routes/events.py"。
-# 只放 SSE（/api/events）與 AI 串流回應的模組。
-ASYNC_ALLOWED: frozenset[str] = frozenset()
+# 只放 SSE（/api/events）、AI 串流回應的模組，以及 FastAPI 規定要 async 的 lifespan
+# （lifespan.py：只開關執行緒，不碰資料庫）。
+ASYNC_ALLOWED: frozenset[str] = frozenset({"lifespan.py"})
 
 WHY = (
     "一般 API 請用 def。async def 裡呼叫同步的資料庫（SQLAlchemy／psycopg）會卡住整支程式，"
-    "所有使用者的請求都會一起停住。只有 SSE（/api/events）與 AI 串流回應可以用 async def，"
-    "而且裡面不碰同步的資料庫；確定屬於這兩類，才把檔案加進 "
+    "所有使用者的請求都會一起停住。只有 SSE（/api/events）、AI 串流回應與 lifespan 可以用 "
+    "async def，而且裡面不碰同步的資料庫；確定屬於這幾類，才把檔案加進 "
     "tests/test_async_whitelist.py 的 ASYNC_ALLOWED。"
 )
 
