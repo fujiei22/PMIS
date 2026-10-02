@@ -280,36 +280,33 @@ function sinceRemoval(tr: Trace, name: string, t2: number): (Box & { t: number; 
 }
 
 test('淡入中的卡被篩掉：透明度與縮放從當下接續淡出，不先跳回實心', async ({ page }) => {
-  await gotoOverview(page)
-  await page.getByTestId('overview-search').fill('p')
-  await idle(page)
-  // 「p」剩 m5 pmis、m8 app；清除後 portal 在 m8 泳道淡入，100ms 後篩「a」只剩 app：淡入中的 portal 被篩掉（m8 泳道留著）
-  let t2 = 0
-  const tr = await trace(page, { portal: '[data-view-panel="cards"] [data-project="portal"]' }, async () => {
-    t2 = await page.evaluate(
-      () =>
-        new Promise<number>((resolve) => {
-          ;(document.querySelector('[data-testid="overview-clear"]') as HTMLElement).click()
-          setTimeout(() => {
-            const input = document.querySelector('[data-testid="overview-search"]') as HTMLInputElement
-            input.value = 'a'
-            input.dispatchEvent(new Event('input', { bubbles: true }))
-            resolve(performance.now() - (window as unknown as TraceWindow).__ovTrace.t0)
-          }, 100)
-        }),
-    )
-  })
-  const s = sinceRemoval(tr, 'portal', t2)
+  // 「p」剩 m5 pmis、m8 app；清除後 portal 在 m8 泳道淡入，淡入走到 0.15 時篩「a」只剩 app：淡入中的 portal 被篩掉（m8 泳道留著）。
+  // 不用固定 100ms：機器忙時 portal 可能還沒開始淡入（平行跑實測 0.046）
+  const { tr, t2 } = await traceRemoveWhileEntering(
+    page,
+    async () => {
+      await gotoOverview(page)
+      await page.getByTestId('overview-search').fill('p')
+      await idle(page)
+    },
+    {
+      add: { sel: '[data-testid="overview-clear"]' },
+      remove: { sel: '[data-testid="overview-search"]', input: 'a' },
+      watch: '[data-view-panel="cards"] [data-project="portal"]',
+    },
+  )
+  const s = sinceRemoval(tr, 'el', t2)
   expect(Math.max(...s.map((b) => b.o)), '移除後最亮').toBeLessThan(0.95)
   expect(opacityJumps(s), '透明度單幀跳').toBe(false)
   // 進場的放大也接續（修正前寬度當幀長約 10px 回原尺寸）。卡片的重排不走內建 move，離場的卡不會被 Vue 再加位移
   expect(jumpCount(s.map((b) => ({ dt: b.dt, v: b.w }))), '縮放單幀跳').toBe(0)
 })
 
-/** 頁內點擊的對象：選擇器，加 text 時取文字含 text 的那一個。 */
+/** 頁內操作的對象：選擇器，加 text 時取文字含 text 的那一個；給 input 時是改它的值（派 input 事件），否則是點它。 */
 interface Click {
   sel: string
   text?: string
+  input?: string
 }
 
 /** 長幀：兩幀間隔超過這麼久，過渡在這段時間裡一次走一大截，量不到「從當下接續」。 */
@@ -336,17 +333,21 @@ async function traceRemoveWhileEntering(
         (a) =>
           new Promise<{ t: number; o: number }>((resolve, reject) => {
             const t0 = (window as unknown as TraceWindow).__ovTrace.t0
-            const find = (c: { sel: string; text?: string }): HTMLElement =>
-              (c.text
+            const act = (c: { sel: string; text?: string; input?: string }): void => {
+              const el = (c.text
                 ? [...document.querySelectorAll<HTMLElement>(c.sel)].find((e) => e.textContent?.includes(c.text!))
                 : document.querySelector<HTMLElement>(c.sel))!
-            find(a.add).click()
+              if (c.input === undefined) return el.click()
+              ;(el as HTMLInputElement).value = c.input
+              el.dispatchEvent(new Event('input', { bubbles: true }))
+            }
+            act(a.add)
             const start = performance.now()
             const tick = (): void => {
               const el = document.querySelector(a.watch)
               const o = el ? parseFloat(getComputedStyle(el).opacity) : 0
               if (o > 0.15) {
-                find(a.remove).click()
+                act(a.remove)
                 resolve({ t: performance.now() - t0, o })
               } else if (performance.now() - start > 2000) reject(new Error('2 秒內沒有開始淡入'))
               else requestAnimationFrame(tick)
