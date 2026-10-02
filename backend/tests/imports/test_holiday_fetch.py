@@ -6,9 +6,12 @@
 - 連不上、HTTP 錯誤、逾時、http.client 的協定錯誤、網址格式錯，一律轉成 FetchError
   （呼叫端只接一種例外，記 warning 後保留舊資料、約 24 小時後再試）。
 - 回應超過上限、跟 Content-Length 對不上（被截斷）都拒收。
+- TLS：憑證鏈與主機名稱照常驗，只關掉 Python 3.13 起預設的 X.509 嚴格模式
+  （新北市網站的 TWCA 憑證鏈缺 Subject Key Identifier，嚴格模式下一定失敗；2026-10-02 實機驗證發現）。
 - 測試環境的 autouse fixture 擋住真的連線。
 """
 
+import ssl
 from http.client import IncompleteRead, InvalidURL
 from types import TracebackType
 from urllib.error import HTTPError, URLError
@@ -47,22 +50,32 @@ class FakeResponse:
 
 
 def serve(monkeypatch: pytest.MonkeyPatch, response: FakeResponse) -> None:
-    monkeypatch.setattr(holiday_fetch, "urlopen", lambda request, timeout: response)
+    monkeypatch.setattr(holiday_fetch, "urlopen", lambda request, timeout, context: response)
 
 
 def test_returns_body(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, object] = {}
 
-    def fake_urlopen(request: Request, timeout: float) -> FakeResponse:
+    def fake_urlopen(request: Request, timeout: float, context: ssl.SSLContext) -> FakeResponse:
         seen["url"] = request.full_url
         seen["agent"] = request.get_header("User-agent")
         seen["timeout"] = timeout
+        seen["strict"] = bool(context.verify_flags & ssl.VERIFY_X509_STRICT)
         return FakeResponse(b"date,year\n", content_length="10")
 
     monkeypatch.setattr(holiday_fetch, "urlopen", fake_urlopen)
 
     assert fetch_calendar_csv(URL) == b"date,year\n"
-    assert seen == {"url": URL, "agent": holiday_fetch.USER_AGENT, "timeout": 30}
+    assert seen == {"url": URL, "agent": holiday_fetch.USER_AGENT, "timeout": 30, "strict": False}
+
+
+def test_tls_still_verifies_chain_and_hostname() -> None:
+    """只關 X.509 嚴格模式：憑證要由信任的根憑證簽發、主機名稱要相符，這兩項不能跟著關掉。"""
+    context = holiday_fetch.ssl_context()
+
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname is True
+    assert not context.verify_flags & ssl.VERIFY_X509_STRICT
 
 
 def test_rejects_plain_http_before_connecting() -> None:
@@ -90,7 +103,7 @@ def test_rejects_redirect_to_http(monkeypatch: pytest.MonkeyPatch) -> None:
     ],
 )
 def test_errors_become_fetch_error(monkeypatch: pytest.MonkeyPatch, error: Exception) -> None:
-    def failing(request: Request, timeout: float) -> FakeResponse:
+    def failing(request: Request, timeout: float, context: ssl.SSLContext) -> FakeResponse:
         raise error
 
     monkeypatch.setattr(holiday_fetch, "urlopen", failing)
