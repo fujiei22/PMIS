@@ -2,7 +2,7 @@
 
 PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 
-前端已建置；後端技術已定案、尚未建置（見〈後端：技術一覽〉）。
+前端已建置；後端已建骨架，只有健康檢查端點（見〈後端：技術一覽〉）。
 
 ## 前端：技術一覽
 
@@ -82,7 +82,7 @@ PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 
 ## 後端：技術一覽
 
-已定案，尚未建置；程式會放在 `backend/`。
+程式在 `backend/`，目前是骨架：只有 `GET /api/health`，還沒有資料表、業務端點與登入。下表的資料分析、Excel 讀寫、即時推送、登入與部署還沒導入。開工導覽見 [`backend/README.md`](../../backend/README.md)。
 
 | 項目 | 使用 |
 |---|---|
@@ -103,6 +103,25 @@ PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 | 部署 | Docker Compose（`app`：FastAPI 連同前端打包結果；`db`：PostgreSQL） |
 
 部署：容器化。一支 FastAPI 程式同時提供前端打包結果（`frontend/dist/`）、`/api` 與 `/api/events`，同一個網域；不認得的網址回 `index.html`，交給 Vue Router。
+
+## 後端：常用指令
+
+以下指令在 `backend/` 下執行（從 repo 根目錄先 `cd backend`）。第一次安裝（建資料庫、`.env`）見 [`backend/README.md`](../../backend/README.md#第一次安裝)。
+
+| 指令 | 設定在 | 用途 |
+|---|---|---|
+| `uv sync` | `pyproject.toml`、`uv.lock` | 依 `uv.lock` 安裝相依套件到 `.venv/` |
+| `uv add <套件>` | `pyproject.toml`、`uv.lock` | 加相依套件（開發工具用 `uv add --dev`），兩個檔都要 commit |
+| `uv run fastapi dev` | `app/main.py` | 啟動本機開發伺服器（<http://127.0.0.1:8000>），存檔自動重啟；API 文件在 `/api/docs` |
+| `uv run pytest` | `[tool.pytest.ini_options]`、`tests/conftest.py` | 測試；只連 `TEST_DATABASE_URL`（名稱必須以 `_test` 結尾） |
+| `uv run mypy` | `[tool.mypy]` | 型別檢查（strict ＋ pydantic plugin） |
+| `uv run ruff check` | `[tool.ruff.lint]` | lint；加 `--fix` 自動修正能修的 |
+| `uv run ruff format` | `[tool.ruff]` | 排版；加 `--check` 只檢查不改檔 |
+| `uv run alembic upgrade head` | `alembic.ini`、`app/alembic/env.py` | 套用所有 migration（連 `DATABASE_URL`） |
+| `uv run alembic revision --autogenerate -m "說明"` | 同上 | 依 `app/models.py` 的變更產生 migration |
+| `uv run alembic check` | 同上 | 確認 `app/models.py` 沒有漏產 migration |
+
+`[tool.*]` 都在 `backend/pyproject.toml`。提交前至少跑一次 `ruff check`、`ruff format --check`、`mypy`、`pytest`。
 
 ## 後端：使用慣例
 
@@ -126,7 +145,7 @@ PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 - 加總、統計在資料庫（SQL）做。
 
 ### 非同步與行程
-- 一般 API 用 `def`；只有 SSE 與 AI 串流回應用 `async def`，而且裡面不呼叫同步的資料庫套件。以讀原始碼的測試列白名單守住。
+- 一般 API 用 `def`；只有 SSE 與 AI 串流回應用 `async def`，而且裡面不呼叫同步的資料庫套件。以讀原始碼的測試列白名單守住（`backend/tests/test_async_whitelist.py`）。
 - 正式環境只跑一個 worker。要開多個 worker 前，先讓事件經 PostgreSQL 的 `LISTEN` / `NOTIFY` 在 worker 之間傳遞。
 - 耗時的分析（例如預測）放排程的背景工作，結果寫進資料表，API 只讀結果。
 
@@ -145,4 +164,8 @@ PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 - 外部 AI 服務的金鑰只放後端的環境變數，不進前端程式，也不進版控。
 
 ### CI
-- 每個 PR 在 Linux 上跑 pytest、mypy、ruff、OpenAPI 型別比對，以及前端既有的檢查，全綠才能 merge。
+- `.github/workflows/ci.yml`：每個 PR 與每次 push 到 `main`，在 Linux（`ubuntu-latest`）上平行跑三個 job：
+  - `backend`：`uv sync --locked`、`ruff check`、`ruff format --check`、`mypy`、`pytest`（連 PostgreSQL 18 容器裡的 `pmis_test`）、`alembic check`。
+  - `frontend`：ESLint（只檢查、不自動修正）、`npm run type-check`、`npm run test:unit -- --run`、`npm run build-only`。
+  - `e2e`：Playwright（Chromium）；失敗時上傳 `playwright-report`。
+- 尚未加入：OpenAPI 型別比對（第一支業務 API 時加）、前端的 Prettier 檢查。
