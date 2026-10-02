@@ -43,6 +43,9 @@ export interface DragElements {
   vscroll: Ref<HTMLElement | null>
 }
 
+/** 條的拖曳：移動、左把手縮放、右把手縮放。 */
+type BarDragKind = 'move' | 'resL' | 'resR'
+
 export interface PointerDrag {
   /** 條本體 / 左右把手按下去：移動或縮放。未選取的條由呼叫端先擋掉。 */
   startBar: (e: PointerEvent, id: string, kind: 'move' | 'resL' | 'resR') => void
@@ -145,11 +148,13 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     const scrolled = (els.gantt.value?.scrollLeft ?? 0) - d.sl0
     // 加上捲動位移，自動捲動時才不會因為畫面移動而多算幾天（legacy :2489）
     const delta = Math.round((moved + scrolled) / dw)
-    if (d.kind === 'move') {
-      // 動畫稽核 D6：自動捲動時 scrollLeft 連續在變、條卻以整天吸附，條在游標下鋸齒抖動。
-      // 補上「捲動造成、還沒湊滿一天」的差，條在畫面上只跟著游標的位移走；放開才吸附（finish）
-      nudge(d.id, scrolled - (delta - Math.round(moved / dw)) * dw)
-    }
+    // 動畫稽核 D6：自動捲動時 scrollLeft 連續在變、條卻以整天吸附，條在游標下鋸齒抖動。
+    // 補上「捲動造成、還沒湊滿一天」的差，條在畫面上只跟著游標的位移走；放開才吸附（finish）。
+    // 縮放只補被拖的那一端（D6 延伸）；被夾住（右把手越過開始日、左把手越過結束日）時那一端不動，不補
+    const residual = scrolled - (delta - Math.round(moved / dw)) * dw
+    if (d.kind === 'move') nudge(d.id, 'move', residual)
+    else if (d.kind === 'resR') nudge(d.id, 'resR', d.e0 + delta < d.s0 ? 0 : residual)
+    else nudge(d.id, 'resL', d.s0 + delta > d.e0 ? 0 : residual)
     if (delta === d.last) return
     d.last = delta
     if (d.kind === 'move') {
@@ -168,22 +173,32 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   }
 
   /**
-   * 這一段拖曳的補償：被拖的條（與它兩側的連線圓點）此刻的位移。補償過就一直留著（位移可能回到 0），
+   * 這一段拖曳的補償：被拖的條（與它兩側的連線圓點）此刻補了多少、補在哪（kind 同拖曳）。補償過就一直留著（位移可能回到 0），
    * 放開時從這裡吸附回整天的位置。
    */
-  let nudged: { id: string; px: number } | null = null
+  let nudged: { id: string; px: number; kind: BarDragKind } | null = null
   /** 見 PointerDrag.nudging。 */
   const nudging = ref(false)
   /** 放開後的回彈動畫；回彈途中又拖同一條要先停掉，不然動畫會蓋住新的補償。 */
   let rebound: { id: string; anims: Animation[] } | null = null
 
-  /** 條與圓點一起平移 px（`transform`，跟列上下位移用的 `translate` 是不同屬性，不互相蓋掉）。 */
-  function nudgeEls(id: string): HTMLElement[] {
+  /**
+   * 補償要平移 px 的元素（`transform`，跟列上下位移用的 `translate` 是不同屬性，不互相蓋掉）：
+   * 移動是整條與兩側圓點；右把手只有右圓點（條本身改寬度）；左把手是條本身與左圓點（寬度另外反向補，右緣留在原地）。
+   */
+  function shiftEls(id: string, kind: BarDragKind): HTMLElement[] {
+    const bar = registry.bars.get(id)
     const dots = registry.linkDots.get(id)
-    return [registry.bars.get(id), dots?.L, dots?.R].filter((el): el is HTMLElement => !!el)
+    const els = kind === 'move' ? [bar, dots?.L, dots?.R] : kind === 'resL' ? [bar, dots?.L] : [dots?.R]
+    return els.filter((el): el is HTMLElement => !!el)
   }
 
-  function nudge(id: string, px: number): void {
+  /** 條的寬度要補多少（GanttBar 的 `--res-w`）：右把手 +px（右緣跟著游標）、左把手 −px（左緣平移了 px，右緣不動）。 */
+  function widthOf(kind: BarDragKind, px: number): number {
+    return kind === 'resR' ? px : kind === 'resL' ? -px : 0
+  }
+
+  function nudge(id: string, kind: BarDragKind, px: number): void {
     const v = Math.round(px * 100) / 100
     if (!v && !nudged) return
     if (v) {
@@ -193,27 +208,40 @@ export function usePointerDrag(els: DragElements): PointerDrag {
         rebound = null
       }
     }
-    nudged = { id, px: v }
-    for (const el of nudgeEls(id)) el.style.transform = v ? `translateX(${v}px)` : ''
+    nudged = { id, px: v, kind }
+    for (const el of shiftEls(id, kind)) el.style.transform = v ? `translateX(${v}px)` : ''
+    const bar = registry.bars.get(id)
+    const w = widthOf(kind, v)
+    if (bar && w) bar.style.setProperty('--res-w', `${w}px`)
+    else bar?.style.removeProperty('--res-w')
   }
 
-  /** 放開 / 中止：拿掉補償位移，條從目前的位置補間回整天的位置（--t-bar / --ease）。 */
+  /**
+   * 放開 / 中止：拿掉補償，條從目前的位置補間回整天的位置（--t-bar / --ease）。
+   * 位移與寬度都用相對量補間（translateX → none、`--res-w` → 0）：中止時資料同時退回，條的 left / width 照自己的過渡走，兩者疊得起來。
+   */
   function settleNudge(): void {
     if (!nudged) return
-    const { id, px } = nudged
+    const { id, px, kind } = nudged
     nudged = null
     const cs = getComputedStyle(document.documentElement)
     const timing = {
       duration: parseDuration(cs.getPropertyValue('--t-bar')),
       easing: cs.getPropertyValue('--ease').trim() || 'ease',
     }
+    // jsdom 沒有 Web Animations
+    const canAnimate = (el: HTMLElement): boolean => !!px && typeof el.animate === 'function' && timing.duration > 0
     const anims: Animation[] = []
-    for (const el of nudgeEls(id)) {
+    for (const el of shiftEls(id, kind)) {
       el.style.transform = ''
-      // jsdom 沒有 Web Animations
-      if (px && typeof el.animate === 'function' && timing.duration > 0) {
-        anims.push(el.animate([{ transform: `translateX(${px}px)` }, { transform: 'none' }], timing))
-      }
+      if (canAnimate(el)) anims.push(el.animate([{ transform: `translateX(${px}px)` }, { transform: 'none' }], timing))
+    }
+    const bar = registry.bars.get(id)
+    const w = widthOf(kind, px)
+    if (bar && w) {
+      bar.style.removeProperty('--res-w')
+      // --res-w 在 GanttBar 用 @property 註冊成 <length>，才補間得動
+      if (canAnimate(bar)) anims.push(bar.animate([{ '--res-w': `${w}px` }, { '--res-w': '0px' }] as Keyframe[], timing))
     }
     rebound = anims.length ? { id, anims } : null
     // 回彈跑完才算結束；這段期間又開了新的補償（又拖了一條）就留給它，不能清掉

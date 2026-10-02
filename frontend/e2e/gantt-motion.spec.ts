@@ -806,9 +806,74 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
     await expect(app.bar('t3')).toHaveCSS('transform', 'none')
   })
 
+  /**
+   * D6 延伸：縮放把手拖到邊緣自動捲動。被拖的那一端要一直在游標下（捲動造成、還沒湊滿一天的差補在那一端），
+   * 另一端是固定的日期、跟著畫布捲動連續移動；放開才吸附到整天。
+   * 修正前被拖的那一端以整天吸附：隨捲動往遠離游標的方向滑、湊滿一天再一幀跳回（鋸齒，實測每幀 13px）。
+   * 右把手用 t3（專案前段，捲動位置 0 時看得到），拖到右緣；左把手用 t24（專案後段、沒有前置任務——有前置的開始日
+   * 不能早於前一個結束，左緣會被擋住），先捲到 t24 左邊留 700px，拖到左緣。
+   * end：被拖的那一端在畫面上的 x；away：這一幀往遠離游標的方向滑了多少（鋸齒的那一段）。
+   */
+  const RESIZE = [
+    {
+      name: '右把手拖到右緣',
+      id: 't3',
+      scrollTo: () => 0,
+      grab: (b: { x: number; width: number }) => b.x + b.width - 3,
+      edge: (sc: { x: number; width: number }) => sc.x + sc.width - 20,
+      end: (bx: { x: number; w: number }) => bx.x + bx.w,
+      away: (prev: number, cur: number) => prev - cur,
+    },
+    {
+      name: '左把手拖到左緣',
+      id: 't24',
+      scrollTo: (barLeft: number) => Math.max(0, barLeft - 700),
+      grab: (b: { x: number; width: number }) => b.x + 3,
+      edge: (sc: { x: number; width: number }) => sc.x + 20,
+      end: (bx: { x: number; w: number }) => bx.x,
+      away: (prev: number, cur: number) => cur - prev,
+    },
+  ]
+  for (const r of RESIZE) {
+    test(`縮放：${r.name}自動捲動，被拖的那一端一直在游標下、不鋸齒；放開才吸附`, async ({ page }) => {
+      const app = await openGantt(page)
+      await app.row(r.id).locator('.name').click()
+      await pause(page, 1300)
+      const barLeft = await app.bar(r.id).evaluate((el) => (el as HTMLElement).offsetLeft)
+      await app.freezeGanttScroll(r.scrollTo(barLeft))
+      const sc = (await app.ganttScroller.boundingBox())!
+      const b = (await app.bar(r.id).boundingBox())!
+      const y = b.y + b.height / 2
+      const grabX = r.grab(b)
+      const edgeX = r.edge(sc)
+      await page.mouse.move(grabX, y)
+      await page.mouse.down()
+      for (let i = 1; i <= 8; i++) {
+        await page.mouse.move(grabX + ((edgeX - grabX) * i) / 8, y)
+        await pause(page, 16)
+      }
+      const sl0 = await app.scrollLeftOf(app.ganttScroller)
+      // 游標停在邊緣：自動捲動一直跑
+      const tr = await trace(page, { bar: bar(r.id) }, () => pause(page, 1), { ms: 700 })
+      const sl1 = await app.scrollLeftOf(app.ganttScroller)
+      await page.mouse.up()
+      expect(Math.abs(sl1 - sl0), '自動捲動有在跑').toBeGreaterThan(100)
+      const ends = tr.frames.filter((f) => f.boxes.bar).map((f) => r.end(f.boxes.bar!))
+      const away = ends.slice(1).map((v, i) => r.away(ends[i]!, v))
+      expect(Math.max(...away), `被拖的那一端逐幀：${ends.map((v) => v.toFixed(0)).join(',')}`).toBeLessThanOrEqual(1.5)
+      // 放開：寬度補償拿掉，條落在整天的位置
+      await expect.poll(() => app.bar(r.id).evaluate((el) => (el as HTMLElement).style.getPropertyValue('--res-w'))).toBe('')
+    })
+  }
+
   // review：自動捲動的補償（transform）不改資料，相依線原本只在資料變後跟一段——
   // 捲動停住（游標離開邊緣）或放開後回彈時，線彈回資料位置、跟被補償的條差到一天寬
-  test('拖條自動捲動、停住、放開回彈期間：t3 → t4 相依線兩端每一幀都貼著條', async ({ page }) => {
+  // 縮放（右把手，D6 延伸）同一套：補的是寬度，相依線從條的右緣出發，要跟著被補的右緣。grab：從條左緣往右抓幾 px
+  for (const { how, grab } of [
+    { how: '移動', grab: () => 24 },
+    { how: '右把手縮放', grab: (b: { width: number }) => b.width - 3 },
+  ]) {
+  test(`拖條（${how}）自動捲動、停住、放開回彈期間：t3 → t4 相依線兩端每一幀都貼著條`, async ({ page }) => {
     const app = await openGantt(page)
     await tagDeps(page, [['t3', 't4']])
     await app.row('t3').locator('.name').click()
@@ -817,7 +882,7 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
     const sc = (await app.ganttScroller.boundingBox())!
     const b = (await app.bar('t3').boundingBox())!
     const y = b.y + b.height / 2
-    const grabX = b.x + 24
+    const grabX = b.x + grab(b)
     const edgeX = sc.x + sc.width - 20
     await page.mouse.move(grabX, y)
     await page.mouse.down()
@@ -844,6 +909,7 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
     expect(tr.marks, '有放開').toHaveLength(1)
     expect(depGap(tr, 't3', 't4', 0), 't3 → t4 兩端與條').toBeLessThanOrEqual(4)
   })
+  }
 
   test('拖條超出專案起點（日期格往左長）：同一天的日期格與別的條每一幀都對齊', async ({ page }) => {
     const app = await openGantt(page)
