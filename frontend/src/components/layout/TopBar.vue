@@ -8,6 +8,7 @@ import FilterCalendar from '@/components/layout/FilterCalendar.vue'
 import FilterDropdown, { type FilterOption } from '@/components/layout/FilterDropdown.vue'
 import MemberPicker from '@/components/layout/MemberPicker.vue'
 import { DELAYED, ISSUE_LEVEL, ISSUE_STATUS, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
+import { useDeferredPanels } from '@/composables/useDeferredPanels'
 import { freezeLeave } from '@/composables/freezeLeave'
 import { useDomRegistry } from '@/composables/useDomRegistry'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
@@ -24,6 +25,8 @@ const filter = useFilterStore()
 const taskStore = useTaskStore()
 const sticky = useStickyOffsetsContext()
 const registry = useDomRegistry()
+/** 首屏外的面板延後掛載（K1）：捷徑跳到還沒掛的面板前先掛上 */
+const deferredPanels = useDeferredPanels()
 
 const rootEl = ref<HTMLElement | null>(null)
 watch(rootEl, (el) => sticky.observe('top', el), { immediate: true })
@@ -220,8 +223,10 @@ const PANEL_JUMP_GAP = 12
  * 捲到面板，讓面板頂端停在 sticky 頂部列下方 12px（legacy :2223-2227）。
  * 不用 `scrollIntoView({ block: 'start' })`：它把面板頂端對齊視窗頂端，會被 sticky 頂部列蓋住標題列。
  * 面板元素由 `PanelShell` 登錄進 `panels`（契約 F），不再用 `data-panel` 反查。
+ * 從總覽切進來時看板 / Issue 可能還沒掛（useDeferredPanels）：先掛上、等 DOM 更新完再量。
  */
-function jumpPanel(key: 'gantt' | 'kanban' | 'issues'): void {
+async function jumpPanel(key: 'gantt' | 'kanban' | 'issues'): Promise<void> {
+  await deferredPanels.ensure()
   const el = registry.panels.get(key)
   if (!el) return
   const top = el.getBoundingClientRect().top + window.scrollY - sticky.panelTop.value - PANEL_JUMP_GAP

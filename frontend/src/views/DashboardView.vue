@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Dashboard 主畫面：載資料、組頂部列 + 摘要卡 + 三個面板，並掛全域的點擊外部與時鐘。
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, watch } from 'vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import DatePicker from '@/components/common/DatePicker.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
@@ -16,11 +16,13 @@ import TopBar from '@/components/layout/TopBar.vue'
 import SummaryCards from '@/components/summary/SummaryCards.vue'
 import { useClickOutside } from '@/composables/useClickOutside'
 import { useConfirmProps } from '@/composables/useConfirmProps'
+import { provideDeferredPanels } from '@/composables/useDeferredPanels'
 import { provideDomRegistry } from '@/composables/useDomRegistry'
 import { clearMenuAnchors } from '@/composables/useMenus'
 import { useNow } from '@/composables/useNow'
 import { useProjectBoot } from '@/composables/useProjectBoot'
 import { useStickyOffsets } from '@/composables/useStickyOffsets'
+import { isPageSwapping, swapRestoresScroll } from '@/router/pageSwap'
 import { useUiStore } from '@/stores/ui'
 
 const ui = useUiStore()
@@ -32,7 +34,7 @@ const boot = useProjectBoot()
 useStickyOffsets()
 // DOM 登錄表也在最上層（契約 F）：面板 / 列 / 條 / 卡片各自登錄，
 // 拖曳與捲動對位改查這張表，不再用 DOM 選擇器
-provideDomRegistry()
+const registry = provideDomRegistry()
 useClickOutside()
 useNow()
 
@@ -40,9 +42,35 @@ useNow()
 // v-bind 一次帶進 props 與 onNext / onConfirm / onCancel 三個 emit listener。
 const confirmView = useConfirmProps()
 
+/*
+ * 首屏外的看板與 Issue 面板延後掛（動畫稽核 K1，規則見 composables/useDeferredPanels.ts）：
+ * 只在「從別頁切進來、而且不還原到非 0 的捲動位置」時延後。直接開頁 / 重新整理沒有切頁淡入要保護；
+ * 上一頁 / 下一頁回到捲過的位置時，新頁在掛上當下就要是最終高度（spec 7b，router/pageSwap.ts）。
+ */
+const { kanban: kanbanReady, issues: issuesReady } = provideDeferredPanels(isPageSwapping() && !swapRestoresScroll())
+
+/**
+ * 首屏看得到的面板一律同步掛（高螢幕、甘特收合時）：上一個面板的下緣在視窗內，下一個就在同一次更新裡掛上，
+ * 第一幀就完整、不會在看得到的地方晚一步冒出來。掛載當下 TopBar 的 measureFit 已經算過版面，這裡讀位置不多花。
+ * 用頁面座標（加回 scrollY）：延後只發生在會捲回頂端的切頁，掛載當下 router 還沒捲（還是上一頁的捲動位置）。
+ */
+function mountVisible(): void {
+  if (ui.loadState !== 'ready') return
+  const bottomInView = (key: 'gantt' | 'kanban'): boolean => {
+    const el = registry.panels.get(key)
+    return !!el && el.getBoundingClientRect().bottom + window.scrollY < window.innerHeight
+  }
+  if (!kanbanReady.value) {
+    if (bottomInView('gantt')) kanbanReady.value = true
+  } else if (!issuesReady.value && bottomInView('kanban')) issuesReady.value = true
+}
+// 看板掛上後（同一輪的 post）再看 Issue；資料晚到（載入中 → ready）時也重看一次
+watch([() => ui.loadState, kanbanReady], mountVisible, { flush: 'post' })
+
 onMounted(() => {
   boot.start()
   void boot.reload()
+  mountVisible()
 })
 
 // 離開頁面時停掉訂閱，並清掉浮層；否則從總覽回來時上次開著的視窗會自己跳出來
@@ -69,8 +97,8 @@ onBeforeUnmount(() => {
         <template v-else>
           <SummaryCards />
           <GanttPanel />
-          <KanbanPanel />
-          <IssuePanel />
+          <KanbanPanel v-if="kanbanReady" />
+          <IssuePanel v-if="issuesReady" />
         </template>
       </div>
     </main>

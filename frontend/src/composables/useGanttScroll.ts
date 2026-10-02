@@ -7,8 +7,6 @@ import { useUiStore } from '@/stores/ui'
 
 /** 縮放滑桿放手後多久恢復甘特條的位移補間。legacy `_zoomT`（:3586） */
 const ZOOM_SETTLE_MS = 160
-/** 掛載後多久自動捲到今天；legacy 是 `setTimeout(() => this.jumpToday(), 60)`（:1926）。 */
-const INITIAL_JUMP_MS = 60
 
 export interface GanttScroll {
   /** chart 目前的水平捲動位置；Issue 徽章要靠它夾在可視範圍內。legacy `S.scrollX`（:2933） */
@@ -50,7 +48,6 @@ export function useGanttScroll(
   /** 正在跑的捲動補間；被新的捲動或使用者動手取消時換掉，已排隊的那一幀看到不是自己就不再寫。 */
   let anim: { raf: number } | null = null
   let zoomTimer: ReturnType<typeof setTimeout> | undefined
-  let initialTimer: ReturnType<typeof setTimeout> | undefined
   let ro: ResizeObserver | undefined
 
   function syncRuler(): void {
@@ -147,6 +144,23 @@ export function useGanttScroll(
     ui.setDayWidth(v)
   }
 
+  /*
+   * 第一次捲到今天：資料已到就在掛載當下捲（同一個 task、第一幀之前）；資料晚到（onMounted 之後才非同步載進來）
+   * 就在任務到齊、DOM 更新完時立刻捲。legacy 是掛載後 60ms 才跳（`setTimeout(() => this.jumpToday(), 60)`，:1926）：
+   * 從總覽切進來時那 60ms 落在 Dashboard 淡入期間，捲動逼出整頁版面計算、onscroll 再同步尺規，長幀把淡入吃掉（動畫稽核 K1）。
+   * 掛載當下頁面還是透明的（切頁淡入的 enter-from），捲動看不到；直接開頁時第一幀就停在今天。
+   * 任務到齊就算跳過了：面板收合著（沒有 scroller）時 jumpToday 什麼都不做，同 legacy，展開時照 D12 回到記住的位置；
+   * 不能等到有 scroller 才算，否則展開後任務數一變（新增、刪除、背景重載）就把使用者捲到的位置拉回今天（review）。
+   */
+  let jumped = false
+  function initialJump(): void {
+    if (jumped || !taskStore.tasks.length) return
+    jumped = true
+    jumpToday(false)
+    stopInitialJump()
+  }
+  const stopInitialJump = watch(() => taskStore.tasks.length, initialJump, { flush: 'post' })
+
   onMounted(() => {
     measure()
     listen(scroller.value)
@@ -155,22 +169,8 @@ export function useGanttScroll(
       if (scroller.value) ro.observe(scroller.value)
     }
     window.addEventListener('resize', measure)
+    initialJump()
   })
-
-  // 資料是 onMounted 之後非同步載進來的，等第一批任務到齊才捲到今天（legacy 的資料是同步的，:1926）
-  let jumped = false
-  const stopInitialJump = watch(
-    () => taskStore.tasks.length,
-    (n) => {
-      if (jumped || !n) return
-      jumped = true
-      initialTimer = setTimeout(() => {
-        jumpToday(false)
-        stopInitialJump()
-      }, INITIAL_JUMP_MS)
-    },
-    { immediate: true },
-  )
 
   // 面板重新展開時 scroller 會換一顆 DOM，要重新量與重新監看
   watch(scroller, (el) => {
@@ -190,7 +190,6 @@ export function useGanttScroll(
     stopScroll()
     listen(null)
     clearTimeout(zoomTimer)
-    clearTimeout(initialTimer)
     ro?.disconnect()
     window.removeEventListener('resize', measure)
   })
