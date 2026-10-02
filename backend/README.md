@@ -4,7 +4,7 @@ Python（FastAPI）＋ PostgreSQL。技術一覽與使用慣例見 [`docs/refere
 
 ## 現況
 
-骨架：只有一支 `GET /api/health`（程式有在跑、資料庫連得上就回 `{"status": "ok"}`）。還沒有資料表、業務端點與登入，前端也還沒接上。
+資料表與軟刪除（回收桶）機制已建好（`app/models.py`，規則見下面〈資料表與 migration〉〈軟刪除〉）。端點只有一支 `GET /api/health`（程式有在跑、資料庫連得上就回 `{"status": "ok"}`）；業務端點與登入還沒做，前端也還沒接上。
 
 ## 安裝與指令
 
@@ -79,7 +79,7 @@ uv run pytest
 backend/
 ├── app/
 │   ├── main.py              FastAPI 進入點，所有 router 掛在 /api 底下
-│   ├── models.py            資料表定義（SQLAlchemy 2，全部繼承 Base；目前沒有資料表）
+│   ├── models.py            資料表定義（SQLAlchemy 2，全部繼承 Base；目前單檔，超過約 600 行再拆）
 │   ├── api/
 │   │   ├── main.py          把 routes/ 的 router 集合起來
 │   │   ├── deps.py          端點共用的依賴（SessionDep：每個請求一個資料庫 session）
@@ -88,11 +88,21 @@ backend/
 │   ├── scripts/             開發用指令稿（export_openapi.py：匯出 OpenAPI 給前端產生型別）
 │   ├── core/
 │   │   ├── config.py        設定（pydantic-settings，從環境變數與 .env 讀）
-│   │   └── db.py            engine 與 session
+│   │   ├── db.py            engine 與 session
+│   │   ├── soft_delete.py   軟刪除：SoftDeleteMixin 與「查詢自動排除已刪除」
+│   │   └── time.py          today()：用設定的 TIMEZONE 算「今天」
+│   ├── services/            商業邏輯（不 import fastapi，丟 errors.py 的例外）
+│   │   ├── _live.py         get_live()：依 id 取一筆活著的資料
+│   │   └── errors.py        service 的例外（NotFound…）
 │   └── alembic/             migration：env.py、script.py.mako（新檔的範本）、versions/
 ├── tests/                   pytest；目錄對應 app/（tests/api/routes/ 對 app/api/routes/）
 │   ├── conftest.py          測試資料庫、交易 rollback、client 與 db fixture
 │   ├── db_guard.py          測試資料庫名稱檢查
+│   ├── factories.py         測試資料工廠：make_member()、make_task()…、soft_delete()
+│   ├── helpers.py           assert_no_live_orphans()：活著的資料上層一定也活著
+│   ├── test_soft_delete.py  軟刪表清單；每種查詢都碰不到已刪除的資料
+│   ├── test_source_rules.py 讀原始碼守住：不繞過軟刪除、分層
+│   ├── test_schema.py       資料庫約束（複合外鍵、部分唯一索引、檢查約束、批次）
 │   ├── test_openapi_snapshot.py  frontend/src/api/http/openapi.json 跟程式一致
 │   ├── test_async_whitelist.py   async def 白名單
 │   └── test_alembic_ini.py  alembic.ini 只能有 ASCII
@@ -115,6 +125,7 @@ backend/
 |---|---|
 | `DATABASE_URL` | app 與 alembic 連的資料庫 |
 | `TEST_DATABASE_URL` | pytest 連的資料庫，名稱必須以 `_test` 結尾 |
+| `TIMEZONE` | 「今天」用的時區，預設 `Asia/Taipei`（正式環境的容器是 UTC，不能用伺服器時區算日期） |
 
 連線字串格式是 `postgresql+psycopg://帳號:密碼@主機:port/資料庫名稱`；用別的開頭（例如 `postgresql://`）啟動時會直接報錯。
 
@@ -167,6 +178,8 @@ model 的寫法：
 - 第一個用到資料庫的測試開始前，會先跑一次 `alembic upgrade head`。
 - 每個測試包在一個交易裡，結束時 rollback；測試裡就算 `session.commit()`，資料也不會留下來。
 - 寫 API 測試用 `client`（打 API）與 `db`（直接查資料庫）兩個 fixture，範例在 `tests/conftest.py` 開頭。
+- 測試資料用 `tests/factories.py` 的 `make_xxx(db, ...)` 建（只給測試在意的欄位，上層沒給就順便建）；進回收桶用 `soft_delete(db, 主體, *連帶的列)`。
+- 刪除、還原的測試最後呼叫 `tests/helpers.py` 的 `assert_no_live_orphans(db)`。
 
 ### 資料表與 migration
 
@@ -175,3 +188,31 @@ model 的寫法：
 - 新產生的 migration 檔會自動用 ruff 修正與排版。
 - CI 跑 `alembic check`：`app/models.py` 改了卻沒有對應的 migration 就失敗。
 - `alembic.ini` 只能寫英文：alembic 用系統編碼讀這個檔，Windows 上遇到中文會讀檔失敗（`tests/test_alembic_ini.py` 會檢查）。
+- `deletions` 與 `projects` 互相有外鍵（回收桶批次屬於專案、專案本身也能進回收桶）。`deletions.project_id` 標了 `use_alter`，autogenerate 會把它寫進 `create_table`，但建表時會被略過；之後的 migration 若要重建這兩張表，照第一支 migration 的寫法（建完 `projects` 再 `op.create_foreign_key`）。
+
+資料表的慣例（`app/models.py` 檔頭也有）：
+
+- 表名、欄名 snake_case，避開 SQL 保留字（`end` → `end_on`、`desc` → `description`，分類表叫 `task_groups`）。日期欄叫 `*_on`（DATE），時間點叫 `*_at`（TIMESTAMPTZ，一律帶時區）。
+- 主鍵都是 UUID。前端產生 id 的（分類、任務、相依、Issue、留言）存 client 給的值；server 產生的（成員、專案、附件、刪除批次）model 有 `default=uuid.uuid4`。
+- 列舉值用 TEXT ＋ CHECK，不用 PostgreSQL 的 ENUM（之後加值只要改 CHECK）。
+- 「同一個專案」用複合外鍵保證：被參照的表有 `UNIQUE (id, project_id)`，參照端用 `(xxx_id, project_id)` 指過去，跨專案的資料寫不進去。
+- 要保留插入順序的表（相依、Issue、留言）有 `seq`（自動遞增）：同一個交易裡 `now()` 都一樣，不能拿 `created_at` 排序。
+- 排序鍵 `position`：重排時整份重寫成 0..n-1；不設唯一（還原回來的列可能跟別人同號），讀取時 `ORDER BY position, id`。
+- 上層對下層的關聯（`Project.groups`、`Task.issues`…）一定要寫：ORM 靠它決定同一次 flush 先寫上層。連動刪除交給資料庫的 `ON DELETE`。
+- 結束日不早於開始日、`done` 只在完成時有值這類業務規則不在資料庫擋（那是前端的連動計算負責的）。
+
+### 軟刪除（回收桶）
+
+刪除先進回收桶，30 天後才真的刪掉。機制在 `app/core/soft_delete.py`。
+
+- 軟刪的表：`projects`、`task_groups`、`tasks`、`task_deps`、`issues`、`comments`、`attachments`（清單在 `tests/test_soft_delete.py` 的 `SOFT_DELETE_MODELS`）。成員不刪；負責人、處理人跟著上層。
+- 每張軟刪表有 `deleted_at`（刪除時間）與 `deletion_id`（刪除批次，`deletions` 表），兩欄一起有值。一次刪除＝一個批次，連帶的資料標同一個 `deletion_id`，還原時整批回來；刪分類連任務時，每個任務是分類底下的子批次（`deletions.parent_id`），可以各自還原。
+- **查詢不用自己加 `deleted_at IS NULL`**：ORM 的 `select`、`update`、`delete`（含 join、關聯載入）自動只碰活著的列。
+- 依 id 取一筆用 `app.services._live.get_live(session, Model, id)`，不要用 `session.get()`（可能拿到同一個請求裡剛被刪的物件）。id 格式不對、不存在、已刪除都丟 `NotFound`（→ 404）。
+- 要看已刪除的資料：語句加 `.execution_options(include_deleted=True)`。只有回收桶（`services/trash.py`）與 30 天清除（`jobs/purge.py`）可以用。
+- 繞過 ORM 的寫法擋不住，所以不准用：`text()` 寫的 SQL（只有 `api/routes/health.py` 例外）、直接查 `Model.__table__`。
+- 以上由 `tests/test_source_rules.py`（讀原始碼）與 `tests/test_soft_delete.py`（實際查詢）守住。
+- 新增一張軟刪表：繼承 `SoftDeleteMixin`、`__table_args__` 放 `*soft_delete_table_args()`，再把它加進 `SOFT_DELETE_MODELS`。
+- 不變式：活著的資料，它的上層一定也活著。刪除、還原的測試最後呼叫 `assert_no_live_orphans(db)`。
+- 標記批次：先 `session.flush()` 把 `deletions` 那一列寫進去，再標各列的 `deletion_id`（兩者之間沒有 ORM 關聯，ORM 不知道誰先寫；用 `session.execute(update(...))` 標的話，執行前會自動 flush）。
+- 30 天清除：批次照刪除時間由舊到新（同時間的子批次先），每批由下往上刪（附件 → 留言 → Issue → 相依 → 任務 → 分類 → 專案）。直接刪一個還有其他批次資料的專案會被 `deletion_id` 的外鍵擋下：PostgreSQL 的連動刪除是一層一層排隊執行，外鍵檢查可能在下層還沒刪到之前就先跑（`tests/test_schema.py` 有照這個順序清除的測試）。
