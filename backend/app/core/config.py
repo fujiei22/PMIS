@@ -6,6 +6,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -41,6 +42,18 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"DATABASE_URL 要以 {DRIVER}:// 開頭（psycopg 3 驅動），目前是 {drivername}://"
             )
+        return value
+
+    # 「今天」用的時區（IANA 名稱）。正式環境的容器是 UTC，不能用伺服器時區算日期。
+    TIMEZONE: str = "Asia/Taipei"
+
+    @field_validator("TIMEZONE")
+    @classmethod
+    def require_known_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"TIMEZONE 不是認得的時區名稱（例如 Asia/Taipei）：{value}") from exc
         return value
 
 

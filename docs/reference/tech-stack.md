@@ -83,7 +83,7 @@ PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 
 ## 後端：技術一覽
 
-程式在 `backend/`，目前是骨架：只有 `GET /api/health`，還沒有資料表、業務端點與登入。下表的資料分析、Excel 讀寫、即時推送、登入與部署還沒導入。開工導覽見 [`backend/README.md`](../../backend/README.md)。
+程式在 `backend/`：資料表與軟刪除機制已建，端點只有 `GET /api/health`，還沒有業務端點與登入。下表的資料分析、Excel 讀寫、即時推送、登入與部署還沒導入。開工導覽見 [`backend/README.md`](../../backend/README.md)。
 
 | 項目 | 使用 |
 |---|---|
