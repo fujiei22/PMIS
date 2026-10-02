@@ -82,7 +82,7 @@ test.describe('切頁與載入的銜接', () => {
     // 離開期間資料被改了（等同別人改的）：回來後背景重載要把它帶進來，也用它確認背景重載跑完
     await page.evaluate(async () => {
       const api = window.__mockApi!
-      const t = (await api.loadProject()).tasks.find((x) => x.status !== 'done')!
+      const t = (await api.loadProject('pmis')).tasks.find((x) => x.status !== 'done')!
       await api.updateTask(t.id, { status: 'done', done: '2026-09-18' })
     })
 

@@ -5,9 +5,12 @@ import { ApiError } from '@/api/types'
 import { useProjectBoot } from '@/composables/useProjectBoot'
 import { dayIndex, isoFromIndex } from '@/lib/date'
 import { sampleProject } from '@/mocks/sampleProject'
+import { useBudgetStore } from '@/stores/budget'
 import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useIssueStore } from '@/stores/issue'
+import { useMemberStore } from '@/stores/member'
+import { useProjectStore } from '@/stores/project'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -28,7 +31,7 @@ describe('taskStore', () => {
     useClockStore().now = NOW
     vi.spyOn(console, 'error').mockImplementation(() => {})
     // boot 負責 loadState 與 error sink，也把派生層的清理 watch 掛好（契約 E）
-    await useProjectBoot().reload()
+    await useProjectBoot('pmis').reload()
   })
 
   afterEach(() => {
@@ -57,7 +60,7 @@ describe('taskStore', () => {
   it('load 失敗時 reject，本地資料不動', async () => {
     const s = useTaskStore()
     mockApi.failNext('loadProject')
-    await expect(s.load()).rejects.toThrow()
+    await expect(s.load('pmis')).rejects.toThrow()
     expect(s.tasks).toHaveLength(30)
   })
 
@@ -71,8 +74,8 @@ describe('taskStore', () => {
     vi.spyOn(api, 'loadProject')
       .mockImplementationOnce(() => new Promise((r) => (releaseOlder = () => r(older))))
       .mockImplementationOnce(() => Promise.resolve(newer))
-    const first = s.load()
-    await s.load()
+    const first = s.load('pmis')
+    await s.load('pmis')
     releaseOlder()
     await first
     expect(s.tasks[0]!.name).toBe('較新的快照')
@@ -88,7 +91,7 @@ describe('taskStore', () => {
     vi.spyOn(api, 'loadProject').mockImplementationOnce(
       () => new Promise((r) => (releaseOlder = () => r(older))),
     )
-    const first = s.load()
+    const first = s.load('pmis')
     await s.load(pushed)
     releaseOlder()
     await first
@@ -103,8 +106,8 @@ describe('taskStore', () => {
     vi.spyOn(api, 'loadProject')
       .mockImplementationOnce(() => Promise.resolve(older))
       .mockImplementationOnce(() => new Promise((_, reject) => (releaseNewer = reject)))
-    const first = s.load()
-    const second = s.load()
+    const first = s.load('pmis')
+    const second = s.load('pmis')
     await first
     expect(s.tasks[0]!.name).toBe('較早的一發')
     releaseNewer(new ApiError('network', 'x'))
@@ -116,8 +119,86 @@ describe('taskStore', () => {
     const s = useTaskStore()
     const ui = useUiStore()
     ui.toggleGroup('g1')
-    await s.load()
+    await s.load('pmis')
     expect(ui.collapsedGroups.has('g1')).toBe(true)
+  })
+
+  it('load(id) 把專案 id 傳給 api，專案本身與 canEdit 進 project store', async () => {
+    const s = useTaskStore()
+    const spy = vi.spyOn(api, 'loadProject')
+    await s.load('pmis')
+    expect(spy).toHaveBeenCalledWith('pmis')
+    expect(useProjectStore().meta).toEqual({ id: 'pmis', name: 'My Project', pmId: 'm5' })
+    expect(useProjectStore().canEdit).toBe(true)
+  })
+
+  it('換了專案：上一個專案晚回來的 load 整個丟掉（同一個專案的較早一發才照樣套用）', async () => {
+    const s = useTaskStore()
+    const old = structuredClone(sampleProject)
+    old.tasks[0]!.name = '上一個專案'
+    let releaseOld!: () => void
+    vi.spyOn(api, 'loadProject')
+      .mockImplementationOnce(() => new Promise((r) => (releaseOld = () => r(old))))
+      .mockImplementationOnce(() => new Promise(() => {}))
+    const first = s.load('a')
+    void s.load('b')
+    releaseOld()
+    await first
+    expect(s.tasks[0]!.name).not.toBe('上一個專案')
+  })
+
+  it('reset 清空整個資料層：分類 / 任務 / 相依與 member / issue / comment / budget / project', () => {
+    const s = useTaskStore()
+    useCommentStore().draft = '打到一半'
+    s.reset()
+    expect(s.groups).toEqual([])
+    expect(s.tasks).toEqual([])
+    expect(s.deps).toEqual([])
+    expect(useIssueStore().issues).toEqual([])
+    expect(useCommentStore().comments).toEqual([])
+    expect(useCommentStore().draft).toBe('')
+    expect(useMemberStore().members).toEqual([])
+    expect(useMemberStore().currentUserId).toBe('')
+    expect(useBudgetStore().budget).toEqual({ total: 0, actual: 0 })
+    expect(useProjectStore().meta).toEqual({ id: '', name: '', pmId: '' })
+    expect(useProjectStore().canEdit).toBe(false)
+  })
+
+  it('reset 讓還在飛的 load 作廢：晚回來也不把上一個專案灌回來', async () => {
+    const s = useTaskStore()
+    let release!: () => void
+    vi.spyOn(api, 'loadProject').mockImplementationOnce(
+      () => new Promise((r) => (release = () => r(structuredClone(sampleProject)))),
+    )
+    const pending = s.load('pmis')
+    s.reset()
+    release()
+    await pending
+    expect(s.tasks).toEqual([])
+  })
+
+  it('reset 之後，上一個專案還在飛的寫入回來不會被插回清單；失敗照樣報錯', async () => {
+    const s = useTaskStore()
+    const ui = useUiStore()
+    let finishCreate!: (t: unknown) => void
+    vi.spyOn(api, 'createTask').mockImplementationOnce(
+      () => new Promise((r) => (finishCreate = r as (t: unknown) => void)),
+    )
+    let failGroup!: (e: unknown) => void
+    vi.spyOn(api, 'createGroup').mockImplementationOnce(
+      () => new Promise((_, reject) => (failGroup = reject)),
+    )
+    const t = s.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-09-18', end: '2026-09-22' })!
+    s.addGroup()
+    s.reset()
+
+    finishCreate(structuredClone({ ...t }))
+    failGroup(new ApiError('network', 'x'))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(s.tasks).toEqual([])
+    expect(s.groups).toEqual([])
+    // 那次修改真的沒存到：錯誤條照樣要讓人知道
+    expect(ui.errors.map((e) => e.label)).toContain('新增分類')
   })
 
   it('taskById / groupById 走索引且查不到回 undefined', () => {
@@ -170,12 +251,14 @@ describe('taskStore', () => {
     expect(s.predecessors('t1').map((t) => t.id)).toEqual(['t28'])
   })
 
-  it('addGroup 依現有數量命名並接在最後', () => {
+  it('addGroup 依現有數量命名並接在最後，送出時帶目前專案的 id', () => {
     const s = useTaskStore()
+    const createGroup = vi.spyOn(api, 'createGroup')
     const g = s.addGroup()
     expect(g.name).toBe('新分類 7')
     expect(s.groups[s.groups.length - 1]!.id).toBe(g.id)
     expect(useUiStore().collapsedGroups.has(g.id)).toBe(false)
+    expect(createGroup).toHaveBeenCalledWith('pmis', g)
   })
 
   // 收合的 action 在 ui（契約 E：資料層不再轉呼叫派生層）
@@ -441,19 +524,21 @@ describe('taskStore', () => {
       expect(s.taskById('t5')!.name).toBe('打到一半')
     })
 
-    it('列重排放開送一次 reorderTasks、分類重排送 reorderGroups', async () => {
+    it('列重排放開送一次 reorderTasks、分類重排送 reorderGroups（都帶目前專案的 id）', async () => {
       const s = useTaskStore()
       const reorderTasks = vi.spyOn(api, 'reorderTasks')
       const reorderGroups = vi.spyOn(api, 'reorderGroups')
       s.moveTaskToLocal('t1', { kind: 't', id: 't3' })
       await s.commitTaskOrder()
       expect(reorderTasks).toHaveBeenCalledTimes(1)
-      expect(reorderTasks.mock.calls[0]![0]).toHaveLength(30)
+      expect(reorderTasks.mock.calls[0]![0]).toBe('pmis')
+      expect(reorderTasks.mock.calls[0]![1]).toHaveLength(30)
 
       s.moveGroupLocal('g1', 1)
       await s.commitGroupOrder()
       expect(reorderGroups).toHaveBeenCalledTimes(1)
-      expect(reorderGroups.mock.calls[0]![0].slice(0, 2)).toEqual(['g2', 'g1'])
+      expect(reorderGroups.mock.calls[0]![0]).toBe('pmis')
+      expect(reorderGroups.mock.calls[0]![1].slice(0, 2)).toEqual(['g2', 'g1'])
     })
 
     // review F3：order 是送出當下的快照，之後才寫進 server 的實體不在裡面

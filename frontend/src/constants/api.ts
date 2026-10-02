@@ -9,6 +9,8 @@ import { ApiError, type ApiErrorCode } from '@/api/types'
 export const API_ERROR_TEXT = {
   network: '連線失敗',
   validation: '資料不合法',
+  unauthorized: '登入已失效',
+  forbidden: '沒有權限',
   not_found: '資料已不存在',
   conflict: '與伺服器狀態衝突',
   unknown: '發生錯誤',

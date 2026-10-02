@@ -14,6 +14,7 @@ import {
 import {
   applyServerValue,
   clearDirty,
+  clearTracker,
   cloneEntity,
   createTracker,
   insertIndexOf,
@@ -26,6 +27,7 @@ import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
+import { useProjectStore } from '@/stores/project'
 import type { Dependency, DropTarget, Group, ISODate, ProjectData, Task } from '@/types/models'
 
 /**
@@ -37,7 +39,8 @@ const GROUP_ORDER_KEY = 'groups:order'
 
 /**
  * 分類、任務與相依——Dashboard 的主資料。
- * 它也是 load() 的入口：一次把 ProjectData 分給 member / issue / comment store。
+ * 它也是 load() 的入口：一次把 ProjectData 分給 member / issue / comment / budget / project store；
+ * 換專案時的 reset() 同樣由它一次清掉這幾個。
  *
  * 每個寫入 action 都是樂觀的（契約 B）：先改本地、再打 api，
  * 失敗時把牽動到的 id 放回 `tracker.server`（最後已知的 server 狀態）。
@@ -75,27 +78,39 @@ export const useTaskStore = defineStore('task', () => {
   let loadSeq = 0
   /** 畫面上的資料來自第幾發；0 表示還沒套用過。 */
   let appliedSeq = 0
+  /**
+   * 最後一次要載的是哪個專案。回應回來時已經改載別的專案，就整個丟掉：
+   * 同一個專案的較早一發照樣套用（見上），換了專案的舊回應不能把上一個專案灌進來。
+   */
+  let requestedId: string | null = null
 
   /**
    * 載入整包專案資料並分給各 store。
    *
-   * 不帶參數 = 走 `api.loadProject()`；帶 `data` = 直接採用
+   * 給專案 id = 走 `api.loadProject(id)`；給 `ProjectData` = 直接採用
    * （`project.reloaded` 事件走這條）。**不跑 cascade**：後端資料為準
    * （spec 目標 5、已定案決策）。
    *
    * 失敗就 **reject**：`loadState` / `loadError` 是畫面狀態，由啟動層
-   * `useProjectBoot().reload()` 接（契約 E）。
+   * `useProjectBoot(id).reload()` 接（契約 E）。
    */
-  async function load(data?: ProjectData): Promise<void> {
+  async function load(source: string | ProjectData): Promise<void> {
     const ticket = ++loadSeq
-    const next = data ?? (await api.loadProject())
-    if (ticket < appliedSeq) return
+    if (typeof source !== 'string') {
+      appliedSeq = ticket
+      applyProject(source)
+      return
+    }
+    requestedId = source
+    const next = await api.loadProject(source)
+    if (ticket < appliedSeq || source !== requestedId) return
     appliedSeq = ticket
     applyProject(next)
   }
 
   /** 把一份 ProjectData 灌進各個 store，並重置三個 tracker。 */
   function applyProject(data: ProjectData): void {
+    useProjectStore().setAll(data.project, data.canEdit)
     useMemberStore().setAll(data.members, data.currentUserId)
     useIssueStore().setAll(data.issues)
     useCommentStore().setAll(data.comments)
@@ -106,6 +121,27 @@ export const useTaskStore = defineStore('task', () => {
     resetTracker(taskTracker, data.tasks)
     resetTracker(groupTracker, data.groups)
     resetTracker(depTracker, data.deps)
+  }
+
+  /**
+   * 換專案時清空整個資料層（applyProject 的反向）：分類 / 任務 / 相依，以及 member / issue / comment /
+   * budget / project store。還在飛的 load 一律作廢；上一個專案還在飛的寫入回來時也不再碰本地（`clearTracker`）。
+   * 派生層（selection / filter / ui）不在這裡清，由啟動層 `useProjectBoot` 處理（資料層不認識派生層，契約 E）。
+   */
+  function reset(): void {
+    appliedSeq = ++loadSeq
+    requestedId = null
+    groups.value = []
+    tasks.value = []
+    deps.value = []
+    clearTracker(taskTracker)
+    clearTracker(groupTracker)
+    clearTracker(depTracker)
+    useProjectStore().reset()
+    useMemberStore().reset()
+    useIssueStore().reset()
+    useCommentStore().reset()
+    useBudgetStore().reset()
   }
 
   // ── 對齊 server（失敗還原 / 事件）────────────────────────────────────────
@@ -242,7 +278,7 @@ export const useTaskStore = defineStore('task', () => {
       tracker: groupTracker,
       ids: [g.id],
       label: '新增分類',
-      call: () => api.createGroup(cloneEntity(g)),
+      call: () => api.createGroup(useProjectStore().meta.id, cloneEntity(g)),
       reconcile: reconcileGroup,
     })
     return g
@@ -358,7 +394,7 @@ export const useTaskStore = defineStore('task', () => {
       ids: [GROUP_ORDER_KEY],
       label: '調整分類順序',
       call: async () => {
-        await api.reorderGroups(ids)
+        await api.reorderGroups(useProjectStore().meta.id, ids)
         ok = true
         const prev = groupTracker.server
         const next = new Map<string, Group>()
@@ -510,7 +546,7 @@ export const useTaskStore = defineStore('task', () => {
       ids: [TASK_ORDER_KEY],
       label: '調整任務順序',
       call: async () => {
-        await api.reorderTasks(order)
+        await api.reorderTasks(useProjectStore().meta.id, order)
         ok = true
         const prev = taskTracker.server
         const next = new Map<string, Task>()
@@ -677,6 +713,7 @@ export const useTaskStore = defineStore('task', () => {
       return t
     })
 
+    const epoch = taskTracker.epoch
     void (async () => {
       let ok = false
       await runOptimistic<Dependency>({
@@ -690,6 +727,8 @@ export const useTaskStore = defineStore('task', () => {
         },
         reconcile: reconcileDep,
       })
+      // 等相依的這段時間換了專案：被推動的那幾筆屬於上一個專案，不送也不還原
+      if (taskTracker.epoch !== epoch) return
       if (!ok) {
         // 相依沒建起來 → 它推動的日期也不該留著（review F5）
         for (const t of changed) reconcileTask(taskTracker.server.get(t.id), t.id)
@@ -767,6 +806,7 @@ export const useTaskStore = defineStore('task', () => {
     taskById,
     groupById,
     load,
+    reset,
     applyEvent,
     range,
     addGroup,

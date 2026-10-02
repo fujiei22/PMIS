@@ -16,7 +16,7 @@ declare global {
       setLatency(ms: number): void
       reset(): void
       /** 只宣告測試會讀到的欄位。 */
-      loadProject(): Promise<{ tasks: { id: string; status: string }[] }>
+      loadProject(id: string): Promise<{ tasks: { id: string; status: string }[] }>
       updateTask(id: string, patch: { status?: string; done?: string }): Promise<unknown>
     }
   }

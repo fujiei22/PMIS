@@ -94,6 +94,8 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
   }
 
   return {
+    // mock 只有一份完整專案：不看 id、任何 id 都回它（README〈現況〉）；
+    // 權限也不判斷，canEdit 照資料（範例是 true）
     loadProject: () => call('loadProject', () => store.snapshot()),
 
     // PMIS 摘要從 store 目前的資料即時彙整，Dashboard 的改動回總覽就看得到（spec 7b）。
@@ -131,15 +133,16 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
         emit({ type: 'task.deleted', payload: { id } })
       }),
 
-    reorderTasks: (order: { id: string; groupId: string }[]) =>
+    reorderTasks: (projectId: string, order: { id: string; groupId: string }[]) =>
       call('reorderTasks', () => {
         // 純順序變更沒有對應事件（見 types.ts）；換了分類的才補一則 task.updated
-        for (const t of store.reorderTasks(order)) emit({ type: 'task.updated', payload: t })
+        for (const t of store.reorderTasks(projectId, order))
+          emit({ type: 'task.updated', payload: t })
       }),
 
-    createGroup: (g: Group) =>
+    createGroup: (projectId: string, g: Group) =>
       call('createGroup', () => {
-        const out = store.createGroup(g)
+        const out = store.createGroup(projectId, g)
         emit({ type: 'group.created', payload: out })
         return out
       }),
@@ -159,7 +162,8 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
         emit({ type: 'group.deleted', payload: { id } })
       }),
 
-    reorderGroups: (ids: string[]) => call('reorderGroups', () => store.reorderGroups(ids)),
+    reorderGroups: (projectId: string, ids: string[]) =>
+      call('reorderGroups', () => store.reorderGroups(projectId, ids)),
 
     createDep: (d: Dependency) =>
       call('createDep', () => {
@@ -211,7 +215,8 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
     downloadAttachment: (attachmentId: string) =>
       call('downloadAttachment', () => store.attachment(attachmentId)),
 
-    subscribe(handler: (e: ProjectEvent) => void): () => void {
+    // mock 只有一份專案，事件不分專案：projectId 不看
+    subscribe(_projectId: string, handler: (e: ProjectEvent) => void): () => void {
       handlers.add(handler)
       return () => {
         handlers.delete(handler)

@@ -1,5 +1,6 @@
 import { anchorCalendar, anchorOptionMenu, anchorRowMenu, viewport } from '@/lib/anchor'
 import { useClockStore } from '@/stores/clock'
+import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore, type OptionMenuKind } from '@/stores/ui'
@@ -49,9 +50,10 @@ export function useMenus(): Menus {
   const ui = useUiStore()
   const taskStore = useTaskStore()
   const memberStore = useMemberStore()
+  const issueStore = useIssueStore()
 
   /** 各 kind 的選項列數，決定選單估高與往上 / 往下開。legacy `openOpt` 的 N 表 :2673 */
-  function rowCountOf(kind: OptionMenuKind): number {
+  function rowCountOf(kind: OptionMenuKind, id: string): number {
     switch (kind) {
       case 'status':
         return 5
@@ -64,8 +66,12 @@ export function useMenus(): Menus {
       case 'itask':
         return taskStore.tasks.length
       case 'icreator':
-      case 'iowner':
-        return memberStore.members.length
+      case 'iowner': {
+        // 跟 OptionMenu 列的是同一份：沒停用的人，加上原本就選了的停用者
+        const issue = issueStore.byId(id)
+        const keep = !issue ? [] : kind === 'icreator' ? [issue.creatorId] : issue.ownerIds
+        return memberStore.assignable(keep).length
+      }
       default:
         // priority 與未列出的 kind 沿用 legacy 的預設 3
         return 3
@@ -83,7 +89,7 @@ export function useMenus(): Menus {
     ui.optionMenu = {
       id,
       kind,
-      ...anchorOptionMenu(rectOf(e, 'option'), rowCountOf(kind), viewport()),
+      ...anchorOptionMenu(rectOf(e, 'option'), rowCountOf(kind, id), viewport()),
     }
   }
 

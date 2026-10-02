@@ -14,7 +14,7 @@ describe('useProjectSync', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
     mockApi.reset(structuredClone(sampleProject))
-    await useTaskStore().load()
+    await useTaskStore().load('pmis')
   })
 
   it('依 type 前綴路由到 task / issue / comment store', () => {
@@ -22,7 +22,7 @@ describe('useProjectSync', () => {
     const tasks = useTaskStore()
     const issues = useIssueStore()
     const comments = useCommentStore()
-    sync.start()
+    sync.start('pmis')
 
     mockApi.emit({ type: 'task.updated', payload: { ...tasks.taskById('t3')!, name: '任務事件' } })
     mockApi.emit({ type: 'issue.updated', payload: { ...issues.byId('i1')!, title: 'Issue 事件' } })
@@ -39,7 +39,7 @@ describe('useProjectSync', () => {
   it('project.reloaded 重新載入整包', () => {
     const sync = useProjectSync()
     const tasks = useTaskStore()
-    sync.start()
+    sync.start('pmis')
     const next = structuredClone(sampleProject)
     next.tasks = next.tasks.slice(0, 3)
     mockApi.emit({ type: 'project.reloaded', payload: next })
@@ -50,8 +50,8 @@ describe('useProjectSync', () => {
   it('stop 之後不再收事件；重複 start 只訂一次', () => {
     const sync = useProjectSync()
     const tasks = useTaskStore()
-    sync.start()
-    sync.start()
+    sync.start('pmis')
+    sync.start('pmis')
     sync.stop()
     mockApi.emit({ type: 'task.updated', payload: { ...tasks.taskById('t3')!, name: '不該進來' } })
     expect(tasks.taskById('t3')!.name).not.toBe('不該進來')

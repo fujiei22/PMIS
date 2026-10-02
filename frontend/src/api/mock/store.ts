@@ -13,6 +13,10 @@ import type { Comment, Dependency, Group, Issue, ProjectData, Task } from '@/typ
  * 這也是真後端的行為（HTTP response 本來就是另一份資料）。
  */
 export interface MockStore {
+  /**
+   * 整包資料。mock 只有一份專案：任何 id 都回這一份（README〈現況〉），
+   * 所以 `loadProject(id)` 不把 id 傳進來。
+   */
   snapshot(): ProjectData
   reset(data: ProjectData): void
 
@@ -21,12 +25,13 @@ export interface MockStore {
   updateTasks(tasks: Task[]): Task[]
   /** 回傳被連動刪掉的東西，呼叫端拿去發事件。 */
   deleteTask(id: string): CascadeResult
-  reorderTasks(order: { id: string; groupId: string }[]): Task[]
+  /** 帶專案 id 的三支：id 不是這份資料的專案就 404（後端同樣以路徑上的專案為準）。 */
+  reorderTasks(projectId: string, order: { id: string; groupId: string }[]): Task[]
 
-  createGroup(g: Group): Group
+  createGroup(projectId: string, g: Group): Group
   updateGroup(id: string, patch: Partial<Group>): Group
   deleteGroup(id: string): CascadeResult & { tasks: string[] }
-  reorderGroups(ids: string[]): void
+  reorderGroups(projectId: string, ids: string[]): void
 
   createDep(d: Dependency): Dependency
   deleteDep(id: string): void
@@ -66,6 +71,11 @@ export function createMockStore(initial: ProjectData): MockStore {
 
   function requireNew(list: { id: string }[], id: string, what: string): void {
     if (list.some((x) => x.id === id)) throw conflict(what, id)
+  }
+
+  /** 路徑上的專案 id 必須是這份資料的專案；store 忘了帶、帶錯（例如空字串）都會在這裡被擋下。 */
+  function requireProject(projectId: string): void {
+    if (projectId !== data.project.id) throw notFound('專案', projectId)
   }
 
   /** 刪掉一批任務，連它們的 issue / dep / comment 一起。 */
@@ -123,7 +133,8 @@ export function createMockStore(initial: ProjectData): MockStore {
       return cascadeTasks(new Set([id]))
     },
 
-    reorderTasks(order: { id: string; groupId: string }[]): Task[] {
+    reorderTasks(projectId: string, order: { id: string; groupId: string }[]): Task[] {
+      requireProject(projectId)
       const by = new Map(data.tasks.map((t) => [t.id, t]))
       if (order.length !== data.tasks.length) {
         throw invalid('reorderTasks 必須帶整份任務順序')
@@ -145,7 +156,8 @@ export function createMockStore(initial: ProjectData): MockStore {
     },
 
     // ── 分類 ──────────────────────────────────────────────────────────────
-    createGroup(g: Group): Group {
+    createGroup(projectId: string, g: Group): Group {
+      requireProject(projectId)
       requireNew(data.groups, g.id, '分類')
       const copy = structuredClone(g)
       data.groups.push(copy)
@@ -166,7 +178,8 @@ export function createMockStore(initial: ProjectData): MockStore {
       return { ...cascaded, tasks }
     },
 
-    reorderGroups(ids: string[]): void {
+    reorderGroups(projectId: string, ids: string[]): void {
+      requireProject(projectId)
       if (ids.length !== data.groups.length) throw invalid('reorderGroups 必須帶整份分類順序')
       const by = new Map(data.groups.map((g) => [g.id, g]))
       data.groups = ids.map((id) => {

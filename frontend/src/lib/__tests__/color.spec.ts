@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { initialOf, rgba } from '@/lib/color'
 import type { Member } from '@/types/models'
 
-const m = (name: string): Member => ({ id: 'm1', name, role: '', color: '#2563eb' })
+const m = (name: string): Member => ({ id: 'm1', name, role: '', color: '#2563eb', active: true })
 
 describe('color', () => {
   it('rgba 支援 6 碼與 3 碼色碼', () => {

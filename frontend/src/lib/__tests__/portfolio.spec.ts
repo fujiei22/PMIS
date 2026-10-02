@@ -40,7 +40,13 @@ const row = (over: Partial<ProjectSummary>, today = '2026-09-22'): ProjectRow =>
   const p = proj(over)
   return { p, d: deriveProject(p, today) }
 }
-const m = (id: string, name: string): Member => ({ id, name, role: '專案經理', color: '#000000' })
+const m = (id: string, name: string): Member => ({
+  id,
+  name,
+  role: '專案經理',
+  color: '#000000',
+  active: true,
+})
 
 describe('pct', () => {
   it('四捨五入到整數；總數 0 回 0', () => {

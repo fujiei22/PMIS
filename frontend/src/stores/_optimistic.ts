@@ -26,10 +26,15 @@ export interface Tracker<T extends { id: string }> {
    * 對應的 commit 送出時清掉。
    */
   dirty: Set<string>
+  /**
+   * 換專案（`clearTracker`）的次數。`runOptimistic` 送出時記下它，回來時不一樣了就表示
+   * 這是上一個專案的請求：不寫 `server`、不對齊本地（否則上一個專案的實體會被插進新專案的清單）。
+   */
+  epoch: number
 }
 
 export function createTracker<T extends { id: string }>(): Tracker<T> {
-  return { server: new Map(), inflight: new Map(), dirty: new Set() }
+  return { server: new Map(), inflight: new Map(), dirty: new Set(), epoch: 0 }
 }
 
 /** 失敗提示的出口（實作是 `ui.pushError`）。 */
@@ -77,6 +82,17 @@ export function cloneEntity<T>(value: T): T {
 export function resetTracker<T extends { id: string }>(tracker: Tracker<T>, list: T[]): void {
   tracker.server.clear()
   for (const item of list) tracker.server.set(item.id, cloneEntity(item))
+}
+
+/**
+ * 換專案時整個清空：跟 `resetTracker` 不同，連 `inflight` 與 `dirty` 都清——那些是上一個專案的請求與草稿，
+ * 跟新專案無關。`epoch` 加一，上一個專案還在飛的請求回來時 `runOptimistic` 就不再碰這個 tracker 與本地。
+ */
+export function clearTracker<T extends { id: string }>(tracker: Tracker<T>): void {
+  tracker.server.clear()
+  tracker.inflight.clear()
+  tracker.dirty.clear()
+  tracker.epoch++
 }
 
 /**
@@ -167,22 +183,35 @@ export interface OptimisticOp<T extends { id: string }> {
  */
 export async function runOptimistic<T extends { id: string }>(op: OptimisticOp<T>): Promise<void> {
   const { tracker, ids, label, call, reconcile } = op
+  const epoch = tracker.epoch
   for (const id of ids) bump(tracker, id, 1)
 
   try {
     const res = await call()
+    if (tracker.epoch !== epoch) return
     for (const item of Array.isArray(res) ? res : res ? [res] : []) {
       tracker.server.set(item.id, cloneEntity(item))
     }
   } catch (error) {
+    // 換了專案也照樣報：那次修改真的沒存到，使用者要知道
     errorSink({ label, error })
   } finally {
-    for (const id of ids) {
-      bump(tracker, id, -1)
-      // 最後一筆結束了才對齊：成功就是套上 server 的最終狀態，失敗就是還原。
-      // review F2：本地又改了還沒送出（拖曳中 / 改名 debounce 中）就只留 server，不動本地。
-      if (holdsLocal(tracker, id)) continue
-      reconcile(tracker.server.get(id), id)
-    }
+    // 上一個專案的請求（送出後換了專案）：in-flight 計數已經跟著 clearTracker 清掉，本地也已經是新專案
+    if (tracker.epoch === epoch) settle(tracker, ids, reconcile)
+  }
+}
+
+/** 請求結束：in-flight 減一，該 id 的最後一筆結束了才對齊本地。 */
+function settle<T extends { id: string }>(
+  tracker: Tracker<T>,
+  ids: string[],
+  reconcile: (server: T | undefined, id: string) => void,
+): void {
+  for (const id of ids) {
+    bump(tracker, id, -1)
+    // 最後一筆結束了才對齊：成功就是套上 server 的最終狀態，失敗就是還原。
+    // review F2：本地又改了還沒送出（拖曳中 / 改名 debounce 中）就只留 server，不動本地。
+    if (holdsLocal(tracker, id)) continue
+    reconcile(tracker.server.get(id), id)
   }
 }

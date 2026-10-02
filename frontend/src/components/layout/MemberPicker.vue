@@ -4,8 +4,10 @@
 // legacy 可以把成員列拖到甘特條 / 任務卡上指派，新版不提供（user 決定移除，指派改在詳細視窗的「＋指派」）。
 import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
+import { filterableMembers } from '@/lib/filter'
 import { useFilterStore } from '@/stores/filter'
 import { useMemberStore } from '@/stores/member'
+import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 
 withDefaults(
@@ -23,18 +25,24 @@ withDefaults(
 const ui = useUiStore()
 const filter = useFilterStore()
 const memberStore = useMemberStore()
+const taskStore = useTaskStore()
 
 const selected = computed(() => filter.memberIds)
 const selCount = computed(() => selected.value.length)
 const hasSel = computed(() => selCount.value > 0)
 
+/** 列得出來的人：這個專案有被指派任務的成員（加上已勾選的），照 members 順序。 */
+const listed = computed(() =>
+  filterableMembers(memberStore.members, taskStore.tasks, selected.value),
+)
+
 /** 沒勾人時顯示前三位當示意，勾了就只顯示勾選的。legacy `memberAvatars`（:3662） */
 const avatars = computed(() =>
   hasSel.value
-    ? memberStore.members.filter((m) => selected.value.includes(m.id))
-    : memberStore.members.slice(0, 3),
+    ? listed.value.filter((m) => selected.value.includes(m.id))
+    : listed.value.slice(0, 3),
 )
-const moreMembers = computed(() => !hasSel.value && memberStore.members.length > 3)
+const moreMembers = computed(() => !hasSel.value && listed.value.length > 3)
 
 function toggle(id: string): void {
   filter.memberIds = selected.value.includes(id)
@@ -73,7 +81,7 @@ function toggle(id: string): void {
         </div>
         <div class="mp-list">
           <div
-            v-for="m in memberStore.members"
+            v-for="m in listed"
             :key="m.id"
             class="mp-row"
             :class="{ on: selected.includes(m.id) }"

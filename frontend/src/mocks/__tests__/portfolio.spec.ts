@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildPortfolio } from '@/api/mock/portfolio'
+import { buildPortfolio, projectStatusOf } from '@/api/mock/portfolio'
 import { deriveProject } from '@/lib/portfolio'
 import { sampleProject } from '@/mocks/sampleProject'
 import { PORTFOLIO_MEMBERS, STATIC_PROJECTS } from '@/mocks/samplePortfolio'
@@ -30,6 +30,10 @@ describe('samplePortfolio', () => {
       for (const id of [...p.memberIds, ...p.upcoming.map((u) => u.memberId)])
         expect(ids.has(id)).toBe(true)
     }
+  })
+  it('靜態專案的 status 等於依任務算出來的值（後端不存狀態，靜態摘要也得照同一份規則）', () => {
+    for (const p of STATIC_PROJECTS)
+      expect([p.id, p.status]).toEqual([p.id, projectStatusOf(p.taskCounts)])
   })
   it('m1–m7 就是 sampleProject 的成員（同一份，不會走樣）', () => {
     expect(PORTFOLIO_MEMBERS.slice(0, 7)).toEqual(sampleProject.members)

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/types'
 import {
   applyServerValue,
+  clearTracker,
   createTracker,
   markDirty,
   resetTracker,
@@ -159,6 +160,51 @@ describe('runOptimistic', () => {
     finish({ id: 'r1', name: '我送出的' })
     await op
     expect(local.get('r1')!.name).toBe('我送出的')
+  })
+
+  // 換專案：上一個專案還在飛的請求回來時，不能把它的實體寫進新專案
+  it('clearTracker 清掉 server / inflight / dirty；之前送出的請求回來不寫 server、不對齊本地，失敗照樣報', async () => {
+    let finish: (r: Row) => void = () => {}
+    let fail: (e: unknown) => void = () => {}
+    markDirty(tracker, ['r2'])
+    const ok = runOptimistic<Row>({
+      tracker,
+      ids: ['r1'],
+      label: '更新資料',
+      call: () => new Promise<Row>((resolve) => (finish = resolve)),
+      reconcile,
+    })
+    const bad = runOptimistic<Row>({
+      tracker,
+      ids: ['r3'],
+      label: '新增資料',
+      call: () => new Promise<Row>((_, reject) => (fail = reject)),
+      reconcile,
+    })
+
+    clearTracker(tracker)
+    local.clear()
+    expect(tracker.server.size).toBe(0)
+    expect(tracker.inflight.size).toBe(0)
+    expect(tracker.dirty.size).toBe(0)
+
+    finish({ id: 'r1', name: '上一個專案的回應' })
+    fail(new ApiError('network', 'x'))
+    await Promise.all([ok, bad])
+    expect(tracker.server.size).toBe(0)
+    expect(tracker.inflight.size).toBe(0)
+    expect(local.size).toBe(0)
+    expect(useUiStore().errors.map((e) => e.label)).toEqual(['新增資料'])
+
+    // 清空之後送出的請求照常
+    await runOptimistic<Row>({
+      tracker,
+      ids: ['n1'],
+      label: '更新資料',
+      call: async () => ({ id: 'n1', name: '新專案' }),
+      reconcile,
+    })
+    expect(local.get('n1')!.name).toBe('新專案')
   })
 
   it('tracker 沒有 failed 這張表（review F9）', () => {

@@ -1,6 +1,6 @@
 import { dayIndex } from '@/lib/date'
 import { isLate } from '@/lib/schedule'
-import type { ISODate, Priority, Task, TaskStatus } from '@/types/models'
+import type { ISODate, Member, Priority, Task, TaskStatus } from '@/types/models'
 
 /** 頂部篩選列的完整條件；各欄的初始值見 filterStore（契約 D）。 */
 export interface TaskFilter {
@@ -19,6 +19,19 @@ export interface MatchCtx {
   /** 該任務未結案的 Issue 數 */
   openIssueCount: (taskId: string) => number
   todayIdx: number
+}
+
+/**
+ * 頂欄成員篩選列得出來的人：這個專案有被指派任務的成員（成員篩選比的就是任務負責人），照 `members` 的順序。
+ * 已經勾選的人就算後來沒有任務了也留著，才取消得掉。
+ */
+export function filterableMembers(
+  members: readonly Member[],
+  tasks: readonly Task[],
+  selected: readonly string[],
+): Member[] {
+  const assigned = new Set(tasks.flatMap((t) => t.assigneeIds))
+  return members.filter((m) => assigned.has(m.id) || selected.includes(m.id))
 }
 
 /** 成員：沒選就全過，選了取交集。legacy `matchMember` :2027 */

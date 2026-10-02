@@ -362,7 +362,7 @@ test.describe('總覽 頁面', () => {
     test.skip(!(await page.evaluate(() => !!window.__mockApi)))
     await page.evaluate(async () => {
       const api = window.__mockApi!
-      const t = (await api.loadProject()).tasks.find((x) => x.status !== 'done')!
+      const t = (await api.loadProject('pmis')).tasks.find((x) => x.status !== 'done')!
       await api.updateTask(t.id, { status: 'done', done: '2026-09-18' })
     })
     // 記錄回總覽過程中有沒有出現過載入畫面

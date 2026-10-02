@@ -25,7 +25,7 @@ describe('issueStore', () => {
     useClockStore().now = NOW
     vi.spyOn(console, 'error').mockImplementation(() => {})
     // boot 負責 error sink，也把派生層的清理 watch 掛好（契約 E）
-    await useProjectBoot().reload()
+    await useProjectBoot('pmis').reload()
   })
 
   afterEach(() => {
