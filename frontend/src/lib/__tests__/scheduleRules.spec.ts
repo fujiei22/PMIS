@@ -5,9 +5,10 @@ import {
   durationBlock,
   durationOf,
   explainSchedule,
-  isLateByBaseline,
+  isLate,
   isOverdue,
-  isPlannedDoneByBaseline,
+  isPlannedDone,
+  lateDays,
   moveBlock,
   predecessorIds,
   scheduleTasks,
@@ -335,18 +336,22 @@ describe('編輯限制、逾期與有效工期', () => {
 
 describe('延遲與計畫進度（依基準）', () => {
   it('已延遲＝未完成，而且推算結束日晚於基準結束日；沒有基準不算', () => {
-    expect(isLateByBaseline(task('a', { end: '2026-10-09', baselineEnd: '2026-10-08' }))).toBe(true)
-    expect(isLateByBaseline(task('a', { end: '2026-10-08', baselineEnd: '2026-10-08' }))).toBe(
-      false,
-    )
+    expect(isLate(task('a', { end: '2026-10-09', baselineEnd: '2026-10-08' }))).toBe(true)
+    expect(isLate(task('a', { end: '2026-10-08', baselineEnd: '2026-10-08' }))).toBe(false)
     const done = task('a', { status: 'done', end: '2026-10-09', baselineEnd: '2026-10-08' })
-    expect(isLateByBaseline(done)).toBe(false)
-    expect(isLateByBaseline(task('a', { end: '2026-10-09' }))).toBe(false)
+    expect(isLate(done)).toBe(false)
+    expect(isLate(task('a', { end: '2026-10-09' }))).toBe(false)
+  })
+
+  it('晚幾個工作天：基準結束隔天到推算結束之間的工作天；沒延遲是 0', () => {
+    // 基準 10/08、推算 10/13：10/09 補假、10/10–11 週末 → 10/12、10/13 兩天
+    expect(lateDays(task('a', { end: '2026-10-13', baselineEnd: '2026-10-08' }), wd)).toBe(2)
+    expect(lateDays(task('a', { end: '2026-10-08', baselineEnd: '2026-10-08' }), wd)).toBe(0)
   })
 
   it('計畫完成＝基準結束日早於今天', () => {
-    expect(isPlannedDoneByBaseline(task('a', { baselineEnd: '2026-10-07' }), NOW)).toBe(true)
-    expect(isPlannedDoneByBaseline(task('a', { baselineEnd: '2026-10-08' }), NOW)).toBe(false)
-    expect(isPlannedDoneByBaseline(task('a'), NOW)).toBe(false)
+    expect(isPlannedDone(task('a', { baselineEnd: '2026-10-07' }), NOW)).toBe(true)
+    expect(isPlannedDone(task('a', { baselineEnd: '2026-10-08' }), NOW)).toBe(false)
+    expect(isPlannedDone(task('a'), NOW)).toBe(false)
   })
 })

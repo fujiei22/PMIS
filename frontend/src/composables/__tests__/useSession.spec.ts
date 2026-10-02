@@ -3,6 +3,7 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, isRef, toRaw } from 'vue'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import { SAMPLE_NOW } from '@/__tests__/loadSample'
 import { api, mockApi as maybeMockApi } from '@/api'
 import { buildPortfolio } from '@/api/mock/portfolio'
 import { preloadPortfolio, usePortfolioBoot } from '@/composables/usePortfolioBoot'
@@ -16,6 +17,7 @@ import {
 } from '@/composables/useSession'
 import { sampleProject } from '@/mocks/sampleProject'
 import { setErrorSink } from '@/stores/_optimistic'
+import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useFilterStore } from '@/stores/filter'
 import { useOverviewStore } from '@/stores/overview'
@@ -214,6 +216,8 @@ describe('resetSession：登出後每個 store 都等於全新的初始狀態', 
 
   it('錯誤條的出口拿掉：上一位還在飛的寫入失敗只進 console，不出現在錯誤條', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    // 固定在範例的那一天：沒有漂移，改名才是單筆 updateTask
+    useClockStore().now = SAMPLE_NOW
     await useProjectBoot('pmis').reload()
     mockApi.setLatency(10)
     mockApi.failNext('updateTask')

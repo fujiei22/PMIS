@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { dayIndex } from '@/lib/date'
 import {
   anyTaskFilter,
   filterableMembers,
@@ -37,7 +36,6 @@ const task = (over: Partial<Task> = {}): Task => ({
 })
 const ctx = (openIssueCount = 0) => ({
   openIssueCount: () => openIssueCount,
-  todayIdx: dayIndex('2026-09-18'),
 })
 
 describe('matchTask', () => {
@@ -50,7 +48,8 @@ describe('matchTask', () => {
   it('statuses 認得 delayed 這個假狀態', () => {
     expect(matchTask(task(), { ...base, statuses: ['todo'] }, ctx())).toBe(true)
     expect(matchTask(task(), { ...base, statuses: ['done'] }, ctx())).toBe(false)
-    const late = task({ end: '2026-09-16' })
+    // 延遲依基準：推算結束日晚於基準結束日
+    const late = task({ end: '2026-09-18', baselineEnd: '2026-09-16' })
     expect(matchTask(late, { ...base, statuses: ['delayed'] }, ctx())).toBe(true)
     expect(matchTask(task(), { ...base, statuses: ['delayed'] }, ctx())).toBe(false)
   })

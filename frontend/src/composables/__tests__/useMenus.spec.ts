@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { useSampleCalendar } from '@/__tests__/loadSample'
 import { clearMenuAnchors, menuAnchors, useMenus } from '@/composables/useMenus'
 import { anchorCalendar, anchorOptionMenu, anchorRowMenu } from '@/lib/anchor'
 import { sampleProject } from '@/mocks/sampleProject'
@@ -22,6 +23,7 @@ const VP = { width: window.innerWidth, height: window.innerHeight }
 
 beforeEach(() => {
   setActivePinia(createPinia())
+  useSampleCalendar()
   useTaskStore().load(structuredClone(sampleProject))
 })
 

@@ -105,8 +105,9 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   let downAt = { x: 0, y: 0 }
   let hoverTimer: ReturnType<typeof setTimeout> | undefined
   /**
-   * 這一段拖曳改到的任務 id（含被 cascade 推動的下游）。
-   * review F2：中止時只放棄**自己**標的那幾筆，別處還在 debounce 的改名不能一起被抹掉。
+   * 這一段拖曳碰過的任務 id（被拖的那一筆，加上推算結果跟著變的下游）。
+   * review F2：中止時只放棄**自己**標的那幾筆，別處還在 debounce 的改名不能一起被抹掉；
+   * 放開時這些 id 就是 `commitSchedule` 的 include。
    */
   const dragged = new Set<string>()
 
@@ -137,7 +138,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
    * 條的移動與左右縮放：換算成整數天再寫回 store。legacy :2486-2496。
    *
    * review C1：每個 tick **只改本地**（`applyLocalPatch`），
-   * 放開（`onUp`）才把整段結果送一次 `updateTasks`——
+   * 放開（`onUp`）才把整段推算結果送一次（`commitSchedule`）——
    * 否則一次拖曳會打出幾十個請求，中途失敗的還原順序也無解。
    */
   function tickBar(
@@ -153,6 +154,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
       d.last = delta
       if (d.kind === 'move') {
         track(
+          d.id,
           taskStore.applyLocalPatch(d.id, {
             start: isoFromIndex(d.s0 + delta),
             end: isoFromIndex(d.e0 + delta),
@@ -161,10 +163,14 @@ export function usePointerDrag(els: DragElements): PointerDrag {
       } else if (d.kind === 'resL') {
         // 左把手不能越過結束日
         track(
+          d.id,
           taskStore.applyLocalPatch(d.id, { start: isoFromIndex(Math.min(d.s0 + delta, d.e0)) }),
         )
       } else {
-        track(taskStore.applyLocalPatch(d.id, { end: isoFromIndex(Math.max(d.e0 + delta, d.s0)) }))
+        track(
+          d.id,
+          taskStore.applyLocalPatch(d.id, { end: isoFromIndex(Math.max(d.e0 + delta, d.s0)) }),
+        )
       }
     }
     // 動畫稽核 D6：自動捲動時 scrollLeft 連續在變、條卻以整天吸附，條在游標下鋸齒抖動。
@@ -275,8 +281,12 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     )
   }
 
-  /** 記下這一段拖曳改到的任務（review F2）。 */
-  function track(changed: { id: string }[]): void {
+  /**
+   * 記下這一段拖曳碰過的任務（review F2）。被拖的那一筆一律記：存的值改了、推算結果卻可能沒變
+   * （例：未開始的任務拖到今天以前，被夾回今天），不記的話它的 dirty 放開後清不掉。
+   */
+  function track(id: string, changed: { id: string }[]): void {
+    dragged.add(id)
     for (const t of changed) dragged.add(t.id)
   }
 
@@ -518,12 +528,12 @@ export function usePointerDrag(els: DragElements): PointerDrag {
 
   /**
    * 放開之後把整段拖曳的結果送一次（review C1）。
-   * 條的移動 / 縮放送 `updateTasks(changed)`（含被 cascade 推動的下游），
+   * 條的移動 / 縮放寫回推算結果（`commitSchedule`，含跟著重排的下游），
    * 列與分類重排送各自的 order 端點；沒有變動時 store 自己會早退。
    */
   function commit(d: DragState): void {
     if (d.kind === 'move' || d.kind === 'resL' || d.kind === 'resR') {
-      void taskStore.commitTasks(taskStore.collectDirtyTasks())
+      void taskStore.commitSchedule(dragged)
     } else if (d.kind === 'reorder') {
       void taskStore.commitTaskOrder()
     } else if (d.kind === 'greorder') {

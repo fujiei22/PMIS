@@ -14,7 +14,6 @@ import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex, lengthOf } from '@/lib/date'
 import { isLate } from '@/lib/schedule'
-import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
@@ -32,7 +31,6 @@ const props = defineProps<
 // fragment root 不能自動套外層屬性，關掉才不會有 Vue 警告
 defineOptions({ inheritAttrs: false })
 
-const clock = useClockStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
@@ -59,13 +57,9 @@ const w = computed(() =>
 /** 上緣：列高的倍數，摘要條比較矮所以往下多 6px。legacy :2897 / :2907 */
 const top = computed(() => props.rowIndex * ROW_HEIGHT + (props.kind === 'task' ? 6 : 12))
 
-/** 條色的來源；逾期蓋掉原本的狀態，摘要條沒有狀態。legacy :2909 */
+/** 條色的來源；延遲（推算結束晚於基準）蓋掉原本的狀態，摘要條沒有狀態。legacy :2909 */
 const status = computed(() =>
-  props.kind === 'task'
-    ? isLate(props.task, clock.todayIdx)
-      ? 'delayed'
-      : props.task.status
-    : undefined,
+  props.kind === 'task' ? (isLate(props.task) ? 'delayed' : props.task.status) : undefined,
 )
 
 /** 選取中的那一條。legacy `on` :2908 */
@@ -418,7 +412,7 @@ function onDown(e: PointerEvent): void {
   opacity: 0;
   pointer-events: none;
   /*
-   * 左右跟條的 left / width 同一組時長與曲線：條變寬、被 cascade 推動時圓點貼著條緣走（動畫稽核 D4）。
+   * 左右跟條的 left / width 同一組時長與曲線：條變寬、被前置推動時圓點貼著條緣走（動畫稽核 D4）。
    * 上下位移由 GanttPanel 的 useRowMotion 寫 translate，跟條同一個時鐘。
    */
   transition:

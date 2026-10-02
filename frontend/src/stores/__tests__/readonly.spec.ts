@@ -65,11 +65,12 @@ const WRITE_ACTIONS: Record<StoreKey, Record<string, WriteCall>> = {
     moveGroup: ({ task }) => task.moveGroup('g3', -1),
     commitGroupOrder: ({ task }) => task.commitGroupOrder(),
     addTask: ({ task }) =>
-      task.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-09-18', end: '2026-09-22' }),
+      task.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-09-18', duration: 5 }),
     applyLocalPatch: ({ task }) => task.applyLocalPatch('t1', { name: '唯讀改名' }),
     updateTask: ({ task }) => task.updateTask('t1', { name: '唯讀改名' }),
     commitTaskPatch: ({ task }) => task.commitTaskPatch('t1', { name: '唯讀改名' }),
-    commitTasks: ({ task }) => task.commitTasks([{ ...task.taskById('t1')!, name: '唯讀改名' }]),
+    // t1 在 loadEditable 被搬到 g2（本地、還沒送），寫回時一定有東西要送
+    commitSchedule: ({ task }) => task.commitSchedule(['t1']),
     commitTaskOrder: ({ task }) => task.commitTaskOrder(),
     setTaskDoneDirect: ({ task }) => task.setTaskDoneDirect('t1', '2020-01-01'),
     removeTask: ({ task }) => task.removeTask('t5'),
@@ -77,6 +78,9 @@ const WRITE_ACTIONS: Record<StoreKey, Record<string, WriteCall>> = {
     moveTaskTo: ({ task }) => task.moveTaskTo('t3', { kind: 'g', id: 'g3' }),
     addDep: ({ task }) => task.addDep('t1', 't30'),
     removeDep: ({ task }) => task.removeDep('d1'),
+    // 範例已上鎖；上鎖的對照組先在 PREP 解鎖（只改本地，不算這個呼叫的變動）
+    lockBaseline: ({ task }) => task.lockBaseline(),
+    unlockBaseline: ({ task }) => task.unlockBaseline(),
   },
   issue: {
     addIssue: ({ task, issue }) => issue.addIssue(task.taskById('t3')!, 'm1'),
@@ -96,8 +100,16 @@ const WRITE_ACTIONS: Record<StoreKey, Record<string, WriteCall>> = {
   project: {},
 }
 
+/**
+ * 呼叫前的準備：讓這個 action 在可編輯時一定有事可做（`before` 在準備之後才取，準備本身不算變動）。
+ * 例：範例專案已上鎖，`lockBaseline` 要先解鎖才有東西可鎖。
+ */
+const PREP: Record<string, (s: Stores) => void> = {
+  'task.lockBaseline': ({ project }) => project.setMeta({ ...project.meta, baselineLockedOn: '' }),
+}
+
 const READ_ACTIONS: Record<StoreKey, string[]> = {
-  task: ['taskById', 'groupById', 'collectDirtyTasks', 'predecessors', 'successors'],
+  task: ['taskById', 'groupById', 'predecessors', 'successors', 'explain'],
   issue: ['byId', 'byTask', 'openCount'],
   comment: ['forTarget', 'filesForTarget', 'commenterIds'],
   member: ['byId', 'assignable'],
@@ -215,9 +227,10 @@ describe('唯讀守衛：資料層 store 的每個函式都要分類（F2）', (
 })
 
 describe('唯讀守衛：canEdit=false 時寫入 action 不打 api、不改狀態（F2）', () => {
-  it.each(WRITE_CASES)('%s', async (_name, call) => {
+  it.each(WRITE_CASES)('%s', async (name, call) => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const s = await loadEditable()
+    PREP[name]?.(s)
     s.project.setAll(s.project.meta, false)
     const called = watchApi()
     const before = stateOf(s)
@@ -231,9 +244,10 @@ describe('唯讀守衛：canEdit=false 時寫入 action 不打 api、不改狀�
 })
 
 describe('對照組：可編輯時同一個呼叫一定會打 api 或改狀態', () => {
-  it.each(WRITE_CASES)('%s', async (_name, call) => {
+  it.each(WRITE_CASES)('%s', async (name, call) => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const s = await loadEditable()
+    PREP[name]?.(s)
     const called = watchApi()
     const before = stateOf(s)
 

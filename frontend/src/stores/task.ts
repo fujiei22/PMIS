@@ -4,12 +4,14 @@ import { api } from '@/api'
 import type { ProjectEvent } from '@/api/types'
 import { newId } from '@/lib/id'
 import {
-  applyTaskPatch,
-  cascade,
-  needsCascade,
+  applyTaskEdit,
+  explainSchedule,
+  predecessorIds,
   projectRange,
   reachable,
   sameTask,
+  scheduleTasks,
+  withBaselineMode,
 } from '@/lib/schedule'
 import {
   applyServerValue,
@@ -18,6 +20,7 @@ import {
   cloneEntity,
   createTracker,
   insertIndexOf,
+  isInflight,
   markDirty,
   resetTracker,
   runOptimistic,
@@ -28,6 +31,7 @@ import { useCommentStore } from '@/stores/comment'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useProjectStore } from '@/stores/project'
+import { useWorkCalendarStore } from '@/stores/workCalendar'
 import type { Dependency, DropTarget, Group, ISODate, ProjectData, Task } from '@/types/models'
 
 /**
@@ -37,10 +41,19 @@ import type { Dependency, DropTarget, Group, ISODate, ProjectData, Task } from '
 const TASK_ORDER_KEY = 'tasks:order'
 const GROUP_ORDER_KEY = 'groups:order'
 
+/** 會牽動排程的欄位：patch 帶了其中任何一個就整批寫回推算結果，否則只送單筆 patch。 */
+const SCHEDULE_FIELDS = ['start', 'duration', 'status', 'done'] as const
+
 /**
  * 分類、任務與相依——Dashboard 的主資料。
  * 它也是 load() 的入口：一次把 ProjectData 分給 member / issue / comment / budget / project store；
  * 換專案時的 reset() 同樣由它一次清掉這幾個。
+ *
+ * **存與算的分工**（規則見 docs/reference/scheduling.md）：
+ * - `inputs` 是存的值——使用者設定的工期、根任務的開始日、狀態與實際日期，以及最後一次寫回的起訖與基準。
+ * - `tasks` 是畫面看的值——用今天與工作日曆把 `inputs` 排一次（`scheduleTasks`），再套基準模式
+ *   （解鎖時基準＝推算起訖）。跨日、日曆晚到都會自動重排，但**不寫回**；下一次編輯時連同漂移的那幾筆一起送。
+ * - 寫回送的是推算結果（`commitSchedule`），後端不重算（契約 A）。
  *
  * 每個寫入 action 都是樂觀的（契約 B）：先改本地、再打 api，
  * 失敗時把牽動到的 id 放回 `tracker.server`（最後已知的 server 狀態）。
@@ -51,7 +64,8 @@ const GROUP_ORDER_KEY = 'groups:order'
  */
 export const useTaskStore = defineStore('task', () => {
   const groups = ref<Group[]>([])
-  const tasks = ref<Task[]>([])
+  /** 存的任務（見檔頭〈存與算的分工〉）；畫面請讀 `tasks`。 */
+  const inputs = ref<Task[]>([])
   const deps = ref<Dependency[]>([])
 
   /** 最後已知的 server 狀態；Map 的順序就是 server 的顯示順序（契約 B）。 */
@@ -59,10 +73,52 @@ export const useTaskStore = defineStore('task', () => {
   const groupTracker = createTracker<Group>()
   const depTracker = createTracker<Dependency>()
 
+  /** 有前置的任務 id（未開始時開始日由前置決定，`applyTaskEdit` 會丟掉它的 start）。 */
+  const hasPred = computed(() => predecessorIds(deps.value))
+  /** 基準上鎖了嗎（整個專案一把鎖）。 */
+  const locked = computed(() => !!useProjectStore().meta.baselineLockedOn)
+
+  /**
+   * 推算結果的 identity 快取：id → 上一次的輸入物件與輸出物件。
+   * 跨日漂移時 `scheduleTasks` 每次都回新物件；輸入是同一個、起訖與基準也相同時沿用上一次的輸出，
+   * 改一筆任務不會讓其他漂移中的任務整列重繪（spec 目標 7）。
+   */
+  let scheduleCache = new Map<string, { src: Task; out: Task }>()
+
+  /** 畫面看的任務：用今天排過、套過基準模式（見檔頭）。順序同 `inputs`。 */
+  const tasks = computed<Task[]>(() => {
+    const src = inputs.value
+    const scheduled = withBaselineMode(
+      scheduleTasks(src, deps.value, useWorkCalendarStore().workdays, useClockStore().todayIdx),
+      locked.value,
+    )
+    const next = new Map<string, { src: Task; out: Task }>()
+    const out = scheduled.map((t, i) => {
+      const input = src[i]!
+      const hit = scheduleCache.get(t.id)
+      const kept = t !== input && hit && hit.src === input && sameDates(hit.out, t) ? hit.out : t
+      next.set(t.id, { src: input, out: kept })
+      return kept
+    })
+    scheduleCache = next
+    return out
+  })
+
+  /** 起訖與基準都一樣（identity 快取用；其他欄位來自同一個輸入物件，不必再比）。 */
+  function sameDates(a: Task, b: Task): boolean {
+    return (
+      a.start === b.start &&
+      a.end === b.end &&
+      a.baselineStart === b.baselineStart &&
+      a.baselineEnd === b.baselineEnd
+    )
+  }
+
   /** id → 物件的索引；legacy 每次 render 重建一次 Map（:1901），這裡交給 computed 快取。 */
   const taskIndex = computed(() => new Map(tasks.value.map((t) => [t.id, t])))
   const groupIndex = computed(() => new Map(groups.value.map((g) => [g.id, g])))
 
+  /** 推算後的任務（畫面看的值）。 */
   function taskById(id: string): Task | undefined {
     return taskIndex.value.get(id)
   }
@@ -92,8 +148,8 @@ export const useTaskStore = defineStore('task', () => {
    * 載入整包專案資料並分給各 store。
    *
    * 給專案 id = 走 `api.loadProject(id)`；給 `ProjectData` = 直接採用
-   * （`project.reloaded` 事件走這條）。**不跑 cascade**：後端資料為準
-   * （spec 目標 5、已定案決策）。
+   * （`project.reloaded` 事件走這條）。存的值原樣放進 `inputs`；畫面上的 `tasks` 用今天重排，
+   * 但載入本身**不寫回**（spec 目標 5：後端資料為準，漂移等下一次編輯才一起送）。
    *
    * 失敗就 **reject**：`loadState` / `loadError` 是畫面狀態，由啟動層
    * `useProjectBoot(id).reload()` 接（契約 E）。
@@ -120,7 +176,7 @@ export const useTaskStore = defineStore('task', () => {
     useCommentStore().setAll(data.comments)
     useBudgetStore().setAll(data.budget)
     groups.value = data.groups
-    tasks.value = data.tasks
+    inputs.value = data.tasks
     deps.value = data.deps
     resetTracker(taskTracker, data.tasks)
     resetTracker(groupTracker, data.groups)
@@ -136,7 +192,7 @@ export const useTaskStore = defineStore('task', () => {
     appliedSeq = ++loadSeq
     requestedId = null
     groups.value = []
-    tasks.value = []
+    inputs.value = []
     deps.value = []
     clearTracker(taskTracker)
     clearTracker(groupTracker)
@@ -150,18 +206,19 @@ export const useTaskStore = defineStore('task', () => {
 
   // ── 對齊 server（失敗還原 / 事件）────────────────────────────────────────
 
+  /** 把一筆存的任務對齊 server（undefined＝已刪除）；推算結果跟著重算。 */
   function reconcileTask(server: Task | undefined, id: string): void {
-    const i = tasks.value.findIndex((t) => t.id === id)
+    const i = inputs.value.findIndex((t) => t.id === id)
     if (!server) {
-      if (i >= 0) tasks.value.splice(i, 1)
+      if (i >= 0) inputs.value.splice(i, 1)
       return
     }
     // 同值事件 / 回音是 no-op，不重建物件（契約 A：client 對同 id 同值事件 no-op）
     if (i >= 0) {
-      if (!sameTask(tasks.value[i]!, server)) tasks.value[i] = { ...server }
+      if (!sameTask(inputs.value[i]!, server)) inputs.value[i] = { ...server }
       return
     }
-    tasks.value.splice(insertIndexOf([...taskTracker.server.keys()], tasks.value, id), 0, {
+    inputs.value.splice(insertIndexOf([...taskTracker.server.keys()], inputs.value, id), 0, {
       ...server,
     })
   }
@@ -218,16 +275,16 @@ export const useTaskStore = defineStore('task', () => {
    * review F2：dirty 的那幾筆（別處還在改、還沒送出）保留本地物件，只有順序照 server。
    */
   function reconcileTasksFromServer(): void {
-    const local = new Map(tasks.value.map((t) => [t.id, t]))
+    const local = new Map(inputs.value.map((t) => [t.id, t]))
     const next: Task[] = []
     for (const [id, server] of taskTracker.server) {
       const mine = local.get(id)
       next.push(mine && taskTracker.dirty.has(id) ? mine : { ...server })
     }
     // server 還不知道、但本地改到一半的（例如 create 在飛時又被改名）留著
-    for (const t of tasks.value)
+    for (const t of inputs.value)
       if (!taskTracker.server.has(t.id) && taskTracker.dirty.has(t.id)) next.push(t)
-    tasks.value = next
+    inputs.value = next
   }
 
   function reconcileGroupsFromServer(): void {
@@ -259,11 +316,51 @@ export const useTaskStore = defineStore('task', () => {
     reconcileGroupsFromServer()
   }
 
-  /** 本地跟最後已知 server 狀態有差的任務（拖曳放開時要送的就是這些）。 */
-  function collectDirtyTasks(): Task[] {
-    return tasks.value.filter((t) => {
+  // ── 寫回推算結果 ─────────────────────────────────────────────────────────
+
+  /**
+   * 要寫回的任務：推算結果跟最後已知 server 狀態不同的那幾筆。
+   *
+   * - `include` 裡的（這次編輯的對象）：不同就送；server 還沒有（建立中）就先不送，dirty 留著，
+   *   等 create 回來由 `addTask` 補送。
+   * - 其他：不同、而且不在 dirty 才送——dirty 的是別處還沒送出的編輯（拖曳中、改名 debounce 中），
+   *   由它自己的 commit 送。漂移（跨日重排、被這次編輯推動的下游）都走這條。
+   */
+  function scheduleWriteSet(include: Set<string>): Task[] {
+    const out: Task[] = []
+    for (const t of tasks.value) {
       const server = taskTracker.server.get(t.id)
-      return !server || !sameTask(t, server)
+      if (!server || sameTask(t, server)) continue
+      if (include.has(t.id) || !taskTracker.dirty.has(t.id)) out.push(t)
+    }
+    return out
+  }
+
+  /**
+   * 把推算結果寫回：`include` 是這次編輯的任務（拖曳放開時是這一段拖曳碰過的 id）。
+   *
+   * 1. 算寫回集合（`scheduleWriteSet`）。
+   * 2. include 中 server 已有的：這次的編輯就此送出，`clearDirty`；推算後跟 server 一樣、不必送的，
+   *    存的值對齊回 server（例如根任務的開始日改到週六、推算後還是同一天）。
+   * 3. 有東西要送才 `updateTasks`（整批最終狀態，後端不重算，契約 A）。
+   */
+  async function commitSchedule(include: Iterable<string>): Promise<void> {
+    if (!useProjectStore().canEdit) return
+    const ids = new Set(include)
+    const payload = scheduleWriteSet(ids).map((t) => cloneEntity(t))
+    const sending = new Set(payload.map((t) => t.id))
+    const settled = [...ids].filter((id) => taskTracker.server.has(id))
+    clearDirty(taskTracker, settled)
+    for (const id of settled)
+      if (!sending.has(id) && !isInflight(taskTracker, id))
+        reconcileTask(taskTracker.server.get(id), id)
+    if (!payload.length) return
+    await runOptimistic<Task>({
+      tracker: taskTracker,
+      ids: [...sending],
+      label: '更新任務',
+      call: () => api.updateTasks(payload),
+      reconcile: reconcileTask,
     })
   }
 
@@ -326,22 +423,27 @@ export const useTaskStore = defineStore('task', () => {
   /**
    * 刪分類，連底下的任務、那些任務的 Issue / 相依 / 留言一起刪。legacy `grpDelete` :4013。
    * 指到已刪 id 的選取 / 浮層由派生層的 watch 自己清（契約 E）。
+   * 分類外、因此失去所有前置的任務變成根任務，保留刪除當下推算的開始日（`pinNewRoots`）。
    */
   async function removeGroup(id: string): Promise<void> {
     if (!useProjectStore().canEdit) return
     const issues = useIssueStore()
     const comments = useCommentStore()
     if (!groupById(id)) return
-    const goneTasks = new Set(tasks.value.filter((t) => t.groupId === id).map((t) => t.id))
+    const goneTasks = new Set(inputs.value.filter((t) => t.groupId === id).map((t) => t.id))
     const goneIssues = issues.issues.filter((i) => goneTasks.has(i.taskId)).map((i) => i.id)
     const targets = new Set<string>([...goneTasks, ...goneIssues])
     const goneComments = comments.comments.filter((c) => targets.has(c.targetId)).map((c) => c.id)
     const goneDeps = deps.value
       .filter((d) => goneTasks.has(d.from) || goneTasks.has(d.to))
       .map((d) => d.id)
+    const pinned = pinNewRoots(
+      deps.value.filter((d) => goneTasks.has(d.from) && !goneTasks.has(d.to)).map((d) => d.to),
+      (d) => !goneTasks.has(d.from) && !goneTasks.has(d.to),
+    )
 
     groups.value = groups.value.filter((g) => g.id !== id)
-    tasks.value = tasks.value.filter((t) => !goneTasks.has(t.id))
+    inputs.value = inputs.value.filter((t) => !goneTasks.has(t.id))
     deps.value = deps.value.filter((d) => !goneTasks.has(d.from) && !goneTasks.has(d.to))
     issues.dropLocal(goneIssues)
     comments.dropLocal(goneComments)
@@ -349,6 +451,7 @@ export const useTaskStore = defineStore('task', () => {
     clearDirty(taskTracker, goneTasks)
     clearDirty(groupTracker, [id])
 
+    const epoch = taskTracker.epoch
     let ok = false
     await runOptimistic<Group>({
       tracker: groupTracker,
@@ -368,6 +471,7 @@ export const useTaskStore = defineStore('task', () => {
         restoreCascadeFromServer(goneTasks, goneDeps, goneIssues, goneComments)
       },
     })
+    await settlePinned(pinned, ok, epoch)
   }
 
   /** 分類與相鄰的那個對調（只改本地）；已在頭尾就不動，回傳有沒有真的動。legacy `moveGroup` :1835 */
@@ -430,92 +534,115 @@ export const useTaskStore = defineStore('task', () => {
   /**
    * 新增任務。legacy `addTask` :4128。
    *
-   * 預設值（分類、負責人、起訖）由呼叫端算好傳進來——那些要讀 selection /
+   * 預設值（分類、負責人、開始日、工期）由呼叫端算好傳進來——那些要讀 selection /
    * filter，是派生層的事（契約 E），資料層只負責建立與送出。
-   * 建立後的選取同樣在 `useTaskActions()`。分類不存在時回 null。
+   * 起訖照排程算好再存（開始日遇非工作天順延、不早於今天）；基準上鎖時基準＝推算起訖
+   * （新任務一建立就有基準，不會一出生就延遲），解鎖時留空、跟著排程走。
+   * 建立還在飛時又被改了（例如馬上改工期），create 回來後補送一次。
+   * 建立後的選取同樣在 `useTaskActions()`。分類不存在時回 null；回傳的是存進去的那個物件（不是 proxy）。
    */
   function addTask(opts: {
     groupId: string
     assigneeIds: string[]
     start: ISODate
-    end: ISODate
+    duration: number
   }): Task | null {
     if (!useProjectStore().canEdit) return null
     if (!groupById(opts.groupId)) return null
-    const t: Task = {
+    const draft: Task = {
       id: newId(),
       groupId: opts.groupId,
       name: '新任務',
       created: useClockStore().todayIso,
       start: opts.start,
-      end: opts.end,
+      end: opts.start,
       status: 'todo',
       done: '',
       priority: 'mid',
       assigneeIds: opts.assigneeIds.slice(),
-      // 排程切換（工期、基準）前的過渡值；切換後由 addTask 依排程算好
-      duration: 1,
+      duration: opts.duration,
       baselineStart: '',
       baselineEnd: '',
     }
-    tasks.value.push(t)
-    void runOptimistic<Task>({
-      tracker: taskTracker,
-      ids: [t.id],
-      label: '新增任務',
-      call: () => api.createTask(cloneEntity(t)),
-      reconcile: reconcileTask,
-    })
+    const placed = scheduleTasks(
+      [draft],
+      [],
+      useWorkCalendarStore().workdays,
+      useClockStore().todayIdx,
+    )[0]!
+    const t: Task = {
+      ...placed,
+      ...(locked.value ? { baselineStart: placed.start, baselineEnd: placed.end } : {}),
+    }
+    inputs.value.push(t)
+    const epoch = taskTracker.epoch
+    void (async () => {
+      await runOptimistic<Task>({
+        tracker: taskTracker,
+        ids: [t.id],
+        label: '新增任務',
+        call: () => api.createTask(cloneEntity(t)),
+        reconcile: reconcileTask,
+      })
+      if (taskTracker.epoch !== epoch) return
+      if (taskTracker.dirty.has(t.id) && taskTracker.server.has(t.id)) await commitSchedule([t.id])
+    })()
     return t
   }
 
+  /** 把編輯套到存的值（`applyTaskEdit`：狀態副作用、無效輸入丟掉、夾值）；有變才標 dirty。 */
+  function editInput(id: string, patch: Partial<Task>): boolean {
+    const next = applyTaskEdit(inputs.value, hasPred.value, id, patch, useClockStore().todayIso)
+    if (next === inputs.value) return false
+    inputs.value = next
+    // review F2：這個值只在本地（拖曳的 tick、改名的 debounce），送出前不准被 reconcile 蓋掉
+    markDirty(taskTracker, [id])
+    return true
+  }
+
   /**
-   * 只改本地的任務欄位（必要時連動下游），回傳真的變動的那幾筆。
-   * 拖曳的每個 tick 走這條——不打 api，放開時再用 `collectDirtyTasks` + `commitTasks` 送一次。
+   * 只改本地的任務欄位，回傳推算結果真的變了的那幾筆（含被推動的下游）。
+   * 拖曳的每個 tick 與逐鍵改名走這條——不打 api，放開 / debounce 到期時再送
+   * （`commitSchedule` / `commitTaskPatch`）。
    */
   function applyLocalPatch(id: string, patch: Partial<Task>): Task[] {
     if (!useProjectStore().canEdit) return []
-    const { tasks: next, changed } = applyTaskPatch(
-      tasks.value,
-      deps.value,
-      id,
-      patch,
-      useClockStore().todayIso,
-    )
-    tasks.value = next
-    // review F2：這些值只在本地（拖曳的 tick、改名的 debounce），送出前不准被 reconcile 蓋掉
-    markDirty(
-      taskTracker,
-      changed.map((t) => t.id),
-    )
-    return changed
+    const before = taskIndex.value
+    if (!editInput(id, patch)) return []
+    return tasks.value.filter((t) => {
+      const was = before.get(t.id)
+      return !was || !sameTask(was, t)
+    })
   }
 
-  /** 改任務欄位並連動下游，然後送給後端。legacy `setTask` :2294 */
+  /**
+   * 改任務欄位並送給後端。legacy `setTask` :2294。
+   *
+   * 不牽動排程的欄位（名稱、優先度、負責人…）、而且要寫回的只有它自己時，送單筆 patch
+   * （JSON merge patch）；其餘整批寫回推算結果（`commitSchedule`），後端不重算（契約 A）。
+   */
   async function updateTask(id: string, patch: Partial<Task>): Promise<void> {
     if (!useProjectStore().canEdit) return
-    const changed = applyLocalPatch(id, patch)
-    if (!changed.length) return
-    // 沒有 cascade 的單筆變更送 patch（JSON merge patch）；
-    // 有連動就送整批最終狀態，後端不重算（契約 A）。
-    const single = !needsCascade(patch) && changed.length === 1
-    const payload = changed.map((t) => cloneEntity(t))
-    clearDirty(
-      taskTracker,
-      payload.map((t) => t.id),
-    )
-    await runOptimistic<Task>({
-      tracker: taskTracker,
-      ids: payload.map((t) => t.id),
-      label: '更新任務',
-      call: () => (single ? api.updateTask(id, cloneEntity(patch)) : api.updateTasks(payload)),
-      reconcile: reconcileTask,
-    })
+    if (!editInput(id, patch)) return
+    const plain = !SCHEDULE_FIELDS.some((k) => k in patch)
+    const set = scheduleWriteSet(new Set([id]))
+    if (plain && set.length === 1 && set[0]!.id === id) {
+      clearDirty(taskTracker, [id])
+      await runOptimistic<Task>({
+        tracker: taskTracker,
+        ids: [id],
+        label: '更新任務',
+        call: () => api.updateTask(id, cloneEntity(patch)),
+        reconcile: reconcileTask,
+      })
+      return
+    }
+    await commitSchedule([id])
   }
 
   /**
    * 只把一筆任務的變更送出去（本地已經改好了）；逐鍵編輯 debounce 到期時走這條。
-   * 只給不牽動排程的欄位用（名稱 / 優先度…）——會 cascade 的欄位請走 `updateTask`。
+   * 只給不牽動排程的欄位用（名稱 / 優先度…）——工期、開始日、狀態、完成日請走 `updateTask`。
    */
   async function commitTaskPatch(id: string, patch: Partial<Task>): Promise<void> {
     if (!useProjectStore().canEdit) return
@@ -529,28 +656,10 @@ export const useTaskStore = defineStore('task', () => {
     })
   }
 
-  /** 把一批已經改好的任務送出去（拖曳放開時用）。 */
-  async function commitTasks(changed: Task[]): Promise<void> {
-    if (!useProjectStore().canEdit) return
-    if (!changed.length) return
-    const payload = changed.map((t) => cloneEntity(t))
-    clearDirty(
-      taskTracker,
-      payload.map((t) => t.id),
-    )
-    await runOptimistic<Task>({
-      tracker: taskTracker,
-      ids: payload.map((t) => t.id),
-      label: '更新任務',
-      call: () => api.updateTasks(payload),
-      reconcile: reconcileTask,
-    })
-  }
-
   /** 把目前的任務順序（含 groupId）送給後端（拖曳放開時送這一次）。 */
   async function commitTaskOrder(): Promise<void> {
     if (!useProjectStore().canEdit) return
-    const order = tasks.value.map((t) => ({ id: t.id, groupId: t.groupId }))
+    const order = inputs.value.map((t) => ({ id: t.id, groupId: t.groupId }))
     // review F2：這一段搬動就此送出，順序與被改到 groupId 的那幾筆都不再是「未送出」
     taskTracker.dirty.delete(TASK_ORDER_KEY)
     for (const o of order) {
@@ -588,27 +697,19 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   /**
-   * 只改完成日、不跑 cascade。legacy 的 iCal task 模式 `iCalSet` :3486。
-   * 這條路徑是日期選擇器直接寫完成日，不該牽動任何排程。
+   * 直接改完成日。legacy 的 iCal task 模式 `iCalSet` :3486。
+   * 完成日就是實際結束日，所以跟一般編輯一樣會推動還沒開始的下游（夾值見 `applyTaskEdit`）。
    */
   async function setTaskDoneDirect(id: string, done: ISODate | ''): Promise<void> {
     if (!useProjectStore().canEdit) return
-    const t = taskById(id)
-    if (!t || t.done === done) return
-    t.done = done
-    await runOptimistic<Task>({
-      tracker: taskTracker,
-      ids: [id],
-      label: '更新任務',
-      call: () => api.updateTask(id, { done }),
-      reconcile: reconcileTask,
-    })
+    await updateTask(id, { done })
   }
 
   /**
    * 刪任務，連它的 Issue、相依與留言一起刪。legacy `confirmDelete` :4092。
    * `ui.detail` 由 ui 自己的 watch 關掉（§不重現的原頁面 bug 1：
    * legacy 刪完視窗會卡住不關 :1761）。
+   * 因此失去所有前置的後續任務變成根任務，保留刪除當下推算的開始日（`pinNewRoots`）。
    */
   async function removeTask(id: string): Promise<void> {
     if (!useProjectStore().canEdit) return
@@ -619,14 +720,19 @@ export const useTaskStore = defineStore('task', () => {
     const targets = new Set<string>([id, ...goneIssues])
     const goneComments = comments.comments.filter((c) => targets.has(c.targetId)).map((c) => c.id)
     const goneDeps = deps.value.filter((d) => d.from === id || d.to === id).map((d) => d.id)
+    const pinned = pinNewRoots(
+      deps.value.filter((d) => d.from === id).map((d) => d.to),
+      (d) => d.from !== id && d.to !== id,
+    )
 
-    tasks.value = tasks.value.filter((t) => t.id !== id)
+    inputs.value = inputs.value.filter((t) => t.id !== id)
     deps.value = deps.value.filter((d) => d.from !== id && d.to !== id)
     issues.dropLocal(goneIssues)
     comments.dropLocal(goneComments)
     // review F2：刪掉的那筆不必再保護未送出的本地變更
     clearDirty(taskTracker, [id])
 
+    const epoch = taskTracker.epoch
     let ok = false
     await runOptimistic<Task>({
       tracker: taskTracker,
@@ -644,6 +750,7 @@ export const useTaskStore = defineStore('task', () => {
         restoreCascadeFromServer([], goneDeps, goneIssues, goneComments)
       },
     })
+    await settlePinned(pinned, ok, epoch)
   }
 
   /** 連動刪除成功後，把被一起刪掉的 id 從各 tracker 的 server 拿掉。 */
@@ -660,6 +767,44 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   /**
+   * 刪相依 / 刪任務 / 刪分類**之前**呼叫：`candidates` 中刪掉之後沒有其他前置（`keep` 留下的相依）的
+   * 未開始任務，會變成根任務——把它此刻推算的開始日寫進存的值並標 dirty，回傳這些 id。
+   *
+   * 不記的話，根任務的開始日會退回很久以前存的值（或今天），刪一條相依整段排程就跳一次。
+   */
+  function pinNewRoots(candidates: string[], keep: (d: Dependency) => boolean): string[] {
+    const remaining = predecessorIds(deps.value.filter(keep))
+    const pins = new Map<string, ISODate>()
+    for (const id of new Set(candidates)) {
+      const t = taskById(id)
+      if (!t || t.status !== 'todo' || remaining.has(id)) continue
+      pins.set(id, t.start)
+    }
+    if (!pins.size) return []
+    inputs.value = inputs.value.map((t) => {
+      const start = pins.get(t.id)
+      return start === undefined || start === t.start ? t : { ...t, start }
+    })
+    markDirty(taskTracker, pins.keys())
+    return [...pins.keys()]
+  }
+
+  /**
+   * 刪除結束後處理 `pinNewRoots` 記下的任務：成功（而且沒換專案）就寫回；
+   * 失敗就放棄記下的開始日、對齊回 server（相依也已經放回來了）。
+   */
+  async function settlePinned(pinned: string[], ok: boolean, epoch: number): Promise<void> {
+    if (!pinned.length || taskTracker.epoch !== epoch) return
+    if (ok) {
+      await commitSchedule(pinned)
+      return
+    }
+    clearDirty(taskTracker, pinned)
+    for (const id of pinned)
+      if (!isInflight(taskTracker, id)) reconcileTask(taskTracker.server.get(id), id)
+  }
+
+  /**
    * 把任務搬到分類或某個任務旁邊（只改本地），回傳有沒有真的動。legacy `moveTaskTo` :1797。
    * 落在分類上：dir='up' 接在該分類最後、否則插在最前；分類是空的就接在整串最後。
    * 落在任務上：從上往下拖就插在目標後面，從下往上拖就插在前面。
@@ -667,7 +812,7 @@ export const useTaskStore = defineStore('task', () => {
   function moveTaskToLocal(id: string, target: DropTarget): boolean {
     if (!useProjectStore().canEdit) return false
     if (!target || target.id === id) return false
-    const list = tasks.value.slice()
+    const list = inputs.value.slice()
     const i = list.findIndex((t) => t.id === id)
     if (i < 0) return false
     const removed = list.splice(i, 1)[0]
@@ -688,13 +833,13 @@ export const useTaskStore = defineStore('task', () => {
       const at = list[j]
       if (j < 0 || !at) {
         list.splice(i, 0, moving)
-        tasks.value = list
+        inputs.value = list
         return false
       }
       moving.groupId = at.groupId
       list.splice(j >= i ? j + 1 : j, 0, moving)
     }
-    tasks.value = list
+    inputs.value = list
     // review F2：順序（與換了分類的那一筆）改了但還沒送
     markDirty(taskTracker, [TASK_ORDER_KEY])
     if (taskTracker.server.get(id)?.groupId !== moving.groupId) markDirty(taskTracker, [id])
@@ -712,12 +857,11 @@ export const useTaskStore = defineStore('task', () => {
 
   /**
    * 建立相依，回傳有沒有成功。legacy `addDep` :2360。
-   * 已經有同一條、或反向已經走得到（會成環）就拒絕；成功後跑一次 cascade 對齊日期，
-   * 被推動的任務跟著送一批 `updateTasks`（後端不跑 cascade，契約 A）。
+   * 已經有同一條、或反向已經走得到（會成環）就拒絕。加上相依後畫面立刻照新相依重排；
+   * 被推動的任務等 `createDep` 成功才寫回（後端不重算，契約 A）。
    *
-   * review F5：相依與 cascade 是一筆交易——`updateTasks` 要等 `createDep` 成功
-   * 才送，createDep 失敗就把相依與被它推動的下游一起還原（否則後端會存下
-   * 「沒有相依卻被推過」的日期）。
+   * review F5：相依與寫回是一筆交易——createDep 失敗時相依被收回，畫面自動照原本的相依排回去，
+   * 也不送任何 `updateTasks`（否則後端會存下「沒有相依卻被推過」的日期）。
    */
   function addDep(from: string, to: string): boolean {
     if (!useProjectStore().canEdit) return false
@@ -728,17 +872,6 @@ export const useTaskStore = defineStore('task', () => {
     if (reachable(to, from, deps.value)) return false
     const dep: Dependency = { id: newId(), from, to }
     deps.value = deps.value.concat([dep])
-
-    const before = tasks.value
-    const after = cascade(before, deps.value, {})
-    // cascade 一律回全新物件；沒變的換回原物件，保住 identity（spec 目標 7）
-    const changed: Task[] = []
-    tasks.value = after.map((t, i) => {
-      const orig = before[i]!
-      if (sameTask(t, orig)) return orig
-      changed.push(t)
-      return t
-    })
 
     const epoch = taskTracker.epoch
     void (async () => {
@@ -754,33 +887,35 @@ export const useTaskStore = defineStore('task', () => {
         },
         reconcile: reconcileDep,
       })
-      // 等相依的這段時間換了專案：被推動的那幾筆屬於上一個專案，不送也不還原
-      if (taskTracker.epoch !== epoch) return
-      if (!ok) {
-        // 相依沒建起來 → 它推動的日期也不該留著（review F5）
-        for (const t of changed) reconcileTask(taskTracker.server.get(t.id), t.id)
-        return
-      }
-      await commitTasks(changed)
+      // 等相依的這段時間換了專案：被推動的那幾筆屬於上一個專案，不送；沒建起來就什麼都不送
+      if (taskTracker.epoch !== epoch || !ok) return
+      await commitSchedule([])
     })()
     return true
   }
 
+  /** 刪相依；後續任務因此變成根任務時，保留刪除當下推算的開始日（`pinNewRoots`）。 */
   async function removeDep(id: string): Promise<void> {
     if (!useProjectStore().canEdit) return
-    if (!deps.value.some((d) => d.id === id)) return
+    const dep = deps.value.find((d) => d.id === id)
+    if (!dep) return
+    const pinned = pinNewRoots([dep.to], (d) => d.id !== id)
     deps.value = deps.value.filter((d) => d.id !== id)
+    const epoch = taskTracker.epoch
+    let ok = false
     await runOptimistic<Dependency>({
       tracker: depTracker,
       ids: [id],
       label: '刪除相依',
       call: async () => {
         await api.deleteDep(id)
+        ok = true
         depTracker.server.delete(id)
       },
       // review F1：成功時 server 已無此筆 → no-op；失敗才照 server 順序插回來
       reconcile: reconcileDep,
     })
+    await settlePinned(pinned, ok, epoch)
   }
 
   /** 前置任務（必須先完成的）。 */
@@ -797,6 +932,86 @@ export const useTaskStore = defineStore('task', () => {
       .filter((d) => d.from === taskId)
       .map((d) => taskById(d.to))
       .filter((t): t is Task => !!t)
+  }
+
+  /** 起訖是哪條規則決定的（甘特提示、屬性面板用）；任務不存在回 null。 */
+  function explain(id: string): ReturnType<typeof explainSchedule> {
+    const input = inputs.value.find((t) => t.id === id)
+    if (!input) return null
+    return explainSchedule(
+      input,
+      taskIndex.value,
+      deps.value,
+      useWorkCalendarStore().workdays,
+      useClockStore().todayIdx,
+    )
+  }
+
+  // ── 基準鎖（規則見 docs/reference/scheduling.md〈基準與基準鎖〉）──────────────
+
+  /**
+   * 上鎖：把此刻的推算起訖存成每個任務的基準，記下鎖定日（今天）。之後推算結束晚於基準就是延遲。
+   *
+   * 前提：可編輯、工作日曆已載入（日曆失敗時排程只看週末，鎖下去的基準會是錯的）、目前是解鎖。
+   * 樂觀更新：先改本地（基準與鎖定日），失敗時兩者都還原。送的是整批推算結果（`api.lockBaseline`）。
+   */
+  async function lockBaseline(): Promise<void> {
+    const project = useProjectStore()
+    if (!project.canEdit) return
+    if (useWorkCalendarStore().status !== 'ready') return
+    if (locked.value) return
+    const lockedOn = useClockStore().todayIso
+    const prevMeta = { ...project.meta }
+    // 解鎖時推算結果的基準已經等於推算起訖（withBaselineMode），直接整份存
+    const snapshot = tasks.value.map((t) => cloneEntity(t))
+    const base = new Map(snapshot.map((t) => [t.id, t]))
+    inputs.value = inputs.value.map((t) => {
+      const b = base.get(t.id)
+      return b ? { ...t, baselineStart: b.baselineStart, baselineEnd: b.baselineEnd } : t
+    })
+    project.setMeta({ ...prevMeta, baselineLockedOn: lockedOn })
+
+    const epoch = taskTracker.epoch
+    let ok = false
+    await runOptimistic<Task>({
+      tracker: taskTracker,
+      ids: snapshot.map((t) => t.id),
+      label: '鎖定基準',
+      call: async () => {
+        await api.lockBaseline(prevMeta.id, lockedOn, snapshot)
+        ok = true
+        for (const t of snapshot) taskTracker.server.set(t.id, cloneEntity(t))
+      },
+      // 成功：存的值對齊到送出的推算結果；失敗：基準放回 server 的值
+      reconcile: reconcileTask,
+    })
+    if (!ok && taskTracker.epoch === epoch) project.setMeta(prevMeta)
+  }
+
+  /**
+   * 解鎖：只清鎖定日。之後基準跟著排程走（不會有延遲），存的基準等下一次寫回時一併更新。
+   * 前提：可編輯、目前上鎖。失敗時鎖定日還原。
+   */
+  async function unlockBaseline(): Promise<void> {
+    const project = useProjectStore()
+    if (!project.canEdit) return
+    if (!locked.value) return
+    const prevMeta = { ...project.meta }
+    project.setMeta({ ...prevMeta, baselineLockedOn: '' })
+
+    const epoch = taskTracker.epoch
+    let ok = false
+    await runOptimistic<Task>({
+      tracker: taskTracker,
+      ids: [],
+      label: '解鎖基準',
+      call: async () => {
+        await api.unlockBaseline(prevMeta.id)
+        ok = true
+      },
+      reconcile: () => {},
+    })
+    if (!ok && taskTracker.epoch === epoch) project.setMeta(prevMeta)
   }
 
   // ── 事件（契約 B）────────────────────────────────────────────────────────
@@ -829,6 +1044,7 @@ export const useTaskStore = defineStore('task', () => {
 
   return {
     groups,
+    inputs,
     tasks,
     deps,
     taskById,
@@ -850,8 +1066,7 @@ export const useTaskStore = defineStore('task', () => {
     updateTask,
     commitTaskPatch,
     applyLocalPatch,
-    collectDirtyTasks,
-    commitTasks,
+    commitSchedule,
     commitTaskOrder,
     reconcileTasksFromServer,
     discardTaskDrag,
@@ -864,5 +1079,8 @@ export const useTaskStore = defineStore('task', () => {
     removeDep,
     predecessors,
     successors,
+    explain,
+    lockBaseline,
+    unlockBaseline,
   }
 })

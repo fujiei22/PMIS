@@ -37,9 +37,9 @@ import type {
  * - id 一律由 client 產（UUID v4）；create 帶 id，重複回 409 conflict。
  * - patch = JSON merge patch（只送有變的欄位）；'' 是有效值（空日期），不是「未設」。adapter 負責 null ↔ ''。
  *   後端收到 patch 要用 schema 白名單逐欄位驗，不可整包 merge（mass-assignment / __proto__）。
- * - updateTasks 是例外：語意是**整批 PUT**，body 是整筆 Task[]（不是 patch），內容已含 cascade 後的下游。
+ * - updateTasks 是例外：語意是**整批 PUT**，body 是整筆 Task[]（不是 patch），內容是前端排好的推算結果（含被推動的下游）。
  * - 日期：Task/Issue 的 ISODate 'YYYY-MM-DD'；Comment.at / Attachment.at 前端用本地 'YYYY-MM-DDTHH:mm' / 'YYYY-MM-DD'，後端存 ISO 8601 含 offset，adapter 轉。
- * - 後端不跑 cascade：updateTasks 已含下游、done 已由前端填；後端只存，response 回最終狀態（可糾正）。
+ * - 後端不重算排程（規則見 docs/reference/scheduling.md）：updateTasks 已含下游、done 已由前端填；後端只存，response 回最終狀態（可糾正）。
  * - 事件依專案訂閱（subscribe(projectId)，只收那個專案的事件；Task 等實體裡沒有專案 id，分專案靠訂閱）。
  *   廣播含發起者；client 對同 id 同值事件 no-op。事件可能早於或晚於對應 response 到達，兩種順序 client 都正確——
  *   這是 client 的責任，後端不必為此排順序。事件的 payload 同樣要走 adapter 轉換（null ↔ ''、日期、Attachment.id）。
@@ -136,7 +136,7 @@ export interface ProjectApi {
   createTask(task: Task): Promise<Task> //                                   POST   /api/tasks
   updateTask(id: string, patch: Partial<Task>): Promise<Task> //             PATCH  /api/tasks/:id
   /**
-   * 語意是**整批 PUT**：body 是整筆 `Task[]`（cascade 結果），不是 patch。
+   * 語意是**整批 PUT**：body 是整筆 `Task[]`（前端排好的推算結果），不是 patch。
    * response 是 server 最終狀態，client 直接套回。
    */
   updateTasks(tasks: Task[]): Promise<Task[]> //                             PATCH  /api/tasks

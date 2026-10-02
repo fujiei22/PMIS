@@ -14,7 +14,6 @@ import { parseDuration } from '@/lib/easing'
 import { fmtDate, stripYear } from '@/lib/format'
 import { isImeComposing } from '@/lib/keyboard'
 import { isLate } from '@/lib/schedule'
-import { useClockStore } from '@/stores/clock'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -22,7 +21,6 @@ import type { Task } from '@/types/models'
 
 const props = defineProps<{ task: Task }>()
 
-const clock = useClockStore()
 const ui = useUiStore()
 const selection = useSelectionStore()
 const taskStore = useTaskStore()
@@ -30,7 +28,7 @@ const { openTaskDatePicker, toggleRowMenu } = useMenus()
 const drag = usePointerDragContext()
 const registry = useDomRegistry()
 
-const late = computed(() => isLate(props.task, clock.todayIdx))
+const late = computed(() => isLate(props.task))
 /** 延遲蓋掉原本的狀態，供 CSS 變數與測試使用（契約 E）。 */
 const status = computed(() => (late.value ? 'delayed' : props.task.status))
 const statusDot = computed(() => (late.value ? DELAYED.bar : TASK_STATUS[props.task.status].bar))

@@ -133,6 +133,10 @@ export const END_REASON_TEXT = {
   overdue: (planned: string) => `逾期未完成，結束日暫定今天（原定 ${planned}）`,
 } as const
 
+/** 延遲 chip 的 title；兩個參數都已格式化（基準結束日 MM/DD、晚幾個工作天）。 */
+export const LATE_TITLE = (baselineEnd: string, late: string): string =>
+  `基準結束 ${baselineEnd}，晚 ${late}`
+
 /** 逾期時 −1 停用的說明。 */
 export const OVERDUE_SHRINK_TEXT = '逾期中，結束日最早是今天'
 

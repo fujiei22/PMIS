@@ -3,67 +3,9 @@ import type { Workdays } from '@/lib/workdays'
 import type { Dependency, ISODate, Issue, Task } from '@/types/models'
 
 /**
- * 排程運算：相依連動（cascade）、循環偵測、延遲判定、專案時間範圍。
- * 全部是純函式，不碰 store；legacy 對照行號標在各函式上。
+ * 排程運算：前推排程、循環偵測、延遲判定、編輯限制、專案時間範圍。
+ * 全部是純函式，不碰 store；規則見 docs/reference/scheduling.md，legacy 對照行號標在各函式上。
  */
-
-/**
- * 依相依把下游任務往後推，回傳新陣列（不改入參，legacy 是就地改）。legacy `cascade` :2320。
- *
- * shifts 記「這一輪誰已經被移動了幾天」：
- * 上游有位移且自己還沒被算過 → 跟著平移同樣天數（維持原本的間隔）；
- * 算完再夾一次下限，start 不得早於任何前置的 start。
- * 迴圈上限 80 是 legacy 的防呆——相依鏈再長也會收斂，循環相依則由 addDep 事前擋掉。
- */
-export function cascade(
-  tasks: Task[],
-  deps: Dependency[],
-  shifts?: Record<string, number>,
-): Task[] {
-  const list = tasks.map((t) => ({ ...t }))
-  const by: Record<string, Task> = {}
-  for (const t of list) by[t.id] = t
-  const sh: Record<string, number> = { ...(shifts ?? {}) }
-
-  for (let i = 0; i < 80; i++) {
-    let changed = false
-    for (const t of list) {
-      const inc = deps.filter((d) => d.to === t.id && by[d.from])
-      if (!inc.length) continue
-      const cur = dayIndex(t.start)
-
-      // 上游這輪最大的位移量；沒有任何上游動過就是 null
-      let mx: number | null = null
-      for (const d of inc) {
-        const v = sh[d.from]
-        if (v === undefined) continue
-        mx = mx === null ? v : Math.max(mx, v)
-      }
-
-      let target = cur
-      if (mx !== null && sh[t.id] === undefined) target = cur + mx
-      let floor = -Infinity
-      for (const d of inc) {
-        const src = by[d.from]
-        if (src) floor = Math.max(floor, dayIndex(src.start))
-      }
-      if (target < floor) target = floor
-
-      if (target !== cur) {
-        const dur = dayIndex(t.end) - cur
-        t.start = isoFromIndex(target)
-        t.end = isoFromIndex(target + dur)
-        sh[t.id] = (sh[t.id] ?? 0) + (target - cur)
-        changed = true
-      } else if (sh[t.id] === undefined && mx !== null) {
-        // 自己沒動，但要記成「已算過」，下一輪才不會被上游重複推
-        sh[t.id] = 0
-      }
-    }
-    if (!changed) break
-  }
-  return list
-}
 
 /**
  * 從 from 沿相依往下走，走得到 to 嗎。legacy `reachable` :2349。
@@ -80,23 +22,9 @@ export function reachable(from: string, to: string, deps: Dependency[]): boolean
   return walk(from)
 }
 
-/** 會牽動排程的三個欄位；其餘欄位（名稱、優先度、負責人、分類…）就地 patch 就好。 */
-const CASCADE_FIELDS = ['start', 'end', 'status'] as const
-
-/**
- * 這個 patch 需不需要跑相依連動。spec 目標 7。
- *
- * 判斷看的是「patch 有沒有帶這個欄位」而不是「值有沒有變」：
- * patch 是 JSON merge patch（契約 A），呼叫端只會送真的要改的欄位。
- * 送了但值一樣的情況 `applyTaskPatch` 會在最後的 diff 收掉，不會產生假變動。
- */
-export function needsCascade(patch: Partial<Task>): boolean {
-  return CASCADE_FIELDS.some((k) => k in patch)
-}
-
 /**
  * 兩筆任務的欄位是否完全一樣（陣列逐項比）；用來判斷能不能沿用舊物件。
- * R2 的 `taskStore.collectDirtyTasks` 也用它比對「本地 vs 最後已知 server 狀態」。
+ * task store 算寫回集合時也用它比對「推算結果 vs 最後已知 server 狀態」。
  */
 export function sameTask(a: Task, b: Task): boolean {
   if (a === b) return true
@@ -110,85 +38,6 @@ export function sameTask(a: Task, b: Task): boolean {
     } else if (va !== vb) return false
   }
   return true
-}
-
-/**
- * 套用任務欄位變更（必要時連動下游），回傳新陣列與真的變動了的那幾筆。legacy `setTask` :2294。
- *
- * 三件事依序發生：
- * 1. 狀態進 done 補完成日（原本有值就不覆蓋）、離開 done 清掉；
- * 2. start 不得早於任何前置的 start，超過就整段平移（保住工期）；
- * 3. 以自己 end 的位移量為種子跑 cascade 連動下游。
- * 2 與 3 只有 `needsCascade(patch)` 為真時才做——改個名字不該重算整張排程（spec 目標 7）。
- *
- * **identity**：沒有變動的任務回原本那個物件（`out[i] === tasks[i]`），
- * 元件的 computed 才能靠參照比對跳過重算；完全沒變動時連陣列都回原本那個。
- *
- * `changed` 是給樂觀更新用的：R2 的 `updateTasks(changed)` 只送真的變了的那幾筆。
- */
-export function applyTaskPatch(
-  tasks: Task[],
-  deps: Dependency[],
-  id: string,
-  patch: Partial<Task>,
-  today: ISODate,
-): { tasks: Task[]; changed: Task[] } {
-  const target = tasks.find((x) => x.id === id)
-  if (!target) return { tasks, changed: [] }
-
-  const next: Task = { ...target, ...patch }
-  if (patch.status && patch.status !== target.status) {
-    if (patch.status === 'done') {
-      if (!next.done) next.done = today
-    } else if (target.status === 'done') {
-      next.done = ''
-    }
-  }
-
-  if (!needsCascade(patch)) {
-    if (sameTask(next, target)) return { tasks, changed: [] }
-    return { tasks: tasks.map((x) => (x.id === id ? next : x)), changed: [next] }
-  }
-
-  // 自己的 start 不得早於任何前置的 start；超過就整段平移，保住工期
-  let floor = -Infinity
-  for (const d of deps) {
-    if (d.to !== id) continue
-    const src = tasks.find((x) => x.id === d.from)
-    if (src) floor = Math.max(floor, dayIndex(src.start))
-  }
-  if (Number.isFinite(floor) && dayIndex(next.start) < floor) {
-    const dur = dayIndex(next.end) - dayIndex(next.start)
-    next.start = isoFromIndex(floor)
-    next.end = isoFromIndex(floor + dur)
-  }
-
-  const seeded = tasks.map((x) => (x.id === id ? next : x))
-  const after = cascade(seeded, deps, { [id]: dayIndex(next.end) - dayIndex(target.end) })
-
-  // cascade 一律回全新物件；沒變的那幾筆換回原物件，並收集真的變動的
-  const changed: Task[] = []
-  const out = after.map((t, i) => {
-    const orig = tasks[i]!
-    if (sameTask(t, orig)) return orig
-    changed.push(t)
-    return t
-  })
-  return changed.length ? { tasks: out, changed } : { tasks, changed }
-}
-
-/**
- * 照排程此刻該完成了嗎：end **早於今天**（今天到期的任務今天還沒到期，隔天才算）。
- * legacy 用 `<=`，這裡刻意不同（user 決定）。Dashboard 的理論進度、總覽的 taskPlanned
- * 與「已延遲」的 isLate 都用這一個判準，改規則只改這裡。沒填 end 的任務不算。
- */
-export function isPlannedDone(t: Task, todayIdx: number): boolean {
-  return !!t.end && dayIndex(t.end) < todayIdx
-}
-
-/** 任務是否已延遲：還沒完成而且照排程該完成了。legacy `isLate` :2277 */
-export function isLate(t: Task, todayIdx: number): boolean {
-  return !!t && t.status !== 'done' && isPlannedDone(t, todayIdx)
 }
 
 /** Issue 是否已延遲：還沒結案而且期限已經過去。legacy `isLateIssue` :2278 */
@@ -219,9 +68,7 @@ export function projectRange(
 }
 
 // ═══ 前推排程（規則見 docs/reference/scheduling.md）════════════════════════════
-// 下面是取代 cascade 的新規則：工期是工作天、完成到開始、以實際進度推下游、計畫基準。
-// 切換前（store 還在用 cascade）新舊並存；isLateByBaseline／isPlannedDoneByBaseline 是暫名，
-// 切換時會取代 isLate／isPlannedDone。
+// 工期是工作天、完成到開始、以實際進度推下游、延遲與計畫進度看計畫基準。
 
 /** 工期（工作天）的上限；跟後端 tasks.duration_days 的 CHECK、日期選擇器的上限一致。 */
 export const DURATION_MAX = 3650
@@ -452,16 +299,29 @@ export function durationOf(t: Task, wd: Workdays): number {
 }
 
 /**
- * 已延遲（依基準）：未完成，而且推算結束日晚於基準結束日；沒有基準不算。
+ * 已延遲：未完成，而且推算結束日晚於基準結束日；沒有基準不算。legacy `isLate` :2277（legacy 看的是 end < 今天）。
  * t 必須是推算後的任務（store 的 tasks）：存的 end 是上次寫回的快照，可能已經過時。
+ * 規劃中（基準未上鎖）的專案基準＝推算起訖，所以一律不延遲。
  */
-export function isLateByBaseline(t: Task): boolean {
+export function isLate(t: Task): boolean {
   return (
     t.status !== 'done' && !!t.baselineEnd && !!t.end && dayIndex(t.end) > dayIndex(t.baselineEnd)
   )
 }
 
-/** 照計畫此刻該完成了嗎（依基準）：基準結束日早於今天；沒有基準不算。 */
-export function isPlannedDoneByBaseline(t: Task, todayIdx: number): boolean {
+/**
+ * 晚了幾個工作天：基準結束日的隔天到推算結束日之間的工作天數；沒延遲回 0。
+ * 例：基準結束 09-16、推算結束 09-18（都是工作天）→ 2。
+ */
+export function lateDays(t: Task, wd: Workdays): number {
+  if (!isLate(t)) return 0
+  return wd.countWorkdays(dayIndex(t.baselineEnd) + 1, dayIndex(t.end))
+}
+
+/**
+ * 照計畫此刻該完成了嗎：基準結束日**早於今天**（今天到期的任務今天還沒到期，隔天才算；legacy 用 `<=`，
+ * 這裡刻意不同）。Dashboard 的理論進度與總覽的 taskPlanned 都用這一個判準；沒有基準不算。
+ */
+export function isPlannedDone(t: Task, todayIdx: number): boolean {
   return !!t.baselineEnd && dayIndex(t.baselineEnd) < todayIdx
 }

@@ -184,7 +184,7 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
     // e2e 用 page.clock 固定在同一天，單元測試改呼叫 buildPortfolio 直接給日期。
     listProjects: () =>
       call('listProjects', () =>
-        buildPortfolio(store.snapshot(), isoFromIndex(todayIndex(systemNow()))),
+        buildPortfolio(store.snapshot(), isoFromIndex(todayIndex(systemNow())), calendar),
       ),
 
     // 工作日曆：全系統共用、不分專案；回複本，呼叫端改了也不影響下一次

@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { defineComponent, h, nextTick } from 'vue'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { useSampleCalendar } from '@/__tests__/loadSample'
 import { mockApi as maybeMockApi } from '@/api'
 import GanttBar from '@/components/gantt/GanttBar.vue'
 import { ROW_HEIGHT } from '@/constants/dashboard'
@@ -32,6 +33,7 @@ beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
   mockApi.reset(structuredClone(sampleProject))
+  useSampleCalendar()
   useTaskStore().load(structuredClone(sampleProject))
   useClockStore().now = BEFORE_ALL
 })

@@ -68,7 +68,7 @@ const statusRows = computed(() =>
     }
   }),
 )
-const delayedCount = computed(() => tasks.value.filter((t) => isLate(t, clock.todayIdx)).length)
+const delayedCount = computed(() => tasks.value.filter((t) => isLate(t)).length)
 
 // ── 卡 3：Issue 統計 ──────────────────────────────────────────────────────
 const levelRows = computed(() =>

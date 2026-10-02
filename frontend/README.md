@@ -40,7 +40,7 @@
       兩頁都是第一次顯示載入中、之後背景重載（畫面維持 ready；背景失敗只有連不上才維持舊資料，其他清掉切成錯誤）
 ```
 
-演算法（日期、cascade、篩選、排序）是 `src/lib/` 的純函式，store 只存狀態並把它們接起來。
+演算法（日期、排程、篩選、排序）是 `src/lib/` 的純函式，store 只存狀態並把它們接起來。
 
 ### 畫面對元件
 
@@ -137,7 +137,7 @@ Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<s
 | `src/stores/__tests__/readonly.spec.ts` | Dashboard 資料層 store 的每個函式都要分類（寫入 / 讀取 / 內部 / 任何登入者都能做）；唯讀時每個寫入都不打 api、不改狀態 |
 | `src/__tests__/no-query-selector.spec.ts` | `src/**` 執行期不得用 `querySelector` 等 DOM 選擇器（唯一例外 `useClickOutside`） |
 | `src/__tests__/readme.spec.ts` | 本檔〈端點對照表〉〈錯誤碼對照表〉與 `api/types.ts` 一致；〈目錄結構〉的 composables 清單提到 `src/composables/` 底下每一支（新增 composable 要一起補說明） |
-| `src/mocks/__tests__/consistency.spec.ts` | 範例資料必須已是 cascade 之後的樣子 |
+| `src/mocks/__tests__/consistency.spec.ts` | 範例資料存的起訖必須已是 2026-09-18 的排程推算結果（載入沒有漂移） |
 | `src/assets/__tests__/tokens.spec.ts` | `tokens.css` 必須含有程式用到的每個變數與約定值，改名或刪 token 會紅 |
 | `src/mocks/__tests__/portfolio.spec.ts` | 總覽靜態專案算出的實際 / 理論 % 與需注意等於設計稿；m1–m7 與 `sampleProject` 的成員是同一份 |
 | `src/api/__tests__/openapi-schema.spec.ts` | `src/api/http/schema.ts` 是由 `openapi.json` 產生的最新版（見〈型別從後端產生（OpenAPI）〉） |
@@ -287,7 +287,7 @@ COMPARE_DUMP=node_modules/.tmp/cmp npm run test:e2e -- e2e/compare.spec.ts
 | | `src/lib/*.ts` | `src/stores/*.ts` |
 |---|---|---|
 | 內容 | 純函式：輸入 → 輸出，不碰 Vue、不碰全域狀態 | 響應式狀態與改動它的 action |
-| 例子 | `dayIndex()`、`cascade()`、`matchTask()`、`applySort()`、`monthGrid()`、`newId()` | `useTaskStore()`、`useFilterStore()`、`useUiStore()` |
+| 例子 | `dayIndex()`、`scheduleTasks()`、`matchTask()`、`applySort()`、`monthGrid()`、`newId()` | `useTaskStore()`、`useFilterStore()`、`useUiStore()` |
 | 測試 | Vitest，直接呼叫、不需要 Pinia | Vitest + `setActivePinia(createPinia())` |
 
 規則：**演算法寫在 `lib/`，store 只負責存狀態並把 `lib/` 的結果接起來。** 只有單一元件用得到的狀態（下拉的 hover 列、卡片 hover）留在元件內。
@@ -337,7 +337,7 @@ store 分三層，依賴**只能由上往下**：
 | **UI 狀態欄位**：`ui` / `filter` / `comment` 裡描述畫面狀態的 `ref` | 元件可以直接寫；**打開**就地編輯、刪除確認、相依編輯器、負責人選擇器例外，走 `ui.startEdit` / `ui.askDelete` / `ui.openDepEditor` / `ui.toggleAssigneePicker`（唯讀時不開，關掉照樣直接寫 `null`） | `ui.editing = null`、`filter.issueMode = 'has'`、`comment.tab = 'files'` |
 | **資料欄位**：`tasks` / `issues` / `deps` / `groups` / `comments` | 只經 action | `taskStore.updateTask()`、`issueStore.update()`、`commentStore.send()` |
 
-分界在「有沒有連動」：資料欄位背後有 cascade 排程、api 呼叫與失敗還原、刪除時的懸空 id 清理，繞過 action 直接改陣列就會漏做這些；UI 狀態欄位沒有這層規則，走 action 只是多包一層。
+分界在「有沒有連動」：資料欄位背後有排程推算、api 呼叫與失敗還原、刪除時的懸空 id 清理，繞過 action 直接改陣列就會漏做這些；UI 狀態欄位沒有這層規則，走 action 只是多包一層。
 
 ## DOM 鉤子
 
@@ -461,7 +461,7 @@ store 分三層，依賴**只能由上往下**：
 | `getCalendar()` | GET | `/api/calendar` | — | `WorkCalendar`（`weekendDays`、`coveredYears`、`days`；全系統共用、不帶 from/to，一次回全部。後端已實作，見 `backend/README.md`〈工作日曆〉） |
 | `createTask()` | POST | `/api/tasks` | `Task`（含 client 產的 `id`） | `Task` |
 | `updateTask()` | PATCH | `/api/tasks/:id` | `Partial<Task>`（JSON merge patch） | `Task` |
-| `updateTasks()` | PATCH | `/api/tasks` | `Task[]`（**語意是整批 PUT**：body 是整筆 `Task[]`，不是 patch；已含 cascade 後的下游） | `Task[]`（server 最終狀態，client 直接套回） |
+| `updateTasks()` | PATCH | `/api/tasks` | `Task[]`（**語意是整批 PUT**：body 是整筆 `Task[]`，不是 patch；已含前端排好的下游） | `Task[]`（server 最終狀態，client 直接套回） |
 | `deleteTask()` | DELETE | `/api/tasks/:id` | — | — |
 | `reorderTasks(projectId, order)` | PUT | `/api/projects/:pid/tasks/order` | `{ id, groupId }[]`（這個專案整份的順序） | — |
 | `lockBaseline(projectId, lockedOn, tasks)` | PUT | `/api/projects/:pid/baseline` | `{ lockedOn, tasks: Task[] }`（基準＝當下推算起訖） | 204；同一個交易存任務與鎖定日，事件：每個任務 `task.updated`、最後 `project.updated` |
@@ -483,7 +483,7 @@ store 分三層，依賴**只能由上往下**：
 後端要注意的四件事：
 
 - **id 由 client 產**（UUID v4，`src/lib/id.ts` 的 `newId()`：`crypto.randomUUID?.()`，非 https / 非 localhost 沒有這支時退回 `crypto.getRandomValues` 自己組）。主鍵接受 client 給的 id，重複回 **409**。
-- **後端不跑 cascade**。相依連動（`start` / `end` 改動推下游、`status=done` 填 `done` 日）前端已經算完，`updateTasks` 送的是整段結果。後端只存，response 回最終狀態（要糾正就在 response 糾正，client 會套回）。
+- **後端不重算排程**。前推排程（工期、相依、實際進度推下游、`status=done` 填 `done` 日）前端已經算完，`updateTasks` 送的是整段結果。後端只存，response 回最終狀態（要糾正就在 response 糾正，client 會套回）。
 - **連動刪除由後端做**：`deleteTask` 連帶刪它的 issue / dep / comment，`deleteGroup` 連帶刪底下的任務（以及那些任務的 issue / dep / comment），`deleteIssue` 連帶刪它的留言。事件順序見下。
 - **事件與 response 的到達順序後端不必保證**。client 兩種順序都正確（機制見〈樂觀更新怎麼運作〉的 in-flight 規則）：事件先到就只更新「最後已知的 server 狀態」，等該 id 的請求全部結束才對齊本地。不要為了排順序而延後廣播或延後回應。
 
@@ -545,7 +545,7 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 - `runOptimistic({ tracker, ids, label, call, reconcile })`：本地由呼叫端先改好 → `inflight++` → `call()` 打 api。response 帶回的實體寫進 `server`；reject 送錯誤。**該 id 的 `inflight` 歸零、而且不在 `dirty` 裡時才 `reconcile`**——成功是套上 server 最終狀態，失敗是放回 server 狀態（不是「送出前的本地快照」，多筆交錯時後者會還原成中途的值）。`runOptimistic` **永不 throw**，store action 不必 try/catch。
 - **`dirty` 擋的是「還沒送出」的那一段**：拖曳的每個 tick、逐鍵改名的 debounce 期間根本還沒有請求在飛，`inflight` 保護不到。標成 dirty 的 id 收到別筆的 response 或別人推來的事件時只更新 `server`，不動本地；對應的 commit 一送出就清掉。
 - **刪除失敗的還原也走 `server`**：`removeTask / removeGroup / removeDep / removeIssue / comment.remove` 失敗時逐 id `reconcile(tracker.server.get(id), id)`。`server` 裡已經沒有的（`deleted` 事件先到了）就不復活。
-- **拖曳放開才送**：`usePointerDrag` 每個 tick 只改本地（`applyLocalPatch` / `moveTaskToLocal` / `moveGroupLocal`），`pointerup` 才送一次 `commitTasks(collectDirtyTasks())` / `commitTaskOrder()` / `commitGroupOrder()`；取消走 `discardTaskDrag(ids)` / `discardGroupDrag()`——只放棄這一段拖曳自己標的 dirty，別處還在 debounce 的改名留著。
+- **拖曳放開才送**：`usePointerDrag` 每個 tick 只改本地（`applyLocalPatch` / `moveTaskToLocal` / `moveGroupLocal`），`pointerup` 才送一次 `commitSchedule(這一段拖曳碰過的 id)` / `commitTaskOrder()` / `commitGroupOrder()`；取消走 `discardTaskDrag(ids)` / `discardGroupDrag()`——只放棄這一段拖曳自己標的 dirty，別處還在 debounce 的改名留著。
 - **改名 debounce**：`composables/useEditDraft.ts`——每一鍵都本地立即生效（維持 legacy 行為），api 走 trailing debounce 300ms，離開編輯（Enter / Esc / blur / 卸載）時 flush。
 - **錯誤出口 = 注入的 sink**：資料層不 import ui，失敗透過 `_optimistic.setErrorSink()` 送出去。
 - **啟動點 = `composables/useProjectBoot.ts`**：它把 `ui.pushError` 註冊成 sink、維護 `ui.loadState` / `ui.loadError`（載入中 / 失敗重試畫面）、確保派生層的清理 `watch` 在資料進來前掛好，並代理事件訂閱的 `start` / `stop`。`DashboardView` 是唯一呼叫端。

@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h, nextTick, ref, type Ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useSampleCalendar } from '@/__tests__/loadSample'
 import { mockApi as maybeMockApi } from '@/api'
 import { useGanttScroll, type GanttScroll } from '@/composables/useGanttScroll'
 import { dayFraction } from '@/lib/date'
@@ -56,6 +57,7 @@ function mountScroll(
 beforeEach(() => {
   setActivePinia(createPinia())
   mockApi.reset(structuredClone(sampleProject))
+  useSampleCalendar()
   useTaskStore().load(structuredClone(sampleProject))
   // 掛載當下會先捲到今天（資料已到）；之後的測試各自設定捲動位置，不受影響
   vi.useFakeTimers()
@@ -155,6 +157,7 @@ describe('useGanttScroll', () => {
     mountScroll(ref(sc), ref(rulerEl()))
     expect(sc.scrollLeft, '還沒有任務：不捲').toBe(0)
 
+    useSampleCalendar()
     taskStore.load(structuredClone(sampleProject))
     await nextTick()
     const first = sc.scrollLeft

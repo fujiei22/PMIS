@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { useSampleCalendar } from '@/__tests__/loadSample'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
@@ -17,6 +18,7 @@ describe('selectionStore', () => {
     // 清理 watch 掛在 store 的 setup 裡，資料進來前就要先建立（契約 E、review DX 8）
     useSelectionStore()
     useUiStore()
+    useSampleCalendar()
     useTaskStore().load(structuredClone(sampleProject))
   })
 

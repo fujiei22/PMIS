@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { useSampleCalendar } from '@/__tests__/loadSample'
 import { DEFAULT_ISSUE_SORT, DEFAULT_TASK_SORT } from '@/lib/sort'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
@@ -12,6 +13,7 @@ describe('filterStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     useClockStore().now = NOW
+    useSampleCalendar()
     useTaskStore().load(structuredClone(sampleProject))
   })
 

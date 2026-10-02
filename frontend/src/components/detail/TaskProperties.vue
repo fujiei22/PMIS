@@ -7,22 +7,31 @@ import Avatar from '@/components/common/Avatar.vue'
 import { useDelayedUnmount } from '@/composables/useDelayedUnmount'
 import { useMenus } from '@/composables/useMenus'
 import { useTaskActions } from '@/composables/useTaskActions'
-import { DELAYED, ISSUE_LEVEL, ISSUE_STATUS, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
+import {
+  DELAYED,
+  ISSUE_LEVEL,
+  ISSUE_STATUS,
+  LATE_TITLE,
+  PRIORITY,
+  TASK_STATUS,
+} from '@/constants/dashboard'
 import { lengthOf } from '@/lib/date'
-import { EMPTY_LABEL, fmtDate } from '@/lib/format'
-import { isLate, isLateIssue } from '@/lib/schedule'
+import { EMPTY_LABEL, fmtDate, fmtWorkdays, shortDate } from '@/lib/format'
+import { isLate, isLateIssue, lateDays } from '@/lib/schedule'
 import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+import { useWorkCalendarStore } from '@/stores/workCalendar'
 import type { Task } from '@/types/models'
 
 const props = defineProps<{ task: Task }>()
 
 const actions = useTaskActions()
 const clock = useClockStore()
+const calendar = useWorkCalendarStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
@@ -30,7 +39,16 @@ const memberStore = useMemberStore()
 const selection = useSelectionStore()
 const { openOptionMenu, openTaskDatePicker, openIssueDatePicker } = useMenus()
 
-const late = computed(() => isLate(props.task, clock.todayIdx))
+const late = computed(() => isLate(props.task))
+/** 延遲 chip 的 title：比的是哪一天、晚了幾個工作天。 */
+const lateTitle = computed(() =>
+  late.value
+    ? LATE_TITLE(
+        shortDate(props.task.baselineEnd),
+        fmtWorkdays(lateDays(props.task, calendar.workdays)),
+      )
+    : '',
+)
 const st = computed(() => TASK_STATUS[props.task.status])
 const pr = computed(() => PRIORITY[props.task.priority])
 
@@ -203,7 +221,7 @@ function askDelete(): void {
         <span class="pill-text">{{ st.label }}</span
         ><span class="pill-caret on-tint">▼</span>
       </div>
-      <div v-if="late" class="late-chip">
+      <div v-if="late" class="late-chip" :title="lateTitle">
         <span class="late-dot"></span><span>{{ DELAYED.label }}</span>
       </div>
     </div>

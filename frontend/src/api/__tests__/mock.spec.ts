@@ -64,7 +64,7 @@ describe('mock api', () => {
         id: 'pmis',
         name: 'My Project',
         pmId: 'm5',
-        baselineLockedOn: '',
+        baselineLockedOn: '2026-08-24',
       })
       expect(data.canEdit).toBe(true)
       expect(data.tasks).toHaveLength(30)
@@ -124,7 +124,7 @@ describe('mock api', () => {
     expect((err as ApiError).status).toBe(404)
   })
 
-  it('updateTasks 整批覆蓋（cascade 結果由 client 算好），每筆各 emit 一次', async () => {
+  it('updateTasks 整批覆寫（推算結果由 client 算好），每筆各 emit 一次', async () => {
     const [a, b] = sampleProject.tasks
     const out = await api.updateTasks([
       { ...a!, start: '2026-08-01', end: '2026-08-05' },
@@ -486,7 +486,7 @@ describe('基準鎖', () => {
   it('失敗時資料不動、不發事件；專案 id 不對回 404', async () => {
     api.failNext('lockBaseline')
     await expect(api.lockBaseline('pmis', '2026-09-18', [])).rejects.toThrow()
-    expect((await api.loadProject('pmis')).project.baselineLockedOn).toBe('')
+    expect((await api.loadProject('pmis')).project.baselineLockedOn).toBe('2026-08-24')
     expect(events).toEqual([])
     await expect(api.lockBaseline('nope', '2026-09-18', [])).rejects.toMatchObject({
       code: 'not_found',

@@ -7,23 +7,23 @@ import Avatar from '@/components/common/Avatar.vue'
 import Pill from '@/components/common/Pill.vue'
 import { useDomRegistry, registerEl } from '@/composables/useDomRegistry'
 import { useMenus } from '@/composables/useMenus'
-import { DELAYED, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
+import { DELAYED, LATE_TITLE, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
 import { dayIndex, isoFromIndex, lengthOf } from '@/lib/date'
-import { EMPTY_LABEL, fmtDate, stripYear } from '@/lib/format'
-import { isLate } from '@/lib/schedule'
-import { useClockStore } from '@/stores/clock'
+import { EMPTY_LABEL, fmtDate, fmtWorkdays, shortDate, stripYear } from '@/lib/format'
+import { isLate, lateDays } from '@/lib/schedule'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+import { useWorkCalendarStore } from '@/stores/workCalendar'
 import type { Task } from '@/types/models'
 
 const props = defineProps<{ task: Task }>()
 
 const registry = useDomRegistry()
 
-const clock = useClockStore()
+const calendar = useWorkCalendarStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
@@ -31,7 +31,16 @@ const memberStore = useMemberStore()
 const selection = useSelectionStore()
 const { openOptionMenu, openTaskDatePicker, openIssueDatePicker } = useMenus()
 
-const late = computed(() => isLate(props.task, clock.todayIdx))
+const late = computed(() => isLate(props.task))
+/** 延遲 chip 的 title：比的是哪一天、晚了幾個工作天。 */
+const lateTitle = computed(() =>
+  late.value
+    ? LATE_TITLE(
+        shortDate(props.task.baselineEnd),
+        fmtWorkdays(lateDays(props.task, calendar.workdays)),
+      )
+    : '',
+)
 const status = computed(() => (late.value ? 'delayed' : props.task.status))
 const st = computed(() => TASK_STATUS[props.task.status])
 const pr = computed(() => PRIORITY[props.task.priority])
@@ -136,7 +145,7 @@ function toggleDetail(): void {
         <span>{{ st.label }}</span>
         <span v-if="ui.canEdit" class="st-caret">▼</span>
       </div>
-      <div v-if="late" class="late-chip">
+      <div v-if="late" class="late-chip" :title="lateTitle">
         <span class="late-dot"></span><span>{{ DELAYED.label }}</span>
       </div>
     </div>
