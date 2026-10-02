@@ -23,6 +23,9 @@ const t = (id: string, start: string, end: string, groupId = 'g1'): Task => ({
   done: '',
   priority: 'mid',
   assigneeIds: [],
+  duration: 1,
+  baselineStart: '',
+  baselineEnd: '',
 })
 const d = (from: string, to: string): Dependency => ({ id: from + to, from, to })
 const issue = (over: Partial<Issue> = {}): Issue => ({

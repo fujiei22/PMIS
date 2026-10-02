@@ -38,6 +38,9 @@ const tasks: Task[] = [
     done: '2026-09-01',
     priority: 'high',
     assigneeIds: ['m3', 'm5'],
+    duration: 7,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't2',
@@ -50,6 +53,9 @@ const tasks: Task[] = [
     done: '2026-09-08',
     priority: 'mid',
     assigneeIds: ['m3'],
+    duration: 5,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't3',
@@ -62,6 +68,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'high',
     assigneeIds: ['m1'],
+    duration: 7,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't4',
@@ -74,6 +83,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'mid',
     assigneeIds: ['m1', 'm3'],
+    duration: 9,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't5',
@@ -86,6 +98,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'high',
     assigneeIds: ['m1'],
+    duration: 7,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't6',
@@ -98,6 +113,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'low',
     assigneeIds: ['m1', 'm7'],
+    duration: 6,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't7',
@@ -110,6 +128,9 @@ const tasks: Task[] = [
     done: '2026-09-07',
     priority: 'mid',
     assigneeIds: ['m2'],
+    duration: 5,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't8',
@@ -122,6 +143,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'high',
     assigneeIds: ['m2'],
+    duration: 9,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't9',
@@ -134,6 +158,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'high',
     assigneeIds: ['m2', 'm6'],
+    duration: 11,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't10',
@@ -146,6 +173,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'mid',
     assigneeIds: ['m2'],
+    duration: 8,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't11',
@@ -158,6 +188,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'low',
     assigneeIds: ['m2', 'm5'],
+    duration: 4,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't12',
@@ -170,6 +203,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'mid',
     assigneeIds: ['m2'],
+    duration: 5,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't13',
@@ -182,6 +218,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'high',
     assigneeIds: ['m6'],
+    duration: 5,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't14',
@@ -194,6 +233,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'mid',
     assigneeIds: ['m6'],
+    duration: 7,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't15',
@@ -206,6 +248,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'high',
     assigneeIds: ['m2', 'm6'],
+    duration: 8,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't16',
@@ -218,6 +263,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'low',
     assigneeIds: ['m6'],
+    duration: 9,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't17',
@@ -230,6 +278,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'mid',
     assigneeIds: ['m6', 'm7'],
+    duration: 7,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't18',
@@ -242,6 +293,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'mid',
     assigneeIds: ['m4'],
+    duration: 5,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't19',
@@ -254,6 +308,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'mid',
     assigneeIds: ['m4', 'm1'],
+    duration: 7,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't20',
@@ -266,6 +323,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'high',
     assigneeIds: ['m4'],
+    duration: 8,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't21',
@@ -278,6 +338,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'mid',
     assigneeIds: ['m4', 'm7'],
+    duration: 7,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't22',
@@ -290,6 +353,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'high',
     assigneeIds: ['m7'],
+    duration: 5,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't23',
@@ -302,6 +368,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'low',
     assigneeIds: ['m4', 'm5'],
+    duration: 5,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't24',
@@ -314,6 +383,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'mid',
     assigneeIds: ['m7'],
+    duration: 6,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't25',
@@ -326,6 +398,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'mid',
     assigneeIds: ['m7'],
+    duration: 6,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't26',
@@ -338,6 +413,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'high',
     assigneeIds: ['m7', 'm2'],
+    duration: 5,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't27',
@@ -350,6 +428,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'high',
     assigneeIds: ['m7', 'm5'],
+    duration: 3,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't28',
@@ -362,6 +443,9 @@ const tasks: Task[] = [
     done: '2026-08-31',
     priority: 'mid',
     assigneeIds: ['m5'],
+    duration: 6,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't29',
@@ -374,6 +458,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'low',
     assigneeIds: ['m5'],
+    duration: 40,
+    baselineStart: '',
+    baselineEnd: '',
   },
   {
     id: 't30',
@@ -386,6 +473,9 @@ const tasks: Task[] = [
     done: '',
     priority: 'mid',
     assigneeIds: ['m5', 'm3'],
+    duration: 7,
+    baselineStart: '',
+    baselineEnd: '',
   },
 ]
 
@@ -722,7 +812,7 @@ export const sampleProject: ProjectData = {
    * 名稱刻意維持 `My Project`：頂欄改讀這個欄位之前寫死的就是它，
    * 頂欄文字與寬度不變，compare.spec（整頁文字對 legacy）與 topbar-layout.spec 的寬度門檻都不受影響。
    */
-  project: { id: 'pmis', name: 'My Project', pmId: 'm5' },
+  project: { id: 'pmis', name: 'My Project', pmId: 'm5', baselineLockedOn: '' },
   /** mock 不判斷權限：一律可以改 */
   canEdit: true,
   groups,

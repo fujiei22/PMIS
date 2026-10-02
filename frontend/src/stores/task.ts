@@ -453,6 +453,10 @@ export const useTaskStore = defineStore('task', () => {
       done: '',
       priority: 'mid',
       assigneeIds: opts.assigneeIds.slice(),
+      // 排程切換（工期、基準）前的過渡值；切換後由 addTask 依排程算好
+      duration: 1,
+      baselineStart: '',
+      baselineEnd: '',
     }
     tasks.value.push(t)
     void runOptimistic<Task>({

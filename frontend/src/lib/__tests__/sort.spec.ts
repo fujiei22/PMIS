@@ -21,6 +21,9 @@ const task = (over: Partial<Task> & { id: string }): Task => ({
   done: '',
   priority: 'mid',
   assigneeIds: [],
+  duration: 1,
+  baselineStart: '',
+  baselineEnd: '',
   ...over,
 })
 const issue = (over: Partial<Issue> & { id: string }): Issue => ({

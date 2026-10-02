@@ -30,6 +30,9 @@ const task = (over: Partial<Task> = {}): Task => ({
   done: '',
   priority: 'mid',
   assigneeIds: ['m1'],
+  duration: 1,
+  baselineStart: '',
+  baselineEnd: '',
   ...over,
 })
 const ctx = (openIssueCount = 0) => ({

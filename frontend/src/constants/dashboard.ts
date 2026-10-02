@@ -109,3 +109,44 @@ export const ISSUE_SORT_KEYS = [
   { k: 'status', label: '處理狀態' },
   { k: 'created', label: '建立日期' },
 ] as const satisfies readonly { k: string; label: string }[]
+
+/* ── 排程（規則見 docs/reference/scheduling.md）──────────────────────────── */
+
+/** 不能編輯的原因（甘特條的 title、日期選擇器的說明行共用）；key 對到 lib/schedule.ts 的 EditBlock。 */
+export const EDIT_BLOCK_TEXT = {
+  predecessor: '開始日由前置任務決定，只能調整工期',
+  done: '已完成：結束日就是完成日；改完成日請用「完成日」',
+} as const
+
+/** 開始日是怎麼來的（explainSchedule 的 startBy）。 */
+export const START_REASON_TEXT = {
+  actual: '實際開工日',
+  root: '設定的開始日',
+  pred: (name: string) => `前置「${name}」結束後開始`,
+  today: '尚未開始，順延到今天',
+} as const
+
+/** 結束日是怎麼來的（explainSchedule 的 endBy）；overdue 帶原定的結束日（已格式化）。 */
+export const END_REASON_TEXT = {
+  done: '完成日',
+  duration: '依工期推算',
+  overdue: (planned: string) => `逾期未完成，結束日暫定今天（原定 ${planned}）`,
+} as const
+
+/** 逾期時 −1 停用的說明。 */
+export const OVERDUE_SHRINK_TEXT = '逾期中，結束日最早是今天'
+
+/** 甘特標題列的日曆提示；years 是已合併的年份字串（例 2027–2028）。 */
+export const CALENDAR_NOTICE = {
+  uncovered: (years: string) => `${years} 年假日未公布，只排除週末`,
+  error: '假日資料載入失敗，只排除週末；重新整理可重試',
+} as const
+
+/** 基準鎖按鈕的文字與 title；on 是已格式化的鎖定日。 */
+export const BASELINE_LOCK_TEXT = {
+  locked: '基準已鎖定',
+  unlocked: '規劃中',
+  lockedTitle: (on: string) => `基準鎖定於 ${on}；點擊解鎖`,
+  unlockedTitle: '基準跟著排程走；點擊上鎖',
+  calendarError: '假日資料載入失敗，暫時不能上鎖',
+} as const

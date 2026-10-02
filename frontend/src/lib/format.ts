@@ -53,6 +53,14 @@ function pad2(v: string | undefined): string {
 }
 
 /** 金額：'$50,000'；負數把負號放在 $ 前面（'-$500'）。 */
+/** 工期的單位：一律寫「工作天」（工期是工作天，不是日曆天；規則見 docs/reference/scheduling.md）。 */
+export const WORKDAY_UNIT = '工作天'
+
+/** 工期的顯示：「N 工作天」。 */
+export function fmtWorkdays(n: number): string {
+  return `${n} ${WORKDAY_UNIT}`
+}
+
 export function fmtMoney(n: number): string {
   return (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US')
 }

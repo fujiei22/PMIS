@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import type { ProjectMeta } from '@/types/models'
 
 /** 還沒載入（或換專案剛清空）時的專案資料：全部空字串，畫面上就是沒有名稱。 */
-const EMPTY_META: ProjectMeta = { id: '', name: '', pmId: '' }
+const EMPTY_META: ProjectMeta = { id: '', name: '', pmId: '', baselineLockedOn: '' }
 
 /**
  * 目前這個 Dashboard 的專案本身：id、名稱、擁有者，以及登入者能不能改（`canEdit`）。

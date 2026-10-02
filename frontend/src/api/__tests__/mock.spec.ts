@@ -24,6 +24,9 @@ const task = (id: string, over: Partial<Task> = {}): Task => ({
   done: '',
   priority: 'mid',
   assigneeIds: [],
+  duration: 1,
+  baselineStart: '',
+  baselineEnd: '',
   ...over,
 })
 
@@ -57,7 +60,12 @@ describe('mock api', () => {
   it('loadProject(id)：mock 只有一份專案，任何 id 都回它（含 project 與 canEdit）', async () => {
     for (const id of ['pmis', 'portal', 'whatever']) {
       const data = await api.loadProject(id)
-      expect(data.project).toEqual({ id: 'pmis', name: 'My Project', pmId: 'm5' })
+      expect(data.project).toEqual({
+        id: 'pmis',
+        name: 'My Project',
+        pmId: 'm5',
+        baselineLockedOn: '',
+      })
       expect(data.canEdit).toBe(true)
       expect(data.tasks).toHaveLength(30)
     }
@@ -378,7 +386,7 @@ describe('mock api', () => {
 
   it('reset(data) 換成指定的資料', async () => {
     api.reset({
-      project: { id: 'pmis', name: '空專案', pmId: 'm1' },
+      project: { id: 'pmis', name: '空專案', pmId: 'm1', baselineLockedOn: '' },
       canEdit: true,
       groups: [],
       members: [],

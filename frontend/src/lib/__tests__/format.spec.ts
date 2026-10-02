@@ -5,6 +5,7 @@ import {
   fmtDate,
   fmtMoney,
   fmtMoneyShort,
+  fmtWorkdays,
   shortDate,
   stripYear,
   visualLen,
@@ -77,5 +78,12 @@ describe('fmtMoneyShort', () => {
     expect(fmtMoneyShort(1_000_000_000)).toBe('$1B')
     expect(fmtMoneyShort(123_456_789_012)).toBe('$123.5B')
     expect(fmtMoneyShort(-2_500_000_000_000)).toBe('-$2.5T')
+  })
+})
+
+describe('fmtWorkdays', () => {
+  it('工期一律寫「N 工作天」', () => {
+    expect(fmtWorkdays(7)).toBe('7 工作天')
+    expect(fmtWorkdays(1)).toBe('1 工作天')
   })
 })

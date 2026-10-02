@@ -128,7 +128,12 @@ describe('taskStore', () => {
     const spy = vi.spyOn(api, 'loadProject')
     await s.load('pmis')
     expect(spy).toHaveBeenCalledWith('pmis')
-    expect(useProjectStore().meta).toEqual({ id: 'pmis', name: 'My Project', pmId: 'm5' })
+    expect(useProjectStore().meta).toEqual({
+      id: 'pmis',
+      name: 'My Project',
+      pmId: 'm5',
+      baselineLockedOn: '',
+    })
     expect(useProjectStore().canEdit).toBe(true)
   })
 
@@ -160,7 +165,7 @@ describe('taskStore', () => {
     expect(useMemberStore().members).toEqual([])
     expect(useMemberStore().currentUserId).toBe('')
     expect(useBudgetStore().budget).toEqual({ total: 0, actual: 0 })
-    expect(useProjectStore().meta).toEqual({ id: '', name: '', pmId: '' })
+    expect(useProjectStore().meta).toEqual({ id: '', name: '', pmId: '', baselineLockedOn: '' })
     expect(useProjectStore().canEdit).toBe(false)
   })
 
