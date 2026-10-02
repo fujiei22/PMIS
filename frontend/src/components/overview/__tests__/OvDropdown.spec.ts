@@ -12,7 +12,10 @@ import OvDropdown from '@/components/overview/OvDropdown.vue'
 
 describe('OvDropdown', () => {
   it('open=false 不畫面板；點觸發鈕 emit toggle；aria-expanded 跟著 open', async () => {
-    const w = mount(OvDropdown, { props: { label: '狀態', active: false, open: false }, slots: { default: '<i class="opt" />' } })
+    const w = mount(OvDropdown, {
+      props: { label: '狀態', active: false, open: false },
+      slots: { default: '<i class="opt" />' },
+    })
     expect(w.find('.dd-menu').exists()).toBe(false)
     expect(w.find('button.dd-trigger').attributes('aria-expanded')).toBe('false')
     await w.find('button.dd-trigger').trigger('click')
@@ -22,13 +25,18 @@ describe('OvDropdown', () => {
     expect(w.find('button.dd-trigger').attributes('aria-expanded')).toBe('true')
   })
   it('active 時觸發鈕帶 .active；disabled 時按不下去', async () => {
-    const w = mount(OvDropdown, { props: { label: '狀態 2', active: true, open: false, disabled: true } })
+    const w = mount(OvDropdown, {
+      props: { label: '狀態 2', active: true, open: false, disabled: true },
+    })
     expect(w.find('.dd-trigger').classes()).toContain('active')
     expect(w.find('.dd-trigger').attributes('disabled')).toBeDefined()
   })
   it('trigger slot 可換掉觸發鈕內容；attrs 落在單一 root', () => {
-    const w = mount(OvDropdown, { props: { label: '成員', active: false, open: false }, attrs: { 'data-ov-dd': 'pm' },
-      slots: { trigger: '<span class="stack" />' } })
+    const w = mount(OvDropdown, {
+      props: { label: '成員', active: false, open: false },
+      attrs: { 'data-ov-dd': 'pm' },
+      slots: { trigger: '<span class="stack" />' },
+    })
     expect(w.attributes('data-ov-dd')).toBe('pm')
     expect(w.find('.dd-trigger .stack').exists()).toBe(true)
   })

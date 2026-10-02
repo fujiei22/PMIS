@@ -12,8 +12,16 @@ import type { ProjectData } from '@/types/models'
 describe('summarizeProject', () => {
   it('sampleProject 在 2026-09-22：30 任務、完成 4、應完成 7、延遲 3', () => {
     const p = summarizeProject(sampleProject, PMIS_META, '2026-09-22')
-    expect(p).toMatchObject({ id: 'pmis', pmId: 'm5', taskTotal: 30, taskDone: 4, taskPlanned: 7, delayedTasks: 3,
-      startDate: '2026-08-24', dueDate: '2026-11-10' })
+    expect(p).toMatchObject({
+      id: 'pmis',
+      pmId: 'm5',
+      taskTotal: 30,
+      taskDone: 4,
+      taskPlanned: 7,
+      delayedTasks: 3,
+      startDate: '2026-08-24',
+      dueDate: '2026-11-10',
+    })
     expect(p.taskCounts).toEqual({ done: 4, doing: 8, paused: 1, todo: 17 })
     expect(p.openIssues).toEqual({ A: 2, B: 3, C: 4, D: 1 })
     expect(p.upcoming).toHaveLength(3)
@@ -34,11 +42,24 @@ describe('summarizeProject', () => {
   it('沒有任務時起訖日都是今天、各數字為 0', () => {
     const data: ProjectData = { ...structuredClone(sampleProject), tasks: [], issues: [] }
     expect(summarizeProject(data, PMIS_META, '2026-09-22')).toMatchObject({
-      startDate: '2026-09-22', dueDate: '2026-09-22', taskTotal: 0, taskPlanned: 0, upcoming: [] })
+      startDate: '2026-09-22',
+      dueDate: '2026-09-22',
+      taskTotal: 0,
+      taskPlanned: 0,
+      upcoming: [],
+    })
   })
   it('buildPortfolio：7 個專案、11 位成員、登入者 m11', () => {
     const pf = buildPortfolio(sampleProject, '2026-09-22')
-    expect(pf.projects.map((p) => p.id)).toEqual(['pmis', 'portal', 'payment', 'dw', 'app', 'wiki', 'vendor'])
+    expect(pf.projects.map((p) => p.id)).toEqual([
+      'pmis',
+      'portal',
+      'payment',
+      'dw',
+      'app',
+      'wiki',
+      'vendor',
+    ])
     expect(pf.members).toHaveLength(11)
     expect(pf.currentUserId).toBe('m11')
   })

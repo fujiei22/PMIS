@@ -46,7 +46,9 @@ watch(open, (on) => {
   clearTimeout(clipTimer)
   clip.value = 'clip'
   if (!on) return
-  const panelMs = parseDuration(getComputedStyle(document.documentElement).getPropertyValue('--t-panel'))
+  const panelMs = parseDuration(
+    getComputedStyle(document.documentElement).getPropertyValue('--t-panel'),
+  )
   clipTimer = setTimeout(() => {
     if (open.value) clip.value = 'visible'
   }, panelMs + OPEN_SLACK_MS)
@@ -72,7 +74,12 @@ function toggle(): void {
   <section :ref="registerPanel" class="panel" :data-panel="panel">
     <div ref="headEl" class="panel-head" :style="{ top: `${sticky.panelTop.value}px` }">
       <slot name="head" />
-      <div class="panel-toggle" role="button" :title="open ? '收合面板' : '展開面板'" @click="toggle">
+      <div
+        class="panel-toggle"
+        role="button"
+        :title="open ? '收合面板' : '展開面板'"
+        @click="toggle"
+      >
         {{ caret }}
       </div>
     </div>

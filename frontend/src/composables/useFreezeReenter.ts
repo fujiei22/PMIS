@@ -12,7 +12,8 @@ interface Leaving {
   s: number
 }
 
-const isLeaving = (el: Element): boolean => Array.from(el.classList).some((k) => k.endsWith('-leave-active'))
+const isLeaving = (el: Element): boolean =>
+  Array.from(el.classList).some((k) => k.endsWith('-leave-active'))
 
 /**
  * 釘位離場的清單（泳道內的卡片，離場由 freezeLeave 釘在原位淡出）：同一個 key 在離場途中又回來時，
@@ -54,7 +55,13 @@ export function useFreezeReenter(
       if (!key || !isLeaving(c) || !(c instanceof HTMLElement)) continue
       const t = currentTranslate(c)
       const o = parseFloat(getComputedStyle(c).opacity)
-      leaving.set(key, { el: c, top: c.offsetTop + t.y, left: c.offsetLeft + t.x, o: Number.isNaN(o) ? 1 : o, s: currentScale(c) })
+      leaving.set(key, {
+        el: c,
+        top: c.offsetTop + t.y,
+        left: c.offsetLeft + t.x,
+        o: Number.isNaN(o) ? 1 : o,
+        s: currentScale(c),
+      })
     }
   })
 
@@ -74,7 +81,8 @@ export function useFreezeReenter(
     const easing = tokenValue('--ease') || 'ease'
     for (const { el, snap, dx, dy } of back) {
       el.style.transition = 'none'
-      for (const k of Array.from(el.classList)) if (k.endsWith('-enter-from')) el.classList.remove(k)
+      for (const k of Array.from(el.classList))
+        if (k.endsWith('-enter-from')) el.classList.remove(k)
       el.style.opacity = String(snap.o)
       el.style.transform = `scale(${snap.s})`
       void getComputedStyle(el).opacity

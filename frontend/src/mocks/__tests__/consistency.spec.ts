@@ -59,7 +59,9 @@ describe('sampleProject 一致性', () => {
     }
     for (const c of sampleProject.comments) {
       expect(memberIds.has(c.memberId)).toBe(true)
-      expect(c.targetKind === 'task' ? taskIds.has(c.targetId) : issueIds.has(c.targetId)).toBe(true)
+      expect(c.targetKind === 'task' ? taskIds.has(c.targetId) : issueIds.has(c.targetId)).toBe(
+        true,
+      )
     }
     expect(memberIds.has(sampleProject.currentUserId)).toBe(true)
   })

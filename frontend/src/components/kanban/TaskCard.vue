@@ -178,7 +178,8 @@ function toggleDetail(): void {
       <div class="foot-gap"></div>
       <div class="created" :title="`建立於 ${createdLabel}`">{{ createdLabel }}</div>
       <div v-if="issues.length" class="issue-badge" :class="{ open: issueBadge.open }">
-        <span>{{ issueBadge.mark }}</span><span>{{ issueBadge.count }}</span>
+        <span>{{ issueBadge.mark }}</span
+        ><span>{{ issueBadge.count }}</span>
       </div>
       <div class="caret" role="button" title="開啟詳細" @click.stop="toggleDetail()">⤢</div>
     </div>

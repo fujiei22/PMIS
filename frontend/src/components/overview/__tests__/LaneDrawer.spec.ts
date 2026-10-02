@@ -27,10 +27,13 @@ vi.mock('@/composables/heightTween', async (importOriginal) => {
 })
 
 async function setup(cols: number) {
-  const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: '/', component: { template: '<div />' } },
-    { path: '/projects/:id', name: 'dashboard', component: { template: '<div />' } },
-  ] })
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/projects/:id', name: 'dashboard', component: { template: '<div />' } },
+    ],
+  })
   useClockStore().now = new Date('2026-09-22T10:00:00').getTime()
   const data = buildPortfolio(sampleProject, '2026-09-22')
   await usePortfolioStore().load(data)

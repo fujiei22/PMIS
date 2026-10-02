@@ -34,7 +34,12 @@ describe('portfolio store', () => {
     newer.projects[1]!.name = '新的'
     let releaseOld!: (v: Awaited<ReturnType<typeof api.listProjects>>) => void
     vi.spyOn(api, 'listProjects')
-      .mockImplementationOnce(() => new Promise((r) => { releaseOld = r }))
+      .mockImplementationOnce(
+        () =>
+          new Promise((r) => {
+            releaseOld = r
+          }),
+      )
       .mockResolvedValueOnce(newer)
     const first = pf.load()
     await pf.load()
@@ -50,7 +55,12 @@ describe('portfolio store', () => {
     let failNew!: (e: unknown) => void
     vi.spyOn(api, 'listProjects')
       .mockResolvedValueOnce(buildPortfolio(sampleProject, '2026-09-22'))
-      .mockImplementationOnce(() => new Promise((_, rej) => { failNew = rej }))
+      .mockImplementationOnce(
+        () =>
+          new Promise((_, rej) => {
+            failNew = rej
+          }),
+      )
     const first = pf.load()
     const second = pf.load()
     await first

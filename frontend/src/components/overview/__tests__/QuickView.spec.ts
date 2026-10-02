@@ -17,17 +17,23 @@ import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
 import { usePortfolioStore } from '@/stores/portfolio'
 
-const router = createRouter({ history: createMemoryHistory(), routes: [
-  { path: '/', component: { template: '<div />' } },
-  { path: '/projects/:id', name: 'dashboard', component: { template: '<div />' } },
-] })
+const router = createRouter({
+  history: createMemoryHistory(),
+  routes: [
+    { path: '/', component: { template: '<div />' } },
+    { path: '/projects/:id', name: 'dashboard', component: { template: '<div />' } },
+  ],
+})
 
 async function setup(id: string, withHead = false) {
   useClockStore().now = new Date('2026-09-22T10:00:00').getTime()
   const data = buildPortfolio(sampleProject, '2026-09-22')
   await usePortfolioStore().load(data)
   const p = data.projects.find((x) => x.id === id)!
-  return mount(QuickView, { props: { row: { p, d: deriveProject(p, '2026-09-22') }, withHead }, global: { plugins: [router] } })
+  return mount(QuickView, {
+    props: { row: { p, d: deriveProject(p, '2026-09-22') }, withHead },
+    global: { plugins: [router] },
+  })
 }
 
 describe('QuickView', () => {
@@ -35,7 +41,12 @@ describe('QuickView', () => {
 
   it('四組標題；portal 的近期任務 09-23 標成快到期、09-30 不標', async () => {
     const w = await setup('portal')
-    expect(w.findAll('.qb-title').map((x) => x.text())).toEqual(['進度與任務數', '時程', '風險項目', '成員與近期任務'])
+    expect(w.findAll('.qb-title').map((x) => x.text())).toEqual([
+      '進度與任務數',
+      '時程',
+      '風險項目',
+      '成員與近期任務',
+    ])
     const dates = w.findAll('.tasks .task-date')
     expect(dates[0]!.classes()).toContain('due-soon')
     expect(dates[2]!.classes()).not.toContain('due-soon')

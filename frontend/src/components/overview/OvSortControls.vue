@@ -163,7 +163,12 @@ useDismiss(
       <span v-for="c in chips" :key="c.k" class="ov-slot sort-slot">
         <span class="ov-slot-clip">
           <span class="sort-chip-wrap">
-            <button type="button" class="sort-chip" :title="c.title" @click="overview.bumpSort(c.k)">
+            <button
+              type="button"
+              class="sort-chip"
+              :title="c.title"
+              @click="overview.bumpSort(c.k)"
+            >
               <span class="chip-level">{{ c.level }}</span>
               <span class="chip-label">{{ c.label }}</span>
               <span class="chip-arrow" :class="{ desc: c.desc }" aria-hidden="true">↑</span>
@@ -194,7 +199,13 @@ useDismiss(
       </button>
       <!-- 進出場用 base.css 的 pop（動畫稽核 T12） -->
       <Transition name="pop">
-        <div v-if="open" ref="menu" class="sort-menu" :class="{ 'align-end': alignEnd }" :style="menuStyle">
+        <div
+          v-if="open"
+          ref="menu"
+          class="sort-menu"
+          :class="{ 'align-end': alignEnd }"
+          :style="menuStyle"
+        >
           <div class="sort-hint">依序點選排序層級，再點一次翻方向</div>
           <button
             v-for="o in options"

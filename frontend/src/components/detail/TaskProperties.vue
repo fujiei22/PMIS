@@ -38,7 +38,9 @@ const rangeLabel = computed(
   () => `${fmtDate(props.task.start)} → ${fmtDate(props.task.end)} · ${lengthOf(props.task)}d`,
 )
 const createdLabel = computed(() => fmtDate(props.task.created || props.task.start))
-const donePill = computed(() => (props.task.done ? fmtDate(props.task.done) : EMPTY_LABEL.notFilled))
+const donePill = computed(() =>
+  props.task.done ? fmtDate(props.task.done) : EMPTY_LABEL.notFilled,
+)
 
 // ── 負責人（chips + 可展開的選擇器）──────────────────────────────────────────
 const assigned = computed(() =>
@@ -136,7 +138,8 @@ function askDelete(): void {
         role="button"
         @click.stop="openOptionMenu($event, task.id, 'group')"
       >
-        <span class="pill-text">{{ groupName }}</span><span class="pill-caret">▼</span>
+        <span class="pill-text">{{ groupName }}</span
+        ><span class="pill-caret">▼</span>
       </div>
     </div>
 
@@ -148,7 +151,8 @@ function askDelete(): void {
         role="button"
         @click.stop="openTaskDatePicker($event, task.id)"
       >
-        <span class="pill-text">{{ rangeLabel }}</span><span class="pill-caret">▼</span>
+        <span class="pill-text">{{ rangeLabel }}</span
+        ><span class="pill-caret">▼</span>
       </div>
     </div>
 
@@ -166,7 +170,8 @@ function askDelete(): void {
         role="button"
         @click.stop="openIssueDatePicker($event, task.id, 'done', task.done, 'task')"
       >
-        <span class="pill-text">{{ donePill }}</span><span class="pill-caret">▼</span>
+        <span class="pill-text">{{ donePill }}</span
+        ><span class="pill-caret">▼</span>
       </div>
     </div>
 
@@ -179,7 +184,8 @@ function askDelete(): void {
         role="button"
         @click.stop="openOptionMenu($event, task.id, 'priority')"
       >
-        <span class="pill-text">{{ pr.label }}</span><span class="pill-caret on-solid">▼</span>
+        <span class="pill-text">{{ pr.label }}</span
+        ><span class="pill-caret on-solid">▼</span>
       </div>
     </div>
 
@@ -196,7 +202,8 @@ function askDelete(): void {
         @click.stop="openOptionMenu($event, task.id, 'status')"
       >
         <span class="status-dot" :style="{ background: st.bar }"></span>
-        <span class="pill-text">{{ st.label }}</span><span class="pill-caret on-tint">▼</span>
+        <span class="pill-text">{{ st.label }}</span
+        ><span class="pill-caret on-tint">▼</span>
       </div>
       <div v-if="late" class="late-chip">
         <span class="late-dot"></span><span>{{ DELAYED.label }}</span>
@@ -246,7 +253,8 @@ function askDelete(): void {
           role="button"
           @click.stop="openOptionMenu($event, i.id, 'istatus')"
         >
-          <span>{{ ISSUE_STATUS[i.status].label }}</span><span class="issue-caret">▼</span>
+          <span>{{ ISSUE_STATUS[i.status].label }}</span
+          ><span class="issue-caret">▼</span>
         </span>
         <span class="issue-open">⤢</span>
       </div>

@@ -1,7 +1,11 @@
 import { mount } from '@vue/test-utils'
 import { defineComponent, h, type Ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { provideDeferredPanels, useDeferredPanels, type DeferredPanels } from '@/composables/useDeferredPanels'
+import {
+  provideDeferredPanels,
+  useDeferredPanels,
+  type DeferredPanels,
+} from '@/composables/useDeferredPanels'
 import { notifyPageSettled } from '@/router/pageSwap'
 
 /**
@@ -107,12 +111,15 @@ describe('useDeferredPanels', () => {
     unmount()
   })
 
-  it.each(['pointerdown', 'wheel', 'keydown', 'touchstart'])('使用者先動手（%s）：立刻全掛', (type) => {
-    const { api, unmount } = host(true)
-    window.dispatchEvent(new Event(type))
-    expect(both(api)).toEqual([true, true])
-    unmount()
-  })
+  it.each(['pointerdown', 'wheel', 'keydown', 'touchstart'])(
+    '使用者先動手（%s）：立刻全掛',
+    (type) => {
+      const { api, unmount } = host(true)
+      window.dispatchEvent(new Event(type))
+      expect(both(api)).toEqual([true, true])
+      unmount()
+    },
+  )
 
   it('捲動不算使用者動手（切頁時 router 自己會捲回頂端）', () => {
     const { api, unmount } = host(true)

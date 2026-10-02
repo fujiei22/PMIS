@@ -162,7 +162,10 @@ describe('useGanttScroll', () => {
 
     // 使用者自己捲走之後，背景重載（任務數變了）不能再把畫面拉回今天
     sc.scrollLeft = 10
-    taskStore.load({ ...structuredClone(sampleProject), tasks: structuredClone(sampleProject).tasks.slice(1) })
+    taskStore.load({
+      ...structuredClone(sampleProject),
+      tasks: structuredClone(sampleProject).tasks.slice(1),
+    })
     await nextTick()
     expect(sc.scrollLeft).toBe(10)
   })
@@ -177,7 +180,10 @@ describe('useGanttScroll', () => {
     await nextTick()
     sc.scrollLeft = 10
     // 新增 / 刪除任務、背景重載讓任務數變了
-    taskStore.load({ ...structuredClone(sampleProject), tasks: structuredClone(sampleProject).tasks.slice(1) })
+    taskStore.load({
+      ...structuredClone(sampleProject),
+      tasks: structuredClone(sampleProject).tasks.slice(1),
+    })
     await nextTick()
     expect(sc.scrollLeft).toBe(10)
   })
@@ -216,15 +222,18 @@ describe('useGanttScroll 的捲動補間讓位給使用者（D7）', () => {
     while (frames.length) frames.pop()!(performance.now() + 5000)
   }
 
-  it.each(['pointerdown', 'wheel', 'touchstart'])('scroller 上的 %s 停掉補間，位置留在當下', (type) => {
-    const sc = scrollerEl(4000, 800)
-    const api = mountScroll(ref(sc), ref(rulerEl()))
-    const mid = midway(api, sc)
+  it.each(['pointerdown', 'wheel', 'touchstart'])(
+    'scroller 上的 %s 停掉補間，位置留在當下',
+    (type) => {
+      const sc = scrollerEl(4000, 800)
+      const api = mountScroll(ref(sc), ref(rulerEl()))
+      const mid = midway(api, sc)
 
-    sc.dispatchEvent(new Event(type))
-    flush()
-    expect(sc.scrollLeft).toBe(mid)
-  })
+      sc.dispatchEvent(new Event(type))
+      flush()
+      expect(sc.scrollLeft).toBe(mid)
+    },
+  )
 
   it('縮放時停掉補間（不然會捲到舊比例算出來的位置）', () => {
     const sc = scrollerEl(4000, 800)

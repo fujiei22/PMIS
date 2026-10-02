@@ -30,7 +30,9 @@ defineEmits<{
       <div v-if="extra" class="confirm-extra">{{ extra }}</div>
       <div class="confirm-actions">
         <button class="btn-cancel" @click="$emit('cancel')">取消</button>
-        <button v-if="step === 1" class="btn-next" @click="$emit('next')">{{ confirmLabel }}</button>
+        <button v-if="step === 1" class="btn-next" @click="$emit('next')">
+          {{ confirmLabel }}
+        </button>
         <button v-else class="btn-danger" @click="$emit('confirm')">{{ confirmLabel }}</button>
       </div>
     </div>

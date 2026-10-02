@@ -31,7 +31,9 @@ const doneTasks = computed(() => tasks.value.filter((t) => t.status === 'done').
  * 對照測試已遮掉這幾個數字，見 README〈刻意保留的差異〉。
  */
 const planDone = computed(() => tasks.value.filter((t) => isPlannedDone(t, clock.todayIdx)).length)
-const actualPct = computed(() => (total.value ? Math.round((doneTasks.value / total.value) * 100) : 0))
+const actualPct = computed(() =>
+  total.value ? Math.round((doneTasks.value / total.value) * 100) : 0,
+)
 const planPct = computed(() => (total.value ? Math.round((planDone.value / total.value) * 100) : 0))
 const gap = computed(() => actualPct.value - planPct.value)
 const gapLabel = computed(() => {
@@ -82,7 +84,9 @@ const issueStatusRows = computed(() =>
     count: issues.value.filter((x) => x.status === k).length,
   })),
 )
-const delayedIssues = computed(() => issues.value.filter((i) => isLateIssue(i, clock.todayIdx)).length)
+const delayedIssues = computed(
+  () => issues.value.filter((i) => isLateIssue(i, clock.todayIdx)).length,
+)
 </script>
 
 <template>

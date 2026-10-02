@@ -7,7 +7,9 @@ defineProps<{ kind: ProjectBadgeKind }>()
 </script>
 
 <template>
-  <span class="pill" :class="'pill-' + BADGE_CLASS[kind]"><i class="pill-dot"></i>{{ PROJECT_BADGE_LABEL[kind] }}</span>
+  <span class="pill" :class="'pill-' + BADGE_CLASS[kind]"
+    ><i class="pill-dot"></i>{{ PROJECT_BADGE_LABEL[kind] }}</span
+  >
 </template>
 
 <style scoped>

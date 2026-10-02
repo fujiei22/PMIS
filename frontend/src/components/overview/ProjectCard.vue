@@ -41,7 +41,8 @@ watch(
   (on, was) => {
     clearTimeout(arrowTimer)
     arrowLeaving.value = !on && !!was
-    if (arrowLeaving.value) arrowTimer = setTimeout(() => (arrowLeaving.value = false), tokenMs('--t-panel'))
+    if (arrowLeaving.value)
+      arrowTimer = setTimeout(() => (arrowLeaving.value = false), tokenMs('--t-panel'))
   },
 )
 onBeforeUnmount(() => clearTimeout(arrowTimer))
@@ -88,9 +89,14 @@ function onKey(e: KeyboardEvent): void {
         <ProjectBadge :kind="d.badge" />
       </div>
       <div class="card-meta">
-        <span class="meta-gap" :class="gapTone(d.gap)">落後 {{ d.gap }}%</span><span class="sep">·</span>
-        <span>到期 <b>{{ p.dueDate }}</b></span><span class="sep">·</span>
-        <span>Issue <b>{{ d.openIssueTotal }}</b></span>
+        <span class="meta-gap" :class="gapTone(d.gap)">落後 {{ d.gap }}%</span
+        ><span class="sep">·</span>
+        <span
+          >到期 <b>{{ p.dueDate }}</b></span
+        ><span class="sep">·</span>
+        <span
+          >Issue <b>{{ d.openIssueTotal }}</b></span
+        >
       </div>
       <div class="progress">
         <div class="hero">{{ d.actualPct }}<span class="hero-unit">%</span></div>

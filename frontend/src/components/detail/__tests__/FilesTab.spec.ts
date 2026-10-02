@@ -55,7 +55,9 @@ describe('FilesTab 下載', () => {
         memberId: 'm1',
         at: '2026-09-20T10:00',
         text: '',
-        files: [{ id: 'cx:0', name: 'has-url.png', size: 10, at: '2026-09-20', url: 'blob:has-url-1' }],
+        files: [
+          { id: 'cx:0', name: 'has-url.png', size: 10, at: '2026-09-20', url: 'blob:has-url-1' },
+        ],
       },
     ]
     const spy = vi.spyOn(api, 'downloadAttachment')

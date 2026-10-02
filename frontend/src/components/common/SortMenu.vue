@@ -49,7 +49,10 @@ watch(
   // 在 DOM 更新前量：選單一畫出來就在對的位置
   { flush: 'pre' },
 )
-const menuStyle = computed(() => ({ '--menu-x': `${anchor.value.x}px`, '--menu-y': `${anchor.value.y}px` }))
+const menuStyle = computed(() => ({
+  '--menu-x': `${anchor.value.x}px`,
+  '--menu-y': `${anchor.value.y}px`,
+}))
 
 /** 點選項 → 加一層或翻方向；選單留著讓人繼續點下一層。legacy :2139 */
 function pick(k: string): void {

@@ -8,7 +8,15 @@ import Avatar from '@/components/common/Avatar.vue'
 import LaneDrawer from '@/components/overview/LaneDrawer.vue'
 import PmCountPill from '@/components/overview/PmCountPill.vue'
 import ProjectCard from '@/components/overview/ProjectCard.vue'
-import { computed, onBeforeUnmount, onBeforeUpdate, onUpdated, ref, watch, type ComponentPublicInstance } from 'vue'
+import {
+  computed,
+  onBeforeUnmount,
+  onBeforeUpdate,
+  onUpdated,
+  ref,
+  watch,
+  type ComponentPublicInstance,
+} from 'vue'
 import { freezeLeave } from '@/composables/freezeLeave'
 import { cancelHeight, holdHeight, releaseHeight } from '@/composables/heightTween'
 import { useFreezeReenter } from '@/composables/useFreezeReenter'
@@ -75,7 +83,9 @@ watch(laneIds, (ids) => overview.keepLastExpandedInLane(ids), { immediate: true 
  * 初值同 LaneDrawer 掛載時的狀態（展開中的那張一掛上就是全開）：等它回報會晚一次更新，
  * 切回卡片檢視、從 Dashboard 返回時箭頭會在已經全開的抽屜上方重新淡入。
  */
-const openId = ref<string | null>(props.group.rows.find((r) => overview.isExpanded(r.p.id))?.p.id ?? null)
+const openId = ref<string | null>(
+  props.group.rows.find((r) => overview.isExpanded(r.p.id))?.p.id ?? null,
+)
 </script>
 
 <template>
@@ -85,7 +95,10 @@ const openId = ref<string | null>(props.group.rows.find((r) => overview.isExpand
       <span class="pm-name">{{ group.pm.name }}</span>
       <span class="pm-meta">
         <PmCountPill :count="group.rows.length" unit="個專案" />
-        <span v-if="group.alertCount > 0" class="pm-alert"><b>{{ group.alertCount }}</b>&nbsp;需注意</span>
+        <span v-if="group.alertCount > 0" class="pm-alert"
+          ><b>{{ group.alertCount }}</b
+          >&nbsp;需注意</span
+        >
       </span>
     </div>
     <!-- 篩選造成卡片進出、排序造成重排（A7 / A8）；離場的卡由 freezeLeave 釘在更新前看得到的位置 -->
@@ -134,7 +147,11 @@ const openId = ref<string | null>(props.group.rows.find((r) => overview.isExpand
   align-items: start;
   min-width: 0;
   /* 標頭欄的底色畫滿整條泳道高度，不跟著 sticky 的標頭內容走 */
-  background: linear-gradient(to right, var(--pm-head) var(--lane-head-w), var(--pm-bg) var(--lane-head-w));
+  background: linear-gradient(
+    to right,
+    var(--pm-head) var(--lane-head-w),
+    var(--pm-bg) var(--lane-head-w)
+  );
   border: 1px solid var(--pm-line);
   border-radius: var(--r-card);
 }

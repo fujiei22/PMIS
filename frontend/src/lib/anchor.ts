@@ -45,11 +45,7 @@ const ROW_MENU_H = 150
  * @param rowCount 選單有幾列（決定估算高度）
  * @param vp 視窗大小
  */
-export function anchorOptionMenu(
-  rect: AnchorRect,
-  rowCount: number,
-  vp: Viewport,
-): AnchorPosition {
+export function anchorOptionMenu(rect: AnchorRect, rowCount: number, vp: Viewport): AnchorPosition {
   const rows = Math.min(rowCount, OPTION_MAX_ROWS)
   const h = rows * OPTION_ROW_H + OPTION_PAD
   return {
@@ -89,7 +85,10 @@ export function anchorCalendar(
 export function anchorRowMenu(rect: AnchorRect & { right: number }, vp: Viewport): AnchorPosition {
   return {
     left: Math.max(EDGE, Math.min(rect.right - ROW_MENU_W, vp.width - ROW_MENU_W - EDGE)),
-    top: vp.height - rect.bottom > ROW_MENU_H + 10 ? rect.bottom + 4 : Math.max(EDGE, rect.top - ROW_MENU_H - 4),
+    top:
+      vp.height - rect.bottom > ROW_MENU_H + 10
+        ? rect.bottom + 4
+        : Math.max(EDGE, rect.top - ROW_MENU_H - 4),
   }
 }
 

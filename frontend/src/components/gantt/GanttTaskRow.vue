@@ -250,7 +250,8 @@ function onDrop(e: DragEvent): void {
       :aria-expanded="menuOpen"
       :data-rowmore="task.id"
       @click.stop="toggleRowMenu($event, task.id)"
-    >⋮</span>
+      >⋮</span
+    >
   </div>
 </template>
 

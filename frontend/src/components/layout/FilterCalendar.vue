@@ -28,7 +28,9 @@ const showD2 = computed(() => filter.dateMode === 'between')
 
 /** 目前顯示的月份：使用者翻過就用 calendarMonth，否則跟著 d1，再不然是今天。legacy :3242 */
 const anchor = computed(() => filter.calendarMonth || (filter.d1 || clock.todayIso).slice(0, 7))
-const title = computed(() => `${Number(anchor.value.slice(0, 4))}年${Number(anchor.value.slice(5, 7))}月`)
+const title = computed(
+  () => `${Number(anchor.value.slice(0, 4))}年${Number(anchor.value.slice(5, 7))}月`,
+)
 
 /** 42 格由 `monthGrid` 產（契約 D），這裡只疊端點 / 區間 / 今天的顯示狀態。 */
 type Cell = CalendarCell & {

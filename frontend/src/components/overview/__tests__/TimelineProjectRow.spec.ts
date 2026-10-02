@@ -14,17 +14,22 @@ import { useOverviewStore } from '@/stores/overview'
 import { usePortfolioStore } from '@/stores/portfolio'
 
 async function setup(id = 'portal') {
-  const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: '/', component: { template: '<div />' } },
-    { path: '/projects/:id', name: 'dashboard', component: { template: '<div />' } },
-  ] })
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/projects/:id', name: 'dashboard', component: { template: '<div />' } },
+    ],
+  })
   useClockStore().now = new Date('2026-09-22T10:00:00').getTime()
   const data = buildPortfolio(sampleProject, '2026-09-22')
   await usePortfolioStore().load(data)
   const p = data.projects.find((x) => x.id === id)!
   const startIdx = dayIndex('2026-06-01')
-  return mount(TimelineProjectRow, { props: { row: { p, d: deriveProject(p, '2026-09-22') }, startIdx, dw: TIMELINE_DAY_W },
-    global: { plugins: [router] } })
+  return mount(TimelineProjectRow, {
+    props: { row: { p, d: deriveProject(p, '2026-09-22') }, startIdx, dw: TIMELINE_DAY_W },
+    global: { plugins: [router] },
+  })
 }
 
 /** 從 inline style 取出某個 px 值。 */
@@ -53,7 +58,10 @@ describe('TimelineProjectRow', () => {
   it('bar 位置 = (開始日 − 範圍起點) × 日寬，寬 = 總天數 × 日寬（頭尾都算，103 天）', async () => {
     const w = await setup()
     const style = w.find('.bar').attributes('style')!
-    expect(px(style, 'left')).toBeCloseTo((dayIndex('2026-07-06') - dayIndex('2026-06-01')) * TIMELINE_DAY_W, 3)
+    expect(px(style, 'left')).toBeCloseTo(
+      (dayIndex('2026-07-06') - dayIndex('2026-06-01')) * TIMELINE_DAY_W,
+      3,
+    )
     expect(px(style, 'width')).toBeCloseTo(103 * TIMELINE_DAY_W, 3)
     expect(w.find('.bar-label').text()).toBe('客戶入口網站改版')
   })
