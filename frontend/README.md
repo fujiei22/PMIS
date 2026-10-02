@@ -14,8 +14,10 @@
 
 ### 現況
 
-- 由 `legacy/Dashboard.html` 的 React 原型改寫而成，行為已用 `e2e/compare.spec.ts` 逐項和原型對照過；新舊有差異時改 `src/`，不改 `legacy/`。
+- 由 `legacy/Dashboard.html` 的 React 原型改寫而成，行為已用 `e2e/compare.spec.ts` 逐項和原型對照過；新舊有差異時改 `src/`，不改 `legacy/`。排程規則刻意跟原型不同（見〈刻意保留的差異〉）：對照時 legacy 頁先灌入新的範例資料再比，排程操作類的情境不在對照裡。
+- 任務日期由排程推算：使用者只設相依、工期（工作天）與根任務的開始日，其他日期自動排；「已延遲」看計畫基準（甘特面板標題列的基準鎖）。規則見 [`docs/reference/scheduling.md`](../docs/reference/scheduling.md)。
 - 資料全在記憶體 mock（`src/api/mock/`），重新整理就回到範例資料。後端待建，前端已整成「換掉 `src/api/` 的實作就能接」。
+- mock 的 dev server 把「今天」固定在 2026-09-18（範例資料就是照這天推算的，`lib/devClock.ts`），網址加 `?today=YYYY-MM-DD` 可以換別天看。production、單元測試、接真後端時是真實日期。
 - 有登入頁（`/login`）：沒登入時任何頁面都會導到登入頁，登入後回原頁。mock 預設已登入（登入者是總覽的 m11「成員11」）；登出後任何格式正確的帳號（英數與 `.` `_` `-`）、不空的密碼都登得進去，`wrong_password` / `outsider` / `locked_out` / `ad_down` 四個帳號固定登入失敗，用來看各種失敗文案。總覽頂欄右端的登入者點了有選單（目前只有「登出」）。Dashboard 的 `currentUserId` 仍是範例資料裡固定的成員（m1），只決定留言掛誰。
 - 唯讀模式：`ProjectData.canEdit`（後端算：登入者是不是這個專案的 PM）是 false 時，Dashboard 整頁唯讀——專案名旁一個灰色「唯讀」tag，改資料的入口全部拿掉，資料層再擋一次。mock 預設可編輯，e2e 用 `__mockApi.setCanEdit(false)` 切（`e2e/readonly.spec.ts`）。規則見〈store 的三層〉的唯讀那段。
 - Dashboard 依路由的 `/projects/:id` 載入（`api.loadProject(id)`），換專案時先清空資料層與選取、篩選（`useProjectBoot`）。mock 只有一份完整專案資料（`mocks/sampleProject.ts`），任何 id 都回這一份；頂欄的專案名來自它的 `project.name`（`My Project`）。
@@ -81,7 +83,8 @@
 
 | 要做的事 | 依序碰 |
 |---|---|
-| 加或改資料欄位 | `types/models.ts` → `api/types.ts`（檔頭 wire 約定）→ `api/mock/store.ts` → 對應資料層 store 的 action → 元件 → 各自旁邊的 `__tests__/` → 本檔〈端點對照表〉 |
+| 加或改資料欄位 | `types/models.ts` → `api/types.ts`（檔頭 wire 約定）→ `api/mock/store.ts` → 對應資料層 store 的 action → 元件 → 各自旁邊的 `__tests__/` → 本檔〈端點對照表〉；`Task` 的欄位另外補〈Task 欄位對照表〉與 `backend/app/models.py`（`readme.spec.ts` 會比對表與 `interface Task`） |
+| 改排程規則（工作天、工期、相依、基準） | 先改 `docs/reference/scheduling.md` → `lib/workdays.ts` / `lib/schedule.ts` ＋ `lib/__tests__/scheduleRules.spec.ts` → 範例資料要仍是 2026-09-18 的推算結果（`mocks/__tests__/consistency.spec.ts`）→ 文件的檢查點表（`readme.spec.ts` 用程式推算比對） |
 | 加一支 api 方法 | `api/types.ts` 的 `ProjectApi` → `api/mock/index.ts` → store action → 本檔〈端點對照表〉（`readme.spec.ts` 會比對兩邊） |
 | 加會改資料的操作（按鈕、選單、拖曳、就地編輯） | 資料層 action 第一行擋 `canEdit`，並在 `stores/__tests__/readonly.spec.ts` 分類 → 元件用 `ui.canEdit` 藏掉入口（開浮層走 `useMenus` / `ui.askDelete` 這類唯讀時自己不開的 action）→ `e2e/readonly.spec.ts` 加一條（見〈store 的三層〉的唯讀那段） |
 | 加畫面狀態（開關、選取、篩選） | 派生層 store 加欄位，元件直接寫：Dashboard 是 `ui` / `filter` / `selection`，總覽是 `overview` |
@@ -118,14 +121,14 @@ Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<s
 
 - 會開始拖曳的元素（選取中的甘特條、左右把手、相依圓點、排序把手 ⠿）要宣告 `touch-action: none`，否則手指一動瀏覽器就當成捲動、送 `pointercancel`，拖曳被中止。沒選取的條不宣告，手指照常能在上面滑動捲動。
 - 觸控裝置沒有 hover：原本 hover 才出現的相依圓點改成「選取中」就出現。
-- 甘特任務列的動作（工期 −1天 / +1天、相依設定、刪除任務）一律收在列尾一直顯示的「⋮」開的選單（`RowActionMenu`，位置 `anchorRowMenu`）；點任務只標記，hover 與選取都不會撐開東西（桌機與平板同一套）。開選單不選取任務（不捲動時間軸、不淡化其他列）；遮罩與選單帶 `data-keep-selection`，點外面只關選單、不清標記。
+- 甘特任務列的動作（工期 −1 / +1 個工作天、相依設定、刪除任務）一律收在列尾一直顯示的「⋮」開的選單（`RowActionMenu`，位置 `anchorRowMenu`）；點任務只標記，hover 與選取都不會撐開東西（桌機與平板同一套）。開選單不選取任務（不捲動時間軸、不淡化其他列）；遮罩與選單帶 `data-keep-selection`，點外面只關選單、不清標記。
 - 空白處的平移交給瀏覽器原生捲動（`usePointerDrag` 的 pan 在觸控時 `native: true`，不改 `scrollLeft`）。
 - 「點到外面清選取」（`useClickOutside`）在觸控時延到 `click`：`pointerdown` 時分不出點一下還是開始捲動，捲動不會有 `click`。
 - 看板卡片拖到甘特列（HTML5 原生拖放）在觸控裝置的支援度不一，刻意沒有處理。
 - 總覽的排序選單往右開會超出視窗時（直向時排序鈕在標題列右半），改成對齊按鈕右緣往左開（`OvSortControls` 的 `alignEnd`）。直向時 chips 放不下會在 `.sorts` 裡左右滑：新加的一層排序進場期間，`.sorts` 逐幀捲到看得到它（`revealChip`）。
 - 時間軸 bar 的名稱是 sticky：bar 起點捲到左欄底下時，名稱停在左欄右緣。`.bar` 因此用 `overflow: clip`，用 `hidden` 的話 bar 自己會變成捲動容器，sticky 跟不上橫捲。
 
-`e2e/tablet.spec.ts` 除了〈DOM 鉤子〉的屬性，還依賴這些 class，**改名時要同步改測試**：`.top-bar` `.col` `.foot` `.caret` `.detail-layer` `.detail-close` `.draft-input` `.name` `.date` `.date-range` `.date-days` `.rm-days` `.gantt-left` `.gantt-scroller`。`e2e/topbar-layout.spec.ts` 依賴 `.top-row` `.stacked` `.filters` `.fgroup` `.section` `.date-pill` `.cal` `.clear` `.project` `.burger`；`e2e/helpers/compare.ts` 依賴 `.top-bar`（量頂欄高度）。`e2e/dash-menu-motion.spec.ts` 依賴 `.top-row` `.stacked` `.filters` `.fgroup` `.date-pill` `.cal` `.cal-end` `.dd-trigger` `.dd-menu` `.dd-item` `.mp-trigger` `.mp-panel` `.mp-row` `.panel-head` `.sort-trigger` `.sort-menu` `.sort-option` `.sort-chip` `.chip-x`。`e2e/overview-tablet.spec.ts` 用到的 class 列在〈DOM 鉤子〉最後的總覽 class 表。
+`e2e/tablet.spec.ts` 除了〈DOM 鉤子〉的屬性，還依賴這些 class，**改名時要同步改測試**：`.top-bar` `.col` `.foot` `.caret` `.detail-layer` `.detail-close` `.draft-input` `.name` `.date` `.date-range` `.date-days` `.rm-days` `.gantt-left` `.gantt-scroller`。`e2e/topbar-layout.spec.ts` 依賴 `.top-row` `.stacked` `.filters` `.fgroup` `.section` `.date-pill` `.cal` `.clear` `.project` `.burger`；`e2e/helpers/compare.ts` 依賴 `.top-bar`（量頂欄高度）。`e2e/dash-menu-motion.spec.ts` 依賴 `.top-row` `.stacked` `.filters` `.fgroup` `.date-pill` `.cal` `.cal-end` `.dd-trigger` `.dd-menu` `.dd-item` `.mp-trigger` `.mp-panel` `.mp-row` `.panel-head` `.sort-trigger` `.sort-menu` `.sort-option` `.sort-chip` `.chip-x`。`e2e/overview-tablet.spec.ts` 用到的 class 列在〈DOM 鉤子〉最後的總覽 class 表。甘特尺規與背景的非工作天格是 `.off`（尺規格的 title 是假日名稱），e2e 用它找假日，改名時同樣要同步改測試。
 
 ### 守衛測試
 
@@ -136,7 +139,7 @@ Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<s
 | `src/stores/__tests__/imports.spec.ts` | store 三層的 import 白名單，資料層不得引用派生層 |
 | `src/stores/__tests__/readonly.spec.ts` | Dashboard 資料層 store 的每個函式都要分類（寫入 / 讀取 / 內部 / 任何登入者都能做）；唯讀時每個寫入都不打 api、不改狀態 |
 | `src/__tests__/no-query-selector.spec.ts` | `src/**` 執行期不得用 `querySelector` 等 DOM 選擇器（唯一例外 `useClickOutside`） |
-| `src/__tests__/readme.spec.ts` | 本檔〈端點對照表〉〈錯誤碼對照表〉與 `api/types.ts` 一致；〈目錄結構〉的 composables 清單提到 `src/composables/` 底下每一支（新增 composable 要一起補說明） |
+| `src/__tests__/readme.spec.ts` | 本檔〈端點對照表〉〈錯誤碼對照表〉與 `api/types.ts` 一致；〈Task 欄位對照表〉列出 `interface Task` 的每個欄位；〈目錄結構〉的 composables 清單提到 `src/composables/` 底下每一支（新增 composable 要一起補說明）；`docs/reference/scheduling.md` 檢查點表的數字等於範例資料在那幾天的推算結果 |
 | `src/mocks/__tests__/consistency.spec.ts` | 範例資料存的起訖必須已是 2026-09-18 的排程推算結果（載入沒有漂移） |
 | `src/assets/__tests__/tokens.spec.ts` | `tokens.css` 必須含有程式用到的每個變數與約定值，改名或刪 token 會紅 |
 | `src/mocks/__tests__/portfolio.spec.ts` | 總覽靜態專案算出的實際 / 理論 % 與需注意等於設計稿；m1–m7 與 `sampleProject` 的成員是同一份 |
@@ -152,6 +155,7 @@ Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<s
 | 改元件或 e2e | 加〈DOM 鉤子〉 |
 | 動到與原型有關的行為 | 加〈`legacy/` 是唯讀基準〉〈與 legacy 對照〉 |
 | 改總覽頁 | 〈畫面對元件〉的總覽表、〈DOM 鉤子〉的兩張總覽表 |
+| 動到任務日期、工期、相依、延遲、基準鎖 | [`docs/reference/scheduling.md`](../docs/reference/scheduling.md)（規則的唯一出處）、本檔〈樂觀更新怎麼運作〉的排程寫回 |
 | 接後端、改 api 契約 | 〈怎麼接後端〉整節；前端日常開發不必讀 |
 
 ## 安裝與指令
@@ -159,7 +163,7 @@ Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<s
 環境安裝、常用指令與提交前檢查在[根目錄 README](../README.md)，指令都在這個 `frontend/` 目錄下執行。本檔只補 e2e 的細節：
 
 - `playwright.config.ts` 會自己起一份 dev server（`reuseExistingServer: false`），不必事先 `npm run dev`；port 由 `PLAYWRIGHT_PORT` 決定，預設 5174。
-- 全部 e2e 的時鐘固定在 `2026-09-18T10:00:00`（`e2e/helpers/clock.ts` 的 `setFixedTime(page)`），否則「已延遲」「今天」這類跟當下時間有關的斷言會隨日期改變。副作用：Vue 用 `Date.now()` 判斷事件是不是在 listener 掛上之前發生的，時鐘凍住時，同一個事件傳遞路徑上的第二個 Vue listener 會被略過（例：同一元素另掛 `@pointerdown.capture`）。同一個事件要做兩件事就合成一個 handler（`OverviewTimeline` 的 `onBodyPointerDown`）。
+- 全部 e2e 的時鐘固定在 `2026-09-18T10:00:00`（`e2e/helpers/clock.ts` 的 `setFixedTime(page)`），否則「已延遲」「今天」這類跟當下時間有關的斷言會隨日期改變。mock 的 dev server 也把今天平移到 09-18（`lib/devClock.ts`），所以 e2e 要固定在別天時，網址得一併帶 `?today=YYYY-MM-DD`。副作用：Vue 用 `Date.now()` 判斷事件是不是在 listener 掛上之前發生的，時鐘凍住時，同一個事件傳遞路徑上的第二個 Vue listener 會被略過（例：同一元素另掛 `@pointerdown.capture`）。同一個事件要做兩件事就合成一個 handler（`OverviewTimeline` 的 `onBodyPointerDown`）。
 - 靠 `window.__mockApi` 的 e2e，接上真後端之後會自動跳過（見[怎麼接後端](#怎麼接後端)）。有這些：
   - `e2e/interactions.spec.ts`：兩條注入 api 失敗的測試。
   - `e2e/overview.spec.ts`：「載入失敗」與「Dashboard 改了資料回總覽看得到」。
@@ -207,12 +211,12 @@ frontend/
 │   │                            useFreezeReenter（釘位離場清單：同 key 離場中又回來時從舊元素當下的位置 / 透明度 / 縮放接續）/
 │   │                            useDeferredPanels（Dashboard 首屏外的看板 / Issue 延後掛：淡入跑完＋空閒才掛，先動手或捷徑 ensure() 立刻掛）
 │   ├── constants/         畫面用常數（dashboard.ts：狀態 / 優先度 / 等級的標籤與顏色；overview.ts：總覽的排序鍵、標籤、尺寸；api.ts：API_ERROR_TEXT）
-│   ├── lib/               純函式（日期、月曆格、排程連動、篩選、排序、格式化、id、CSS 時長 / 曲線 token 轉 JS（easing.ts）、元素目前的 translate（transform.ts）、程式平滑捲動的時長與曲線（scrollTween.ts，甘特與總覽時間軸共用）、啟動時預載晚出現符號的字型子集（fontPreload.ts：甘特收合鈕的 ▶，免得第一次收合才下載、整頁重排）、登入後回原頁的網址檢查（redirect.ts：只接受站內路徑）…）
+│   ├── lib/               純函式（日期、月曆格、工作天（workdays.ts）、排程與基準（schedule.ts）、mock dev server 的今天（devClock.ts）、篩選、排序、格式化、id、CSS 時長 / 曲線 token 轉 JS（easing.ts）、元素目前的 translate（transform.ts）、程式平滑捲動的時長與曲線（scrollTween.ts，甘特與總覽時間軸共用）、啟動時預載晚出現符號的字型子集（fontPreload.ts：甘特收合鈕的 ▶，免得第一次收合才下載、整頁重排）、登入後回原頁的網址檢查（redirect.ts：只接受站內路徑）…）
 │   ├── mocks/             範例資料
 │   ├── router/            路由（index.ts：登入守衛、切頁時先載目標頁資料；pageSwap.ts：切頁過渡結束後才還原捲動位置）
 │   ├── stores/            Pinia store（三層，見下）
-│   │   ├── clock.ts                           時鐘層
-│   │   ├── task / issue / comment / member / budget / project.ts   資料層（單一專案；project 是專案本身與 canEdit）
+│   │   ├── clock.ts                           時鐘層（「現在」取 lib/devClock.ts 的 systemNow()）
+│   │   ├── task / issue / comment / member / budget / project.ts   資料層（單一專案；task 分存的值 inputs 與推算結果 tasks；project 是專案本身（含基準鎖定日）與 canEdit）
 │   │   ├── portfolio.ts                       資料層（總覽的專案摘要與成員名錄）
 │   │   ├── session.ts                         資料層（登入者；給登入守衛與畫面顯示用，不做授權）
 │   │   ├── workCalendar.ts                    資料層（工作日曆：週末與假日，排程用；全系統共用，登出不重置）
@@ -226,7 +230,7 @@ frontend/
 └── e2e/                   Playwright 測試與 helper
 ```
 
-單元測試放在被測檔案旁的 `__tests__/`（例如 `src/lib/__tests__/date.spec.ts`）。不屬於任何單一檔案的結構守衛放 `src/__tests__/`：`no-query-selector.spec.ts`（執行期不得用 DOM 選擇器）、`readme.spec.ts`（本檔的端點表與 `ProjectApi` 一致、目錄結構列到每一支 composable），另有 `src/stores/__tests__/imports.spec.ts`（store 分層白名單）。
+單元測試放在被測檔案旁的 `__tests__/`（例如 `src/lib/__tests__/date.spec.ts`）。不屬於任何單一檔案的結構守衛放 `src/__tests__/`：`no-query-selector.spec.ts`（執行期不得用 DOM 選擇器）、`readme.spec.ts`（本檔的端點表與 `ProjectApi` 一致、Task 欄位對照表與 `interface Task` 一致、目錄結構列到每一支 composable、排程規則文件的檢查點），另有 `src/stores/__tests__/imports.spec.ts`（store 分層白名單）。
 
 ## `legacy/` 是唯讀基準
 
@@ -272,7 +276,7 @@ COMPARE_DUMP=node_modules/.tmp/cmp npm run test:e2e -- e2e/compare.spec.ts
 - **檔案多選跨任務殘留**：legacy 的 `fileSel` 不會在換任務時清掉（`:3901`），計數會沿用上一個任務。新頁在 `openDetail` 時清空。
 - **附件同日的相對順序**：`filesForTarget` 對同一天的附件沒有定義先後，兩邊可能不同，對照不比這個。
 - **重排節流的時間來源**：legacy 用 `Date.now()`，被 e2e 的 `page.clock.setFixedTime` 凍住之後，一次拖曳裡除了第一次以外的 `dragTick` 全部被節流擋掉；新頁用 `performance.now()`，不受固定時鐘影響。這是測試環境造成的差異，不是行為差異——對照測試的重排只送一次 `mousemove`，比第一次落點。
-- **理論進度的判準**：legacy 把「今天到期」的任務算進理論進度（`end <= 今天`，`Dashboard.html:3604-3620`）。新頁要到期日**隔天**才算（`end < 今天`），和總覽的 `taskPlanned`、「已延遲」的 `isLate` 同一個定義（都呼叫 `lib/schedule.ts` 的 `isPlannedDone`，改規則只改那裡），兩頁同一個專案的理論 % 才會一致（user 決定）。對照測試只遮掉摘要卡的差距標籤、理論的 N / 總數與理論 %（`e2e/helpers/compare.ts` 的 `maskPlan`），其餘照比。
+- **理論進度的判準**：legacy 把「今天到期」的任務算進理論進度（`end <= 今天`，`Dashboard.html:3604-3620`）。新頁要到期日**隔天**才算，而且看的是基準結束日（`baselineEnd < 今天`，見下面〈排程規則〉），和總覽的 `taskPlanned` 同一個定義（都呼叫 `lib/schedule.ts` 的 `isPlannedDone`，改規則只改那裡），兩頁同一個專案的理論 % 才會一致（user 決定）。對照測試只遮掉摘要卡的差距標籤、理論的 N / 總數與理論 %（`e2e/helpers/compare.ts` 的 `maskPlan`），其餘照比。
 - **甘特列的快捷鈕**：legacy 滑鼠移到任務列上會撐開「▲ ▼ ⇄ ✕」並省掉日期的年份；新頁改成列尾一直顯示的「⋮」，動作收在它開的選單（user 決定：只想標記任務時快捷鈕很干擾，▲ ▼ 也看不出是工期 ±1 天）。對照測試比文字時兩邊都拿掉列尾動作字與年份（`e2e/helpers/compare.ts` 的 `maskActs`），情境 8 的相依 / 刪除各走各的路（`compare.spec.ts` 的 `rowAction`）；點任務列的位置改在名稱區 x=70（`ROW_NAME_POS`）。
 - **頂欄放不下時改兩列**：篩選器在標題與右端之間一行放不下時（預設篩選約 1470px 以下；啟用日期範圍、專案名稱較長時門檻更高），新頁把篩選器整排移到滿寬的第二列、靠左排，標籤和它的下拉一定在同一行（`TopBar` 的 `measureFit` 量實際寬度切 `.stacked`）。legacy 是篩選器擠在中間自己換成兩行，標籤和下拉會被拆開（user 回報 15.6 吋筆電常見的 1200～1470px 排版怪異）。兩邊頂欄高度因此不同（1440 時差 2px），對照測試的看板欄 y 與整頁高改從摘要列底部量起（`e2e/helpers/compare.ts` 的 `geoSnapshot`；摘要列的高度也不同，見下方〈摘要卡的版面〉），摘要列以下的幾何照樣 ±1px。兩列時日期日曆也不同：legacy 一律對齊篩選器右緣，篩選器滿寬時會離日期膠囊很遠；新頁改以日期那一組為基準、左緣對齊「日期」（user 決定），日曆在 DOM 裡也移進日期那一組（legacy 在「清除篩選」之後）。對照測試都在日曆關上之後才擷取，不受影響。
 - **頂欄與面板的浮層**：legacy 的篩選下拉、成員面板、日期日曆、排序選單關閉時瞬間消失，新頁有離場淡出（批次 D 的 `pop`）；legacy 的日曆遮罩被 `.top-bar` 的 transform 限制成只蓋頂欄，會吃掉頂欄其他控制項的第一下點擊，新頁拿掉遮罩、點外面照常關（點擊照常送達），點另一顆日期膠囊只切換要填的端點、日曆不關；頂欄一行時下拉與成員面板右緣對齊往左展開（legacy 一律 `left: 0`，勾選讓觸發鈕變寬時選單跟著移）；排序選單開著時固定在打開時的位置（legacy 跟著觸發鈕跑）；一行時篩選項變寬整排平滑滑動、排序 chip 原地展開收起（legacy 一幀跳）。對照測試在 settle 之後才擷取，`[data-dd]` 序列不變。
@@ -281,13 +285,20 @@ COMPARE_DUMP=node_modules/.tmp/cmp npm run test:e2e -- e2e/compare.spec.ts
 - **相依編輯器的位置**：legacy 一直垂直置中，增刪前置 / 後續任務時上下兩端一起跳；新頁打開時置中、之後上緣固定，只往下長（user 決定）。對照測試只比寬高，不受影響。
 - **摘要卡的版面**：legacy 是四張卡（專案總時長、整體進度、任務狀態、Issue 統計）；新頁把「專案總時長」併進「整體進度」同一張卡的上段（user 決定），另外多一張 legacy 沒有的「預算 vs. 支出」。卡內文字順序和 legacy 相同，所以 `e2e/helpers/compare.ts` 取摘要卡文字時只排除 `summary-budget`，其餘照比。預算卡讓摘要列比 legacy 高，幾何的頁面座標（看板欄 y、整頁高）從摘要列底部量起（新頁是 `summary-progress` 卡的父層、legacy 是「專案總時長」那張卡的父層）。
 - **文字之間的空白**：兩頁的文字節點切法不同（legacy 把每個 `{{ }}` 包成一層元素、元素之間留著模板縮排的空白節點），比對前會把文字裡的空白全部去掉。字級與間距的差異改由幾何量測把關。
+- **排程規則**（規則見 [`docs/reference/scheduling.md`](../docs/reference/scheduling.md)）：
+  - legacy 的連動只要求後續任務不早於前置的**開始日**，工期是日曆天，推多少看使用者拖了哪一條。新頁是「完成到開始」、工期是工作天（扣週末與假日）、依實際進度推下游，同一份資料只會排出一種結果。
+  - 所以甘特條的起訖、工期數字、拖曳後下游怎麼動都跟 legacy 不同。對照測試在 legacy 頁灌入新範例再比；拖條連動、把手、卡片 ▲▼ 這類排程操作從對照移除，改由各自的 e2e 守；工期數字與延遲著色遮掉不比。
+- **延遲的判準**：legacy 是「未完成而且結束日已過」。新頁看計畫基準：未完成、而且推算結束日晚於基準結束日。逾期未完成的任務結束日會被推到今天，照舊判準永遠算出 0。
+- **新任務的工期**：legacy 是今天起 5 個日曆天；新頁是今天起 5 個工作天（今天不是工作天就從下一個工作天起算）。
+- **改完成日會推動下游**：完成日就是實際結束日，改了會推動還沒開始的後續任務。legacy 的完成日只是一筆紀錄。
+- **基準鎖**：legacy 沒有計畫基準。新頁在甘特面板標題列、縮放滑桿左邊多一顆基準鎖（`data-testid="baseline-lock"`）：上鎖一步確認、解鎖兩步確認，唯讀時只顯示狀態。
 
 ## lib 與 store 的分工
 
 | | `src/lib/*.ts` | `src/stores/*.ts` |
 |---|---|---|
 | 內容 | 純函式：輸入 → 輸出，不碰 Vue、不碰全域狀態 | 響應式狀態與改動它的 action |
-| 例子 | `dayIndex()`、`scheduleTasks()`、`matchTask()`、`applySort()`、`monthGrid()`、`newId()` | `useTaskStore()`、`useFilterStore()`、`useUiStore()` |
+| 例子 | `dayIndex()`、`createWorkdays()`、`scheduleTasks()`、`matchTask()`、`applySort()`、`monthGrid()`、`newId()` | `useTaskStore()`、`useFilterStore()`、`useUiStore()` |
 | 測試 | Vitest，直接呼叫、不需要 Pinia | Vitest + `setActivePinia(createPinia())` |
 
 規則：**演算法寫在 `lib/`，store 只負責存狀態並把 `lib/` 的結果接起來。** 只有單一元件用得到的狀態（下拉的 hover 列、卡片 hover）留在元件內。
@@ -298,13 +309,13 @@ store 分三層，依賴**只能由上往下**：
 
 | 層 | 檔 | 職責 | 可以 import 誰 |
 |---|---|---|---|
-| 時鐘層 | `clock.ts` | `now` / `todayIdx` / `todayIso`（60 秒 tick） | 誰都不用 |
+| 時鐘層 | `clock.ts` | `now` / `todayIdx` / `todayIso`（60 秒 tick；跨日時排程跟著重算） | 誰都不用 |
 | 資料層 | `task.ts`、`issue.ts`、`comment.ts`、`member.ts`、`budget.ts`、`project.ts`（＋共用的 `_optimistic.ts`、`_sync.ts`）；總覽的 `portfolio.ts`；登入者 `session.ts`；工作日曆 `workCalendar.ts` | 專案資料的唯一擁有者；所有寫入都經 `@/api` | `@/api/*`、`@/lib/*`、`@/types/*`、`@/stores/clock`、其他資料 store、`_optimistic` / `_sync` |
 | 派生層 | `rows.ts`、`filter.ts`、`selection.ts`、`ui.ts`；總覽的 `overview.ts` | 從資料層算出畫面要的東西（可見列、篩選、選取、浮層 / 錯誤條 / 收合） | 所有層 |
 
 成員名錄有兩份：`portfolio.members`（總覽，含各專案的 PM）與 `member.members`（Dashboard，單一專案的成員）。總覽元件查成員一律用 `portfolio.byId`。指派類的下拉（＋指派、Issue 提出人與負責人）只列沒停用的人，用 `member.assignable(原本選的 id)`；頂欄成員篩選只列這個專案有被指派任務的人（`lib/filter.ts` 的 `filterableMembers`）。
 
-`project.ts` 存專案本身（`meta`：id / 名稱 / 擁有者）與 `canEdit`（後端算的「登入者能不能改」，前端不自己比對 `pmId`）。`taskStore.load(id)` 一次灌進所有資料 store，`taskStore.reset()` 一次清掉（換專案時由 `useProjectBoot` 呼叫，再清選取、篩選與暫態）。
+`project.ts` 存專案本身（`meta`：id / 名稱 / 擁有者 / 基準鎖定日 `baselineLockedOn`）與 `canEdit`（後端算的「登入者能不能改」，前端不自己比對 `pmId`）。`meta` 會被 `project.updated` 事件與基準鎖的樂觀更新整份換掉（`setMeta`）；上鎖、解鎖的 action 在 `task.ts`（要動到每個任務的基準）。`taskStore.load(id)` 一次灌進所有資料 store，`taskStore.reset()` 一次清掉（換專案時由 `useProjectBoot` 呼叫，再清選取、篩選與暫態）。
 
 `session.ts` 存登入者（`info`：成員 id / 姓名 / 角色）與「問過後端了沒」（`checked`），只給登入守衛導頁與畫面顯示用；權限一律由後端判斷。
 
@@ -370,7 +381,7 @@ store 分三層，依賴**只能由上往下**：
 | `data-rel` | 任務卡 | `up` / `down` / `group` / 空 | ✗ |
 | `data-status` | 甘特條 / 任務卡 / Issue 卡 | 狀態 key，或 `delayed` | ✗ |
 | `data-panel` | 面板外殼 | `gantt` / `kanban` / `issues` | ✗ |
-| `data-testid` | 摘要卡 `summary-progress`（含專案總時長） / `summary-tasks` / `summary-issues` / `summary-budget`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count`；甘特左欄的展開鈕 `gantt-left-toggle`（只在 < 900px 出現）；頂欄專案名旁的唯讀 tag `readonly-tag`（只在唯讀時出現） | 固定字串 | ✗ |
+| `data-testid` | 摘要卡 `summary-progress`（含專案總時長） / `summary-tasks` / `summary-issues` / `summary-budget`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count`；甘特左欄的展開鈕 `gantt-left-toggle`（只在 < 900px 出現）；甘特面板標題列的日曆提示 `cal-notice`（沒有提示時是空的）與基準鎖按鈕 `baseline-lock`（帶 `aria-pressed`，上鎖時是 `true`）；頂欄專案名旁的唯讀 tag `readonly-tag`（只在唯讀時出現） | 固定字串 | ✗ |
 
 總覽頁的屬性。legacy 沒有這一頁，所以下表全部都不能用在新舊對照測試：
 
@@ -437,7 +448,7 @@ store 分三層，依賴**只能由上往下**：
    | `ProjectData.project`、`ProjectData.canEdit` | `{ id, name, pmId }`、`boolean` | `canEdit` = 登入者是不是這個專案的 PM | 後端算；前端不自己拿 `pmId` 比對登入者（權限規則只留在後端一處） |
    | `Member.active` | `boolean`（沒停用） | 後端的停用旗標 | 後端；指派類下拉只列 `active`，原本就指派給停用者的照樣顯示 |
    | `ProjectData.budget` | `{ total, actual }`（數字，只讀；剩餘與使用率由 `lib/budget.ts` 算） | 後端的預算欄位 | adapter 填進 `loadProject(id)` 與 `project.reloaded` 的 payload；目前沒有寫入端點 |
-   | `ProjectSummary.taskPlanned` | 「照排程今天之前就該完成」的任務數 | 後端依伺服器當日算 | 後端；前端只拿它算理論 %，跨日差一天可接受 |
+   | `ProjectSummary.taskPlanned` / `delayedTasks` / `startDate` / `dueDate` | 照計畫基準與推算起訖算（`taskPlanned`＝基準結束日早於今天的任務數，`delayedTasks`＝推算結束日晚於基準的未完成任務數） | 後端依伺服器當日算 | 後端；要移植同一套排程（見下方〈端點對照表〉表下的「後端不重算排程」）。前端只拿它算理論 %，跨日差一天可接受 |
    | `Member.color` | 合法的 CSS 顏色值（例 `#2563eb`），經 `:style` 寫進 CSS 變數 | 後端存的顏色字串 | adapter 驗格式；前端沒有用字串拼接組 CSS，但格式錯會讓頭像與 PM 泳道沒有顏色 |
    | `ProjectSummary.upcoming` | 最多 3 筆、依到期日升冪、含已逾期 | 後端篩選排序 | 後端；前端原樣顯示 |
    | `ProjectSummary` 的不變式 | `taskDone === taskCounts.done`、`taskTotal === taskCounts` 加總 | — | adapter 驗；實際 / 理論 %、落後百分點、需注意由前端 `lib/portfolio.ts` 算，**後端不給** |
@@ -483,7 +494,7 @@ store 分三層，依賴**只能由上往下**：
 後端要注意的四件事：
 
 - **id 由 client 產**（UUID v4，`src/lib/id.ts` 的 `newId()`：`crypto.randomUUID?.()`，非 https / 非 localhost 沒有這支時退回 `crypto.getRandomValues` 自己組）。主鍵接受 client 給的 id，重複回 **409**。
-- **後端不重算排程**。前推排程（工期、相依、實際進度推下游、`status=done` 填 `done` 日）前端已經算完，`updateTasks` 送的是整段結果。後端只存，response 回最終狀態（要糾正就在 response 糾正，client 會套回）。
+- **後端不重算排程**。前推排程（工期、相依、實際進度推下游、`status=done` 填 `done` 日、解鎖時的基準）前端已經算完，`updateTasks` / `lockBaseline` 送的是整段結果。後端只存，response 回最終狀態（要糾正就在 response 糾正，client 會套回）。但專案摘要（`listProjects`）要用推算結果：存的起訖是上次寫回的快照，跨日後會落後。後端做任務 API 時要移植同一套排程，照 [`docs/reference/scheduling.md`](../docs/reference/scheduling.md) 實作並跑它的〈檢查點（測試向量）〉；mock 的參考實作是 `api/mock/portfolio.ts` 的 `summarizeProject()`（直接呼叫 `lib/schedule.ts`）。
 - **連動刪除由後端做**：`deleteTask` 連帶刪它的 issue / dep / comment，`deleteGroup` 連帶刪底下的任務（以及那些任務的 issue / dep / comment），`deleteIssue` 連帶刪它的留言。事件順序見下。
 - **事件與 response 的到達順序後端不必保證**。client 兩種順序都正確（機制見〈樂觀更新怎麼運作〉的 in-flight 規則）：事件先到就只更新「最後已知的 server 狀態」，等該 id 的請求全部結束才對齊本地。不要為了排順序而延後廣播或延後回應。
 
@@ -492,6 +503,30 @@ store 分三層，依賴**只能由上往下**：
 - session 放在 HttpOnly cookie，前端碰不到 token；每一支資料端點由後端自己驗 session 與權限。
 - `login()` 的失敗是預期結果，**不拋錯**，adapter 依狀態碼轉成 `{ ok: false, reason }`：401 → `invalid`（帳號或密碼錯，不分哪個錯）、403 → `forbidden`（不在 PMIS 的可登入名單）、429 → `locked`（失敗太多次，暫時擋下）、503 → `unavailable`（AD 驗證服務連不上）；其他照一般錯誤拋 `ApiError`。登入頁的文案在 `constants/api.ts` 的 `LOGIN_FAIL_TEXT`。
 - **其他每一支遇到 401**：adapter 先呼叫 `notifyUnauthorized()`（`src/api/authEvents.ts`）再拋 `ApiError('unauthorized')`。`main.ts` 收到通知就導到登入頁、登入後回原頁；`getSession` / `login` / `logout` 自己的 401 不通知。mock 照同一套規矩做（`setSession(null)` 之後的下一發）。
+
+### Task 欄位對照表（前端 ↔ wire ↔ DB）
+
+`Task`（`src/types/models.ts`）的每個欄位對到 wire 與後端的 `tasks` 表（`backend/app/models.py`）。wire 的 JSON 鍵跟前端同名（後端的 schema 照前端命名，不照 DB 欄名；任務 API 還沒做）；空日期前端是 `''`、wire 與 DB 是 `null`，由 adapter 轉。起訖、工期、基準的語意見 [`docs/reference/scheduling.md`](../docs/reference/scheduling.md)〈存與算的分工〉。
+
+| 前端 | wire（JSON） | DB（`tasks`） | 說明 |
+|---|---|---|---|
+| `id` | `id`（UUID） | `id` | client 產生 |
+| `groupId` | `groupId` | `group_id` | 分類；專案由分類反查（`project_id`） |
+| `name` | `name` | `name` | 最長 200 字 |
+| `created` | `created` | `created_on` | 建立日；後端建立時填今天，不信 client |
+| `start` | `start`（`null ↔ ''`） | `start_on` | 已開始＝實際開始日；未開始的根任務＝設定的開始日；其他＝上次推算寫回的快照 |
+| `end` | `end`（`null ↔ ''`） | `end_on` | 上次推算寫回的快照，不是輸入值 |
+| `status` | `status` | `status` | `todo` / `doing` / `paused` / `done`（CHECK） |
+| `done` | `done`（`null ↔ ''`） | `done_on` | 完成日，也就是實際結束日；不是完成時為空 |
+| `priority` | `priority` | `priority` | `high` / `mid` / `low`（CHECK） |
+| `assigneeIds` | `assigneeIds` | `task_assignees`（`member_id`，依 `position`） | 有順序，第一位是摘要 `upcoming` 的負責人；整份替換 |
+| `duration` | `duration`（整數） | `duration_days` | 工期，工作天，1–3650（CHECK）。輸入值，結束日由它推算 |
+| `baselineStart` | `baselineStart`（`null ↔ ''`） | `baseline_start_on` | 計畫基準的開始日 |
+| `baselineEnd` | `baselineEnd`（`null ↔ ''`） | `baseline_end_on` | 計畫基準的結束日；跟 `baseline_start_on` 一起有值或一起是 NULL（CHECK） |
+
+- 只在 DB 的欄：`project_id`（由分類反查）、`position`（陣列順序，`reorderTasks` 寫）、`created_at` / `updated_at`、軟刪除的 `deleted_at` / `deletion_id`。
+- 專案的基準鎖：`ProjectMeta.baselineLockedOn`（wire 同名，`null ↔ ''`）↔ `projects.baseline_locked_on`；空的表示解鎖（規劃中）。
+- `readme.spec.ts` 比對這張表的第一欄與 `interface Task` 的欄位，加減欄位沒跟上就紅。
 
 ### 錯誤碼對照表
 
@@ -535,6 +570,7 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 - **順序不保證**，但連動刪除例外：被連帶刪掉的實體要**先**各發一則 `deleted`，主體自己的 `deleted` **最後**發（前端依這個順序清懸空 id）。
 - **事件的 payload 也要走 adapter 轉換**：`ProjectEvent.payload` 就是 `Task` / `Issue` / `Comment` / `ProjectData` 本身，所以上表那份對照（`null ↔ ''`、日期格式、`Attachment.id`）在事件這條路徑上要**再做一次**。只轉 response 不轉事件，本地會被推來的 `null` 汙染成非法值。
 - **`project.reloaded` 由 adapter 自己造，後端不用做**：重連偵測在前端這一層（`EventSource` 的 `onopen` 從**第二次**起、或 WebSocket 的 reconnect callback），adapter 自己 `await loadProject(id)` 之後 `emit({ type: 'project.reloaded', payload })`。後端只要能重新建立連線就好，不必記得補推什麼。
+- **`project.updated`**：專案本身（`ProjectMeta`）變了，目前只有基準鎖定與解鎖會發。payload 不含 `canEdit`（那是後端依登入者算的）。前端收到就整份換掉 `project` store 的 `meta`。
 - **`reorderTasks` / `reorderGroups` 沒有對應事件**。純順序變更要讓別的 client 看到，靠的是重連時 adapter 補的 `project.reloaded`；只有搬動造成 `groupId` 改變時才會有一則 `task.updated`。
 
 ### 樂觀更新怎麼運作
@@ -545,14 +581,21 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 - `runOptimistic({ tracker, ids, label, call, reconcile })`：本地由呼叫端先改好 → `inflight++` → `call()` 打 api。response 帶回的實體寫進 `server`；reject 送錯誤。**該 id 的 `inflight` 歸零、而且不在 `dirty` 裡時才 `reconcile`**——成功是套上 server 最終狀態，失敗是放回 server 狀態（不是「送出前的本地快照」，多筆交錯時後者會還原成中途的值）。`runOptimistic` **永不 throw**，store action 不必 try/catch。
 - **`dirty` 擋的是「還沒送出」的那一段**：拖曳的每個 tick、逐鍵改名的 debounce 期間根本還沒有請求在飛，`inflight` 保護不到。標成 dirty 的 id 收到別筆的 response 或別人推來的事件時只更新 `server`，不動本地；對應的 commit 一送出就清掉。
 - **刪除失敗的還原也走 `server`**：`removeTask / removeGroup / removeDep / removeIssue / comment.remove` 失敗時逐 id `reconcile(tracker.server.get(id), id)`。`server` 裡已經沒有的（`deleted` 事件先到了）就不復活。
-- **拖曳放開才送**：`usePointerDrag` 每個 tick 只改本地（`applyLocalPatch` / `moveTaskToLocal` / `moveGroupLocal`），`pointerup` 才送一次 `commitSchedule(這一段拖曳碰過的 id)` / `commitTaskOrder()` / `commitGroupOrder()`；取消走 `discardTaskDrag(ids)` / `discardGroupDrag()`——只放棄這一段拖曳自己標的 dirty，別處還在 debounce 的改名留著。
+- **拖曳放開才送**：`usePointerDrag` 每個 tick 只改本地（`applyLocalPatch` / `moveTaskToLocal` / `moveGroupLocal`），`pointerup` 才送一次 `commitSchedule(這一段拖曳碰過的 id)`（整批寫回推算結果，見下一點）/ `commitTaskOrder()` / `commitGroupOrder()`；取消走 `discardTaskDrag(ids)` / `discardGroupDrag()`——只放棄這一段拖曳自己標的 dirty，別處還在 debounce 的改名留著。
+- **排程寫回集合**（`stores/task.ts` 的 `scheduleWriteSet` / `commitSchedule`）：牽動排程的編輯（開始日、工期、狀態、完成日、相依、刪任務或分類）寫回的是「推算結果跟 `server` 不同」的那幾筆，整批一次 `updateTasks`。
+  - 這次編輯的對象：不同就送；server 還沒有（建立中）就等 create 回來再補送。推算後跟 server 一樣、不必送的，存的值對齊回 server。
+  - 其他任務：不同、而且不在 `dirty` 才送。被推動的下游、跨日漂移的任務都跟著送；別處還沒送出的本地編輯（拖曳中、改名 debounce 中）留給它自己送。
+  - 只改不牽動排程的欄位（名稱、優先度、負責人），而且要送的只有它自己時，走單筆 `updateTask`（patch）。
+  - 規則見 [`docs/reference/scheduling.md`](../docs/reference/scheduling.md)〈存與算的分工〉。
 - **改名 debounce**：`composables/useEditDraft.ts`——每一鍵都本地立即生效（維持 legacy 行為），api 走 trailing debounce 300ms，離開編輯（Enter / Esc / blur / 卸載）時 flush。
 - **錯誤出口 = 注入的 sink**：資料層不 import ui，失敗透過 `_optimistic.setErrorSink()` 送出去。
 - **啟動點 = `composables/useProjectBoot.ts`**：它把 `ui.pushError` 註冊成 sink、維護 `ui.loadState` / `ui.loadError`（載入中 / 失敗重試畫面）、確保派生層的清理 `watch` 在資料進來前掛好，並代理事件訂閱的 `start` / `stop`。`DashboardView` 是唯一呼叫端。
 
 ### e2e 與 mock 把手
 
-dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (import.meta.env.DEV)`），e2e 用它注入延遲與失敗（`failNext` / `setLatency` / `reset` / `emit`），以及切唯讀（`setCanEdit(false)`：之後的 `loadProject` 回 `canEdit: false`；mock 不判斷權限，寫入照做）。總覽的載入失敗用 `failNext('listProjects')`。
+dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (import.meta.env.DEV)`），e2e 用它注入延遲與失敗（`failNext` / `setLatency` / `reset` / `emit`），以及切唯讀（`setCanEdit(false)`：之後的 `loadProject` 回 `canEdit: false`；mock 不判斷權限，寫入照做）、換工作日曆（`setCalendar(cal)`：之後的 `getCalendar` 回這份，測「假日未公布」、補班日用；`reset()` 還原成範例日曆）。總覽的載入失敗用 `failNext('listProjects')`。
+
+**工作日曆載入失敗**：`failNext('getCalendar')` 要在第一次進 Dashboard 之前設。日曆跟專案資料在進頁時一起載；已經有日曆時重載失敗會保留舊資料、不顯示提示。寫法同下面〈登入狀態〉的 `addInitScript`。
 
 接上真後端之後 `window.__mockApi` 會是 `undefined`，這幾條開頭就是 `test.skip(!__mockApi)`，會自動跳過，其餘照跑：`e2e/interactions.spec.ts` 的**那兩條**（api 失敗後還原並顯示錯誤條、載入失敗後重試）、`e2e/errorbar-motion.spec.ts` 的頁頂與捲到中段兩條（`failNext('updateTask')` 讓錯誤條出現；另四條直接呼叫 `ui.pushError`，不需要 mock）、`e2e/load-motion.spec.ts` 的重進 Dashboard（`setLatency`）與載入次數守門。要在真後端上也測失敗路徑，就換成在 `page.route()` 攔 HTTP 回錯誤碼。
 

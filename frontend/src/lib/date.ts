@@ -28,7 +28,11 @@ export function todayIndex(now: number): number {
   return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000)
 }
 
-/** 任務工期（天），含頭尾兩天。legacy `len` :1900 */
+/**
+ * 起訖之間的日曆天數（含頭尾兩天），也就是甘特條佔幾格。legacy `len` :1900。
+ * 這不是工期：工期是工作天（扣週末與假日），顯示與加減請用 `lib/schedule.ts` 的 `durationOf`
+ * （規則見 docs/reference/scheduling.md〈有效工期〉）。
+ */
 export function lengthOf(t: Pick<Task, 'start' | 'end'>): number {
   return dayIndex(t.end) - dayIndex(t.start) + 1
 }

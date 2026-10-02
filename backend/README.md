@@ -4,7 +4,7 @@ Python（FastAPI）＋ PostgreSQL。技術一覽與使用慣例見 [`docs/refere
 
 ## 現況
 
-資料表與軟刪除（回收桶）機制已建好（`app/models.py`，規則見下面〈資料表與 migration〉〈軟刪除〉）。端點有 `GET /api/health`（程式有在跑、資料庫連得上就回 `{"status": "ok"}`）與 `GET /api/calendar`（工作日曆，見下面〈工作日曆（假日表）〉）。其他業務端點與登入還沒做，前端也還沒接上。
+資料表與軟刪除（回收桶）機制已建好（`app/models.py`，規則見下面〈資料表與 migration〉〈軟刪除〉）。端點有 `GET /api/health`（程式有在跑、資料庫連得上就回 `{"status": "ok"}`）與 `GET /api/calendar`（工作日曆，見下面〈工作日曆（假日表）〉）。其他業務端點與登入還沒做，前端也還沒接上。任務的排程（工期、相依、計畫基準）目前全在前端算，規則見 [`docs/reference/scheduling.md`](../docs/reference/scheduling.md)；做任務 API 時要移植同一套。
 
 ## 安裝與指令
 
@@ -206,11 +206,23 @@ model 的寫法：
 - 要保留插入順序的表（相依、Issue、留言）有 `seq`（自動遞增）：同一個交易裡 `now()` 都一樣，不能拿 `created_at` 排序。
 - 排序鍵 `position`：重排時整份重寫成 0..n-1；不設唯一（還原回來的列可能跟別人同號），讀取時 `ORDER BY position, id`。
 - 上層對下層的關聯（`Project.groups`、`Task.issues`…）一定要寫：ORM 靠它決定同一次 flush 先寫上層。連動刪除交給資料庫的 `ON DELETE`。
-- 結束日不早於開始日、`done` 只在完成時有值這類業務規則不在資料庫擋（那是前端的連動計算負責的）。
+- 結束日不早於開始日、`done` 只在完成時有值這類業務規則不在資料庫擋（那是前端排程與編輯入口負責的，規則見 [`docs/reference/scheduling.md`](../docs/reference/scheduling.md)）。
+
+排程與計畫基準的欄位（規則見 [`docs/reference/scheduling.md`](../docs/reference/scheduling.md)；跟前端欄位的對照見 [`frontend/README.md` 的〈Task 欄位對照表〉](../frontend/README.md#task-欄位對照表前端--wire--db)）：
+
+| 表.欄 | 型別 | 說明 |
+|---|---|---|
+| `tasks.duration_days` | INTEGER NOT NULL，CHECK 1–3650 | 工期（工作天）。輸入值，結束日由它推算。上限跟前端的 `DURATION_MAX` 一致 |
+| `tasks.start_on` / `end_on` | DATE NULL | 前端推算後寫回的值：已開始的 `start_on` 是實際開始日，未開始根任務的 `start_on` 是設定的開始日，其他是快照 |
+| `tasks.baseline_start_on` / `baseline_end_on` | DATE NULL，CHECK 兩欄同時有值或同時 NULL | 計畫基準起訖；專案上鎖時寫入 |
+| `projects.baseline_locked_on` | DATE NULL | 計畫基準的鎖定日；NULL＝解鎖（規劃中，基準跟著排程走） |
+
+- `duration_days` 不設預設值，跟 `status`、`priority`、`position` 一樣由 service 寫入。
+- **後端目前不跑排程**：起訖、基準都是前端算好送來的，後端只存。之後做任務 API、或要在後端算專案摘要（延遲數、計畫應完成數、專案起訖）時，要移植同一套排程，並跑 `scheduling.md`〈檢查點（測試向量）〉的三組數字。
 
 ### 工作日曆（假日表）
 
-前端用工作天算工期。預設規則：週六日（ISO 星期 6、7）放假、其他上班；資料表只存跟預設不同、或有名稱的日子。週末、年份範圍（2000–2200）、名稱長度、來源清單集中定義在 `app/core/calendar_rules.py`，解析、寫入、資料表的 CHECK、API 都從那裡拿。只存「跟預設不同」的日子等於把週末定義寫進了資料：改週末定義後，官方日曆要全部重新匯入。
+前端用工作天算工期與排程（規則見 [`docs/reference/scheduling.md`](../docs/reference/scheduling.md)〈工作天〉）。預設規則：週六日（ISO 星期 6、7）放假、其他上班；資料表只存跟預設不同、或有名稱的日子。週末、年份範圍（2000–2200）、名稱長度、來源清單集中定義在 `app/core/calendar_rules.py`，解析、寫入、資料表的 CHECK、API 都從那裡拿。只存「跟預設不同」的日子等於把週末定義寫進了資料：改週末定義後，官方日曆要全部重新匯入。
 
 **讀取 API**：`GET /api/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD`
 
@@ -220,7 +232,7 @@ model 的寫法：
   - `coveredYears`：官方日曆**完整**匯入的年份（遞增）。不在裡面的年份只套週末規則，畫面要提示「假日資料未公布」。
   - `days`：依日期遞增、同一天只有一筆，有例外日時只回例外日（`source: "override"`）。`name` 只供顯示，前端不得拿它判斷邏輯。
 - `from` 晚於 `to`、日期格式錯、多餘的參數回 422。
-- 前端的 wire 約定（`frontend/src/api/types.ts`）等前端接這支 API 時再補。
+- 前端的 wire 約定在 `frontend/src/api/types.ts` 的 `getCalendar()`：不帶 `from`、`to`，進 Dashboard 時一次載全部。載入失敗時前端只扣週末、畫面提示，不擋畫面；也不能鎖定計畫基準。
 
 **三張表**（都不軟刪）：
 
