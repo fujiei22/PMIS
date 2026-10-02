@@ -2,7 +2,7 @@
 
 PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 
-前端已建置；後端已建骨架，只有健康檢查端點（見〈後端：技術一覽〉）。
+前端已建置；後端有健康檢查與工作日曆（假日表）兩支端點（見〈後端：技術一覽〉）。
 
 ## 前端：技術一覽
 
@@ -83,7 +83,7 @@ PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 
 ## 後端：技術一覽
 
-程式在 `backend/`：資料表與軟刪除機制已建，端點只有 `GET /api/health`，還沒有業務端點與登入。下表的資料分析、Excel 讀寫、即時推送、登入與部署還沒導入。開工導覽見 [`backend/README.md`](../../backend/README.md)。
+程式在 `backend/`：資料表與軟刪除機制已建，端點有 `GET /api/health` 與 `GET /api/calendar`（工作日曆），背景排程每月同步假日表；其他業務端點與登入還沒做。下表的資料分析、Excel 讀寫、即時推送、登入與部署還沒導入。開工導覽見 [`backend/README.md`](../../backend/README.md)。
 
 | 項目 | 使用 |
 |---|---|
@@ -122,6 +122,7 @@ PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 | `uv run alembic revision --autogenerate -m "說明"` | 同上 | 依 `app/models.py` 的變更產生 migration |
 | `uv run alembic check` | 同上 | 確認 `app/models.py` 沒有漏產 migration |
 | `uv run python -m app.scripts.export_openapi` | `app/scripts/export_openapi.py` | 匯出 OpenAPI 到 `frontend/src/api/http/openapi.json`；改了 API 才要跑，見〈API 契約〉 |
+| `uv run python -m app.scripts.holidays <指令>` | `app/scripts/holidays.py` | 假日表管理：`status`／`sync`／`import`／`add`／`remove`／`list`（`--help` 看範例），見 [`backend/README.md`〈工作日曆（假日表）〉](../../backend/README.md#工作日曆假日表) |
 
 `[tool.*]` 都在 `backend/pyproject.toml`。提交前至少跑一次 `ruff check`、`ruff format --check`、`mypy`、`pytest`。
 
@@ -149,9 +150,10 @@ PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 - 加總、統計在資料庫（SQL）做。
 
 ### 非同步與行程
-- 一般 API 用 `def`；只有 SSE 與 AI 串流回應用 `async def`，而且裡面不呼叫同步的資料庫套件。以讀原始碼的測試列白名單守住（`backend/tests/test_async_whitelist.py`）。
+- 一般 API 用 `def`；只有 SSE、AI 串流回應與 lifespan（`app/lifespan.py`）用 `async def`，而且裡面不呼叫同步的資料庫套件。以讀原始碼的測試列白名單守住（`backend/tests/test_async_whitelist.py`）。
 - 正式環境只跑一個 worker。要開多個 worker 前，先讓事件經 PostgreSQL 的 `LISTEN` / `NOTIFY` 在 worker 之間傳遞。
 - 耗時的分析（例如預測）放排程的背景工作，結果寫進資料表，API 只讀結果。
+- 背景排程：程式內建的 daemon 執行緒（`app/jobs/scheduler.py`），由 lifespan 啟停，`BACKGROUND_JOBS_ENABLED` 是總開關；第一個工作是每月同步假日表。開多個 worker 前要先讓排程互斥。
 
 ### 資料庫變更
 - 資料表變更一律寫成 Alembic migration。自動產生的 migration 要逐行確認，改欄位名稱可能被產生成「刪欄位＋加欄位」，舊資料會遺失。
