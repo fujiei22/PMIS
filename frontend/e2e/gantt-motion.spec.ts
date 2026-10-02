@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { DashboardPage, html5Drag } from './helpers/dashboardPage'
+import { speedJumps } from './helpers/ovMotion'
 
 /**
  * 甘特面板的動畫銜接（動畫稽核批次 A，`docs/incidents/2026-09-30-motion-audit`）。
@@ -887,6 +888,35 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
       await expect.poll(() => app.bar(r.id).evaluate((el) => (el as HTMLElement).style.getPropertyValue('--res-w'))).toBe('')
     })
   }
+
+  /*
+   * review：被拖的那一端被擋住時不補。t6 的前置是 t5，開始日不能早於 t5 的開始：左把手拖到左緣、自動捲動捲過那一天之後，
+   * 左緣停在限制上、跟著畫布等速往右走。修正前補償照加：補償把它拉回游標下不動，每湊滿一天又一幀往右跳一天（32px）。
+   */
+  test('縮放：左把手被前置任務擋住後，左緣跟著畫布等速移動、不一天一跳', async ({ page }) => {
+    const app = await openGantt(page)
+    await app.row('t6').locator('.name').click()
+    await pause(page, 1300)
+    const barLeft = await app.bar('t6').evaluate((el) => (el as HTMLElement).offsetLeft)
+    await app.freezeGanttScroll(Math.max(0, barLeft - 700))
+    const sc = (await app.ganttScroller.boundingBox())!
+    const b = (await app.bar('t6').boundingBox())!
+    const y = b.y + b.height / 2
+    const grabX = b.x + 3
+    const edgeX = sc.x + 20
+    await page.mouse.move(grabX, y)
+    await page.mouse.down()
+    for (let i = 1; i <= 8; i++) {
+      await page.mouse.move(grabX + ((edgeX - grabX) * i) / 8, y)
+      await pause(page, 16)
+    }
+    const tr = await trace(page, { bar: bar('t6') }, () => pause(page, 1), { ms: 700 })
+    await page.mouse.up()
+    const pts = tr.frames.filter((f) => f.boxes.bar).map((f) => ({ t: f.t, v: f.boxes.bar!.x }))
+    const detail = `左緣逐幀：${pts.map((p) => p.v.toFixed(0)).join(',')}`
+    expect(pts.at(-1)!.v - pts[0]!.v, `被擋住、跟著畫布往右走了（前提）；${detail}`).toBeGreaterThan(50)
+    expect(speedJumps(pts), detail).toBe(0)
+  })
 
   // review：自動捲動的補償（transform）不改資料，相依線原本只在資料變後跟一段——
   // 捲動停住（游標離開邊緣）或放開後回彈時，線彈回資料位置、跟被補償的條差到一天寬

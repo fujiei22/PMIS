@@ -481,6 +481,44 @@ describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）',
     unmount()
   })
 
+  /*
+   * 縮放的自動捲動補償（D6 延伸）只在被拖的那一端真的落在拖到的那一天時才補（review）：
+   * 被夾住（前置任務限制開始日、或已經縮到一天）時那一端停在限制上，再補就會在限制附近來回鋸齒、或短於一天。
+   */
+  it('縮放補償：左把手被前置任務擋住時不補（條不平移、寬度不補）', () => {
+    const tasks = useTaskStore()
+    const { api: drag, registry, scroller, unmount } = mountWithScroller()
+    const bar = document.createElement('div')
+    registerEl(registry.bars, 't2')(bar)
+    const s0 = dayIndex(tasks.taskById('t2')!.start)
+    // t2 的前置是 t1：往左拖 20 天，開始日被夾在 t1 的開始日；再往左捲 10px（還沒湊滿一天的差）
+    drag.startBar(pointer('pointerdown', 1000, 0) as unknown as PointerEvent, 't2', 'resL')
+    scroller.scrollLeft = -10
+    document.dispatchEvent(pointer('pointermove', 1000 - 20 * 32, 0))
+    expect(dayIndex(tasks.taskById('t2')!.start), '開始日被前置擋住').toBeGreaterThan(s0 - 20)
+    expect(bar.style.transform).toBe('')
+    expect(bar.style.getPropertyValue('--res-w')).toBe('')
+    document.dispatchEvent(pointer('pointerup', 1000 - 20 * 32, 0))
+    unmount()
+  })
+
+  it('縮放補償：右把手已經縮到一天時，往內的補償不讓條短於一天', () => {
+    const tasks = useTaskStore()
+    const { api: drag, registry, scroller, unmount } = mountWithScroller()
+    const bar = document.createElement('div')
+    registerEl(registry.bars, 't1')(bar)
+    const t = tasks.taskById('t1')!
+    const days = dayIndex(t.end) - dayIndex(t.start)
+    // 往左拖剛好讓結束日等於開始日（一天），再往左捲 10px
+    drag.startBar(pointer('pointerdown', 1000, 0) as unknown as PointerEvent, 't1', 'resR')
+    scroller.scrollLeft = -10
+    document.dispatchEvent(pointer('pointermove', 1000 - days * 32, 0))
+    expect(dayIndex(tasks.taskById('t1')!.end), '縮到一天').toBe(dayIndex(t.start))
+    expect(bar.style.getPropertyValue('--res-w'), '寬度不往內補').toBe('')
+    document.dispatchEvent(pointer('pointerup', 1000 - days * 32, 0))
+    unmount()
+  })
+
   // review：補償（nudge）不改資料，相依線只在資料變後跟一段；要有旗標讓它在補償與放開回彈期間一直跟著條
   it('nudging 在補償與回彈期間為 true、結束後 false；回彈中又開新的拖曳不會被清掉', () => {
     vi.useFakeTimers()

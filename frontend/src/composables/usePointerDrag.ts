@@ -148,28 +148,36 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     const scrolled = (els.gantt.value?.scrollLeft ?? 0) - d.sl0
     // 加上捲動位移，自動捲動時才不會因為畫面移動而多算幾天（legacy :2489）
     const delta = Math.round((moved + scrolled) / dw)
-    // 動畫稽核 D6：自動捲動時 scrollLeft 連續在變、條卻以整天吸附，條在游標下鋸齒抖動。
-    // 補上「捲動造成、還沒湊滿一天」的差，條在畫面上只跟著游標的位移走；放開才吸附（finish）。
-    // 縮放只補被拖的那一端（D6 延伸）；被夾住（右把手越過開始日、左把手越過結束日）時那一端不動，不補
-    const residual = scrolled - (delta - Math.round(moved / dw)) * dw
-    if (d.kind === 'move') nudge(d.id, 'move', residual)
-    else if (d.kind === 'resR') nudge(d.id, 'resR', d.e0 + delta < d.s0 ? 0 : residual)
-    else nudge(d.id, 'resL', d.s0 + delta > d.e0 ? 0 : residual)
-    if (delta === d.last) return
-    d.last = delta
-    if (d.kind === 'move') {
-      track(
-        taskStore.applyLocalPatch(d.id, {
-          start: isoFromIndex(d.s0 + delta),
-          end: isoFromIndex(d.e0 + delta),
-        }),
-      )
-    } else if (d.kind === 'resL') {
-      // 左把手不能越過結束日
-      track(taskStore.applyLocalPatch(d.id, { start: isoFromIndex(Math.min(d.s0 + delta, d.e0)) }))
-    } else {
-      track(taskStore.applyLocalPatch(d.id, { end: isoFromIndex(Math.max(d.e0 + delta, d.s0)) }))
+    if (delta !== d.last) {
+      d.last = delta
+      if (d.kind === 'move') {
+        track(
+          taskStore.applyLocalPatch(d.id, {
+            start: isoFromIndex(d.s0 + delta),
+            end: isoFromIndex(d.e0 + delta),
+          }),
+        )
+      } else if (d.kind === 'resL') {
+        // 左把手不能越過結束日
+        track(taskStore.applyLocalPatch(d.id, { start: isoFromIndex(Math.min(d.s0 + delta, d.e0)) }))
+      } else {
+        track(taskStore.applyLocalPatch(d.id, { end: isoFromIndex(Math.max(d.e0 + delta, d.s0)) }))
+      }
     }
+    // 動畫稽核 D6：自動捲動時 scrollLeft 連續在變、條卻以整天吸附，條在游標下鋸齒抖動。
+    // 補上「捲動造成、還沒湊滿一天」的差，條在畫面上只跟著游標的位移走；放開才吸附（finish）。縮放只補被拖的那一端（D6 延伸）
+    nudge(d.id, d.kind, landed(d, delta) ? scrolled - (delta - Math.round(moved / dw)) * dw : 0)
+  }
+
+  /**
+   * 被拖的那一端真的落在拖到的那一天（資料寫完之後看）：沒落在那天表示被夾住了——開始日不能早於前置任務的開始、
+   * 左把手不能越過結束日、右把手不能越過開始日——那一端停在限制上，再補「還沒湊滿一天的差」就會在限制附近來回鋸齒（review）。
+   */
+  function landed(d: Extract<DragState, { kind: BarDragKind }>, delta: number): boolean {
+    const t = taskStore.taskById(d.id)
+    if (!t) return false
+    if (d.kind === 'resR') return dayIndex(t.end) === d.e0 + delta
+    return dayIndex(t.start) === d.s0 + delta
   }
 
   /**
@@ -199,7 +207,10 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   }
 
   function nudge(id: string, kind: BarDragKind, px: number): void {
-    const v = Math.round(px * 100) / 100
+    let v = Math.round(px * 100) / 100
+    // 已經縮到一天：往內補（右把手往左、左把手往右）會讓條短於一天，下一幀越過限制又跳回一天（review）
+    const t = kind === 'move' ? undefined : taskStore.taskById(id)
+    if (t && dayIndex(t.start) === dayIndex(t.end) && (kind === 'resR' ? v < 0 : v > 0)) v = 0
     if (!v && !nudged) return
     if (v) {
       nudging.value = true
