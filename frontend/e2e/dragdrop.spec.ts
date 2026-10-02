@@ -107,6 +107,10 @@ test('列拖曳重排到另一分類', async ({ page }) => {
   await app.goto()
   expect((await app.rowOrder()).slice(5, 9)).toEqual(['t5', 't6', 'G:g2', 't7'])
 
+  // 前提：拖曳點不在視窗上下緣的自動捲動區。摘要列變高（多了預算卡）之後，t6 在 1280×720 落到視窗底部附近，
+  // 往下拖會觸發自動捲動、多換一格；先捲到視窗中間
+  await app.row('t6').evaluate((el) => el.scrollIntoView({ block: 'center' }))
+  await idle(page)
   const gb = (await app.row('t6').locator('.grip').boundingBox())!
   const x = gb.x + gb.width / 2
   const y0 = gb.y + gb.height / 2

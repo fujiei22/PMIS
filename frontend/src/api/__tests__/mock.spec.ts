@@ -355,6 +355,7 @@ describe('mock api', () => {
       deps: [],
       issues: [],
       comments: [],
+      budget: { total: 0, actual: 0 },
       currentUserId: 'm1',
     })
     expect((await api.loadProject()).tasks).toHaveLength(0)

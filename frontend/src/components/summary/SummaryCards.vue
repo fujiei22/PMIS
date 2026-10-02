@@ -1,16 +1,20 @@
 <script setup lang="ts">
-// 四張摘要卡：專案總時長、整體進度、任務狀態、Issue 統計。
+// 四張摘要卡：專案總時長 + 整體進度（合成一張）、任務狀態、Issue 統計、預算 vs. 支出。
 // legacy 對照：模板 :298-385，數值 :3522-3633。
 import { computed } from 'vue'
 import { DELAYED, ISSUE_LEVEL, ISSUE_STATUS, TASK_STATUS } from '@/constants/dashboard'
+import { budgetRatio, budgetRemaining, gaugeAngle, isOverBudget } from '@/lib/budget'
 import { isoFromIndex } from '@/lib/date'
+import { fmtMoney, fmtMoneyShort } from '@/lib/format'
 import { isLate, isLateIssue, isPlannedDone } from '@/lib/schedule'
+import { useBudgetStore } from '@/stores/budget'
 import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'
 import type { IssueLevel, IssueStatus, TaskStatus } from '@/types/models'
 
 const clock = useClockStore()
+const budgetStore = useBudgetStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 
@@ -18,13 +22,13 @@ const tasks = computed(() => taskStore.tasks)
 const issues = computed(() => issueStore.issues)
 const total = computed(() => tasks.value.length)
 
-// ── 卡 1：專案總時長 ───────────────────────────────────────────────────────
+// ── 卡 1 上段：專案總時長 ───────────────────────────────────────────────────────
 const totalDays = computed(() => taskStore.range.max - taskStore.range.min + 1)
 /** 起訖日各自不斷行（連字號會被當斷點），卡片窄時只在「~」處換行。 */
 const rangeStart = computed(() => isoFromIndex(taskStore.range.min))
 const rangeEnd = computed(() => isoFromIndex(taskStore.range.max))
 
-// ── 卡 2：整體進度（實際 = 已完成數；理論 = 到期日已過的數）legacy :3604-3620 ──
+// ── 卡 1 下段：整體進度（實際 = 已完成數；理論 = 到期日已過的數）legacy :3604-3620 ──
 const doneTasks = computed(() => tasks.value.filter((t) => t.status === 'done').length)
 /**
  * 理論上此刻該完成的任務（判準見 isPlannedDone：到期日隔天才算，和 legacy 刻意不同）。
@@ -49,7 +53,7 @@ const gapTone = computed(() => {
   return a < p ? 'behind' : a > p ? 'ahead' : 'flat'
 })
 
-// ── 卡 3：任務狀態 ────────────────────────────────────────────────────────
+// ── 卡 2：任務狀態 ────────────────────────────────────────────────────────
 const statusRows = computed(() =>
   (['todo', 'doing', 'paused', 'done'] as TaskStatus[]).map((k) => {
     const count = tasks.value.filter((t) => t.status === k).length
@@ -66,7 +70,7 @@ const statusRows = computed(() =>
 )
 const delayedCount = computed(() => tasks.value.filter((t) => isLate(t, clock.todayIdx)).length)
 
-// ── 卡 4：Issue 統計 ──────────────────────────────────────────────────────
+// ── 卡 3：Issue 統計 ──────────────────────────────────────────────────────
 const levelRows = computed(() =>
   (['A', 'B', 'C', 'D'] as IssueLevel[]).map((k) => ({
     k,
@@ -87,21 +91,27 @@ const issueStatusRows = computed(() =>
 const delayedIssues = computed(
   () => issues.value.filter((i) => isLateIssue(i, clock.todayIdx)).length,
 )
+
+// ── 卡 4：預算 vs. 支出（半圓儀表；演算法在 lib/budget）───────────────────
+const budget = computed(() => budgetStore.budget)
+const remaining = computed(() => budgetRemaining(budget.value))
+const overBudget = computed(() => isOverBudget(budget.value))
+const ratio = computed(() => budgetRatio(budget.value))
+const needleAngle = computed(() => gaugeAngle(ratio.value))
 </script>
 
 <template>
   <div class="cards">
-    <!-- 1. 專案總時長 -->
-    <div class="card" data-testid="summary-duration">
-      <div class="card-title">專案總時長</div>
-      <div class="hero">{{ totalDays }} <span class="hero-unit">天</span></div>
+    <!-- 1. 專案總時長 + 整體進度（同一張卡：上段時長、下段進度） -->
+    <div class="card" data-testid="summary-progress">
+      <div class="duration">
+        <span class="card-title">專案總時長</span>
+        <span class="duration-days">{{ totalDays }} <span class="duration-unit">天</span></span>
+      </div>
       <div class="range">
         <span>{{ rangeStart }}</span> ~ <span>{{ rangeEnd }}</span>
       </div>
-    </div>
-
-    <!-- 2. 整體進度 -->
-    <div class="card" data-testid="summary-progress">
+      <div class="divider"></div>
       <div class="card-head">
         <span class="card-title">整體進度</span>
         <span class="gap" :class="gapTone">{{ gapLabel }}</span>
@@ -131,7 +141,7 @@ const delayedIssues = computed(
       </div>
     </div>
 
-    <!-- 3. 任務狀態 -->
+    <!-- 2. 任務狀態 -->
     <div class="card card-tight" data-testid="summary-tasks">
       <div class="stat-head">
         <span class="card-title">任務狀態</span>
@@ -161,7 +171,7 @@ const delayedIssues = computed(
       </div>
     </div>
 
-    <!-- 4. Issue 統計 -->
+    <!-- 3. Issue 統計 -->
     <div class="card card-tight" data-testid="summary-issues">
       <div class="stat-head">
         <span class="card-title">Issue 統計</span>
@@ -191,6 +201,47 @@ const delayedIssues = computed(
               <span class="legend-label">{{ DELAYED.label }}</span>
               <span class="legend-count">{{ delayedIssues }}</span>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. 預算 vs. 支出 -->
+    <div class="card card-tight" data-testid="summary-budget">
+      <div class="card-title budget-title">Budget vs. Actual</div>
+      <div class="budget-body">
+        <svg class="gauge" viewBox="0 0 120 70" role="img" aria-label="預算使用率">
+          <path class="gauge-track" d="M 12 60 A 48 48 0 0 1 108 60" pathLength="100" />
+          <path
+            class="gauge-fill"
+            :class="{ over: overBudget }"
+            d="M 12 60 A 48 48 0 0 1 108 60"
+            pathLength="100"
+            :stroke-dasharray="`${ratio * 100} 100`"
+          />
+          <g class="needle" :style="{ transform: `rotate(${needleAngle}deg)` }">
+            <line x1="60" y1="60" x2="60" y2="22" />
+          </g>
+          <circle class="hub" cx="60" cy="60" r="4" />
+        </svg>
+        <div class="budget-legend">
+          <div class="legend-row">
+            <span class="legend-label">Total:</span>
+            <span class="legend-count budget-num" :title="fmtMoney(budget.total)">{{
+              fmtMoneyShort(budget.total)
+            }}</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-label">Actual:</span>
+            <span class="legend-count budget-num" :title="fmtMoney(budget.actual)">{{
+              fmtMoneyShort(budget.actual)
+            }}</span>
+          </div>
+          <div class="legend-row" :class="{ late: overBudget }">
+            <span class="legend-label">{{ overBudget ? 'Over:' : 'Remaining:' }}</span>
+            <span class="legend-count budget-num" :title="fmtMoney(remaining)">{{
+              fmtMoneyShort(remaining)
+            }}</span>
           </div>
         </div>
       </div>
@@ -243,8 +294,22 @@ const delayedIssues = computed(
   color: var(--st-done);
 }
 
-.hero-unit {
+.duration {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+
+.duration-days {
   font-size: var(--fs-panel);
+  font-weight: var(--fw-bold);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  margin-left: auto;
+}
+
+.duration-unit {
+  font-size: var(--fs-pill);
   font-weight: var(--fw-medium);
   color: var(--text-muted);
 }
@@ -253,7 +318,11 @@ const delayedIssues = computed(
   font-size: var(--fs-meta);
   color: var(--text-muted);
   font-family: var(--font-mono);
-  margin-top: auto;
+}
+
+.divider {
+  border-top: 1px dashed var(--border-1);
+  margin: var(--sp-3) 0;
 }
 
 .range span {
@@ -474,7 +543,84 @@ const delayedIssues = computed(
   text-overflow: ellipsis;
 }
 
-/* 平板直向（< 900px）：四張擠一列時每張只剩 170px，Issue 統計被擠成很長一條、其他卡空一大塊；改 2×2 */
+.budget-title {
+  margin-bottom: var(--sp-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 儀表在上、金額在下：金額位數再多也只往下長，不會把卡片撐寬 */
+.budget-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.gauge {
+  width: 100%;
+  max-width: 200px;
+  align-self: center;
+}
+
+.gauge-track,
+.gauge-fill {
+  fill: none;
+  stroke-width: 16;
+}
+
+.gauge-track {
+  stroke: var(--surface-3);
+}
+
+.gauge-fill {
+  stroke: var(--accent);
+  transition: stroke-dasharray var(--t-progress) var(--ease);
+}
+
+.gauge-fill.over {
+  stroke: var(--danger);
+}
+
+.needle {
+  transform-origin: 60px 60px;
+  transition: transform var(--t-progress) var(--ease);
+}
+
+.needle line {
+  stroke: var(--text-3);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.hub {
+  fill: var(--text-3);
+}
+
+.budget-legend {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.budget-legend .legend-label {
+  flex: 0 0 auto;
+}
+
+/* 標籤靠左、金額靠右；真的塞不下時才用「…」截斷（完整金額在 title） */
+.budget-num {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 平板直向（< 900px）：四張擠一列時每張太窄，Issue 統計被擠成很長一條、其他卡空一大塊；改 2×2 */
 @media (max-width: 899px) {
   .cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));

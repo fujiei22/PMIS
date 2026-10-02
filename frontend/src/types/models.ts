@@ -98,6 +98,12 @@ export interface Comment {
  */
 export type DropTarget = { kind: 'g'; id: string; dir?: 'up' | 'down' } | { kind: 't'; id: string }
 
+/** 專案預算與已支出，金額單位由畫面決定（目前顯示為 $）；剩餘是算出來的，不存。 */
+export interface Budget {
+  total: number
+  actual: number
+}
+
 export interface ProjectData {
   groups: Group[]
   members: Member[]
@@ -105,6 +111,7 @@ export interface ProjectData {
   deps: Dependency[]
   issues: Issue[]
   comments: Comment[]
+  budget: Budget
   currentUserId: string
 }
 

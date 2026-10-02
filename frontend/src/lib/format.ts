@@ -51,3 +51,18 @@ function pad2(v: string | undefined): string {
   const s = String(Number(v ?? 0))
   return s.length < 2 ? '0' + s : s
 }
+
+/** 金額：'$50,000'；負數把負號放在 $ 前面（'-$500'）。 */
+export function fmtMoney(n: number): string {
+  return (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US')
+}
+
+/** 卡片空間小時用：未滿 10 億同 `fmtMoney`，之後改縮寫（'$123.5B'、'-$2.5T'），完整金額另放 title。 */
+export function fmtMoneyShort(n: number): string {
+  if (Math.abs(n) < 1e9) return fmtMoney(n)
+  const short = new Intl.NumberFormat('en-US', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(Math.abs(n))
+  return (n < 0 ? '-' : '') + '$' + short
+}
