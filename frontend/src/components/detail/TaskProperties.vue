@@ -1,13 +1,15 @@
 <script setup lang="ts">
-// 詳細視窗左欄（任務）：負責人、分類、時程、建立、完成日、優先度、執行狀態、相依、Issue 清單。
+// 詳細視窗左欄（任務）：負責人、分類、時程、工期、計畫基準、建立、完成日、優先度、執行狀態、相依、Issue 清單。
 // 唯讀時（F2）沒有指派 / 移除負責人、編輯相依、開立 Issue、刪除，膠囊只是顯示（點了不開選單）。
 // legacy 對照：模板 :887-1007，欄位來源是看板卡片那份 view-model（columns[].tasks :2999-3113）。
+// 工期、計畫基準兩列 legacy 沒有（排程規則見 docs/reference/scheduling.md）。
 import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import { useDelayedUnmount } from '@/composables/useDelayedUnmount'
 import { useMenus } from '@/composables/useMenus'
 import { useTaskActions } from '@/composables/useTaskActions'
 import {
+  BASELINE_ROW_TEXT,
   DELAYED,
   ISSUE_LEVEL,
   ISSUE_STATUS,
@@ -15,12 +17,12 @@ import {
   PRIORITY,
   TASK_STATUS,
 } from '@/constants/dashboard'
-import { lengthOf } from '@/lib/date'
 import { EMPTY_LABEL, fmtDate, fmtWorkdays, shortDate } from '@/lib/format'
-import { isLate, isLateIssue, lateDays } from '@/lib/schedule'
+import { durationOf, isLate, isLateIssue, lateDays } from '@/lib/schedule'
 import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
+import { useProjectStore } from '@/stores/project'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -32,6 +34,7 @@ const props = defineProps<{ task: Task }>()
 const actions = useTaskActions()
 const clock = useClockStore()
 const calendar = useWorkCalendarStore()
+const project = useProjectStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
@@ -53,8 +56,41 @@ const st = computed(() => TASK_STATUS[props.task.status])
 const pr = computed(() => PRIORITY[props.task.priority])
 
 const groupName = computed(() => taskStore.groupById(props.task.groupId)?.name ?? '未分類')
-const rangeLabel = computed(
-  () => `${fmtDate(props.task.start)} → ${fmtDate(props.task.end)} · ${lengthOf(props.task)}d`,
+/** 時程列只寫推算起訖；工期另起一列（工作天），不再跟日曆天的「· Nd」擠在一起。 */
+const rangeLabel = computed(() => `${fmtDate(props.task.start)} → ${fmtDate(props.task.end)}`)
+/**
+ * 工期列：有效工期（完成＝實際工作天；進行中／暫停逾期時含延長；未開始＝輸入值）。
+ * 跟甘特、卡片、排序同一個 durationOf，數字才會處處一致。
+ */
+const durationLabel = computed(() => fmtWorkdays(durationOf(props.task, calendar.workdays)))
+
+// ── 計畫基準 ──────────────────────────────────────────────────────────────────
+/** 基準鎖是整個專案一把：鎖定日有值＝上鎖。 */
+const locked = computed(() => !!project.meta.baselineLockedOn)
+/**
+ * 基準列要顯示什麼：
+ * - unlocked：規劃中，基準就是推算起訖（store 的 tasks 已套好），寫日期等於重複時程列，改寫「跟著排程」。
+ * - none：上鎖了但這筆沒有基準（舊資料），不算延遲，寫「未設定」。
+ * - set：基準起訖；延遲時另外標出晚幾個工作天。
+ */
+const baselineState = computed<'unlocked' | 'none' | 'set'>(() => {
+  if (!locked.value) return 'unlocked'
+  return props.task.baselineStart && props.task.baselineEnd ? 'set' : 'none'
+})
+const baselineText = computed(() => {
+  if (baselineState.value === 'unlocked') return BASELINE_ROW_TEXT.unlocked
+  if (baselineState.value === 'none') return BASELINE_ROW_TEXT.none
+  return `${fmtDate(props.task.baselineStart)} → ${fmtDate(props.task.baselineEnd)}`
+})
+/** 膠囊的 title：上鎖時補上鎖定日；文字被截斷時也看得到全文。 */
+const baselineTitle = computed(() =>
+  baselineState.value === 'set'
+    ? `${baselineText.value}｜${BASELINE_ROW_TEXT.lockedOn(fmtDate(project.meta.baselineLockedOn))}`
+    : baselineText.value,
+)
+/** 「晚 N 工作天」：看得見的說明（觸控看不到 title），延遲 chip 的 title 只是補充。 */
+const lateLabel = computed(() =>
+  late.value ? BASELINE_ROW_TEXT.late(fmtWorkdays(lateDays(props.task, calendar.workdays))) : '',
 )
 const createdLabel = computed(() => fmtDate(props.task.created || props.task.start))
 const donePill = computed(() =>
@@ -170,6 +206,36 @@ function askDelete(): void {
         <span class="pill-text">{{ rangeLabel }}</span
         ><span class="pill-caret">▼</span>
       </div>
+    </div>
+
+    <!-- 工期（有效工期，工作天）：點了開同一個日期選擇器，在裡面改工期 -->
+    <div class="row">
+      <div class="label"><span class="glyph">◔</span><span>工期</span></div>
+      <div class="pill pill-plain mono" role="button" @click="openTaskDatePicker($event, task.id)">
+        <span class="pill-text">{{ durationLabel }}</span
+        ><span class="pill-caret">▼</span>
+      </div>
+    </div>
+
+    <!-- 計畫基準：只顯示，改基準要整個專案解鎖再上鎖（甘特面板的基準鎖） -->
+    <div class="row">
+      <div class="label">
+        <span class="glyph">▭</span><span>{{ BASELINE_ROW_TEXT.label }}</span>
+      </div>
+      <div class="pill-static mono baseline" :title="baselineTitle">
+        <svg
+          v-if="baselineState === 'set'"
+          class="lock-icon"
+          viewBox="0 0 12 12"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <rect x="2" y="5.5" width="8" height="5.5" rx="1.2" />
+          <path d="M4 5.5V4a2 2 0 0 1 4 0v1.5" />
+        </svg>
+        <span class="pill-text">{{ baselineText }}</span>
+      </div>
+      <span v-if="lateLabel" class="late-days" :title="lateTitle">{{ lateLabel }}</span>
     </div>
 
     <!-- 建立 -->
@@ -518,6 +584,36 @@ function askDelete(): void {
   padding: var(--sp-1) 11px;
   border-radius: var(--r-pill);
   width: fit-content;
+  white-space: nowrap;
+}
+
+/* 計畫基準：靜態膠囊裡放鎖頭與起訖；欄寬不夠時截斷文字（全文在 title），不把列撐破 */
+.baseline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+/* 鎖頭跟著文字色（--text-3），線條圖示、不填色 */
+.lock-icon {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+/* 晚幾個工作天：延遲的看得見說明，文字色用 --danger-text（spec〈設計方向〉），跟執行狀態列的 late-chip 同字級 */
+.late-days {
+  flex: 0 0 auto;
+  font-size: var(--fs-pill);
+  font-weight: var(--fw-bold);
+  color: var(--danger-text);
   white-space: nowrap;
 }
 

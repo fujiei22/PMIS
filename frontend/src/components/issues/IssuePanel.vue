@@ -20,6 +20,7 @@ import { useMemberStore } from '@/stores/member'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+import { useWorkCalendarStore } from '@/stores/workCalendar'
 import type { Issue, IssueItem, IssueLevel, IssueStatus } from '@/types/models'
 
 const GROUP_LABEL = { status: '處理狀態', level: '等級', item: '分類' } as const
@@ -30,6 +31,7 @@ const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 const memberStore = useMemberStore()
+const calendar = useWorkCalendarStore()
 const filter = useFilterStore()
 const selection = useSelectionStore()
 const registry = useDomRegistry()
@@ -40,6 +42,8 @@ const sortCtx = computed(() => ({
   openIssueCount: issueStore.openCount,
   // created 沒填時的後備值；lib 不自己讀時鐘（review m5）
   todayIdx: clock.todayIdx,
+  // 工期排序扣週末與假日；lib 不自己讀 store
+  workdays: calendar.workdays,
 }))
 
 /**

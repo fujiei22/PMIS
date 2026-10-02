@@ -28,3 +28,29 @@ describe('SummaryCards 理論進度', () => {
     expect(card.find('.bar-pct.plan').text()).toBe('23%')
   })
 })
+
+/**
+ * title 講清楚判準與單位：理論進度、已延遲看的是計畫基準（不是到期日已過）；
+ * 專案總時長仍是日曆天（工期才是工作天，兩者單位不同）。
+ */
+describe('SummaryCards 的 title', () => {
+  beforeEach(async () => {
+    await loadSample()
+  })
+
+  it('理論進度註明「依計畫基準」', () => {
+    const card = mount(SummaryCards).find('[data-testid="summary-progress"]')
+    const plan = card.findAll('.bar-label').find((el) => el.text() === '理論進度')!
+    expect(plan.attributes('title')).toContain('依計畫基準')
+  })
+
+  it('任務狀態卡的「已延遲」註明「依計畫基準」', () => {
+    const late = mount(SummaryCards).find('[data-testid="summary-tasks"] .legend-row.late')
+    expect(late.attributes('title')).toContain('依計畫基準')
+  })
+
+  it('專案總時長註明「日曆天」', () => {
+    const duration = mount(SummaryCards).find('[data-testid="summary-progress"] .duration')
+    expect(duration.attributes('title')).toContain('日曆天')
+  })
+})

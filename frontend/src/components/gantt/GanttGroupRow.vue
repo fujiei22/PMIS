@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 甘特左欄的分類列：把手、收合箭頭、分類名、工期天數、刪除鈕。
+// 甘特左欄的分類列：把手、收合箭頭、分類名、分類期間（日曆天）、刪除鈕。
 // 唯讀時（F2）沒有把手與刪除鈕、不能改名；收合照常。
 // legacy 對照：模板 :429-440，groupRows :2762-2813。
 import { computed, nextTick, ref, watch } from 'vue'
@@ -28,7 +28,10 @@ const tasks = computed(() =>
   taskStore.tasks.filter((t) => t.groupId === props.group.id && filter.passTask(t)),
 )
 
-/** 從最早 start 到最晚 end 的天數；沒有任務就 0。legacy :2764-2766 */
+/**
+ * 分類期間：從最早 start 到最晚 end 的日曆天（頭尾都算）；沒有任務就 0。legacy :2764-2766。
+ * 任務的工期是工作天，這裡刻意維持日曆天（看的是分類橫跨多久），單位寫在 title。
+ */
 const span = computed(() => {
   if (!tasks.value.length) return 0
   const starts = tasks.value.map((t) => dayIndex(t.start))
@@ -154,7 +157,7 @@ function onDrop(e: DragEvent): void {
       @blur="endEdit"
       @keydown="onEditKey"
     />
-    <div class="span">{{ span }}d</div>
+    <div class="span" title="分類期間（日曆天）">{{ span }}d</div>
     <div v-if="ui.canEdit" class="del" role="button" title="刪除分類" @click="askDelete">✕</div>
   </div>
 </template>

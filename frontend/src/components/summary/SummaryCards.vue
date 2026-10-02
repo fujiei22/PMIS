@@ -23,15 +23,17 @@ const issues = computed(() => issueStore.issues)
 const total = computed(() => tasks.value.length)
 
 // ── 卡 1 上段：專案總時長 ───────────────────────────────────────────────────────
+/** 最早開始到最晚結束的日曆天（含週末與假日）；工期才是工作天，所以 title 寫明單位。 */
 const totalDays = computed(() => taskStore.range.max - taskStore.range.min + 1)
 /** 起訖日各自不斷行（連字號會被當斷點），卡片窄時只在「~」處換行。 */
 const rangeStart = computed(() => isoFromIndex(taskStore.range.min))
 const rangeEnd = computed(() => isoFromIndex(taskStore.range.max))
 
-// ── 卡 1 下段：整體進度（實際 = 已完成數；理論 = 到期日已過的數）legacy :3604-3620 ──
+// ── 卡 1 下段：整體進度（實際 = 已完成數；理論 = 基準結束日已過的數）legacy :3604-3620 ──
 const doneTasks = computed(() => tasks.value.filter((t) => t.status === 'done').length)
 /**
- * 理論上此刻該完成的任務（判準見 isPlannedDone：到期日隔天才算，和 legacy 刻意不同）。
+ * 依計畫基準此刻該完成的任務（判準見 isPlannedDone：基準結束日早於今天，到期當天不算、隔天才算，
+ * 和 legacy 的 `<=` 刻意不同；沒有基準的不算）。規劃中（基準未上鎖）時基準＝推算起訖。
  * 對照測試已遮掉這幾個數字，見 README〈刻意保留的差異〉。
  */
 const planDone = computed(() => tasks.value.filter((t) => isPlannedDone(t, clock.todayIdx)).length)
@@ -68,6 +70,7 @@ const statusRows = computed(() =>
     }
   }),
 )
+/** 已延遲：依計畫基準，未完成而且推算結束日晚於基準結束日（判準見 isLate；規劃中一律 0）。 */
 const delayedCount = computed(() => tasks.value.filter((t) => isLate(t)).length)
 
 // ── 卡 3：Issue 統計 ──────────────────────────────────────────────────────
@@ -104,7 +107,7 @@ const needleAngle = computed(() => gaugeAngle(ratio.value))
   <div class="cards">
     <!-- 1. 專案總時長 + 整體進度（同一張卡：上段時長、下段進度） -->
     <div class="card" data-testid="summary-progress">
-      <div class="duration">
+      <div class="duration" title="專案總時長以日曆天計（含週末與假日）；任務工期才是工作天">
         <span class="card-title">專案總時長</span>
         <span class="duration-days">{{ totalDays }} <span class="duration-unit">天</span></span>
       </div>
@@ -130,7 +133,7 @@ const needleAngle = computed(() => gaugeAngle(ratio.value))
         </div>
         <div>
           <div class="bar-head">
-            <span class="bar-label">理論進度</span>
+            <span class="bar-label" title="依計畫基準：基準結束日早於今天的任務數">理論進度</span>
             <span class="bar-frac">{{ planDone }} / {{ total }}</span>
             <span class="bar-pct plan">{{ planPct }}%</span>
           </div>
@@ -163,7 +166,10 @@ const needleAngle = computed(() => gaugeAngle(ratio.value))
           <span class="legend-pct">{{ s.pctLabel }}</span>
           <span class="legend-count">{{ s.count }}</span>
         </div>
-        <div class="legend-row late">
+        <div
+          class="legend-row late"
+          title="依計畫基準：未完成、推算結束日晚於基準結束日的任務；基準未上鎖（規劃中）時不算延遲"
+        >
           <span class="dot dot-late"></span>
           <span class="legend-label">{{ DELAYED.label }}</span>
           <span class="legend-count">{{ delayedCount }}</span>
