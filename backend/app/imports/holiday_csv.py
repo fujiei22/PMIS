@@ -11,7 +11,7 @@
 
 新北市的「特定節日」包含只限特定身分的日子：軍人節標「放假」，但說明是「軍人依國防部規定辦理」，
 一般公司照常上班（人事總處同一天是上班日）。所以特定節日只有說明含「勞工」（勞動節）才算放假，
-其他略過並記在 `skipped`，同步與匯入的輸出看得到。
+其他略過並記在 `skipped`，匯入的輸出看得到。
 
 完整性：檔案裡某一年不完整（抓檔被截斷、管理員自製的幾列）時不能匯入，否則那年其他假日
 會被整年替換掉。解析時順便算出 `incomplete`，寫入前呼叫 `ensure_complete()` 擋下。
@@ -132,7 +132,7 @@ def describe_years(years: Iterable[int]) -> str:
 
 
 def describe_skipped(parsed: ParsedCalendar) -> list[str]:
-    """略過的特定節日，一筆一行（同步與匯入時印出來）。"""
+    """略過的特定節日，一筆一行（匯入時印出來）。"""
     return [
         f"略過 {d.day.isoformat()} {d.name}：特定節日，說明沒有「勞工」，一般公司照常上班"
         for d in parsed.skipped

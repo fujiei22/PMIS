@@ -9,8 +9,8 @@
   migration（`alembic/`）不在檢查範圍：它不經過 ORM，本來就用 `sa.text()` 等寫法。
 
 分層：
-- `services/`、`auth/`、`imports/`、`jobs/` 不 import `fastapi` 與 `app.api`：service 丟自己的例外，
-  由 `app/api/errors.py` 轉成 HTTP；背景工作跟網頁層無關。
+- `services/`、`auth/`、`imports/` 不 import `fastapi` 與 `app.api`：service 丟自己的例外，
+  由 `app/api/errors.py` 轉成 HTTP。
 - `api/routes/` 不直接查資料庫（不出現 `select(`、`.execute(`、`.scalar…(`），交給 service；
   health.py 例外。
 - `models.py` 只 import SQLAlchemy、標準函式庫與 `app.core`。
@@ -32,7 +32,7 @@ GET_ALLOWED = frozenset({"services/_live.py"})
 INCLUDE_DELETED_ALLOWED = frozenset({"core/soft_delete.py", "services/trash.py", "jobs/purge.py"})
 TABLE_ATTRIBUTE_ALLOWED = frozenset({"models.py"})
 DB_ACCESS_IN_ROUTES_ALLOWED = frozenset({"api/routes/health.py"})
-NO_WEB_IMPORT_DIRS = ("services/", "auth/", "imports/", "jobs/")
+NO_WEB_IMPORT_DIRS = ("services/", "auth/", "imports/")
 SKIPPED_DIRS = ("alembic/",)
 
 MODEL_NAMES = frozenset(mapper.class_.__name__ for mapper in Base.registry.mappers)

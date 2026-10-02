@@ -1,11 +1,9 @@
 """假日表管理指令（登入與管理畫面做好之前，管理員只能靠這支）。
 
 測案：
-- status：沒資料時提示怎麼補；有資料時逐年列來源與匯入時間、同步開關、例外日筆數；
-  過期（超過 45 天）或缺今年資料時記 warning，--check 回 3。
-- import：兩種檔都能匯入；殘缺檔、壞檔、找不到檔回 1 且資料不動；略過的特定節日要印出來；
-  自動同步開著時提醒「下次可能被蓋回」。
-- sync：成功寫入；抓不到回 1，並告訴管理員下一步。
+- status：沒資料時提示怎麼補；有資料時逐年列來源與匯入時間、例外日筆數；缺今年資料，
+  或 11 月起還缺明年資料（假日表全靠手動匯入，要有人提醒）時記 warning，--check 回 3。
+- import：兩種檔都能匯入；殘缺檔、壞檔、找不到檔回 1 且資料不動；略過的特定節日要印出來。
 - add / remove / list：一定要指定 --off 或 --workday；可以一次多個日期；輸出帶星期、官方原值、
   新增或修改；刪不存在的、名稱空白都回 1。
 - 參數格式錯（日期不是 YYYY-MM-DD）由 argparse 擋，exit code 2，訊息是中文。
@@ -13,9 +11,8 @@
 """
 
 import logging
-from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -23,14 +20,11 @@ import pytest
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.imports.holiday_csv import parse_calendar_csv
-from app.imports.holiday_fetch import FetchError
-from app.scripts import holidays
 from app.scripts.holidays import CHECK_FAILED, main
 from app.services.calendar import (
+    covered_years,
     get_calendar,
-    last_synced_at,
     list_overrides,
     replace_official_years,
 )
@@ -40,21 +34,16 @@ NOW = datetime(2026, 10, 2, 1, 0, tzinfo=UTC)  # 台北 2026-10-02 09:00
 
 
 class Runner(Protocol):
-    def __call__(self, *argv: str, fetch: Callable[[], bytes] | None = None) -> int: ...
+    def __call__(self, *argv: str, now: datetime = NOW) -> int: ...
 
 
 @pytest.fixture
 def run(db: Session, caplog: pytest.LogCaptureFixture) -> Runner:
-    """跑指令：連測試的 db、固定時間、預設抓到合成的 2026 完整年。"""
+    """跑指令：連測試的 db、固定時間（預設 NOW）。"""
     caplog.set_level(logging.INFO, logger="app.scripts.holidays")
 
-    def _run(*argv: str, fetch: Callable[[], bytes] | None = None) -> int:
-        return main(
-            list(argv),
-            session_scope=lambda: nullcontext(db),
-            fetch=fetch or (lambda: ntpc_full_year(2026, NTPC_2026_ROWS)),
-            clock=lambda: NOW,
-        )
+    def _run(*argv: str, now: datetime = NOW) -> int:
+        return main(list(argv), session_scope=lambda: nullcontext(db), clock=lambda: now)
 
     return _run
 
@@ -78,23 +67,10 @@ def test_import_ntpc_file(
 
     assert run("import", path) == 0
 
-    assert last_synced_at(db) == NOW
+    [year] = covered_years(db)
+    assert (year.calendar_year, year.source, year.imported_at) == (2026, "ntpc", NOW)
     assert "已匯入 2026 年（新北市），5 個特殊日" in caplog.text
     assert "略過 2026-09-03 軍人節" in caplog.text
-
-
-def test_import_reminds_auto_sync_may_overwrite(
-    run: Runner,
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    enabled = get_settings().model_copy(update={"BACKGROUND_JOBS_ENABLED": True})
-    monkeypatch.setattr(holidays, "get_settings", lambda: enabled)
-
-    assert run("import", write(tmp_path, "116年.csv", dgpa_full_year(2027))) == 0
-
-    assert "下次自動同步" in caplog.text
 
 
 def test_import_dgpa_file(run: Runner, db: Session, tmp_path: Path) -> None:
@@ -115,7 +91,7 @@ def test_import_partial_file_changes_nothing(
 ) -> None:
     assert run("import", write(tmp_path, "few.csv", NTPC_SAMPLE)) == 1
 
-    assert last_synced_at(db) is None
+    assert covered_years(db) == []
     assert "資料不完整" in caplog.text
     assert "holidays add" in caplog.text
 
@@ -138,32 +114,31 @@ def test_status_after_import(run: Runner, tmp_path: Path, caplog: pytest.LogCapt
 
     assert "2026 新北市（2026-10-02 09:00 匯入）" in caplog.text
     assert "明年（2027）的假日資料還沒有" in caplog.text
-    assert "自動同步：關" in caplog.text
     assert "例外日 0 筆" in caplog.text
 
 
-def test_status_stale(run: Runner, db: Session, caplog: pytest.LogCaptureFixture) -> None:
-    replace_official_years(
-        db, parse_calendar_csv(ntpc_full_year(2026)), imported_at=NOW - timedelta(days=50)
-    )
+def test_status_warns_next_year_from_november(
+    run: Runner, db: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    """10 月缺明年只是提示；11 月起變成問題（--check 回 3），提醒管理員去下載匯入。"""
+    replace_official_years(db, parse_calendar_csv(ntpc_full_year(2026)), imported_at=NOW)
+
+    assert run("status", "--check", now=datetime(2026, 10, 31, 15, 59, tzinfo=UTC)) == 0
+    caplog.clear()
+    # 台北 2026-11-01 00:00
+    assert run("status", "--check", now=datetime(2026, 10, 31, 16, 0, tzinfo=UTC)) == CHECK_FAILED
+    [warning] = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert "明年（2027）的假日資料還沒有" in warning.getMessage()
+
+
+def test_status_missing_this_year(
+    run: Runner, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    run("import", write(tmp_path, "116年.csv", dgpa_full_year(2027)))
+    caplog.clear()
 
     assert run("status", "--check") == CHECK_FAILED
-    assert "上次匯入已經是 50 天前" in caplog.text
-
-
-def test_sync(run: Runner, db: Session, caplog: pytest.LogCaptureFixture) -> None:
-    assert run("sync") == 0
-    assert last_synced_at(db) == NOW
-    assert "下載中" in caplog.text
-
-
-def test_sync_failure(run: Runner, db: Session, caplog: pytest.LogCaptureFixture) -> None:
-    def unreachable() -> bytes:
-        raise FetchError("抓不到 https://example.test：timed out")
-
-    assert run("sync", fetch=unreachable) == 1
-    assert last_synced_at(db) is None
-    assert "伺服器連不到外網的話" in caplog.text
+    assert "今年（2026）的假日資料還沒有" in caplog.text
 
 
 def test_add_list_remove(run: Runner, db: Session, caplog: pytest.LogCaptureFixture) -> None:

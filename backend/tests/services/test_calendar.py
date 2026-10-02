@@ -2,9 +2,8 @@
 
 測案：
 - 整年替換：檔案涵蓋的年整年換掉，其他年份不動；同一份檔匯入兩次結果相同。
-- 例外日不會被重新同步蓋掉，查詢時同一天以例外日為準。
+- 例外日不會被重新匯入蓋掉，查詢時同一天以例外日為準。
 - 查詢的區間頭尾都算、兩端都可以不給（前端進頁時一次載全部）；涵蓋年份回傳全部。
-- 上次匯入時間不分來源（手動匯入也算新資料）。
 - 例外日名稱不能空白、年份要在 2000–2200、刪不存在的例外日要報錯
   （指令稿才能告訴管理員打錯日期）。
 """
@@ -23,7 +22,6 @@ from app.services.calendar import (
     get_calendar,
     get_official_day,
     get_override,
-    last_synced_at,
     list_overrides,
     remove_override,
     replace_official_years,
@@ -135,15 +133,7 @@ def test_range_is_inclusive_and_open_ended(db: Session) -> None:
 
 def test_empty_calendar(db: Session) -> None:
     assert get_calendar(db) == ([], [])
-    assert last_synced_at(db) is None
-
-
-def test_last_synced_at_is_latest_import_of_any_source(db: Session) -> None:
-    replace_official_years(db, parse_calendar_csv(NTPC_SAMPLE), imported_at=T0)
-    later = T0 + timedelta(days=3)
-    replace_official_years(db, parsed_of("dgpa", {2027}), imported_at=later)
-
-    assert last_synced_at(db) == later
+    assert covered_years(db) == []
 
 
 def test_lookup_single_days(db: Session) -> None:

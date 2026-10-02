@@ -24,5 +24,5 @@ def today(now: datetime | None = None) -> date:
 
 
 def utc_now() -> datetime:
-    """現在（UTC、帶時區）。排程與指令稿的時鐘；要算「今天」用 `today(utc_now())`。"""
+    """現在（UTC、帶時區）。指令稿的時鐘；要算「今天」用 `today(utc_now())`。"""
     return datetime.now(UTC)

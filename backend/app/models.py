@@ -473,7 +473,7 @@ class CalendarOfficialDay(CreatedAtMixin, Base):
 class CalendarOfficialYear(Base):
     """官方辦公日曆**完整**涵蓋的年份，與該年最後一次匯入的來源與時間。
 
-    每月自動同步看所有年份裡最新的 imported_at（手動匯入也算新資料）。
+    `holidays status` 逐年列出來源與匯入時間。
     """
 
     __tablename__ = "calendar_official_years"
@@ -489,7 +489,7 @@ class CalendarOfficialYear(Base):
 
 
 class CalendarOverride(TimestampMixin, Base):
-    """管理員的例外日（颱風假、公司自訂假日、臨時補班…）。同一天以例外日為準；重新同步不會動。
+    """管理員的例外日（颱風假、公司自訂假日、臨時補班…）。同一天以例外日為準；重新匯入官方日曆不會動。
 
     刪除是真的 DELETE（沒有回收桶）。還沒有「誰設的」：指令稿沒有登入者，登入做好再加。
     """

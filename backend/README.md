@@ -4,7 +4,7 @@ Python（FastAPI）＋ PostgreSQL。技術一覽與使用慣例見 [`docs/refere
 
 ## 現況
 
-資料表與軟刪除（回收桶）機制已建好（`app/models.py`，規則見下面〈資料表與 migration〉〈軟刪除〉）。端點有 `GET /api/health`（程式有在跑、資料庫連得上就回 `{"status": "ok"}`）與 `GET /api/calendar`（工作日曆，見下面〈工作日曆（假日表）〉）；背景排程每月同步假日表。其他業務端點與登入還沒做，前端也還沒接上。
+資料表與軟刪除（回收桶）機制已建好（`app/models.py`，規則見下面〈資料表與 migration〉〈軟刪除〉）。端點有 `GET /api/health`（程式有在跑、資料庫連得上就回 `{"status": "ok"}`）與 `GET /api/calendar`（工作日曆，見下面〈工作日曆（假日表）〉）。其他業務端點與登入還沒做，前端也還沒接上。
 
 ## 安裝與指令
 
@@ -57,7 +57,7 @@ Python（FastAPI）＋ PostgreSQL。技術一覽與使用慣例見 [`docs/refere
 | `uv run alembic revision --autogenerate -m "說明"` | 依 `app/models.py` 的變更產生 migration |
 | `uv run alembic check` | 確認 `app/models.py` 沒有漏產 migration |
 | `uv run python -m app.scripts.export_openapi` | 匯出 OpenAPI 到 `frontend/src/api/http/openapi.json`（改了 API 才要跑，見〈API 契約與前端型別〉） |
-| `uv run python -m app.scripts.holidays <指令>` | 假日表管理：`status`／`sync`／`import`／`add`／`remove`／`list`（`--help` 看範例），見〈工作日曆（假日表）〉 |
+| `uv run python -m app.scripts.holidays <指令>` | 假日表管理：`status`／`import`／`add`／`remove`／`list`（`--help` 看範例），見〈工作日曆（假日表）〉 |
 
 ### 提交前
 
@@ -80,7 +80,6 @@ uv run pytest
 backend/
 ├── app/
 │   ├── main.py              FastAPI 進入點，所有 router 掛在 /api 底下
-│   ├── lifespan.py          啟動時設定 app logging、開背景排程，結束時停下（async 白名單裡唯一的檔）
 │   ├── models.py            資料表定義（SQLAlchemy 2，全部繼承 Base；目前單檔，超過約 600 行再拆）
 │   ├── api/
 │   │   ├── main.py          把 routes/ 的 router 集合起來
@@ -91,18 +90,16 @@ backend/
 │   ├── core/
 │   │   ├── config.py        設定（pydantic-settings，從環境變數與 .env 讀）
 │   │   ├── db.py            engine 與 session
-│   │   ├── logging.py       app.* 的 log 輸出（uvicorn 不設定 root，不設的話 INFO 會被丟掉）
 │   │   ├── soft_delete.py   軟刪除：SoftDeleteMixin 與「查詢自動排除已刪除」
 │   │   └── time.py          today()：用設定的 TIMEZONE 算「今天」；utc_now()
 │   ├── services/            商業邏輯（不 import fastapi，丟 errors.py 的例外）
 │   │   ├── _live.py         get_live()：依 id 取一筆活著的資料
 │   │   ├── calendar.py      工作日曆：官方日曆整年替換、查詢、例外日
 │   │   └── errors.py        service 的例外（NotFound、InvalidInput…）
-│   ├── imports/             匯入外部資料的純函式（不碰資料庫、不 import fastapi）：辦公日曆 CSV 解析與抓檔
-│   ├── jobs/                背景排程（不 import fastapi）：scheduler.py、holiday_sync.py、startup.py
+│   ├── imports/             匯入外部資料的純函式（不碰資料庫、不 import fastapi）：辦公日曆 CSV 解析與完整性檢查
 │   └── alembic/             migration：env.py、script.py.mako（新檔的範本）、versions/
 ├── tests/                   pytest；目錄對應 app/（tests/api/routes/ 對 app/api/routes/）
-│   ├── conftest.py          測試資料庫、交易 rollback、client 與 db fixture；關背景排程、禁連外網
+│   ├── conftest.py          測試資料庫、交易 rollback、client 與 db fixture
 │   ├── db_guard.py          測試資料庫名稱檢查
 │   ├── calendar_samples.py  辦公日曆的真實 CSV 樣本與「完整一年」產生器
 │   ├── factories.py         測試資料工廠：make_member()、make_task()…、soft_delete()
@@ -133,16 +130,13 @@ backend/
 | `DATABASE_URL` | app 與 alembic 連的資料庫 |
 | `TEST_DATABASE_URL` | pytest 連的資料庫，名稱必須以 `_test` 結尾 |
 | `TIMEZONE` | 「今天」用的時區，預設 `Asia/Taipei`（正式環境的容器是 UTC，不能用伺服器時區算日期） |
-| `BACKGROUND_JOBS_ENABLED` | 背景排程的總開關，預設 `true`；pytest 一律關閉 |
-| `HOLIDAY_SYNC_ENABLED` | 假日表每月自動同步，預設 `true`；伺服器連不到外網時設 `false`，改手動 `import` |
-| `HOLIDAY_SOURCE_URL` | 自動同步抓的 CSV，只接受 https；預設新北市資料開放平臺的辦公日曆 |
 
 連線字串格式是 `postgresql+psycopg://帳號:密碼@主機:port/資料庫名稱`；用別的開頭（例如 `postgresql://`）啟動時會直接報錯。
 
 ### def 與 async def
 
-- 端點與一般函式一律用 `def`。只有 SSE（`/api/events`）、AI 串流回應與 lifespan（`app/lifespan.py`，FastAPI 規定要 async；只開關執行緒）用 `async def`，而且裡面不呼叫同步的資料庫（`async def` 裡做同步的資料庫存取，會讓整支程式停住，所有請求一起等）。
-- `tests/test_async_whitelist.py` 讀 `app/` 的原始碼：出現 `async def` 的檔案必須列在它的 `ASYNC_ALLOWED`（目前只有 `lifespan.py`），否則測試失敗。
+- 端點與一般函式一律用 `def`。只有 SSE（`/api/events`）與 AI 串流回應用 `async def`，而且裡面不呼叫同步的資料庫（`async def` 裡做同步的資料庫存取，會讓整支程式停住，所有請求一起等）。
+- `tests/test_async_whitelist.py` 讀 `app/` 的原始碼：出現 `async def` 的檔案必須列在它的 `ASYNC_ALLOWED`（目前是空的），否則測試失敗。
 
 ### API 契約與前端型別
 
@@ -235,10 +229,12 @@ model 的寫法：
 | `calendar_official_years` | 完整涵蓋的年份，與每年最後一次匯入的來源、時間 |
 | `calendar_overrides` | 管理員的例外日 |
 
-**官方日曆的來源**：兩種格式自動判別，依年份整年替換；官方檔要整年匯入，不完整就整份拒絕。
+**官方日曆的來源**：全靠手動匯入，程式不連外網（2026-10-02 定案）。兩種格式自動判別，依年份整年替換；官方檔要整年匯入，不完整就整份拒絕。
 
-- 新北市資料開放平臺：固定網址，每月自動同步。
-- 行政院人事行政總處：政府資料開放平臺「[中華民國政府行政機關辦公日曆表](https://data.gov.tw/dataset/14718)」。每年網址不同，用 `import` 手動匯入；要選一般版，不是「Google 行事曆專用」版。
+- 新北市資料開放平臺「政府行政機關辦公日曆表」：2018 年起、含補假與補班，固定網址直接下載 CSV：`https://data.ntpc.gov.tw/api/datasets/308dcd75-6434-45bc-a95f-584da4fed251/csv/file`。
+- 行政院人事行政總處：政府資料開放平臺「[中華民國政府行政機關辦公日曆表](https://data.gov.tw/dataset/14718)」。每年網址不同；要選一般版，不是「Google 行事曆專用」版。
+
+人事總處通常年中公布明年的辦公日曆，公布後下載匯入。`status` 從 11 月起會把「還沒有明年資料」列為問題。
 
 **解析規則**：
 
@@ -250,12 +246,11 @@ model 的寫法：
 **例外日**（颱風假、公司自訂假日、臨時補班）：
 
 - 用 `add`、`remove`、`list` 維護；`add` 一定要給 `--off` 或 `--workday`，可以一次給多個日期。
-- 同一天以例外日為準，重新同步不會蓋掉例外日。
-- 但同一年後匯入的官方檔會蓋掉先匯入的：手動匯入的年份，下次自動同步會換回來源的資料。要長期修正某幾天請用例外日。
+- 同一天以例外日為準，重新匯入官方日曆不會蓋掉例外日。
+- 同一年後匯入的官方檔會整年蓋掉先匯入的（不分來源）；要修正某幾天請用例外日，不要改官方檔。
 
 ```sh
 uv run python -m app.scripts.holidays status
-uv run python -m app.scripts.holidays sync
 uv run python -m app.scripts.holidays import D:\下載\辦公日曆表.csv
 uv run python -m app.scripts.holidays add 2026-09-29 2026-09-30 --off --name 颱風假
 uv run python -m app.scripts.holidays add 2026-12-26 --workday --name 補班
@@ -263,26 +258,7 @@ uv run python -m app.scripts.holidays remove 2026-09-29
 uv run python -m app.scripts.holidays list --year 2026
 ```
 
-指令在 `backend/` 下執行，相對路徑以 `backend/` 為準，建議給完整路徑。`status --check` 在資料過期或缺今年資料時回 3，可以拿來做監控。部署後在容器裡執行同一個指令（例：`docker compose exec app …`）；手動匯入的 CSV 要先放進容器（`docker compose cp`）。部署的 branch 要確認 image 裡有 uv，或改用 `python -m app.scripts.holidays`。
-
-**自動同步**：
-
-- 程式啟動後馬上檢查一次，之後每 6 小時檢查。
-- 距上次匯入（不分來源）滿 30 天就抓。
-- 失敗時保留舊資料，約 24–30 小時後再試（滿 24 小時後的下一次檢查）；重啟程式會立刻再試。
-- 從沒成功過、或超過 45 天沒成功，失敗時記 ERROR。
-- 本機 `uv run fastapi dev` 預設也會在背景連 `data.ntpc.gov.tw`（從沒同步過或超過 30 天時），不擋啟動。不想連外網就在 `.env` 設 `HOLIDAY_SYNC_ENABLED=false`，需要資料時跑 `holidays sync`。pytest 一律關閉背景排程，也禁止連外網。
-- 走 proxy 設 `HTTPS_PROXY`。公司網路有 SSL 檢查（自簽根憑證）時設 `SSL_CERT_FILE`，指向公司根憑證。
-
-**log 關鍵字**：
-
-| 情況 | log 開頭 | 等級 |
-|---|---|---|
-| 排程啟動 | `背景排程已啟動`、`不啟動背景排程` | INFO |
-| 同步成功 | `假日表已同步` | INFO |
-| 同步失敗 | `假日表自動同步失敗` | WARNING；從沒成功或超過 45 天是 ERROR |
-| 程式錯誤 | `背景工作 holiday-sync 失敗`，附 traceback | ERROR |
-| 不到期 | `假日表不到期` | DEBUG（預設不印） |
+指令在 `backend/` 下執行，相對路徑以 `backend/` 為準，建議給完整路徑。`status --check` 在缺今年資料、或 11 月起還缺明年資料時回 3，可以拿來做監控或年度提醒。部署後在容器裡執行同一個指令（例：`docker compose exec app …`）；手動匯入的 CSV 要先放進容器（`docker compose cp`）。部署的 branch 要確認 image 裡有 uv，或改用 `python -m app.scripts.holidays`。
 
 **管理員常見錯誤**：
 
@@ -291,14 +267,9 @@ uv run python -m app.scripts.holidays list --year 2026
 | `不是 UTF-8 也不是 Big5` | 檔案編碼不對 | 用原始下載檔 |
 | `認不得的表頭` | 選錯檔（例如「Google 行事曆專用」版） | 選一般版 |
 | `資料不完整` | 不是整年 | 匯入整年的官方檔；單日用 `add` |
-| `抓不到` | 連不到外網，或要走 proxy | 設 `HTTPS_PROXY`，或改手動 `import` |
 | `連不上資料庫` | PostgreSQL 沒開，或 `DATABASE_URL` 錯 | 檢查服務與設定 |
 | `資料表不存在` | 沒跑 migration | `uv run alembic upgrade head` |
 | `沒有例外日` | 日期打錯 | 先 `list` |
-
-**多 worker**：目前正式環境只跑一個 worker。開多個 worker 前要讓排程互斥，否則每個 worker 都會同步；官方日曆的寫入已用 advisory lock 排隊，結果不會錯，只是浪費。
-
-**新增一個背景工作**：寫一個符合 `app.jobs.scheduler.Job` 的類別，加進 `app/jobs/startup.py` 的 `default_jobs()`（必要時再加自己的開關）。測試用假的 job 呼叫 `Scheduler(...).run_pending()`，不要真的啟動執行緒或連外網。
 
 ### 軟刪除（回收桶）
 

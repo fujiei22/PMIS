@@ -1,7 +1,7 @@
 """工作日曆：官方辦公日曆（依年份整年替換）＋管理員的例外日（同一天以例外為準）。
 
 預設規則見 app/imports/holiday_csv.py 的 WEEKEND_ISO_DAYS。資料表只存跟預設不同、或有名稱的日子，
-讀取時把兩邊合併。所有函式都不 commit，交給呼叫端（API、指令稿、排程）。
+讀取時把兩邊合併。所有函式都不 commit，交給呼叫端（API、指令稿）。
 """
 
 from dataclasses import dataclass
@@ -17,7 +17,7 @@ from app.services.errors import InvalidInput, NotFound
 
 OVERRIDE_NAME_MAX = 100
 OVERRIDE_NOTE_MAX = 500
-# 寫官方日曆時的 advisory lock 鍵（"PMIS"）：指令稿與背景排程同時寫入時排隊，不撞主鍵
+# 寫官方日曆時的 advisory lock 鍵（"PMIS"）：兩個人同時匯入時排隊，不撞主鍵
 CALENDAR_WRITE_LOCK = 0x504D4953
 
 type EntrySource = Literal["official", "override"]
@@ -102,11 +102,6 @@ def covered_years(session: Session) -> list[CalendarOfficialYear]:
     return list(
         session.scalars(select(CalendarOfficialYear).order_by(CalendarOfficialYear.calendar_year))
     )
-
-
-def last_synced_at(session: Session) -> datetime | None:
-    """最近一次匯入官方資料的時間（不分來源）；從沒匯入過回 None。"""
-    return session.scalar(select(func.max(CalendarOfficialYear.imported_at)))
 
 
 def get_official_day(session: Session, day: date) -> CalendarOfficialDay | None:
