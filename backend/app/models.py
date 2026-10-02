@@ -11,6 +11,7 @@ Alembic 從 `Base.metadata` 比對資料表變更，所以 model 一定要繼承
 - 「同一個專案」用複合外鍵保證：被參照的表有 `UNIQUE (id, project_id)`，
   參照端用 `(xxx_id, project_id)` 指過去；service 漏檢也寫不進跨專案的資料。
 - 軟刪的表繼承 `SoftDeleteMixin`（app/core/soft_delete.py）；查詢自動排除已刪除的列。
+  工作日曆的三張表（`calendar_*`）不軟刪：官方資料整年替換、例外日刪了就是刪了。
 - 上層對下層的關聯（`Project.groups`、`Task.issues`…）一定要寫：ORM 靠它知道同一次 flush
   要先寫上層、再寫下層，否則可能先寫下層而違反外鍵。外鍵欄位可以直接設，不必經過關聯。
   連動刪除交給資料庫的 ON DELETE（`passive_deletes=True`），ORM 不先把下層載入。
@@ -450,3 +451,56 @@ class Deletion(Base):
     deleted_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("members.id"))
     # 子批次跟上層同一個時間。
     deleted_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
+
+
+class CalendarOfficialDay(CreatedAtMixin, Base):
+    """官方辦公日曆裡「跟預設規則不同」或「有名稱」的日子。
+
+    預設規則：ISO 星期 6、7 放假（普通週末不存）。依年份整年替換
+    （services/calendar.py 的 replace_official_years），不軟刪。
+    """
+
+    __tablename__ = "calendar_official_days"
+    __table_args__ = (_one_of("source", CALENDAR_SOURCES), _max_length("name", 100))
+
+    day_on: Mapped[date] = mapped_column(primary_key=True)
+    is_workday: Mapped[bool]
+    # 只供顯示；沒有名稱的列解析時已補上（補假、國定假日、補行上班日…）
+    name: Mapped[str] = mapped_column(server_default="")
+    source: Mapped[str]
+
+
+class CalendarOfficialYear(Base):
+    """官方辦公日曆**完整**涵蓋的年份，與該年最後一次匯入的來源與時間。
+
+    每月自動同步看所有年份裡最新的 imported_at（手動匯入也算新資料）。
+    """
+
+    __tablename__ = "calendar_official_years"
+    __table_args__ = (
+        _one_of("source", CALENDAR_SOURCES),
+        CheckConstraint("calendar_year BETWEEN 2000 AND 2200", name="calendar_year_range"),
+    )
+
+    # 年份不是流水號：SMALLINT 主鍵預設會變成 SMALLSERIAL，要明確關掉
+    calendar_year: Mapped[int] = mapped_column(SmallInteger, primary_key=True, autoincrement=False)
+    source: Mapped[str]
+    imported_at: Mapped[datetime]
+
+
+class CalendarOverride(TimestampMixin, Base):
+    """管理員的例外日（颱風假、公司自訂假日、臨時補班…）。同一天以例外日為準；重新同步不會動。
+
+    刪除是真的 DELETE（沒有回收桶）。還沒有「誰設的」：指令稿沒有登入者，登入做好再加。
+    """
+
+    __tablename__ = "calendar_overrides"
+    __table_args__ = (
+        CheckConstraint("char_length(name) BETWEEN 1 AND 100", name="name_length"),
+        _max_length("note", 500),
+    )
+
+    day_on: Mapped[date] = mapped_column(primary_key=True)
+    is_workday: Mapped[bool]
+    name: Mapped[str]
+    note: Mapped[str] = mapped_column(server_default="")

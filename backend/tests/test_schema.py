@@ -5,6 +5,7 @@
 
 import uuid
 from collections.abc import Callable
+from datetime import UTC, date, datetime
 
 import psycopg
 import pytest
@@ -15,6 +16,9 @@ from sqlalchemy.orm import Session
 from app.core.time import today
 from app.models import (
     Attachment,
+    CalendarOfficialDay,
+    CalendarOfficialYear,
+    CalendarOverride,
     Comment,
     Deletion,
     Issue,
@@ -376,3 +380,74 @@ def test_deleting_project_with_other_batches_is_not_blocked(db: Session) -> None
     assert db.scalars(select(Deletion.id)).all() == []
     for model in (Project, TaskGroup, Task, Issue, Comment, Attachment):
         assert db.scalars(select(model.id).execution_options(include_deleted=True)).all() == []
+
+
+# ---------- 工作日曆 ----------
+
+
+def test_official_day_source_must_be_known(db: Session) -> None:
+    assert_rejected(
+        db,
+        lambda: db.add(
+            CalendarOfficialDay(
+                day_on=date(2026, 9, 25), is_workday=False, name="中秋節", source="excel"
+            )
+        ),
+        "ck_calendar_official_days_source",
+    )
+
+
+def test_official_day_name_length(db: Session) -> None:
+    assert_rejected(
+        db,
+        lambda: db.add(
+            CalendarOfficialDay(
+                day_on=date(2026, 9, 25), is_workday=False, name="長" * 101, source="ntpc"
+            )
+        ),
+        "ck_calendar_official_days_name_length",
+    )
+
+
+def test_official_year_must_be_in_range(db: Session) -> None:
+    assert_rejected(
+        db,
+        lambda: db.add(
+            CalendarOfficialYear(
+                calendar_year=1999, source="ntpc", imported_at=datetime(2026, 10, 2, tzinfo=UTC)
+            )
+        ),
+        "ck_calendar_official_years_calendar_year_range",
+    )
+
+
+def test_calendar_year_has_no_sequence(db: Session) -> None:
+    """calendar_year 是年份、不是流水號：SMALLINT 主鍵預設會變成 SMALLSERIAL，
+    migration 必須保留 autoincrement=False（alembic check 不比對預設值，抓不到）。"""
+    default = db.scalar(
+        text(
+            "SELECT column_default FROM information_schema.columns "
+            "WHERE table_name = 'calendar_official_years' AND column_name = 'calendar_year'"
+        )
+    )
+    assert default is None
+
+
+def test_override_needs_a_name(db: Session) -> None:
+    assert_rejected(
+        db,
+        lambda: db.add(CalendarOverride(day_on=date(2026, 9, 29), is_workday=False, name="")),
+        "ck_calendar_overrides_name_length",
+    )
+
+
+def test_override_note_length(db: Session) -> None:
+    assert_rejected(
+        db,
+        lambda: db.add(
+            CalendarOverride(
+                day_on=date(2026, 9, 29), is_workday=False, name="颱風假", note="長" * 501
+            )
+        ),
+        "ck_calendar_overrides_note_length",
+    )
