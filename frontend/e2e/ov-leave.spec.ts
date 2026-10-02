@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import {
   drift,
   endSnap,
@@ -75,15 +75,9 @@ function since<T extends { t: number }>(pts: T[], from: number): T[] {
   return (before ? [before] : []).concat(pts.filter((p) => p.t >= from))
 }
 
-/**
- * 離場元素從 from（開始離場的時間）到看不見為止的位移：原地淡出應 ≤ 4px。
- * 離場前還在補位移動的元素（例：連刪的第二個 chip）要給 from，否則會把離場前正常的補位也算進去。
- */
-function expectStill(tr: Trace, name: string, from = -Infinity): void {
-  const d = drift(series(tr, name, from))
-  expect(d, `${name} 有樣本`).not.toBeNaN()
-  expect(d, `${name} 位移`).toBeLessThanOrEqual(4)
-}
+/** 某元素逐幀的左緣 x（原地收起的 chip / 頭像：左緣不動或隨前面的項目連續移動，不會單幀跳）。 */
+const xs = (tr: Trace, name: string, from = -Infinity): { t: number; v: number }[] =>
+  series(tr, name, from).map((b) => ({ t: b.t, v: b.x }))
 
 /** 某元素相對 ref 元素左上角的逐幀位置；兩者都在畫面上的幀才算。 */
 function relSeries(tr: Trace, name: string, ref: string): (Box & { t: number; dt: number })[] {
@@ -102,7 +96,7 @@ function relSeries(tr: Trace, name: string, ref: string): (Box & { t: number; dt
  */
 type TraceWindow = Window & { __ovTrace: { t0: number } }
 
-test('勾成員 m10：離場的頭像各自原地淡出（T1）', async ({ page }) => {
+test('勾成員 m10：離場的頭像原地收起淡出，不疊成一團（T1）', async ({ page }) => {
   await gotoOverview(page)
   // 沒勾人時疊前三位 PM；勾 m10 後只剩 m10，前三位同一次更新一起離場
   const avs = await probe(page, '[data-ov-dd="pm"] .mp-stack > *', 'av')
@@ -115,25 +109,29 @@ test('勾成員 m10：離場的頭像各自原地淡出（T1）', async ({ page 
   )
   expect(gone(tr, names), '三個一起離場').toEqual(names)
   /*
-   * 頭像疊在靠右對齊的觸發鈕裡：三個離場（absolute）、只進一個，觸發鈕當幀變窄約 30px，整疊頭像跟著平順右移
-   * （觸發鈕寬度瞬變屬批次 C 的 T6，不在這裡量）。這裡量「各自原地」：離場的頭像彼此的間距不變——
-   * 修正前第二、三個量到前一個已經 absolute 之後的版面，滑到第一個的位置疊成一團（R1）。
+   * 頭像疊是原地收合（批次 C，T6）：離場的頭像留在版面流裡，寬度與透明度一起收到 0，彼此的間距跟著透明度一起縮。
+   * 量「不疊成一團」：還很看得見（透明度 > 0.5）的幀，間距至少是原本的四成——批次 B 之前是 absolute 釘位，
+   * 第二、三個量到前一個已經 absolute 之後的版面，還不透明就滑到第一個的位置疊成一團（R1）。
    */
-  const all = tr.frames.filter((f) => names.every((n) => (f.boxes[n]?.o ?? 0) > 0.05))
-  expect(all.length, '三個都看得見的幀').toBeGreaterThan(5)
-  for (const n of names.slice(1)) {
-    const gaps = all.map((f) => cx(f.boxes[n]!) - cx(f.boxes[names[0]!]!))
-    expect(Math.max(...gaps) - Math.min(...gaps), `${n} 與 av0 的間距變化`).toBeLessThanOrEqual(4)
+  const opaque = tr.frames.filter((f) => names.every((n) => (f.boxes[n]?.o ?? 0) > 0.5))
+  expect(opaque.length, '三個都還很看得見的幀').toBeGreaterThan(2)
+  const gap0 = cx(opaque[0]!.boxes[names[1]!]!) - cx(opaque[0]!.boxes[names[0]!]!)
+  expect(gap0, '原本的間距（前提）').toBeGreaterThan(10)
+  for (const f of opaque) {
+    for (let i = 1; i < names.length; i++) {
+      const gap = cx(f.boxes[names[i]!]!) - cx(f.boxes[names[i - 1]!]!)
+      expect(gap, `${names[i]} 與 ${names[i - 1]} 的間距（${f.t.toFixed(0)}ms）`).toBeGreaterThan(0.4 * gap0)
+    }
   }
   for (const n of names) {
     expect(jumpCount(series(tr, n).map((b) => ({ dt: b.dt, v: cx(b) }))), `${n} 單幀瞬移`).toBe(0)
   }
 })
 
-test('100ms 內連刪兩個排序 chip：兩個各自原地淡出，留下的從看得到的位置接續', async ({ page }) => {
+test('100ms 內連刪兩個排序 chip：兩個各自原地收起，留下的從看得到的位置接續', async ({ page }) => {
   await gotoOverview(page)
   const P = '[data-view-panel="cards"]'
-  // 先多加一層（共三個）：只有兩個時全部離場，.sorts 塌成 0 高、垂直置中讓離場的 chip 一起下移 14px（批次 C 的元件樣式）
+  // 先多加一層（共三個），刪前兩個：留下的第三個要一路補位到最前面（兩個一起離場的情況在 ov-chrome-motion.spec）
   await page.locator(`${P} .sort-trigger`).click()
   await page.locator(`${P} .sort-option`, { hasText: '專案開始日' }).click()
   await page.keyboard.press('Escape')
@@ -157,17 +155,21 @@ test('100ms 內連刪兩個排序 chip：兩個各自原地淡出，留下的從
     }, P)
   })
   expect(gone(tr, names), '刪掉的兩個').toEqual(['c0', 'c1'])
-  expectStill(tr, 'c0')
-  // c1 在 0–100ms 補位往左移，第二下時位移到一半：釘在當下看得到的位置、取消位移的過渡
-  expectStill(tr, 'c1', t2)
-  // c2 一直在補位：第二次更新時 Vue 拿掉 move class，進行中的位移要被取消（overview-motion.css 的 :where 規則），
-  // 否則 Vue 量到殘留位移、當幀往前跳一段（拿掉規則時約 45px）；有取消時這一幀停在原處，之後重新起步
+  /*
+   * chip 是原地收合（批次 C，T7）：離場的留在版面流裡收到 0 寬，後面的跟著版面逐幀補位、沒有 transform 位移可以被打斷。
+   * c0 左緣不動；c1 在 0–100ms 跟著 c0 收起往左移、第二下後自己也開始收；c2 一路補位到最前面。都不能有單幀跳。
+   */
+  for (const n of names) {
+    const p = xs(tr, n)
+    expect(speedJumps(p), `${n} x：${p.map((q) => q.v.toFixed(1)).join(' ')}`).toBe(0)
+  }
+  // 第二次更新（t2）之後 c2 繼續補位（上面的速度檢查涵蓋第二次更新當幀），最後補到原本第一個的位置
   const c2 = since(series(tr, 'c2'), t2)
   expect(c2.length, 'c2 有第二次更新後的幀').toBeGreaterThan(2)
-  expect(Math.abs(cx(c2[1]!) - cx(c2[0]!)), 'c2 第二次更新當幀的位移').toBeLessThanOrEqual(8)
+  expect(Math.abs(c2.at(-1)!.x - series(tr, 'c0')[0]!.x), 'c2 最後補到原本第一個的位置').toBeLessThanOrEqual(1)
 })
 
-test('清除排序：多出來的 chip 同時各自原地淡出', async ({ page }) => {
+test('清除排序：多出來的 chip 同時各自原地收起', async ({ page }) => {
   await gotoOverview(page)
   const P = '[data-view-panel="cards"]'
   // 清除排序是回到預設（落後、到期日兩層），先多加兩層，清除時這兩層同一次更新一起離場
@@ -182,8 +184,15 @@ test('清除排序：多出來的 chip 同時各自原地淡出', async ({ page 
     page.locator(`${P} .sort-clear`).click(),
   )
   expect(gone(tr, names), '多加的兩層').toEqual(['c2', 'c3'])
-  expectStill(tr, 'c2')
-  expectStill(tr, 'c3')
+  // 原地收起：留在原位收到 0 寬（c3 跟著 c2 收起往左移），逐幀連續；留下的兩層不動
+  for (const n of names) {
+    const p = xs(tr, n)
+    expect(speedJumps(p), `${n} x：${p.map((q) => q.v.toFixed(1)).join(' ')}`).toBe(0)
+  }
+  for (const n of ['c0', 'c1']) {
+    const p = xs(tr, n).map((q) => q.v)
+    expect(Math.max(...p) - Math.min(...p), `${n} 不動`).toBeLessThanOrEqual(1)
+  }
 })
 
 test('排序位移途中被篩掉的卡：照常淡出、相對泳道原地不瞬移（C2 e）', async ({ page }) => {
@@ -267,54 +276,98 @@ test('淡入中的卡被篩掉：透明度與縮放從當下接續淡出，不�
   expect(jumpCount(s.map((b) => ({ dt: b.dt, v: b.w }))), '縮放單幀跳').toBe(0)
 })
 
-test('加一層排序 80ms 內清除排序：淡入中的 chip 從當下接續淡出，不先跳回實心', async ({ page }) => {
-  await gotoOverview(page)
+/** 頁內點擊的對象：選擇器，加 text 時取文字含 text 的那一個。 */
+interface Click {
+  sel: string
+  text?: string
+}
+
+/** 長幀：兩幀間隔超過這麼久，過渡在這段時間裡一次走一大截，量不到「從當下接續」。 */
+const LONG_FRAME_MS = 50
+
+/**
+ * 「淡入中被移除」的錄影，含前提檢查（同 page-motion.spec 的 G9）：頁內點 add，逐幀（rAF）看 watch 的透明度，
+ * 淡入走到 0.15 以上的那一幀就點 remove——不用固定毫秒數：進場要等 Vue 隔兩幀才起步，機器忙時 80ms 可能還沒開始淡入、
+ * 也可能已經淡入完。前提：點 remove 時還在淡入途中（< 0.6），而且之後 150ms 沒有長幀；不成立就 prep 重來，最多 3 次。
+ * 回傳錄影與點 remove 的時間（trace 時間軸）。
+ */
+async function traceRemoveWhileEntering(
+  page: Page,
+  prep: () => Promise<void>,
+  a: { add: Click; remove: Click; watch: string },
+): Promise<{ tr: Trace; t2: number }> {
+  let tr!: Trace
+  let r = { t: 0, o: 1 }
+  let valid = false
+  for (let attempt = 0; attempt < 3 && !valid; attempt++) {
+    await prep()
+    tr = await trace(page, { el: a.watch }, async () => {
+      r = await page.evaluate(
+        (a) =>
+          new Promise<{ t: number; o: number }>((resolve, reject) => {
+            const t0 = (window as unknown as TraceWindow).__ovTrace.t0
+            const find = (c: { sel: string; text?: string }): HTMLElement =>
+              (c.text
+                ? [...document.querySelectorAll<HTMLElement>(c.sel)].find((e) => e.textContent?.includes(c.text!))
+                : document.querySelector<HTMLElement>(c.sel))!
+            find(a.add).click()
+            const start = performance.now()
+            const tick = (): void => {
+              const el = document.querySelector(a.watch)
+              const o = el ? parseFloat(getComputedStyle(el).opacity) : 0
+              if (o > 0.15) {
+                find(a.remove).click()
+                resolve({ t: performance.now() - t0, o })
+              } else if (performance.now() - start > 2000) reject(new Error('2 秒內沒有開始淡入'))
+              else requestAnimationFrame(tick)
+            }
+            requestAnimationFrame(tick)
+          }),
+        a,
+      )
+    })
+    valid = r.o < 0.6 && tr.frames.every((f) => f.t < r.t || f.t > r.t + 150 || f.dt <= LONG_FRAME_MS)
+  }
+  expect(valid, `3 次都沒在淡入途中移除、或移除後碰上長幀（機器太忙；最後一次移除時 ${r.o.toFixed(2)}）`).toBe(true)
+  return { tr, t2: r.t }
+}
+
+test('加一層排序、淡入途中清除排序：淡入中的 chip 從當下接續淡出，不先跳回實心', async ({ page }) => {
   const P = '[data-view-panel="cards"]'
-  await page.locator(`${P} .sort-trigger`).click()
-  await idle(page)
-  // 預設兩層；加「專案開始日」成第三個 chip 淡入，80ms 後清除排序回預設：淡入中的第三個 chip 離場
-  // 不量縮放：chip / 頭像走內建 move，釘位的整數 offset 與實際寬度差零點幾 px，Vue 就對離場的 chip 加一段位移、蓋掉進場的放大（已知限制）
-  const n = await page.locator(`${P} .sorts > *`).count()
-  let t2 = 0
-  const tr = await trace(page, { chip: `${P} .sorts > :nth-child(${n + 1})` }, async () => {
-    t2 = await page.evaluate(
-      (P) =>
-        new Promise<number>((resolve) => {
-          const opts = [...document.querySelectorAll<HTMLElement>(`${P} .sort-option`)]
-          opts.find((b) => b.textContent?.includes('專案開始日'))!.click()
-          setTimeout(() => {
-            ;(document.querySelector(`${P} .sort-clear`) as HTMLElement).click()
-            resolve(performance.now() - (window as unknown as TraceWindow).__ovTrace.t0)
-          }, 80)
-        }),
-      P,
-    )
-  })
-  const s = sinceRemoval(tr, 'chip', t2)
+  // 預設兩層；加「專案開始日」成第三個 chip 淡入，淡入途中清除排序回預設：淡入中的第三個 chip 離場
+  const { tr, t2 } = await traceRemoveWhileEntering(
+    page,
+    async () => {
+      await gotoOverview(page)
+      await page.locator(`${P} .sort-trigger`).click()
+      await idle(page)
+      await expect(page.locator(`${P} .sorts > *`), '預設兩層').toHaveCount(2)
+    },
+    {
+      add: { sel: `${P} .sort-option`, text: '專案開始日' },
+      remove: { sel: `${P} .sort-clear` },
+      watch: `${P} .sorts > :nth-child(3)`,
+    },
+  )
+  const s = sinceRemoval(tr, 'el', t2)
   expect(Math.max(...s.map((b) => b.o)), '移除後最亮').toBeLessThan(0.95)
   expect(opacityJumps(s), '透明度單幀跳').toBe(false)
 })
 
-test('80ms 內勾了又取消成員：淡入中的頭像從當下接續淡出，不先跳回實心', async ({ page }) => {
-  await gotoOverview(page)
-  await page.locator('[data-ov-dd="pm"] button.dd-trigger').click()
-  await idle(page)
-  // 勾 m10：頭像疊只剩 m10（淡入）；80ms 後取消：回到前三位，淡入中的 m10 頭像離場
-  let t2 = 0
-  const tr = await trace(page, { av: '[data-ov-dd="pm"] .mp-stack > [title="成員10"]' }, async () => {
-    t2 = await page.evaluate(
-      () =>
-        new Promise<number>((resolve) => {
-          const opt = (): HTMLElement => document.querySelector('[data-ov-dd="pm"] [data-pm-option="m10"]') as HTMLElement
-          opt().click()
-          setTimeout(() => {
-            opt().click()
-            resolve(performance.now() - (window as unknown as TraceWindow).__ovTrace.t0)
-          }, 80)
-        }),
-    )
-  })
-  const s = sinceRemoval(tr, 'av', t2)
+test('勾了成員、淡入途中又取消：淡入中的頭像從當下接續淡出，不先跳回實心', async ({ page }) => {
+  // 勾 m10：頭像疊只剩 m10（淡入）；淡入途中取消：回到前三位，淡入中的 m10 頭像離場
+  // 追頭像外層（.ov-slot）：淡入淡出寫在外層，頭像本身的透明度一直是 1
+  const m10 = { sel: '[data-ov-dd="pm"] [data-pm-option="m10"]' }
+  const { tr, t2 } = await traceRemoveWhileEntering(
+    page,
+    async () => {
+      await gotoOverview(page)
+      await page.locator('[data-ov-dd="pm"] button.dd-trigger').click()
+      await idle(page)
+    },
+    { add: m10, remove: m10, watch: '[data-ov-dd="pm"] .mp-stack > :has([title="成員10"])' },
+  )
+  const s = sinceRemoval(tr, 'el', t2)
   expect(Math.max(...s.map((b) => b.o)), '移除後最亮').toBeLessThan(0.95)
   expect(opacityJumps(s), '透明度單幀跳').toBe(false)
 })

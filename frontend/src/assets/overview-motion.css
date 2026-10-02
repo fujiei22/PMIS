@@ -1,9 +1,6 @@
 /* 總覽頁的 Transition / TransitionGroup class。時長只用 tokens.css 的 --t-*。
-   卡片、chip、頭像的離場元素由 composables/freezeLeave.ts 釘在原位；泳道、時間軸群組與列是原地收合（見下方），不釘位。 */
-
-/* 浮層：下拉、排序選單（A4 / A5） */
-.ov-pop-enter-active { animation: popIn var(--t-menu) ease-out; }
-.ov-pop-leave-active { animation: popOut var(--t-fast) var(--ease); }
+   卡片的離場元素由 composables/freezeLeave.ts 釘在原位；泳道、時間軸群組與列、排序 chip、成員頭像疊是原地收合（見下方），不釘位。
+   下拉與排序選單用 base.css 的 pop（transition，動畫稽核 T12；原本的 ov-pop 是 keyframes，快速開關會跳回全亮）。 */
 
 /* 淡入淡出：空狀態、摘要 bar、速覽內容、.qv-cap（A13 / A17 / A27） */
 .ov-fade-enter-active, .ov-fade-leave-active { transition: opacity var(--t-base) var(--ease); }
@@ -39,36 +36,57 @@
  * Vue 判斷要不要跑 move 時也會複製第一個子元素的 class 來看（見上面 still 的註解）。要放在 *-move 之後（同特異度靠順序）。
  * 同一個 key 在離場途中又回來時，由 composables/useCollapseReenter.ts 從舊元素當下的高度與透明度接續。
  * 時間軸列的裁切層只在進出場時裁（TimelineGroup 的 .r-clip）：平常裁的話 bar 的光暈（A25）會在列的上下緣被切平。
+ * ov-fold：成員面板的「清除勾選」那列（PmFilter 的 .mp-tools，T14），同一套原地長出 / 收起，面板高度逐幀連續。
  */
 .ov-col-enter-active, .ov-col-leave-active,
 .ov-group-enter-active, .ov-group-leave-active,
-.ov-row-enter-active, .ov-row-leave-active {
+.ov-row-enter-active, .ov-row-leave-active,
+.ov-fold-enter-active, .ov-fold-leave-active {
   transition: grid-template-rows var(--t-panel) var(--ease), opacity var(--t-panel) var(--ease), transform var(--t-panel) var(--ease);
 }
 .ov-col-enter-from, .ov-col-leave-to,
 .ov-group-enter-from, .ov-group-leave-to,
-.ov-row-enter-from, .ov-row-leave-to { grid-template-rows: 0fr; opacity: 0; }
+.ov-row-enter-from, .ov-row-leave-to,
+.ov-fold-enter-from, .ov-fold-leave-to { grid-template-rows: 0fr; opacity: 0; }
+.ov-fold-leave-active { pointer-events: none; }
 
-/* 排序 chip 與成員頭像疊（A16 / A23） */
 /*
  * 內建 move 的子元素平常不宣告任何過渡。Vue 在下一次更新時拿掉 *-move 想停住進行中的位移，
  * 但子元素沒有宣告 transition 時 transition-property 退回初始值 all：「屬性還在清單裡、終值沒變」→ 進行中的
  * transform 過渡不會被取消，Vue 量到含殘留位移的位置，算出來的位移讓元素先瞬移再折返（T3）。設成 none 就會被取消。
- * :where() 讓特異度為 0（*-move / *-enter-active / *-leave-active 仍勝出），只限總覽（.sorts / .mp-stack 在 Dashboard 也有）。
+ * :where() 讓特異度為 0（*-move / *-enter-active / *-leave-active 仍勝出），只限總覽（.sorts 在 Dashboard 也有）。
  * 泳道外層（CardBoard 的 .board > .lane-wrap，排序時跑 ov-col-move）、時間軸群組外層（OverviewTimeline 的
- * .tl-groups > .g-wrap，ov-group-move）同理。時間軸列（.g-list > .r-wrap）不用：內建 move 已由 ov-row-still 停用。
- * 批次 C 改這兩個元件時：.sorts、.mp-stack 要維持是 TransitionGroup 根元素，子元素的 transition 不可含 transform / all。
+ * .tl-groups > .g-wrap，ov-group-move）、排序 chip（.sorts > .ov-slot，清除排序回預設時換順序跑 ov-chip-move）同理。
+ * 時間軸列（.g-list > .r-wrap）不用：內建 move 已由 ov-row-still 停用。頭像疊沒有重排（勾選前後都照 PM 順序），不設 move。
  */
 :where(
   [data-view="overview"] .sorts > *,
-  [data-view="overview"] .mp-stack > *,
   [data-view="overview"] .board > *,
   [data-view="overview"] .tl-groups > *
 ) {
   transition: none;
 }
-.ov-chip-move, .ov-av-move { transition: transform var(--t-base) var(--ease); }
+
+/*
+ * 排序 chip（A16）與成員觸發鈕的頭像疊（A23：頭像、「…」、人數）：原地橫向展開 / 收起（動畫稽核批次 C：T6 / T7 / T14，
+ * 同 Dashboard 的 SortChips）。項目外層 .ov-slot 是單欄 grid，欄寬 0fr ↔ 1fr 跟著內容寬度補間；內層 .ov-slot-clip
+ * （min-width: 0，欄寬才收得到 0）只在進出場時裁——平常裁的話觸控 ✕ 的外擴熱區會被切掉；用 clip 不用 hidden（hidden 會變捲動容器）。
+ * 離場的留在版面流裡不釘位：同排後面的 chip 與排序鈕、靠右排的觸發鈕（變窄是左緣右移）與它左邊的篩選項都逐幀連續，
+ * 兩個 chip 一起離場時 .sorts 也不會塌成 0 高（批次 B 交接：chip 往下掉 14px）。
+ * 外層的右邊界用兩個變數（使用端 scoped CSS 設，特異度比這裡高、直接寫 margin-right 會蓋掉下面的進出場值）：
+ * --ov-slot-mr 平常值（頭像疊的重疊 -7px）、--ov-slot-mr0 寬度 0 時的值（抵掉父層 flex gap，插入 / 移除當幀不先跳一個 gap）。
+ * 過渡都寫在外層：Vue 只等外層自己的 transitionend（子元素冒上來的不算）。.ov-slot 要放在進出場 class 之前（同特異度靠順序）。
+ */
+.ov-slot { display: grid; grid-template-columns: 1fr; flex: 0 0 auto; margin-right: var(--ov-slot-mr, 0px); }
+.ov-slot-clip { display: flex; min-width: 0; }
+.ov-chip-move { transition: transform var(--t-panel) var(--ease); }
 .ov-chip-enter-active, .ov-chip-leave-active,
-.ov-av-enter-active, .ov-av-leave-active { transition: opacity var(--t-base) var(--ease), transform var(--t-base) var(--ease); }
+.ov-av-enter-active, .ov-av-leave-active {
+  transition: grid-template-columns var(--t-panel) var(--ease), margin-right var(--t-panel) var(--ease), opacity var(--t-panel) var(--ease);
+}
+/* 離場中不攔點擊（同 base.css 的 pop-leave-active）：收到一半的 ✕ 不能再被點到 */
+.ov-chip-leave-active, .ov-av-leave-active { pointer-events: none; }
 .ov-chip-enter-from, .ov-chip-leave-to,
-.ov-av-enter-from, .ov-av-leave-to { opacity: 0; transform: scale(0.9); }
+.ov-av-enter-from, .ov-av-leave-to { grid-template-columns: 0fr; margin-right: var(--ov-slot-mr0, 0px); opacity: 0; }
+.ov-chip-enter-active > .ov-slot-clip, .ov-chip-leave-active > .ov-slot-clip,
+.ov-av-enter-active > .ov-slot-clip, .ov-av-leave-active > .ov-slot-clip { overflow: clip; }

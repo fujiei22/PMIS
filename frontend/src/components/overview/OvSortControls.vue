@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // 總覽面板標題列的排序控制：已套用的排序 chips ＋「⇅ 排序」選單，讀寫 overview store 的 sorts。
-import { computed, ref, watch } from 'vue'
-import { freezeLeave } from '@/composables/freezeLeave'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useDismiss } from '@/composables/useDismiss'
 import { OVERVIEW_SORT_KEYS } from '@/constants/overview'
+import { parseDuration, parseEasing } from '@/lib/easing'
 import { OVERVIEW_SORT_DEFAULT_DIR, type OverviewSortKey } from '@/lib/portfolio'
 import { useOverviewStore } from '@/stores/overview'
 
@@ -54,9 +54,33 @@ function reset(): void {
   overview.closeDropdown()
 }
 
+const bar = ref<HTMLElement | null>(null)
 const menuRoot = ref<HTMLElement | null>(null)
 const trigger = ref<HTMLElement | null>(null)
 const menu = ref<HTMLElement | null>(null)
+
+/**
+ * 選單的位置：開啟當下觸發鈕在定位基準 .sort-bar 裡的位置（左緣、右緣到 .sort-bar 右緣的距離、上緣），開著期間不再更新。
+ * 選單開著時加一層排序，chip 原地展開、排序鈕往右滑；選單錨在排序鈕上會被帶著跑，游標下的選項跟著跑掉
+ * （動畫稽核 T6 / T7，同 Dashboard 的 SortMenu）。關了再開才到排序鈕的新位置。
+ * pre：在 DOM 更新前量，選單一畫出來就在對的位置。
+ */
+const anchor = ref({ left: 0, right: 0, top: 0 })
+watch(
+  open,
+  (isOpen) => {
+    if (!isOpen || !trigger.value || !bar.value) return
+    const t = trigger.value.getBoundingClientRect()
+    const b = bar.value.getBoundingClientRect()
+    anchor.value = { left: t.left - b.left, right: b.right - t.right, top: t.top - b.top }
+  },
+  { flush: 'pre' },
+)
+const menuStyle = computed(() => ({
+  '--menu-x': `${anchor.value.left}px`,
+  '--menu-r': `${anchor.value.right}px`,
+  '--menu-y': `${anchor.value.top}px`,
+}))
 
 /** 選單離視窗右緣至少留這麼多。 */
 const MENU_EDGE = 8
@@ -76,6 +100,50 @@ watch(
   { flush: 'post' },
 )
 
+/**
+ * 平板直向（≤ 899px）的 .sorts 是橫向捲動容器：新加的一層排序排在最後，常常在可見範圍外（動畫稽核 T15）。
+ * chip 原地展開期間逐幀把 .sorts 捲到「剛好看得到這顆 chip」的位置：從原本的捲動位置照 --t-panel / --ease 補間過去，
+ * 目標每幀用 chip 當下的位置重算（chip 還在變寬），最後一幀整顆 chip 都在可見範圍內。桌機不是捲動容器，不做。
+ * TransitionGroup 的 enter hook 只收一個參數：Vue 照樣自己偵測 CSS 過渡結束。
+ */
+let revealRaf: number | undefined
+
+function stopReveal(): void {
+  if (revealRaf !== undefined) cancelAnimationFrame(revealRaf)
+  revealRaf = undefined
+}
+
+function revealChip(el: Element): void {
+  const box = el.parentElement
+  if (!box || typeof requestAnimationFrame !== 'function') return
+  if (getComputedStyle(box).overflowX === 'visible') return
+  const cs = getComputedStyle(document.documentElement)
+  const duration = parseDuration(cs.getPropertyValue('--t-panel'))
+  const ease = parseEasing(cs.getPropertyValue('--ease'))
+  // 前後各留 padding 的寬度：.sorts 用 padding 留給 focus 光圈（見下方樣式），捲到 chip 貼邊會切到光圈
+  const pad = parseFloat(getComputedStyle(box).paddingLeft) || 0
+  const start = box.scrollLeft
+  const t0 = performance.now()
+  stopReveal()
+  const step = (): void => {
+    const b = box.getBoundingClientRect()
+    const r = el.getBoundingClientRect()
+    // chip 在捲動內容裡的左右緣（padding box 座標）
+    const left = r.left - b.left - box.clientLeft + box.scrollLeft
+    const right = left + r.width
+    let target = start
+    if (right + pad > target + box.clientWidth) target = right + pad - box.clientWidth
+    if (left - pad < target) target = left - pad
+    target = Math.min(Math.max(target, 0), box.scrollWidth - box.clientWidth)
+    const p = duration ? Math.min(1, (performance.now() - t0) / duration) : 1
+    box.scrollLeft = start + (target - start) * ease(p)
+    revealRaf = p < 1 && el.isConnected ? requestAnimationFrame(step) : undefined
+  }
+  revealRaf = requestAnimationFrame(step)
+}
+
+onBeforeUnmount(stopReveal)
+
 useDismiss(
   menuRoot,
   () => open.value,
@@ -85,23 +153,32 @@ useDismiss(
 </script>
 
 <template>
-  <div class="sort-bar">
-    <TransitionGroup name="ov-chip" tag="div" class="sorts" @before-leave="freezeLeave">
-      <span v-for="c in chips" :key="c.k" class="sort-chip-wrap">
-        <button type="button" class="sort-chip" :title="c.title" @click="overview.bumpSort(c.k)">
-          <span class="chip-level">{{ c.level }}</span>
-          <span class="chip-label">{{ c.label }}</span>
-          <span class="chip-arrow" :class="{ desc: c.desc }" aria-hidden="true">↑</span>
-        </button>
-        <button
-          type="button"
-          class="chip-x"
-          aria-label="移除這層排序"
-          title="移除這層排序"
-          @click.stop="overview.dropSort(c.k)"
-        >
-          ✕
-        </button>
+  <div ref="bar" class="sort-bar">
+    <!--
+      加 / 移除一層排序時 chip 原地橫向展開 / 收起（動畫稽核 T7；ov-chip，見 overview-motion.css）：
+      排序鈕跟著版面逐幀滑動、不會蓋到收到一半的 chip；兩個 chip 一起離場時 .sorts 也不會塌成 0 高。
+      每顆外面兩層：.ov-slot（欄寬 0fr ↔ 1fr）、.ov-slot-clip（進出場時裁切）。
+    -->
+    <TransitionGroup name="ov-chip" tag="div" class="sorts" @enter="revealChip">
+      <span v-for="c in chips" :key="c.k" class="ov-slot sort-slot">
+        <span class="ov-slot-clip">
+          <span class="sort-chip-wrap">
+            <button type="button" class="sort-chip" :title="c.title" @click="overview.bumpSort(c.k)">
+              <span class="chip-level">{{ c.level }}</span>
+              <span class="chip-label">{{ c.label }}</span>
+              <span class="chip-arrow" :class="{ desc: c.desc }" aria-hidden="true">↑</span>
+            </button>
+            <button
+              type="button"
+              class="chip-x"
+              aria-label="移除這層排序"
+              title="移除這層排序"
+              @click.stop="overview.dropSort(c.k)"
+            >
+              ✕
+            </button>
+          </span>
+        </span>
       </span>
     </TransitionGroup>
 
@@ -115,8 +192,9 @@ useDismiss(
       >
         <span class="sort-icon" aria-hidden="true">⇅</span><span>排序</span>
       </button>
-      <Transition name="ov-pop">
-        <div v-if="open" ref="menu" class="sort-menu" :class="{ 'align-end': alignEnd }">
+      <!-- 進出場用 base.css 的 pop（動畫稽核 T12） -->
+      <Transition name="pop">
+        <div v-if="open" ref="menu" class="sort-menu" :class="{ 'align-end': alignEnd }" :style="menuStyle">
           <div class="sort-hint">依序點選排序層級，再點一次翻方向</div>
           <button
             v-for="o in options"
@@ -140,7 +218,9 @@ useDismiss(
 </template>
 
 <style scoped>
+/* 排序選單的定位基準（選單位置在開啟時量好，見 anchor） */
 .sort-bar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--r-badge);
@@ -148,14 +228,17 @@ useDismiss(
   min-width: 0;
 }
 
-/* freezeLeave 以這層為基準釘住離場的 chip */
 .sorts {
-  position: relative;
   display: flex;
   align-items: center;
   gap: var(--r-badge);
   flex-wrap: wrap;
   min-width: 0;
+}
+
+/* chip 之間隔著 .sorts 的 flex gap：寬度 0 時用負右邊界抵掉，插入 / 移除當幀排序鈕不先跳一個 gap */
+.sort-slot {
+  --ov-slot-mr0: calc(-1 * var(--r-badge));
 }
 
 /*
@@ -295,8 +378,8 @@ useDismiss(
   }
 }
 
+/* 不是定位基準：選單以 .sort-bar 為基準，位置在開啟時量好（--menu-x / --menu-r / --menu-y） */
 .sort-dd {
-  position: relative;
   flex: 0 0 auto;
 }
 
@@ -339,8 +422,8 @@ useDismiss(
 
 .sort-menu {
   position: absolute;
-  top: calc(var(--ctrl-h) + var(--sp-1));
-  left: 0;
+  top: calc(var(--menu-y) + var(--ctrl-h) + var(--sp-1));
+  left: var(--menu-x);
   z-index: 100;
   min-width: 208px;
   padding: var(--sp-2);
@@ -352,7 +435,7 @@ useDismiss(
 
 .sort-menu.align-end {
   left: auto;
-  right: 0;
+  right: var(--menu-r);
 }
 
 .sort-hint {
