@@ -166,6 +166,6 @@ PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 ### CI
 - `.github/workflows/ci.yml`：每個 PR 與每次 push 到 `main`，在 Linux（`ubuntu-latest`）上平行跑三個 job：
   - `backend`：`uv sync --locked`、`ruff check`、`ruff format --check`、`mypy`、`pytest`（連 PostgreSQL 18 容器裡的 `pmis_test`）、`alembic check`。
-  - `frontend`：ESLint（只檢查、不自動修正）、`npm run type-check`、`npm run test:unit -- --run`、`npm run build-only`。
+  - `frontend`：ESLint（只檢查、不自動修正）、Prettier（`prettier --check src/`，跟 `npm run format` 同範圍）、`npm run type-check`、`npm run test:unit -- --run`、`npm run build-only`。
   - `e2e`：Playwright（Chromium）；失敗時上傳 `playwright-report`。
-- 尚未加入：OpenAPI 型別比對（第一支業務 API 時加）、前端的 Prettier 檢查。
+- 尚未加入：OpenAPI 型別比對（第一支業務 API 時加）。

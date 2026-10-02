@@ -1,6 +1,6 @@
 # PR 與 main 的自動檢查。三個 job 平行執行：
 # - backend：ruff、mypy、pytest（連 PostgreSQL 18 的測試資料庫）、migration 一致性
-# - frontend：ESLint、型別檢查、單元測試、打包
+# - frontend：ESLint、Prettier、型別檢查、單元測試、打包
 # - e2e：Playwright（Chromium）
 name: CI
 
@@ -90,6 +90,9 @@ jobs:
 
       - name: ESLint（只檢查，不自動修正）
         run: npx eslint .
+
+      - name: Prettier（只檢查 src/，跟 npm run format 同範圍）
+        run: npx prettier --check src/
 
       - name: 型別檢查
         run: npm run type-check
