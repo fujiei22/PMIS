@@ -1,0 +1,22 @@
+# 後端自己的產物。跨子專案的通用規則（.env / OS / 編輯器 / docs 任務文件）在根 .gitignore。
+
+# 虛擬環境（uv sync 建立）
+.venv/
+
+# Python 位元組碼
+__pycache__/
+*.py[cod]
+
+# 工具快取
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# 打包產物
+build/
+dist/
+*.egg-info/
+
+# 測試覆蓋率
+.coverage
+htmlcov/

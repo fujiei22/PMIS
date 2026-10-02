@@ -2,7 +2,7 @@
 
 專案管理資訊系統（Project Management Information System）：單一專案的甘特圖、任務看板與 Issue 看板。
 
-目前只有前端（`frontend/`，Vue 3 + TypeScript），資料走記憶體 mock；後端待建（技術已定案：Python／FastAPI ＋ PostgreSQL）。
+前端（`frontend/`，Vue 3 + TypeScript）的資料目前走記憶體 mock。後端（`backend/`，Python／FastAPI ＋ PostgreSQL）已建骨架，只有健康檢查端點，前端還沒接上。
 
 ```
 PMIS/
@@ -11,7 +11,11 @@ PMIS/
 │   ├── e2e/           Playwright 測試
 │   ├── legacy/        改寫前的原型（唯讀基準）
 │   └── README.md      目錄結構、store 分層、怎麼接後端
-├── backend/           後端（待建，FastAPI ＋ PostgreSQL）
+├── backend/           後端專案（FastAPI ＋ PostgreSQL），所有 uv 指令都在這裡面跑
+│   ├── app/           程式碼
+│   ├── tests/         pytest 測試
+│   └── README.md      安裝、指令、目錄結構、規則
+├── .github/workflows/ CI（每個 PR 跑前後端檢查與 e2e）
 └── docs/
     └── reference/     長期參考文件
         ├── tech-stack.md    技術棧與程式慣例
@@ -52,9 +56,13 @@ npm install
 npx playwright install chromium   # 只有要跑 e2e 才需要
 ```
 
+### 4. 後端（要動後端才需要）
+
+需要 [uv](https://docs.astral.sh/uv/) 與 PostgreSQL；Python 由 uv 自動準備。安裝步驟（建資料庫、`.env`、migration）見 [`backend/README.md`](backend/README.md#第一次安裝)。
+
 ## 常用指令
 
-以下都在 `frontend/` 裡執行。
+以下都在 `frontend/` 裡執行；後端的指令見 [`backend/README.md`](backend/README.md#常用指令)。
 
 | 指令 | 做什麼 |
 |---|---|
@@ -95,5 +103,6 @@ e2e 的時鐘固定在 2026-09-18 10:00，「今天」「已延遲」這類斷�
 ## 進一步的文件
 
 - [`frontend/README.md`](frontend/README.md)：目錄結構、store 分層、DOM 鉤子表、`legacy/` 對照、怎麼接後端
+- [`backend/README.md`](backend/README.md)：後端的安裝、指令、目錄結構與規則
 - [`docs/reference/tech-stack.md`](docs/reference/tech-stack.md)：技術棧與程式慣例
 - [`docs/reference/design-map.md`](docs/reference/design-map.md)：設計語言區塊地圖

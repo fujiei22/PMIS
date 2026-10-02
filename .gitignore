@@ -1,5 +1,6 @@
-# 根層只放跨子專案的通用規則。
-# 前端自己的產物（node_modules / dist / 測試輸出…）在 frontend/.gitignore。
+# 根層只放跨子專案的通用規則；各子專案自己的產物放在自己的 .gitignore：
+# - 前端（node_modules / dist / 測試輸出…）在 frontend/.gitignore
+# - 後端（.venv / __pycache__ / 工具快取…）在 backend/.gitignore
 
 # Environment variables (keep example files)
 .env
