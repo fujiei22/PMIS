@@ -10,6 +10,7 @@ import {
   type ProjectEvent,
 } from '@/api/types'
 import { isoFromIndex, todayIndex } from '@/lib/date'
+import { systemNow } from '@/lib/devClock'
 import { PORTFOLIO_CURRENT_USER, PORTFOLIO_MEMBERS } from '@/mocks/samplePortfolio'
 import { sampleProject } from '@/mocks/sampleProject'
 import type {
@@ -175,10 +176,11 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
       }),
 
     // PMIS 摘要從 store 目前的資料即時彙整，Dashboard 的改動回總覽就看得到（spec 7b）。
-    // 今天取系統時鐘：e2e 用 page.clock 固定，單元測試改呼叫 buildPortfolio 直接給日期。
+    // 今天取 systemNow()，跟時鐘 store 同一個來源：dev server 平移到 2026-09-18（?today= 可改），
+    // e2e 用 page.clock 固定在同一天，單元測試改呼叫 buildPortfolio 直接給日期。
     listProjects: () =>
       call('listProjects', () =>
-        buildPortfolio(store.snapshot(), isoFromIndex(todayIndex(Date.now()))),
+        buildPortfolio(store.snapshot(), isoFromIndex(todayIndex(systemNow()))),
       ),
 
     createTask: (task: Task) =>
