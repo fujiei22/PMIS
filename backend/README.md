@@ -215,4 +215,5 @@ model 的寫法：
 - 新增一張軟刪表：繼承 `SoftDeleteMixin`、`__table_args__` 放 `*soft_delete_table_args()`，再把它加進 `SOFT_DELETE_MODELS`。
 - 不變式：活著的資料，它的上層一定也活著。刪除、還原的測試最後呼叫 `assert_no_live_orphans(db)`。
 - 標記批次：先 `session.flush()` 把 `deletions` 那一列寫進去，再標各列的 `deletion_id`（兩者之間沒有 ORM 關聯，ORM 不知道誰先寫；用 `session.execute(update(...))` 標的話，執行前會自動 flush）。
-- 30 天清除：批次照刪除時間由舊到新（同時間的子批次先），每批由下往上刪（附件 → 留言 → Issue → 相依 → 任務 → 分類 → 專案）。直接刪一個還有其他批次資料的專案會被 `deletion_id` 的外鍵擋下：PostgreSQL 的連動刪除是一層一層排隊執行，外鍵檢查可能在下層還沒刪到之前就先跑（`tests/test_schema.py` 有照這個順序清除的測試）。
+- `deletion_id` 的外鍵是 `DEFERRABLE INITIALLY DEFERRED`（交易 commit 時才檢查）：PostgreSQL 的連動刪除是一層一層排隊執行，語句結束就檢查的話，直接刪一個還有其他批次資料的專案會在下層還沒刪到時被擋下。延到 commit，清除回收桶與刪整個專案就不必依賴刪除順序（`tests/test_schema.py` 有測試）。測試包在交易裡不會 commit，要驗這條外鍵時用 `SET CONSTRAINTS ALL IMMEDIATE` 當場檢查。
+- 30 天清除：批次照刪除時間由舊到新（同時間的子批次先），每批由下往上刪（附件 → 留言 → Issue → 相依 → 任務 → 分類 → 專案），順序清楚、好追錯。

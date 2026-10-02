@@ -8,7 +8,7 @@ from collections.abc import Callable
 
 import psycopg
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -337,4 +337,42 @@ def test_purging_project_batch_bottom_up_is_not_blocked(db: Session) -> None:
 
     assert db.scalars(select(Deletion.id)).all() == []
     for model in (Project, TaskGroup, Task, TaskDep, Issue, Comment, Attachment):
+        assert db.scalars(select(model.id).execution_options(include_deleted=True)).all() == []
+
+
+# deletion_id 的外鍵延到 commit 才檢查（DEFERRABLE INITIALLY DEFERRED）。測試包在交易裡、
+# 最後 rollback，不會 commit，所以用 SET CONSTRAINTS ALL IMMEDIATE 要資料庫當場檢查。
+IMMEDIATE_CHECK = text("SET CONSTRAINTS ALL IMMEDIATE")
+
+
+def test_deletion_batch_fk_still_rejects_missing_batch(db: Session) -> None:
+    task = make_task(db)
+    other = make_task(db)
+    deletion = soft_delete(db, other)
+
+    def dangling_batch() -> None:
+        task.deleted_at = deletion.deleted_at
+        task.deletion_id = uuid.uuid4()
+        db.flush()
+        db.execute(IMMEDIATE_CHECK)
+
+    assert_rejected(db, dangling_batch, "fk_tasks_deletion_id_deletions")
+
+
+def test_deleting_project_with_other_batches_is_not_blocked(db: Session) -> None:
+    """直接刪整個專案：連動刪除不論先刪到 deletions 還是下層，commit 時都一致。"""
+    project = make_project(db)
+    group = make_group(db, project=project)
+    task = make_task(db, group=group)
+    issue = make_issue(db, task=task)
+    comment = make_comment(db, target=issue)
+    make_attachment(db, comment=comment)
+    soft_delete(db, comment)  # 另一個批次裡的資料
+    soft_delete(db, make_comment(db, target=task))
+
+    db.execute(delete(Project).where(Project.id == project.id))
+    db.execute(IMMEDIATE_CHECK)
+
+    assert db.scalars(select(Deletion.id)).all() == []
+    for model in (Project, TaskGroup, Task, Issue, Comment, Attachment):
         assert db.scalars(select(model.id).execution_options(include_deleted=True)).all() == []

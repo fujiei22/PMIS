@@ -1,10 +1,15 @@
-"""建立成員、專案、分類、任務、相依、Issue、留言、附件、刪除批次等資料表（含軟刪除欄位）
+"""建立核心資料表（含軟刪除欄位）
+
+建立成員、專案、分類、任務、相依、Issue、留言、附件、刪除批次等資料表。
 
 autogenerate 產生後手改兩處（其餘照產生的內容，逐行看過）：
 - deletions.project_id 的外鍵：deletions 與 projects 互相參照，先建 deletions（不含這個外鍵）、
   再建 projects，最後補上這個外鍵。autogenerate 把它（use_alter=True）寫在 create_table 裡，
   但 CREATE TABLE 會略過 use_alter 的外鍵，不手改就少一個外鍵。
 - downgrade：刪 projects 之前先拿掉這個外鍵，否則 DROP TABLE projects 會被擋。
+
+各表的 deletion_id 外鍵是 DEFERRABLE INITIALLY DEFERRED（交易 commit 時才檢查），
+跟 app/core/soft_delete.py 一致：清除回收桶或刪整個專案時，多層連動刪除不必依賴刪除順序。
 
 Revision ID: 5c2126ce0487
 Revises:
@@ -133,7 +138,11 @@ def upgrade() -> None:
             ["created_by"], ["members.id"], name=op.f("fk_projects_created_by_members")
         ),
         sa.ForeignKeyConstraint(
-            ["deletion_id"], ["deletions.id"], name=op.f("fk_projects_deletion_id_deletions")
+            ["deletion_id"],
+            ["deletions.id"],
+            deferrable=True,
+            initially="DEFERRED",
+            name=op.f("fk_projects_deletion_id_deletions"),
         ),
         sa.ForeignKeyConstraint(["pm_id"], ["members.id"], name=op.f("fk_projects_pm_id_members")),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_projects")),
@@ -187,7 +196,11 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("char_length(name) <= 200", name=op.f("ck_task_groups_name_length")),
         sa.ForeignKeyConstraint(
-            ["deletion_id"], ["deletions.id"], name=op.f("fk_task_groups_deletion_id_deletions")
+            ["deletion_id"],
+            ["deletions.id"],
+            deferrable=True,
+            initially="DEFERRED",
+            name=op.f("fk_task_groups_deletion_id_deletions"),
         ),
         sa.ForeignKeyConstraint(
             ["project_id"],
@@ -248,7 +261,11 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("char_length(name) <= 200", name=op.f("ck_tasks_name_length")),
         sa.ForeignKeyConstraint(
-            ["deletion_id"], ["deletions.id"], name=op.f("fk_tasks_deletion_id_deletions")
+            ["deletion_id"],
+            ["deletions.id"],
+            deferrable=True,
+            initially="DEFERRED",
+            name=op.f("fk_tasks_deletion_id_deletions"),
         ),
         sa.ForeignKeyConstraint(
             ["group_id", "project_id"],
@@ -335,7 +352,11 @@ def upgrade() -> None:
             ["creator_id"], ["members.id"], name=op.f("fk_issues_creator_id_members")
         ),
         sa.ForeignKeyConstraint(
-            ["deletion_id"], ["deletions.id"], name=op.f("fk_issues_deletion_id_deletions")
+            ["deletion_id"],
+            ["deletions.id"],
+            deferrable=True,
+            initially="DEFERRED",
+            name=op.f("fk_issues_deletion_id_deletions"),
         ),
         sa.ForeignKeyConstraint(
             ["task_id", "project_id"],
@@ -399,7 +420,11 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("from_task_id <> to_task_id", name=op.f("ck_task_deps_not_self")),
         sa.ForeignKeyConstraint(
-            ["deletion_id"], ["deletions.id"], name=op.f("fk_task_deps_deletion_id_deletions")
+            ["deletion_id"],
+            ["deletions.id"],
+            deferrable=True,
+            initially="DEFERRED",
+            name=op.f("fk_task_deps_deletion_id_deletions"),
         ),
         sa.ForeignKeyConstraint(
             ["from_task_id", "project_id"],
@@ -466,7 +491,11 @@ def upgrade() -> None:
             ["author_id"], ["members.id"], name=op.f("fk_comments_author_id_members")
         ),
         sa.ForeignKeyConstraint(
-            ["deletion_id"], ["deletions.id"], name=op.f("fk_comments_deletion_id_deletions")
+            ["deletion_id"],
+            ["deletions.id"],
+            deferrable=True,
+            initially="DEFERRED",
+            name=op.f("fk_comments_deletion_id_deletions"),
         ),
         sa.ForeignKeyConstraint(
             ["issue_id", "project_id"],
@@ -547,7 +576,11 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
-            ["deletion_id"], ["deletions.id"], name=op.f("fk_attachments_deletion_id_deletions")
+            ["deletion_id"],
+            ["deletions.id"],
+            deferrable=True,
+            initially="DEFERRED",
+            name=op.f("fk_attachments_deletion_id_deletions"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_attachments")),
         sa.UniqueConstraint("stored_name", name=op.f("uq_attachments_stored_name")),

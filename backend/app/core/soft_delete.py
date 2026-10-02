@@ -28,10 +28,10 @@ class SoftDeleteMixin:
 
     # sort_order：放在每張表的最後面（建表時欄位的順序）。
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), sort_order=110)
-    # 外鍵用預設的 NO ACTION（語句結束才檢查）。清除回收桶要照刪除時間由舊到新、
-    # 每批由下往上刪（見 backend/README.md〈軟刪除〉），否則多層連動刪除可能被它擋下。
+    # 外鍵延到交易 commit 時才檢查（DEFERRABLE INITIALLY DEFERRED）：清除回收桶或刪整個專案時，
+    # PostgreSQL 的多層連動刪除是一層層排隊做的，語句結束就檢查的話可能在下層還沒刪到時被擋下。
     deletion_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("deletions.id"), sort_order=111
+        ForeignKey("deletions.id", deferrable=True, initially="DEFERRED"), sort_order=111
     )
 
 
