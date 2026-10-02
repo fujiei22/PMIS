@@ -882,3 +882,27 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
     expect(Math.min(...xs), '被拖的條往左').toBeLessThan(b.x - 100)
   })
 })
+
+/**
+ * J2：甘特分類收合鈕收合時是「▶」（U+25B6）。Noto Sans TC（Google Fonts）以 unicode-range 分子集，
+ * 含 ▶ 的子集要等它第一次出現在畫面上才下載，到了之後「Fonts changed」整頁文字重排（批次 A 量到第一次收合 87–118ms 的長幀）。
+ * 啟動時就預載（lib/fontPreload.ts）：第一次收合之前這個子集已經在。
+ * 直接看 FontFace 的 status：Chrome 的 document.fonts.check 對 unicode-range 子集一律回 true（實測子集 unloaded 時也是 true）。
+ * 網路擋掉 Google Fonts 時沒有這些 @font-face，找不到就不用等。
+ */
+test('J2 第一次收合分類之前，含 ▶ 的字型子集已經載好（不在收合當下才下載、整頁重排）', async ({ page }) => {
+  await openGantt(page)
+  await page.evaluate(() => document.fonts.ready)
+  const faces = await page.evaluate(() => {
+    const weight = getComputedStyle(document.querySelector('[data-rowgroup] .caret')!).fontWeight
+    const covers = (range: string, cp: number): boolean =>
+      range.split(',').some((part) => {
+        const m = /U\+([0-9A-F]+)(?:-([0-9A-F]+))?/i.exec(part.trim())
+        return !!m && cp >= parseInt(m[1]!, 16) && cp <= parseInt(m[2] ?? m[1]!, 16)
+      })
+    return [...document.fonts]
+      .filter((f) => f.family.includes('Noto Sans TC') && f.weight === weight && covers(f.unicodeRange, 0x25b6))
+      .map((f) => f.status)
+  })
+  expect(faces.every((s) => s === 'loaded'), `含 ▶ 的 Noto Sans TC 子集狀態：${faces.join(',')}`).toBe(true)
+})
