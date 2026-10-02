@@ -2,6 +2,7 @@ import { api } from '@/api'
 import type { ProjectEvent } from '@/api/types'
 import { useCommentStore } from '@/stores/comment'
 import { useIssueStore } from '@/stores/issue'
+import { useProjectStore } from '@/stores/project'
 import { useTaskStore } from '@/stores/task'
 
 /**
@@ -22,6 +23,10 @@ export function useProjectSync(): { start: (projectId: string) => void; stop: ()
     if (e.type === 'project.reloaded') {
       // 重連後後端會補一次整包（契約 A）；順序也可能變了，直接重載
       void taskStore.load(e.payload)
+      return
+    }
+    if (e.type === 'project.updated') {
+      useProjectStore().setMeta(e.payload)
       return
     }
     if (e.type.startsWith('issue.')) issueStore.applyEvent(e)

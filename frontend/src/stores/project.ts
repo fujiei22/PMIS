@@ -26,10 +26,15 @@ export const useProjectStore = defineStore('project', () => {
     canEdit.value = editable
   }
 
+  /** 專案本身變了（`project.updated` 事件、基準鎖定或解鎖的樂觀更新）；canEdit 不動。 */
+  function setMeta(next: ProjectMeta): void {
+    meta.value = { ...next }
+  }
+
   /** 換專案時清空，回到還沒載入的樣子。 */
   function reset(): void {
     setAll(EMPTY_META, false)
   }
 
-  return { meta, canEdit, setAll, reset }
+  return { meta, canEdit, setAll, setMeta, reset }
 })

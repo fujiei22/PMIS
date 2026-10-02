@@ -464,6 +464,8 @@ store 分三層，依賴**只能由上往下**：
 | `updateTasks()` | PATCH | `/api/tasks` | `Task[]`（**語意是整批 PUT**：body 是整筆 `Task[]`，不是 patch；已含 cascade 後的下游） | `Task[]`（server 最終狀態，client 直接套回） |
 | `deleteTask()` | DELETE | `/api/tasks/:id` | — | — |
 | `reorderTasks(projectId, order)` | PUT | `/api/projects/:pid/tasks/order` | `{ id, groupId }[]`（這個專案整份的順序） | — |
+| `lockBaseline(projectId, lockedOn, tasks)` | PUT | `/api/projects/:pid/baseline` | `{ lockedOn, tasks: Task[] }`（基準＝當下推算起訖） | 204；同一個交易存任務與鎖定日，事件：每個任務 `task.updated`、最後 `project.updated` |
+| `unlockBaseline(projectId)` | DELETE | `/api/projects/:pid/baseline` | — | 204；只清鎖定日，事件 `project.updated` |
 | `createGroup(projectId, g)` | POST | `/api/projects/:pid/groups` | `Group` | `Group` |
 | `updateGroup()` | PATCH | `/api/groups/:id` | `Partial<Group>` | `Group` |
 | `deleteGroup()` | DELETE | `/api/groups/:id` | — | — |

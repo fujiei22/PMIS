@@ -446,6 +446,54 @@ describe('api 進入點', () => {
   })
 })
 
+describe('基準鎖', () => {
+  /**
+   * lockBaseline：任務的基準與專案的鎖定日一次存（後端是同一個交易）；事件是每個任務一則 task.updated、
+   * 最後一則 project.updated。unlockBaseline 只清鎖定日。失敗時資料不動、不發事件。
+   */
+  let api: MockApi
+  let events: ProjectEvent[]
+
+  beforeEach(() => {
+    api = createMockApi(sampleProject)
+    events = []
+    api.subscribe('pmis', (e) => events.push(e))
+  })
+
+  it('lockBaseline：存基準與鎖定日，事件順序是任務在前、專案最後', async () => {
+    const data = await api.loadProject('pmis')
+    const locked = data.tasks.slice(0, 2).map((t) => ({
+      ...t,
+      baselineStart: t.start,
+      baselineEnd: t.end,
+    }))
+    await api.lockBaseline('pmis', '2026-09-18', locked)
+
+    const after = await api.loadProject('pmis')
+    expect(after.project.baselineLockedOn).toBe('2026-09-18')
+    expect(after.tasks[0]!.baselineEnd).toBe(locked[0]!.end)
+    expect(events.map((e) => e.type)).toEqual(['task.updated', 'task.updated', 'project.updated'])
+  })
+
+  it('unlockBaseline：清鎖定日，發一則 project.updated', async () => {
+    await api.lockBaseline('pmis', '2026-09-18', [])
+    events = []
+    await api.unlockBaseline('pmis')
+    expect((await api.loadProject('pmis')).project.baselineLockedOn).toBe('')
+    expect(events.map((e) => e.type)).toEqual(['project.updated'])
+  })
+
+  it('失敗時資料不動、不發事件；專案 id 不對回 404', async () => {
+    api.failNext('lockBaseline')
+    await expect(api.lockBaseline('pmis', '2026-09-18', [])).rejects.toThrow()
+    expect((await api.loadProject('pmis')).project.baselineLockedOn).toBe('')
+    expect(events).toEqual([])
+    await expect(api.lockBaseline('nope', '2026-09-18', [])).rejects.toMatchObject({
+      code: 'not_found',
+    })
+  })
+})
+
 describe('getCalendar', () => {
   /** 工作日曆：mock 回 2026–2027 的官方日曆（45 個放假日），每次都是複本；setCalendar 換掉、reset 還原。 */
   it('回 45 筆、涵蓋 2026–2027、週末 [6, 7]，而且是複本', async () => {

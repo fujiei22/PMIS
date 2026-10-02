@@ -2,9 +2,11 @@ import type {
   Comment,
   Dependency,
   Group,
+  ISODate,
   Issue,
   PortfolioData,
   ProjectData,
+  ProjectMeta,
   SessionInfo,
   Task,
   WorkCalendar,
@@ -75,6 +77,8 @@ export type ProjectEvent =
   | { type: 'comment.created'; payload: Comment }
   | { type: 'comment.deleted'; payload: { id: string } }
   | { type: 'project.reloaded'; payload: ProjectData }
+  /** 專案本身變了（例：基準鎖定或解鎖）；canEdit 不在裡面（那是後端依登入者算的）。 */
+  | { type: 'project.updated'; payload: ProjectMeta }
 
 export type ApiErrorCode =
   'network' | 'validation' | 'unauthorized' | 'forbidden' | 'not_found' | 'conflict' | 'unknown'
@@ -140,6 +144,16 @@ export interface ProjectApi {
   deleteTask(id: string): Promise<void> //                                   DELETE /api/tasks/:id
   /** 這個專案整份的任務順序 + 每筆的 groupId；後端把它存成排序鍵。 */
   reorderTasks(projectId: string, order: { id: string; groupId: string }[]): Promise<void> // PUT    /api/projects/:pid/tasks/order
+  /**
+   * 鎖定計畫基準（規則見 docs/reference/scheduling.md〈基準與基準鎖〉）：`tasks` 是整批任務
+   * （基準＝當下的推算起訖），`lockedOn` 是鎖定日。後端在同一個交易裡存任務與專案的鎖定日；
+   * 事件依序是每個任務一則 `task.updated`、最後一則 `project.updated`。
+   */
+  lockBaseline(projectId: string, lockedOn: ISODate, tasks: Task[]): Promise<void> // PUT    /api/projects/:pid/baseline
+  /**
+   * 解鎖：只清鎖定日（基準由前端改成跟著排程走，下次寫回時一併寫入）；事件 `project.updated`。
+   */
+  unlockBaseline(projectId: string): Promise<void> //                        DELETE /api/projects/:pid/baseline
 
   createGroup(projectId: string, g: Group): Promise<Group> //                POST   /api/projects/:pid/groups
   updateGroup(id: string, patch: Partial<Group>): Promise<Group> //          PATCH  /api/groups/:id

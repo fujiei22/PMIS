@@ -1,6 +1,15 @@
 import { ApiError } from '@/api/types'
 import { reachable } from '@/lib/schedule'
-import type { Comment, Dependency, Group, Issue, ProjectData, Task } from '@/types/models'
+import type {
+  Comment,
+  Dependency,
+  Group,
+  ISODate,
+  Issue,
+  ProjectData,
+  ProjectMeta,
+  Task,
+} from '@/types/models'
 
 /**
  * mock api 的記憶體資料庫：只負責「存」與「連動刪」，不負責延遲、失敗與事件。
@@ -27,6 +36,13 @@ export interface MockStore {
   deleteTask(id: string): CascadeResult
   /** 帶專案 id 的三支：id 不是這份資料的專案就 404（後端同樣以路徑上的專案為準）。 */
   reorderTasks(projectId: string, order: { id: string; groupId: string }[]): Task[]
+  /** 基準鎖：任務的基準與專案的鎖定日一次存（全部確認存在才寫，模擬後端的單一交易）。 */
+  lockBaseline(
+    projectId: string,
+    lockedOn: ISODate,
+    tasks: Task[],
+  ): { tasks: Task[]; project: ProjectMeta }
+  unlockBaseline(projectId: string): ProjectMeta
 
   createGroup(projectId: string, g: Group): Group
   updateGroup(id: string, patch: Partial<Group>): Group
@@ -131,6 +147,24 @@ export function createMockStore(initial: ProjectData): MockStore {
     deleteTask(id: string): CascadeResult {
       find(data.tasks, id, '任務')
       return cascadeTasks(new Set([id]))
+    },
+
+    lockBaseline(projectId: string, lockedOn: ISODate, tasks: Task[]) {
+      requireProject(projectId)
+      for (const t of tasks) find(data.tasks, t.id, '任務')
+      const out = tasks.map((t) => {
+        const cur = find(data.tasks, t.id, '任務')
+        Object.assign(cur, structuredClone(t))
+        return structuredClone(cur)
+      })
+      data.project.baselineLockedOn = lockedOn
+      return { tasks: out, project: structuredClone(data.project) }
+    },
+
+    unlockBaseline(projectId: string): ProjectMeta {
+      requireProject(projectId)
+      data.project.baselineLockedOn = ''
+      return structuredClone(data.project)
     },
 
     reorderTasks(projectId: string, order: { id: string; groupId: string }[]): Task[] {

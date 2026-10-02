@@ -127,7 +127,7 @@ const INTERNAL_ACTIONS: Record<StoreKey, string[]> = {
   ],
   member: ['setAll', 'reset'],
   budget: ['setAll', 'reset'],
-  project: ['setAll', 'reset'],
+  project: ['setAll', 'reset', 'setMeta'],
 }
 
 /** 不受唯讀擋的寫入。F8 的 `project.changeOwner`（任何登入者都能改擁有者）會列在這裡。 */
