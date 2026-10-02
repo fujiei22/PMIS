@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Dashboard 主畫面：載資料、組頂部列 + 摘要卡 + 三個面板，並掛全域的點擊外部與時鐘。
 import { onBeforeUnmount, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import DatePicker from '@/components/common/DatePicker.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
@@ -28,7 +29,8 @@ import { useUiStore } from '@/stores/ui'
 const ui = useUiStore()
 // 資料只從這裡進來一次、後端事件也只在這裡訂閱一次（契約 B / E、review M6）：
 // boot 同時負責載入狀態、錯誤條的 sink，與派生層清理 watch 的建立。
-const boot = useProjectBoot()
+// 專案 id 取自路由；App.vue 的頁面 key 是 route.path，換專案會重新掛載，這裡只讀一次就好
+const boot = useProjectBoot(String(useRoute().params.id))
 
 // sticky 量測要在最上層建立，子元件用 inject 取用
 useStickyOffsets()

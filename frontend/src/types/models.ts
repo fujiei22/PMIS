@@ -24,6 +24,11 @@ export interface Member {
   role: string
   /** 頭像與標籤用的色碼；成員色由資料提供，不走 token */
   color: string
+  /**
+   * 沒停用。停用的人不能再被加進負責人、提出人、Issue 負責人，
+   * 但原本就指派給他的照樣顯示（指派類下拉只列 active，見 `memberStore.assignable`）。
+   */
+  active: boolean
 }
 
 export interface Task {
@@ -104,7 +109,21 @@ export interface Budget {
   actual: number
 }
 
+/** 專案本身的資料（頂欄顯示的名稱、擁有者）；`id` 就是 `/projects/:id` 的路由參數。 */
+export interface ProjectMeta {
+  id: string
+  name: string
+  /** 專案經理（擁有者）的成員 id */
+  pmId: string
+}
+
 export interface ProjectData {
+  project: ProjectMeta
+  /**
+   * 登入者能不能改這個專案（後端算：是不是這個專案的 PM）。
+   * 前端不自己拿 `project.pmId` 比對登入者：權限規則只留在後端一處。
+   */
+  canEdit: boolean
   groups: Group[]
   members: Member[]
   tasks: Task[]
@@ -141,7 +160,7 @@ export interface ProjectSummary {
   name: string
   /** 專案經理的成員 id */
   pmId: string
-  /** 專案整體狀態 */
+  /** 專案整體狀態；後端依任務算（規則見 `api/types.ts` 檔頭，參考實作 `projectStatusOf`），不存欄位 */
   status: ProjectStatus
   /** 專案開始日 */
   startDate: ISODate

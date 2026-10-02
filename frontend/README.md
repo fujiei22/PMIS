@@ -17,7 +17,7 @@
 - 由 `legacy/Dashboard.html` 的 React 原型改寫而成，行為已用 `e2e/compare.spec.ts` 逐項和原型對照過；新舊有差異時改 `src/`，不改 `legacy/`。
 - 資料全在記憶體 mock（`src/api/mock/`），重新整理就回到範例資料。後端待建，前端已整成「換掉 `src/api/` 的實作就能接」。
 - 沒有登入。`currentUserId` 是範例資料裡固定的成員，只決定留言掛誰。總覽頂欄右端顯示的登入者也是它。
-- `/projects/:id` 的 `id` 暫時不影響載入。mock 只有一份完整專案資料（`mocks/sampleProject.ts`），任何 id 都顯示這一份，要等後端才會依 id 載入。
+- Dashboard 依路由的 `/projects/:id` 載入（`api.loadProject(id)`），換專案時先清空資料層與選取、篩選（`useProjectBoot`）。mock 只有一份完整專案資料（`mocks/sampleProject.ts`），任何 id 都回這一份；頂欄的專案名來自它的 `project.name`（`My Project`）。
 - 總覽裡 PMIS 的摘要，是由那份範例專案即時彙整出來的（`api/mock/portfolio.ts` 的 `summarizeProject()`），所以在 Dashboard 改了任務，回到總覽看得到。
   - 其他 6 個專案是靜態摘要（`mocks/samplePortfolio.ts`）。
   - 在這 6 個專案按「進入」，看到的仍是 PMIS 那份資料。這是預期行為，不是 bug。
@@ -31,8 +31,8 @@
               失敗：放回最後已知的 server 狀態，錯誤條經注入的 sink 顯示
 讀取  元件 ◀── 派生層 store（rows / filter / selection / ui）◀── 資料層
 事件  api.subscribe ──▶ stores/_sync.ts ──▶ 各資料層 store 的 applyEvent
-啟動  router.beforeEach ──▶ preloadProject() / preloadPortfolio()：切頁一開始就先載目標頁（不阻塞導航）
-      DashboardView ──▶ useProjectBoot()：注入 sink、沿用先載的那一發（loadProject()）、訂閱事件
+啟動  router.beforeEach ──▶ preloadProject(id) / preloadPortfolio()：切頁一開始就先載目標頁（不阻塞導航）
+      DashboardView ──▶ useProjectBoot(id)：注入 sink、沿用先載的那一發（loadProject(id)）、訂閱這個專案的事件
       ProjectsOverviewView ──▶ usePortfolioBoot()：沿用先載的那一發 ──▶ api.listProjects()
       兩頁都是第一次顯示載入中、之後背景重載（畫面維持 ready，失敗只記 console）
 ```
@@ -172,7 +172,7 @@ frontend/
 │   ├── assets/            tokens.css（設計 token）、base.css（全域樣式、keyframes、Dashboard 浮層共用的 pop / dialog / fade 過渡）、overview-motion.css（總覽的過渡 class；泳道 / 群組 / 列原地收合）
 │   ├── components/        元件，依畫面區塊分子目錄（common / layout / summary / gantt / kanban / issues / detail / dialogs / overview）
 │   ├── composables/       可重用的組合式函式
-│   │   ├── useProjectBoot.ts    啟動層：注入 error sink、載入狀態（第一次載入中、之後背景重載）、訂閱事件；preloadProject 給 router 切頁先載
+│   │   ├── useProjectBoot.ts    啟動層：注入 error sink、載入狀態（第一次載入中、之後背景重載；換專案先清空）、訂閱事件；preloadProject 給 router 切頁先載
 │   │   ├── usePortfolioBoot.ts  總覽的啟動層：第一次顯示載入中，之後背景重載不閃；preloadPortfolio 給 router 切頁先載
 │   │   ├── useDomRegistry.ts    DOM 登錄表（執行期不再用選擇器找元素）
 │   │   ├── useTaskActions.ts    新增任務 / Issue 的預設值（派生層讀取集中在這）
@@ -199,7 +199,7 @@ frontend/
 │   ├── router/            路由（index.ts：切頁時先載目標頁資料；pageSwap.ts：切頁過渡結束後才還原捲動位置）
 │   ├── stores/            Pinia store（三層，見下）
 │   │   ├── clock.ts                           時鐘層
-│   │   ├── task / issue / comment / member / budget.ts   資料層（單一專案）
+│   │   ├── task / issue / comment / member / budget / project.ts   資料層（單一專案；project 是專案本身與 canEdit）
 │   │   ├── portfolio.ts                       資料層（總覽的專案摘要與成員名錄）
 │   │   ├── _optimistic.ts                     樂觀更新的共用機制（tracker / runOptimistic / error sink）
 │   │   ├── _sync.ts                           api.subscribe 的唯一訂閱點，把事件路由到各資料 store
@@ -284,14 +284,17 @@ store 分三層，依賴**只能由上往下**：
 | 層 | 檔 | 職責 | 可以 import 誰 |
 |---|---|---|---|
 | 時鐘層 | `clock.ts` | `now` / `todayIdx` / `todayIso`（60 秒 tick） | 誰都不用 |
-| 資料層 | `task.ts`、`issue.ts`、`comment.ts`、`member.ts`、`budget.ts`（＋共用的 `_optimistic.ts`、`_sync.ts`）；總覽的 `portfolio.ts` | 專案資料的唯一擁有者；所有寫入都經 `@/api` | `@/api/*`、`@/lib/*`、`@/types/*`、`@/stores/clock`、其他資料 store、`_optimistic` / `_sync` |
+| 資料層 | `task.ts`、`issue.ts`、`comment.ts`、`member.ts`、`budget.ts`、`project.ts`（＋共用的 `_optimistic.ts`、`_sync.ts`）；總覽的 `portfolio.ts` | 專案資料的唯一擁有者；所有寫入都經 `@/api` | `@/api/*`、`@/lib/*`、`@/types/*`、`@/stores/clock`、其他資料 store、`_optimistic` / `_sync` |
 | 派生層 | `rows.ts`、`filter.ts`、`selection.ts`、`ui.ts`；總覽的 `overview.ts` | 從資料層算出畫面要的東西（可見列、篩選、選取、浮層 / 錯誤條 / 收合） | 所有層 |
 
-成員名錄有兩份：`portfolio.members`（總覽，含各專案的 PM）與 `member.members`（Dashboard，單一專案的成員）。總覽元件查成員一律用 `portfolio.byId`。
+成員名錄有兩份：`portfolio.members`（總覽，含各專案的 PM）與 `member.members`（Dashboard，單一專案的成員）。總覽元件查成員一律用 `portfolio.byId`。指派類的下拉（＋指派、Issue 提出人與負責人）只列沒停用的人，用 `member.assignable(原本選的 id)`；頂欄成員篩選只列這個專案有被指派任務的人（`lib/filter.ts` 的 `filterableMembers`）。
+
+`project.ts` 存專案本身（`meta`：id / 名稱 / 擁有者）與 `canEdit`（後端算的「登入者能不能改」，前端不自己比對 `pmId`）。`taskStore.load(id)` 一次灌進所有資料 store，`taskStore.reset()` 一次清掉（換專案時由 `useProjectBoot` 呼叫，再清選取、篩選與暫態）。
 
 離開頁面時，兩邊的狀態處理方式不同：
 - `overview` store 會保留：從 Dashboard 回到總覽時，篩選、排序、展開與檢視都還在。
 - Dashboard 卸載時，`ui.resetTransient()` 會清掉詳細視窗與浮層這類暫態，回來時不會自己打開。
+- 進的是另一個專案時，資料層、選取、篩選條件也一起清掉；排序、面板收合、縮放這些版面偏好留著。
 
 **資料層不知道派生層存在**，所以三件原本會反向依賴的事改成這樣：
 
@@ -396,7 +399,9 @@ store 分三層，依賴**只能由上往下**：
    | `Attachment.at` | `'YYYY-MM-DD'`（本地日） | ISO 8601 | adapter |
    | `Group` | 只有 `id` / `name` | 後端若存了收合狀態要忽略 | 收合是畫面狀態，在 `ui.collapsedGroups`，不上 wire |
    | `ProjectData.currentUserId`、`PortfolioData.currentUserId` | 必填字串 | 登入還沒做 | adapter 從 session / token 填；沒有登入就先填一個固定成員 id |
-   | `ProjectData.budget` | `{ total, actual }`（數字，只讀；剩餘與使用率由 `lib/budget.ts` 算） | 後端的預算欄位 | adapter 填進 `loadProject()` 與 `project.reloaded` 的 payload；目前沒有寫入端點 |
+   | `ProjectData.project`、`ProjectData.canEdit` | `{ id, name, pmId }`、`boolean` | `canEdit` = 登入者是不是這個專案的 PM | 後端算；前端不自己拿 `pmId` 比對登入者（權限規則只留在後端一處） |
+   | `Member.active` | `boolean`（沒停用） | 後端的停用旗標 | 後端；指派類下拉只列 `active`，原本就指派給停用者的照樣顯示 |
+   | `ProjectData.budget` | `{ total, actual }`（數字，只讀；剩餘與使用率由 `lib/budget.ts` 算） | 後端的預算欄位 | adapter 填進 `loadProject(id)` 與 `project.reloaded` 的 payload；目前沒有寫入端點 |
    | `ProjectSummary.taskPlanned` | 「照排程今天之前就該完成」的任務數 | 後端依伺服器當日算 | 後端；前端只拿它算理論 %，跨日差一天可接受 |
    | `Member.color` | 合法的 CSS 顏色值（例 `#2563eb`），經 `:style` 寫進 CSS 變數 | 後端存的顏色字串 | adapter 驗格式；前端沒有用字串拼接組 CSS，但格式錯會讓頭像與 PM 泳道沒有顏色 |
    | `ProjectSummary.upcoming` | 最多 3 筆、依到期日升冪、含已逾期 | 後端篩選排序 | 後端；前端原樣顯示 |
@@ -407,21 +412,23 @@ store 分三層，依賴**只能由上往下**：
 
 ### 端點對照表
 
-路徑是建議值；後端不同就在 adapter 對應，**介面的參數 / 回傳 / 錯誤碼才是契約**。都不分頁：`loadProject()` 回單一專案整包，`listProjects()` 回所有專案的摘要。彙整規則寫在 `src/api/types.ts` 檔頭，參考實作是 `src/api/mock/portfolio.ts` 的 `summarizeProject()`。
+路徑是建議值；後端不同就在 adapter 對應，**介面的參數 / 回傳 / 錯誤碼才是契約**。都不分頁：`loadProject(id)` 回單一專案整包，`listProjects()` 回所有專案的摘要。彙整規則（含專案狀態依任務算的 `status`）寫在 `src/api/types.ts` 檔頭，參考實作是 `src/api/mock/portfolio.ts` 的 `summarizeProject()` / `projectStatusOf()`。
+
+帶專案 id 的只有四支：`createGroup`（分類沒有上層實體可以反查專案）、`reorderTasks` / `reorderGroups`（整份順序是專案層級的）與 `subscribe`（事件分專案）。其他建立 / 修改 / 刪除由後端從實體反查專案（任務看 `groupId`、Issue 看 `taskId`、留言看 `targetId`）。
 
 | 方法 | HTTP | 路徑 | request | response |
 |---|---|---|---|---|
-| `loadProject()` | GET | `/api/project` | — | `ProjectData`（整包；`tasks` / `groups` 的陣列順序就是顯示順序） |
+| `loadProject(id)` | GET | `/api/projects/:id` | — | `ProjectData`（整包，含 `project` 與 `canEdit`；`tasks` / `groups` 的陣列順序就是顯示順序） |
 | `listProjects()` | GET | `/api/projects` | — | `PortfolioData`（所有專案的 `ProjectSummary` ＋ 成員名錄 ＋ `currentUserId`；`projects` 順序無意義，`members` 順序就是顯示順序） |
 | `createTask()` | POST | `/api/tasks` | `Task`（含 client 產的 `id`） | `Task` |
 | `updateTask()` | PATCH | `/api/tasks/:id` | `Partial<Task>`（JSON merge patch） | `Task` |
 | `updateTasks()` | PATCH | `/api/tasks` | `Task[]`（**語意是整批 PUT**：body 是整筆 `Task[]`，不是 patch；已含 cascade 後的下游） | `Task[]`（server 最終狀態，client 直接套回） |
 | `deleteTask()` | DELETE | `/api/tasks/:id` | — | — |
-| `reorderTasks()` | PUT | `/api/tasks/order` | `{ id, groupId }[]`（整份順序） | — |
-| `createGroup()` | POST | `/api/groups` | `Group` | `Group` |
+| `reorderTasks(projectId, order)` | PUT | `/api/projects/:pid/tasks/order` | `{ id, groupId }[]`（這個專案整份的順序） | — |
+| `createGroup(projectId, g)` | POST | `/api/projects/:pid/groups` | `Group` | `Group` |
 | `updateGroup()` | PATCH | `/api/groups/:id` | `Partial<Group>` | `Group` |
 | `deleteGroup()` | DELETE | `/api/groups/:id` | — | — |
-| `reorderGroups()` | PUT | `/api/groups/order` | `string[]`（分類 id 的完整順序） | — |
+| `reorderGroups(projectId, ids)` | PUT | `/api/projects/:pid/groups/order` | `string[]`（這個專案分類 id 的完整順序） | — |
 | `createDep()` | POST | `/api/deps` | `Dependency` | `Dependency` |
 | `deleteDep()` | DELETE | `/api/deps/:id` | — | — |
 | `createIssue()` | POST | `/api/issues` | `Issue` | `Issue` |
@@ -430,7 +437,7 @@ store 分三層，依賴**只能由上往下**：
 | `createComment()` | POST | `/api/comments` | multipart：comment 的 JSON part + `files[]` | `Comment`（`files[].url` 換成 server url） |
 | `deleteComment()` | DELETE | `/api/comments/:id` | — | — |
 | `downloadAttachment()` | GET | `/api/attachments/:id` | — | `Blob`（檔案本身） |
-| `subscribe()` | — | `/api/events`（SSE）或 WS 或 polling | — | `ProjectEvent` 串流；回傳解訂函式 |
+| `subscribe(projectId, handler)` | — | `/api/projects/:pid/events`（SSE）或 WS 或 polling | — | 這個專案的 `ProjectEvent` 串流；回傳解訂函式 |
 
 後端要注意的四件事：
 
@@ -446,7 +453,9 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 | `ApiError.code` | HTTP status | 錯誤條文案 |
 |---|---|---|
 | `network` | fetch 直接拋錯 / 沒有回應 | 連線失敗 |
-| `validation` | 400、422 | 資料不合法 |
+| `validation` | 400、413、415、422 | 資料不合法 |
+| `unauthorized` | 401 | 登入已失效 |
+| `forbidden` | 403 | 沒有權限 |
 | `not_found` | 404 | 資料已不存在 |
 | `conflict` | 409 | 與伺服器狀態衝突 |
 | `unknown` | 其他 | 發生錯誤 |
@@ -457,7 +466,7 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 
 ### 事件
 
-`subscribe(handler)` 是後端推變更的唯一入口，前端只有 `src/stores/_sync.ts` 的 `useProjectSync()` 訂閱它（`DashboardView` 掛載時 `start()`、卸載時 `stop()`），再依 `type` 前綴路由到各資料 store 的 `applyEvent`。
+`subscribe(projectId, handler)` 是後端推變更的唯一入口，依專案訂閱（`Task` 這些實體裡沒有專案 id，分專案靠訂閱）。前端只有 `src/stores/_sync.ts` 的 `useProjectSync()` 訂閱它（`DashboardView` 掛載時經 `useProjectBoot` 呼叫 `start(專案 id)`、卸載時 `stop()`），再依 `type` 前綴路由到各資料 store 的 `applyEvent`。
 
 總覽頁（`/`）**不訂閱事件**：進頁時 `listProjects()` 載入一次，之後每次回到總覽都在背景重載（畫面不切回載入中），所以在 Dashboard 做的改動回總覽就看得到。
 
@@ -465,8 +474,8 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 
 | 做法 | 怎麼接 | 取捨 |
 |---|---|---|
-| polling | `setInterval` 打 `loadProject()`，跟上一份 diff 出事件；或後端給 `/api/events?since=<cursor>` | 最好做、後端零長連線；延遲等於輪詢間隔，流量大 |
-| SSE | `new EventSource('/api/events')`，每則 `data` 是一個 `ProjectEvent`；`onerror` 時瀏覽器自動重連 | 單向推送、走一般 HTTP，最貼合這個介面 |
+| polling | `setInterval` 打 `loadProject(id)`，跟上一份 diff 出事件；或後端給 `/api/projects/:pid/events?since=<cursor>` | 最好做、後端零長連線；延遲等於輪詢間隔，流量大 |
+| SSE | `new EventSource('/api/projects/:pid/events')`，每則 `data` 是一個 `ProjectEvent`；`onerror` 時瀏覽器自動重連 | 單向推送、走一般 HTTP，最貼合這個介面 |
 | WebSocket | `new WebSocket(...)`，訊息就是 `ProjectEvent` 的 JSON | 雙向、延遲最低；要自己做心跳與重連 |
 
 不論哪一種，client 端的規則是固定的：
@@ -476,7 +485,7 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 - **in-flight 期間只寫 `serverState`**：某個 id 還有請求在飛時，事件只更新「最後已知的 server 狀態」，不動本地；等該 id 的請求全部結束才對齊（硬規則見端點表下方第四點）。
 - **順序不保證**，但連動刪除例外：被連帶刪掉的實體要**先**各發一則 `deleted`，主體自己的 `deleted` **最後**發（前端依這個順序清懸空 id）。
 - **事件的 payload 也要走 adapter 轉換**：`ProjectEvent.payload` 就是 `Task` / `Issue` / `Comment` / `ProjectData` 本身，所以上表那份對照（`null ↔ ''`、日期格式、`Attachment.id`）在事件這條路徑上要**再做一次**。只轉 response 不轉事件，本地會被推來的 `null` 汙染成非法值。
-- **`project.reloaded` 由 adapter 自己造，後端不用做**：重連偵測在前端這一層（`EventSource` 的 `onopen` 從**第二次**起、或 WebSocket 的 reconnect callback），adapter 自己 `await loadProject()` 之後 `emit({ type: 'project.reloaded', payload })`。後端只要能重新建立連線就好，不必記得補推什麼。
+- **`project.reloaded` 由 adapter 自己造，後端不用做**：重連偵測在前端這一層（`EventSource` 的 `onopen` 從**第二次**起、或 WebSocket 的 reconnect callback），adapter 自己 `await loadProject(id)` 之後 `emit({ type: 'project.reloaded', payload })`。後端只要能重新建立連線就好，不必記得補推什麼。
 - **`reorderTasks` / `reorderGroups` 沒有對應事件**。純順序變更要讓別的 client 看到，靠的是重連時 adapter 補的 `project.reloaded`；只有搬動造成 `groupId` 改變時才會有一則 `task.updated`。
 
 ### 樂觀更新怎麼運作
@@ -526,19 +535,15 @@ npm run gen:api
 
 - **逾時與取消**：`ProjectApi` 目前沒有 `AbortSignal`，也沒有逾時。網路實作至少要給每個請求一個逾時（逾時 → `ApiError('network')`）；離開頁面或連續改動時要能取消前一發。
 - **authn / authz**：`ProjectApi` 完全沒有身分概念，**每一支端點都要後端自己做認證與授權**。`ProjectData.currentUserId` 只是「留言掛誰、頭像顯示誰」的顯示用欄位，是 client 送什麼就是什麼，**絕對不能拿它當身分**。
-  - 兩頁重進時的背景重載失敗**只記 console、畫面維持舊資料**（Dashboard 的 `useProjectBoot`、總覽的 `usePortfolioBoot`）。加上登入之後，session 過期 / 撤權 / 專案被刪（401 / 403 / 404）不能也這樣吞掉：`ApiErrorCode` 補 `unauthorized` / `forbidden`，背景失敗遇到這幾種就清掉資料、切成錯誤或導回登入頁，只有 `network` 才維持舊資料。
+  - 兩頁重進時的背景重載失敗**只記 console、畫面維持舊資料**（Dashboard 的 `useProjectBoot`、總覽的 `usePortfolioBoot`）。加上登入之後，session 過期 / 撤權 / 專案被刪（401 / 403 / 404）不能也這樣吞掉：`ApiErrorCode` 已經有 `unauthorized` / `forbidden`，還要做的是背景失敗遇到這幾種就清掉資料、切成錯誤或導回登入頁，只有 `network` 才維持舊資料。
   - 登出 / 換使用者要有明確的重置：清資料層（task / issue / comment / member / portfolio）與 `selection` / `filter`，兩個 `loadState` 設回 `idle`；不然下一位進頁時是背景重載，會先看到上一位的資料。
   - 加登入守衛時，`router/index.ts` 的先載守衛要排在它**後面**（守衛依註冊順序執行），未登入或被擋下的導航才不會先打出需要認證的請求。
 - **PATCH body 要用 schema 白名單驗欄位**：`updateTask` / `updateGroup` / `updateIssue` 送的是 JSON merge patch，後端必須逐欄位比對允許清單再寫入，**不可以整包 merge 進實體**（mass-assignment；也要擋 `__proto__` / `constructor` / `prototype` 這類鍵造成的原型污染）。同理 `createTask` 這些帶完整實體的端點也要過一次 schema。
 - **多人衝突**：現在是「後到的覆蓋先到的」，沒有版本號或 `If-Match`。同時編輯同一筆的情境沒有處理（spec 已排除）。附帶一提：`dirty`（本地改了還沒送出）只保護**本地**不被 reconcile 蓋掉，**不保護 server 端**——那段值還沒上 wire，別的 client 這段時間寫進去的東西，等它送出時一樣會被覆蓋。
 - **附件上傳驗證**：`comment.addDraftFiles` 直接 `URL.createObjectURL`，沒有任何檢查。要補檔案大小上限、MIME 型別與副檔名白名單（三者都要，只擋副檔名擋不住偽裝的檔案），**伺服器端再驗一次**。
-- **依 id 載入專案**：路由已經是 `/projects/:id`，但資料層仍是單專案設計（`loadProject()` 沒有參數、`subscribe` 不分專案、Dashboard 的 store 是單例）。接上時：
-  1. 契約改成 `loadProject(id)` → `GET /api/projects/:id`、`subscribe(id)`；`api/types.ts` 檔頭與〈端點對照表〉一起改。
-  2. DashboardView 從 `route.params.id` 取 id 傳給 `useProjectBoot()`。`App.vue` 的頁面 key 已經是 `route.path`，換專案時 Dashboard 會重新掛載、重新載入。
-  3. 換專案時要清空資料層（task / issue / comment / member）與 `selection` / `filter`，不能只靠 `ui.resetTransient()`（它只清暫態浮層）。
-  4. 總覽的 PMIS 摘要目前由 mock 從範例專案彙整，接上後改由後端的 `listProjects()` 提供。
-  5. 切頁先載已經收到路由的 id（`router/index.ts` 的 `preloadProject(String(to.params.id))`），把它往下傳給 `loadProject(id)`。
-  6. 換了專案不走背景重載**已經做了**：`useProjectBoot.ts` 的 `loadedId` 記著 store 裡是哪個專案，不同就走「載入中」（單元測試守），畫面不會先秀上一個專案、也不會在 B 的頁面改到 A。剩下要處理的是換專案時先載把 `ui.loadState` 切成 loading，正在淡出的舊頁會閃一下「載入中」（例如等新頁掛上才切）。
+- **依 id 載入專案**：契約與資料流已經多專案化——`loadProject(id)`、`subscribe(projectId)`，`createGroup` / `reorderTasks` / `reorderGroups` 帶專案 id；路由的 id 經 `preloadProject` 與 `useProjectBoot(id)` 一路傳到 api；換專案時先清空資料層（`taskStore.reset()`）與選取、篩選、暫態，上一個專案晚回來的載入與寫入一律丟掉（單元測試守）。還沒做的：
+  1. 總覽的 PMIS 摘要目前由 mock 從範例專案彙整，接上後改由後端的 `listProjects()` 提供。
+  2. Dashboard 直接切到另一個 Dashboard（目前畫面上沒有這條路，一定經過總覽）時，先載會在舊頁淡出期間就清空資料、切成 loading，正在淡出的舊頁會閃一下「載入中」（例如等新頁掛上才切）。
 - **切頁先載與背景重載的競賽**（mock 延遲為 0，現在不會發生）：
   - **事件空窗**：先載的快照在導航一開始就打，`subscribe` 要到 Dashboard 掛載（舊頁淡出之後）才開始，這段時間別人改的事件會漏接。接後端時把訂閱提前，或訂閱後比對版本再補一次 `project.reloaded`。
   - **整包覆蓋**：背景重載回來時使用者已經能操作，`applyProject` 會整包覆蓋本地，包括還沒送出（`dirty`）的改動，語意同 `project.reloaded`。延遲大的後端要考慮背景重載遇到 `dirty` / `inflight` 時延後套用。

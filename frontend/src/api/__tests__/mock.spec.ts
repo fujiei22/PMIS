@@ -34,7 +34,7 @@ describe('mock api', () => {
   beforeEach(() => {
     api = createMockApi(sampleProject)
     events = []
-    stop = api.subscribe((e) => events.push(e))
+    stop = api.subscribe('pmis', (e) => events.push(e))
   })
 
   afterEach(() => {
@@ -44,20 +44,48 @@ describe('mock api', () => {
 
   // ── 讀取 ────────────────────────────────────────────────────────────────
   it('loadProject 回整包資料，且每次都是新的拷貝（改回傳值不影響 mock）', async () => {
-    const a = await api.loadProject()
+    const a = await api.loadProject('pmis')
     expect(a.tasks).toHaveLength(30)
     expect(a.groups).toHaveLength(6)
     expect(a.currentUserId).toBe(sampleProject.currentUserId)
     a.tasks[0]!.name = '被呼叫端改掉'
-    const b = await api.loadProject()
+    const b = await api.loadProject('pmis')
     expect(b.tasks[0]!.name).not.toBe('被呼叫端改掉')
+  })
+
+  it('loadProject(id)：mock 只有一份專案，任何 id 都回它（含 project 與 canEdit）', async () => {
+    for (const id of ['pmis', 'portal', 'whatever']) {
+      const data = await api.loadProject(id)
+      expect(data.project).toEqual({ id: 'pmis', name: 'My Project', pmId: 'm5' })
+      expect(data.canEdit).toBe(true)
+      expect(data.tasks).toHaveLength(30)
+    }
+  })
+
+  it('帶專案 id 的三支：id 不是這份資料的專案 → 404，資料不動', async () => {
+    const before = await api.loadProject('pmis')
+    const order = before.tasks.map((t) => ({ id: t.id, groupId: t.groupId }))
+    await expect(api.createGroup('', { id: 'gx', name: 'x' })).rejects.toMatchObject({
+      code: 'not_found',
+      status: 404,
+    })
+    await expect(api.reorderTasks('other', order.slice().reverse())).rejects.toMatchObject({
+      code: 'not_found',
+    })
+    await expect(
+      api.reorderGroups('other', before.groups.map((g) => g.id).reverse()),
+    ).rejects.toMatchObject({ code: 'not_found' })
+    const after = await api.loadProject('pmis')
+    expect(after.groups.map((g) => g.id)).toEqual(before.groups.map((g) => g.id))
+    expect(after.tasks.map((t) => t.id)).toEqual(before.tasks.map((t) => t.id))
+    expect(events).toEqual([])
   })
 
   // ── 任務 ────────────────────────────────────────────────────────────────
   it('createTask 後 loadProject 看得到，並 emit task.created', async () => {
     const created = await api.createTask(task('new-1'))
     expect(created.id).toBe('new-1')
-    const data = await api.loadProject()
+    const data = await api.loadProject('pmis')
     expect(data.tasks.some((t) => t.id === 'new-1')).toBe(true)
     expect(events).toEqual([
       { type: 'task.created', payload: expect.objectContaining({ id: 'new-1' }) },
@@ -70,7 +98,7 @@ describe('mock api', () => {
     expect((err as ApiError).code).toBe('conflict')
     expect((err as ApiError).status).toBe(409)
     expect((err as ApiError).method).toBe('createTask')
-    expect((await api.loadProject()).tasks).toHaveLength(30)
+    expect((await api.loadProject('pmis')).tasks).toHaveLength(30)
     expect(events).toEqual([])
   })
 
@@ -95,13 +123,13 @@ describe('mock api', () => {
     ])
     expect(out).toHaveLength(2)
     expect(events.map((e) => e.type)).toEqual(['task.updated', 'task.updated'])
-    const data = await api.loadProject()
+    const data = await api.loadProject('pmis')
     expect(data.tasks.find((t) => t.id === a!.id)!.start).toBe('2026-08-01')
     expect(data.tasks.find((t) => t.id === b!.id)!.name).toBe('批次改名')
   })
 
   it('deleteTask 連動刪 issue / dep / comment，各自 emit deleted', async () => {
-    const before = await api.loadProject()
+    const before = await api.loadProject('pmis')
     const doomedIssues = before.issues.filter((i) => i.taskId === 't3').map((i) => i.id)
     const doomedDeps = before.deps.filter((d) => d.from === 't3' || d.to === 't3').map((d) => d.id)
     const targets = new Set<string>(['t3', ...doomedIssues])
@@ -112,7 +140,7 @@ describe('mock api', () => {
 
     await api.deleteTask('t3')
 
-    const after = await api.loadProject()
+    const after = await api.loadProject('pmis')
     expect(after.tasks.some((t) => t.id === 't3')).toBe(false)
     expect(after.issues.some((i) => doomedIssues.includes(i.id))).toBe(false)
     expect(after.deps.some((d) => doomedDeps.includes(d.id))).toBe(false)
@@ -128,12 +156,12 @@ describe('mock api', () => {
   })
 
   it('reorderTasks 依送來的順序重排；groupId 有變的任務 emit task.updated', async () => {
-    const before = await api.loadProject()
+    const before = await api.loadProject('pmis')
     const order = before.tasks.map((t) => ({ id: t.id, groupId: t.groupId }))
     const moved = order.splice(0, 1)[0]!
     order.push({ ...moved, groupId: 'g2' })
-    await api.reorderTasks(order)
-    const after = await api.loadProject()
+    await api.reorderTasks('pmis', order)
+    const after = await api.loadProject('pmis')
     expect(after.tasks[after.tasks.length - 1]!.id).toBe(moved.id)
     expect(after.tasks[after.tasks.length - 1]!.groupId).toBe('g2')
     expect(events.map((e) => e.type)).toEqual(['task.updated'])
@@ -141,16 +169,16 @@ describe('mock api', () => {
 
   // ── 分類 / 相依 / Issue / 留言 ───────────────────────────────────────────
   it('分類 CRUD 與 reorderGroups；deleteGroup 連動刪底下的任務', async () => {
-    const g = await api.createGroup({ id: 'gx', name: '新分類' })
+    const g = await api.createGroup('pmis', { id: 'gx', name: '新分類' })
     expect(g.name).toBe('新分類')
     await api.updateGroup('gx', { name: '改過的' })
-    await api.reorderGroups(['gx', 'g1', 'g2', 'g3', 'g4', 'g5', 'g6'])
-    let data = await api.loadProject()
+    await api.reorderGroups('pmis', ['gx', 'g1', 'g2', 'g3', 'g4', 'g5', 'g6'])
+    let data = await api.loadProject('pmis')
     expect(data.groups[0]!.id).toBe('gx')
     expect(data.groups.find((x) => x.id === 'gx')!.name).toBe('改過的')
 
     await api.deleteGroup('g1')
-    data = await api.loadProject()
+    data = await api.loadProject('pmis')
     expect(data.groups.some((x) => x.id === 'g1')).toBe(false)
     expect(data.tasks.some((t) => t.groupId === 'g1')).toBe(false)
     expect(events.filter((e) => e.type === 'task.deleted').length).toBeGreaterThan(0)
@@ -162,7 +190,7 @@ describe('mock api', () => {
     expect((self as ApiError).code).toBe('validation')
     expect((self as ApiError).status).toBe(422)
 
-    const data = await api.loadProject()
+    const data = await api.loadProject('pmis')
     const first = data.deps[0]!
     const dup = await api
       .createDep({ id: 'dy', from: first.from, to: first.to })
@@ -179,7 +207,7 @@ describe('mock api', () => {
     expect(events).toEqual([{ type: 'dep.created', payload: ok }])
 
     await api.deleteDep('dnew')
-    expect((await api.loadProject()).deps.some((d) => d.id === 'dnew')).toBe(false)
+    expect((await api.loadProject('pmis')).deps.some((d) => d.id === 'dnew')).toBe(false)
     expect(events[events.length - 1]).toEqual({ type: 'dep.deleted', payload: { id: 'dnew' } })
   })
 
@@ -220,7 +248,7 @@ describe('mock api', () => {
     await api.createComment(comment, [])
     await api.deleteIssue('ix')
 
-    const data = await api.loadProject()
+    const data = await api.loadProject('pmis')
     expect(data.issues.some((i) => i.id === 'ix')).toBe(false)
     expect(data.comments.some((c) => c.id === 'cx')).toBe(false)
     expect(events.map((e) => e.type)).toEqual([
@@ -247,7 +275,7 @@ describe('mock api', () => {
     const blob = await api.downloadAttachment('cfile:0')
     expect(await blob.text()).toBe('hello')
     await api.deleteComment('cfile')
-    expect((await api.loadProject()).comments.some((c) => c.id === 'cfile')).toBe(false)
+    expect((await api.loadProject('pmis')).comments.some((c) => c.id === 'cfile')).toBe(false)
   })
 
   it('downloadAttachment 對 mocks 的附件回 demo Blob；不存在 → not_found', async () => {
@@ -261,7 +289,7 @@ describe('mock api', () => {
   // ── 事件 ────────────────────────────────────────────────────────────────
   it('事件同步發出、早於 response resolve；unsubscribe 後不再收到', async () => {
     const order: string[] = []
-    const off = api.subscribe((e) => order.push('event:' + e.type))
+    const off = api.subscribe('pmis', (e) => order.push('event:' + e.type))
     await api.updateTask('t1', { name: '順序測試' }).then(() => order.push('resolve'))
     expect(order).toEqual(['event:task.updated', 'resolve'])
 
@@ -274,7 +302,7 @@ describe('mock api', () => {
   it('有延遲時事件仍早於 resolve（事件不等 response）', async () => {
     api.setLatency(20)
     const order: string[] = []
-    const off = api.subscribe(() => order.push('event'))
+    const off = api.subscribe('pmis', () => order.push('event'))
     const p = api.updateTask('t1', { name: '延遲' }).then(() => order.push('resolve'))
     expect(order).toEqual(['event'])
     await p
@@ -292,10 +320,10 @@ describe('mock api', () => {
   it('handler 拋錯只進 console.error，不影響其他 handler 與呼叫端', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const later = vi.fn()
-    const offBad = api.subscribe(() => {
+    const offBad = api.subscribe('pmis', () => {
       throw new Error('handler boom')
     })
-    const offLater = api.subscribe(later)
+    const offLater = api.subscribe('pmis', later)
     await expect(api.updateTask('t1', { name: 'ok' })).resolves.toMatchObject({ name: 'ok' })
     expect(later).toHaveBeenCalledTimes(1)
     expect(spy).toHaveBeenCalled()
@@ -309,7 +337,7 @@ describe('mock api', () => {
     const err = await api.updateTask('t1', { name: '會失敗' }).catch((e: unknown) => e)
     expect(err).toBeInstanceOf(ApiError)
     expect((err as ApiError).method).toBe('updateTask')
-    expect((await api.loadProject()).tasks[0]!.name).not.toBe('會失敗')
+    expect((await api.loadProject('pmis')).tasks[0]!.name).not.toBe('會失敗')
     expect(events).toEqual([])
     await expect(api.updateTask('t1', { name: '會成功' })).resolves.toMatchObject({
       name: '會成功',
@@ -330,7 +358,7 @@ describe('mock api', () => {
   it('setLatency(20) 後 resolve 晚於 20ms', async () => {
     api.setLatency(20)
     const t0 = Date.now()
-    await api.loadProject()
+    await api.loadProject('pmis')
     expect(Date.now() - t0).toBeGreaterThanOrEqual(19)
     api.setLatency(0)
   })
@@ -341,7 +369,7 @@ describe('mock api', () => {
     api.failNext('loadProject')
     api.reset()
     const t0 = Date.now()
-    const data = await api.loadProject()
+    const data = await api.loadProject('pmis')
     expect(Date.now() - t0).toBeLessThan(50)
     expect(data.tasks).toHaveLength(30)
     expect(data.tasks.some((t) => t.id === 'will-be-gone')).toBe(false)
@@ -349,6 +377,8 @@ describe('mock api', () => {
 
   it('reset(data) 換成指定的資料', async () => {
     api.reset({
+      project: { id: 'pmis', name: '空專案', pmId: 'm1' },
+      canEdit: true,
       groups: [],
       members: [],
       tasks: [],
@@ -358,7 +388,7 @@ describe('mock api', () => {
       budget: { total: 0, actual: 0 },
       currentUserId: 'm1',
     })
-    expect((await api.loadProject()).tasks).toHaveLength(0)
+    expect((await api.loadProject('pmis')).tasks).toHaveLength(0)
   })
 })
 
@@ -371,7 +401,7 @@ describe('api 進入點', () => {
 
   it('createMockApi 不帶參數時用 sampleProject，而且是拷貝', async () => {
     const fresh = createMockApi()
-    const data = await fresh.loadProject()
+    const data = await fresh.loadProject('pmis')
     expect(data.tasks).toHaveLength(sampleProject.tasks.length)
     await fresh.updateTask('t1', { name: '改過的' })
     expect(sampleProject.tasks.find((t) => t.id === 't1')!.name).not.toBe('改過的')
@@ -408,7 +438,7 @@ describe('listProjects', () => {
   it('PMIS 摘要跟著 mock 裡的任務走', async () => {
     const api = createMockApi()
     const before = (await api.listProjects()).projects[0]!.taskDone
-    const t = (await api.loadProject()).tasks.find((x) => x.status !== 'done')!
+    const t = (await api.loadProject('pmis')).tasks.find((x) => x.status !== 'done')!
     await api.updateTask(t.id, { status: 'done', done: '2026-09-22' })
     expect((await api.listProjects()).projects[0]!.taskDone).toBe(before + 1)
   })

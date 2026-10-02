@@ -16,6 +16,7 @@ import { parseDuration } from '@/lib/easing'
 import { toggleIn } from '@/lib/filter'
 import { fmtDate } from '@/lib/format'
 import { useFilterStore } from '@/stores/filter'
+import { useProjectStore } from '@/stores/project'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 import type { IssueLevel, IssueStatus, Priority, TaskStatus } from '@/types/models'
@@ -23,6 +24,7 @@ import type { IssueLevel, IssueStatus, Priority, TaskStatus } from '@/types/mode
 const ui = useUiStore()
 const filter = useFilterStore()
 const taskStore = useTaskStore()
+const project = useProjectStore()
 const sticky = useStickyOffsetsContext()
 const registry = useDomRegistry()
 /** 首屏外的面板延後掛載（K1）：捷徑跳到還沒掛的面板前先掛上 */
@@ -403,7 +405,8 @@ function clearFilters(): void {
       <RouterLink to="/" class="burger" title="所有專案" aria-label="所有專案">
         <i></i><i></i><i></i>
       </RouterLink>
-      <h1 class="project">My Project</h1>
+      <!-- 專案名最多 100 字：放不下時截斷加「…」，滑過看全名 -->
+      <h1 class="project" :title="project.meta.name">{{ project.meta.name }}</h1>
 
       <nav class="boards">
         <div
@@ -646,11 +649,20 @@ function clearFilters(): void {
   background: var(--text-2);
 }
 
+/*
+ * 專案名（最多 100 字）：再長也只佔約 24 個字寬，窄螢幕再收到視窗寬的 28%，超過就截斷加「…」（title 看全名）。
+ * 寬螢幕上篩選器才不會因為名稱長就一定換到第二列（measureFit 量的是截斷後的寬度）；
+ * 平板直向兩列時，第一列的「只顯示篩選結果」與頭像也不會被長名稱擠到下一行。
+ * 名稱短的時候（範例的 My Project）寬度跟以前寫死時一樣，頂欄版型不變。
+ */
 .project {
   font-size: var(--fs-dialog);
   font-weight: var(--fw-bold);
   letter-spacing: -0.01em;
   flex: 0 0 auto;
+  max-width: min(24em, 28vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   margin: 0;
 }

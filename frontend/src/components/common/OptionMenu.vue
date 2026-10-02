@@ -115,8 +115,9 @@ const items = computed<OptionItem[]>(() => {
         checked: issue.taskId === t.id,
         pick: () => setIssue(issue.id, { taskId: t.id }),
       }))
+    // 提出人 / 負責人只列沒停用的人，原本就選了的停用者留著（要看得到勾選、才能換掉或取消）
     case 'icreator':
-      return memberStore.members.map((mm) => ({
+      return memberStore.assignable([issue.creatorId]).map((mm) => ({
         key: mm.id,
         label: mm.name,
         dot: mm.color,
@@ -126,7 +127,7 @@ const items = computed<OptionItem[]>(() => {
     default: {
       // iowner 是多選，點了不關選單。legacy :3437
       const owners = issue.ownerIds ?? []
-      return memberStore.members.map((mm) => {
+      return memberStore.assignable(owners).map((mm) => {
         const on = owners.includes(mm.id)
         return {
           key: mm.id,

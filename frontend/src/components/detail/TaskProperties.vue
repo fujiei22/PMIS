@@ -46,8 +46,9 @@ const donePill = computed(() =>
 const assigned = computed(() =>
   props.task.assigneeIds.map((id) => memberStore.byId(id)).filter((m) => !!m),
 )
+/** ＋指派可以選的人：沒停用、還沒指派的（已指派的停用者照樣在上面的標籤裡，可以移除）。 */
 const available = computed(() =>
-  memberStore.members.filter((m) => !props.task.assigneeIds.includes(m.id)),
+  memberStore.assignable().filter((m) => !props.task.assigneeIds.includes(m.id)),
 )
 const pickerOpen = computed(() => ui.pickerFor === props.task.id)
 /** 收起時仍保留 DOM 讓 grid-template-rows 有東西可補間。legacy `pickerMounted` :3063 */

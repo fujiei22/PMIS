@@ -6,6 +6,7 @@ import { dayIndex } from '@/lib/date'
 import { newId } from '@/lib/id'
 import {
   applyServerValue,
+  clearTracker,
   cloneEntity,
   createTracker,
   insertIndexOf,
@@ -59,6 +60,20 @@ export const useCommentStore = defineStore('comment', () => {
   function setAll(list: Comment[]): void {
     comments.value = list
     resetTracker(tracker, list)
+  }
+
+  /**
+   * 換專案時清空：留言、草稿（連同 blob url）、檔案多選，以及留言篩選（成員與日期指的是上一個專案的東西）。
+   * 頁籤與檔案檢視模式是使用者的偏好，留著。上一個專案還在飛的請求回來也不會再動這裡（`clearTracker`）。
+   */
+  function reset(): void {
+    comments.value = []
+    clearTracker(tracker)
+    resetDraft()
+    fileSel.value = []
+    dateFrom.value = ''
+    dateTo.value = ''
+    memberIds.value = []
   }
 
   /** 連動刪除時由 task / issue store 呼叫：只動本地。 */
@@ -299,6 +314,7 @@ export const useCommentStore = defineStore('comment', () => {
     fileView,
     fileSel,
     setAll,
+    reset,
     dropLocal,
     restoreFromServer,
     dropServer,

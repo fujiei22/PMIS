@@ -21,4 +21,21 @@ describe('memberStore', () => {
     expect(s.byId('m3')?.name).toBe('成員3')
     expect(s.byId('nope')).toBeUndefined()
   })
+
+  it('assignable：只列沒停用的人，原本就選了的停用者留著；順序照 members', () => {
+    const data = structuredClone(sampleProject)
+    data.members[1]!.active = false // m2
+    data.members[3]!.active = false // m4
+    useTaskStore().load(data)
+    const s = useMemberStore()
+    expect(s.assignable().map((m) => m.id)).toEqual(['m1', 'm3', 'm5', 'm6', 'm7'])
+    expect(s.assignable(['m4']).map((m) => m.id)).toEqual(['m1', 'm3', 'm4', 'm5', 'm6', 'm7'])
+  })
+
+  it('reset 清空成員與登入者', () => {
+    const s = useMemberStore()
+    s.reset()
+    expect(s.members).toEqual([])
+    expect(s.currentUserId).toBe('')
+  })
 })

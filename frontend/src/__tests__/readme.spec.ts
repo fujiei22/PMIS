@@ -103,9 +103,9 @@ describe('README 的「怎麼接後端」', () => {
   })
 
   it('錯誤碼表涵蓋所有 ApiErrorCode', () => {
-    const codes = [...apiTypes.matchAll(/export type ApiErrorCode = ([^\n]+)/g)]
-      .flatMap((m) => [...m[1]!.matchAll(/'([^']+)'/g)].map((c) => c[1]!))
-      .sort()
+    // 宣告到第一個空行為止：成員一多，Prettier 會把 union 拆成一行一個
+    const decl = apiTypes.match(/export type ApiErrorCode =([\s\S]*?)\n\s*\n/)
+    const codes = [...(decl?.[1] ?? '').matchAll(/'([^']+)'/g)].map((c) => c[1]!).sort()
     expect(codes.length, '沒解析到 ApiErrorCode').toBeGreaterThan(0)
     const documented = firstColumnUnder('### 錯誤碼對照表')
       .map((cell) => cell.replace(/`/g, '').trim())

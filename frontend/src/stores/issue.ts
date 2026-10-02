@@ -6,6 +6,7 @@ import { newId } from '@/lib/id'
 import {
   applyServerValue,
   clearDirty,
+  clearTracker,
   cloneEntity,
   createTracker,
   insertIndexOf,
@@ -57,6 +58,12 @@ export const useIssueStore = defineStore('issue', () => {
   function setAll(list: Issue[]): void {
     issues.value = list
     resetTracker(tracker, list)
+  }
+
+  /** 換專案時清空；上一個專案還在飛的請求回來也不會再動這裡（`clearTracker`）。 */
+  function reset(): void {
+    issues.value = []
+    clearTracker(tracker)
   }
 
   /** 連動刪除時由 taskStore 呼叫：只動本地。 */
@@ -230,6 +237,7 @@ export const useIssueStore = defineStore('issue', () => {
     openCounts,
     openCount,
     setAll,
+    reset,
     dropLocal,
     restoreFromServer,
     dropServer,

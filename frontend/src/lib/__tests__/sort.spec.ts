@@ -44,8 +44,8 @@ const issue = (over: Partial<Issue> & { id: string }): Issue => ({
   ...over,
 })
 const members: Member[] = [
-  { id: 'm1', name: '甲', role: '', color: '#000' },
-  { id: 'm2', name: '乙', role: '', color: '#000' },
+  { id: 'm1', name: '甲', role: '', color: '#000', active: true },
+  { id: 'm2', name: '乙', role: '', color: '#000', active: true },
 ]
 const tasks = [task({ id: 't1', start: '2026-09-01' }), task({ id: 't2', start: '2026-09-09' })]
 const TODAY_IDX = dayIndex('2026-09-18')

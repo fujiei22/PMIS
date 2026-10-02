@@ -1,18 +1,19 @@
 import { API_ERROR_TEXT, apiErrorCode } from '@/constants/api'
 import { setErrorSink } from '@/stores/_optimistic'
 import { useProjectSync } from '@/stores/_sync'
+import { useFilterStore } from '@/stores/filter'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 
 export interface ProjectBoot {
-  /** 開始收後端事件（`DashboardView` onMounted）。 */
+  /** 開始收這個專案的後端事件（`DashboardView` onMounted）。 */
   start: () => void
   /** 停止收事件（onBeforeUnmount）。 */
   stop: () => void
   /**
-   * 載入整包資料並維護 `ui.loadState` / `ui.loadError`；失敗不 throw。
-   * 切頁時 router 已經先開始載（`preloadProject`）的話，沿用那一發、不再打。
+   * 載入這個專案的整包資料並維護 `ui.loadState` / `ui.loadError`；失敗不 throw。
+   * 切頁時 router 已經先開始載同一個專案（`preloadProject`）的話，沿用那一發、不再打。
    */
   reload: () => Promise<void>
 }
@@ -25,15 +26,15 @@ export interface ProjectBoot {
 let reloadSeq = 0
 
 /**
- * 切頁時 router 先開始的那一發（`preloadProject`），等頁面掛載時的 `reload()` 取走。
+ * 切頁時 router 先開始的那一發（`preloadProject`）與它載的專案，等頁面掛載時的 `reload()` 取走。
  * 取走就清掉，所以同一次進頁只會打一次：之後的 `reload()`（按重試）才會再打。
  */
-let preloaded: Promise<void> | null = null
+let preloaded: { id: string; promise: Promise<void> } | null = null
 
 /**
- * store 裡（或正在載）的是哪個專案。背景重載只在**同一個專案**時才走：換了專案一律走「載入中」，
- * 畫面不會先秀上一個專案的資料，也不會讓人在 B 的頁面上改到 A 的任務（安全審查 M2）。
- * `api.loadProject()` 目前不帶 id（mock 只有一份專案），比對已經在這裡；接後端時把 id 傳給 api 就好。
+ * store 裡（或正在載）的是哪個專案。背景重載只在**同一個專案**時才走：換了專案一律先清空資料層與
+ * 畫面狀態、走「載入中」，畫面不會先秀上一個專案的資料，篩選與選取也不會沿用，
+ * 也不會讓人在 B 的頁面上改到 A 的任務（安全審查 M2）。
  */
 let loadedId: string | null = null
 
@@ -50,19 +51,32 @@ function afterNextPaint(): Promise<void> {
 }
 
 /**
+ * 換專案：清掉上一個專案的東西——資料層整個（`taskStore.reset()` 連 member / issue / comment / budget /
+ * project 一起）、選取、篩選條件，與詳細視窗、浮層、錯誤條這類暫態（`ui.resetTransient()`）。
+ * 排序、面板收合、縮放這些版面偏好留著（同離開 Dashboard 時的規則）。
+ */
+function clearProject(): void {
+  useTaskStore().reset()
+  useSelectionStore().clear()
+  useFilterStore().clear()
+  useUiStore().resetTransient()
+}
+
+/**
  * 載入整包資料並維護載入狀態；失敗不 throw。
  *
  * 重進 Dashboard 時畫面不能閃（G8，比照總覽的 `usePortfolioBoot`）：
  * - 還沒有資料（idle / loading / error）→ 顯示載入中，失敗顯示重試。
  * - 已經有資料（ready）→ 背景重載，全程維持 ready；資料到了就地更新（列以 id 為 key，元素不換）。
  *   背景失敗不蓋掉畫面，只記 console——舊資料仍然可用。
+ * - 換了專案 → 先 `clearProject()` 再走載入中；等的時候又換到別的專案，這一發的結果（成功或失敗）都不算數。
  *
- * @param id 要載的專案（路由的 `:id`）；跟 store 裡的不是同一個就不走背景重載。
+ * @param id 要載的專案（路由的 `:id`）；跟 store 裡的不是同一個就先清空、不走背景重載。
  * @param mounted 頁面已經掛上（掛載時的 reload）。背景重載要等新頁第一幀畫出來再打：
  *   mock 的資料在 microtask 就回來，會在掛載同一個 task 裡再把整頁重算一次，拉長切頁那一幀。
  *   router 先載時頁面還沒掛上，資料進 store 不會重算畫面，立刻打。
  */
-async function load(id: string | null, mounted: boolean): Promise<void> {
+async function load(id: string, mounted: boolean): Promise<void> {
   const ui = useUiStore()
   const taskStore = useTaskStore()
   // 懸空 id 清理 watch 要在資料進來前掛好（契約 E）；router 先載時頁面還沒呼叫 useProjectBoot
@@ -74,24 +88,27 @@ async function load(id: string | null, mounted: boolean): Promise<void> {
   if (ui.loadState === 'ready' && sameProject) {
     if (mounted) await afterNextPaint()
     try {
-      await taskStore.load()
+      await taskStore.load(id)
     } catch (error) {
       console.error('[api]', '載入專案（背景）', error)
     }
     return
   }
 
+  if (!sameProject) clearProject()
   ui.loadState = 'loading'
   ui.loadError = null
   try {
-    await taskStore.load()
+    await taskStore.load(id)
+    // 等的時候換到別的專案了：task store 已經把這份資料丟掉，畫面狀態歸新專案那一發管
+    if (id !== loadedId) return
     // 不等還在飛的後一發：它之後若失敗，這份資料照樣可用
     ui.loadState = 'ready'
     ui.loadError = null
   } catch (error) {
     console.error('[api]', '載入專案', error)
-    // 已經有更新的一發在處理，或較早的一發已經把資料帶回來，這一發的失敗就不影響畫面
-    if (ticket !== reloadSeq || ui.loadState === 'ready') return
+    // 換了專案、已經有更新的一發在處理，或較早的一發已經把資料帶回來，這一發的失敗就不影響畫面
+    if (id !== loadedId || ticket !== reloadSeq || ui.loadState === 'ready') return
     ui.loadError = API_ERROR_TEXT[apiErrorCode(error)]
     ui.loadState = 'error'
   }
@@ -104,20 +121,24 @@ async function load(id: string | null, mounted: boolean): Promise<void> {
  * 每次導航都覆寫：上一次導航被打斷而沒被取走的那一發，不會留給下一次進頁。
  */
 export function preloadProject(id: string): void {
-  preloaded = load(id, false)
+  preloaded = { id, promise: load(id, false) }
 }
 
 /**
  * 啟動層：把資料層接上畫面（契約 E）。
  *
- * 資料 store 不認識派生層，所以這三件事都在這裡做：
+ * 資料 store 不認識派生層，所以這四件事都在這裡做：
  * 1. 注入 error sink——`runOptimistic` 失敗時把錯誤送進 `ui.errors`。
- * 2. `loadState` / `loadError`——`taskStore.load()` 只負責回 Promise。
+ * 2. `loadState` / `loadError`——`taskStore.load(id)` 只負責回 Promise。
  * 3. 先把 selection / ui 建起來，它們的懸空 id 清理 `watch` 要在資料進來前掛好。
+ * 4. 換專案時清掉上一個專案的資料與畫面狀態（`clearProject`）。
+ *
+ * @param projectId 這一頁的專案（路由的 `:id`）。`App.vue` 的頁面 key 是 `route.path`，
+ *   換專案時 Dashboard 會重新掛載，所以一次掛載只對應一個專案。
  *
  * `DashboardView` 是唯一的呼叫端（事件訂閱也只有這一處，review M6）。
  */
-export function useProjectBoot(): ProjectBoot {
+export function useProjectBoot(projectId: string): ProjectBoot {
   const ui = useUiStore()
   // 建立即掛上清理 watch（契約 E）
   useSelectionStore()
@@ -129,9 +150,10 @@ export function useProjectBoot(): ProjectBoot {
     // 掛載時沿用 router 先開始的那一發（進行中或已完成都一樣），不再多打
     const p = preloaded
     preloaded = null
-    // 沒有先載（直接呼叫、按重試）就載 store 裡的那個專案
-    return p ?? load(loadedId, true)
+    if (p && p.id === projectId) return p.promise
+    // 沒有先載（直接呼叫、按重試）就自己載這一頁的專案
+    return load(projectId, true)
   }
 
-  return { start: sync.start, stop: sync.stop, reload }
+  return { start: () => sync.start(projectId), stop: sync.stop, reload }
 }

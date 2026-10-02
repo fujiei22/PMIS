@@ -1,5 +1,5 @@
 import { sampleProject } from '@/mocks/sampleProject'
-import type { Member, ProjectStatus, ProjectSummary } from '@/types/models'
+import type { Member, ProjectSummary } from '@/types/models'
 
 /**
  * 多專案總覽的範例資料（設計稿 `content.md` 第三輪）。
@@ -12,21 +12,24 @@ import type { Member, ProjectStatus, ProjectSummary } from '@/types/models'
  * `mocks/__tests__/portfolio.spec.ts` 守著這組數字。
  */
 
-/** PMIS 的摘要中，不能從任務資料推出來的欄位。 */
-export const PMIS_META: { id: string; name: string; pmId: string; status: ProjectStatus } = {
+/**
+ * PMIS 的摘要中，不能從任務資料推出來的欄位（狀態依任務算，見 `projectStatusOf`）。
+ * 名稱跟範例專案的 `project.name`（Dashboard 頂欄的 `My Project`）不同是 mock 的現況：
+ * Dashboard 那邊要維持 legacy 的頂欄文字（compare.spec 比整頁文字），總覽這邊照設計稿。
+ */
+export const PMIS_META: { id: string; name: string; pmId: string } = {
   id: 'pmis',
   name: 'PMIS 專案管理系統',
   pmId: 'm5',
-  status: 'doing',
 }
 
 /** 總覽的成員名錄：m1–m7 直接引用範例專案的成員（同一份，不會走樣），再加上三位 PM 與 PM 主管。 */
 export const PORTFOLIO_MEMBERS: Member[] = [
   ...sampleProject.members,
-  { id: 'm8', name: '成員8', role: '專案經理', color: '#7c3aed' },
-  { id: 'm9', name: '成員9', role: '專案經理', color: '#0891b2' },
-  { id: 'm10', name: '成員10', role: '專案經理', color: '#db2777' },
-  { id: 'm11', name: '成員11', role: 'PM 主管', color: '#475569' },
+  { id: 'm8', name: '成員8', role: '專案經理', color: '#7c3aed', active: true },
+  { id: 'm9', name: '成員9', role: '專案經理', color: '#0891b2', active: true },
+  { id: 'm10', name: '成員10', role: '專案經理', color: '#db2777', active: true },
+  { id: 'm11', name: '成員11', role: 'PM 主管', color: '#475569', active: true },
 ]
 
 /** 登入者：PM 主管。 */

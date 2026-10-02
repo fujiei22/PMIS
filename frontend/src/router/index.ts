@@ -15,8 +15,8 @@ const router = createRouter({
       component: ProjectsOverviewView,
     },
     {
-      // 單一專案的 Dashboard。`id` 目前不影響載入（mock 只有一份完整專案），
-      // 等後端接上後才依 id 取資料
+      // 單一專案的 Dashboard，依 `id` 載入（api.loadProject(id)）；
+      // mock 只有一份完整專案，任何 id 都回它
       path: '/projects/:id',
       name: 'dashboard',
       component: DashboardView,
@@ -51,8 +51,8 @@ const router = createRouter({
  *   直接開總覽時 path 沒變，所以用 matched 是否為空判斷，跟 scrollBehavior 一樣。
  * - 導航被後來的導航打斷時，這一發不會被取走；下一次進同一頁的導航會覆寫它，不會沿用到舊的。
  *
- * 專案 id 傳給 `preloadProject`：換了專案不走背景重載（見 useProjectBoot 的 `loadedId`）。
- * `api.loadProject()` 目前不帶 id；接後端時由 `preloadProject` 往下傳給 api。
+ * 專案 id 傳給 `preloadProject`，一路傳到 `api.loadProject(id)`；換了專案先清空、不走背景重載
+ * （見 useProjectBoot 的 `loadedId`）。
  */
 router.beforeEach((to, from) => {
   if (from.matched.length && to.path === from.path) return

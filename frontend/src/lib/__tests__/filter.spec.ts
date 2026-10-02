@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { dayIndex } from '@/lib/date'
-import { anyTaskFilter, matchTask, toggleIn, type TaskFilter } from '@/lib/filter'
-import type { Task } from '@/types/models'
+import {
+  anyTaskFilter,
+  filterableMembers,
+  matchTask,
+  toggleIn,
+  type TaskFilter,
+} from '@/lib/filter'
+import type { Member, Task } from '@/types/models'
 
 const base: TaskFilter = {
   memberIds: [],
@@ -108,5 +114,23 @@ describe('toggleIn', () => {
     expect(toggleIn(list, 'c')).toEqual(['a', 'b', 'c'])
     expect(toggleIn(list, 'a')).toEqual(['b'])
     expect(list).toEqual(['a', 'b'])
+  })
+})
+
+describe('filterableMembers', () => {
+  const m = (id: string): Member => ({ id, name: id, role: '', color: '#000000', active: true })
+  const members = [m('m1'), m('m2'), m('m3'), m('m4')]
+  const tasks = [
+    { assigneeIds: ['m3', 'm1'] },
+    { assigneeIds: [] },
+    { assigneeIds: ['m3'] },
+  ] as unknown as Task[]
+
+  it('只列有被指派任務的成員，順序照 members（不照任務裡的順序）', () => {
+    expect(filterableMembers(members, tasks, []).map((x) => x.id)).toEqual(['m1', 'm3'])
+  })
+
+  it('已勾選的人就算沒有任務了也留著，才取消得掉', () => {
+    expect(filterableMembers(members, tasks, ['m4']).map((x) => x.id)).toEqual(['m1', 'm3', 'm4'])
   })
 })

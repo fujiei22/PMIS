@@ -17,13 +17,13 @@ const groups: Group[] = [
 ]
 
 const members: Member[] = [
-  { id: 'm1', name: '成員1', role: '前端工程師', color: '#2563eb' },
-  { id: 'm2', name: '成員2', role: '後端工程師', color: '#059669' },
-  { id: 'm3', name: '成員3', role: 'UI 設計師', color: '#7c3aed' },
-  { id: 'm4', name: '成員4', role: 'QA 工程師', color: '#db2777' },
-  { id: 'm5', name: '成員5', role: '專案經理', color: '#d97706' },
-  { id: 'm6', name: '成員6', role: '資料工程師', color: '#0891b2' },
-  { id: 'm7', name: '成員7', role: 'DevOps', color: '#475569' },
+  { id: 'm1', name: '成員1', role: '前端工程師', color: '#2563eb', active: true },
+  { id: 'm2', name: '成員2', role: '後端工程師', color: '#059669', active: true },
+  { id: 'm3', name: '成員3', role: 'UI 設計師', color: '#7c3aed', active: true },
+  { id: 'm4', name: '成員4', role: 'QA 工程師', color: '#db2777', active: true },
+  { id: 'm5', name: '成員5', role: '專案經理', color: '#d97706', active: true },
+  { id: 'm6', name: '成員6', role: '資料工程師', color: '#0891b2', active: true },
+  { id: 'm7', name: '成員7', role: 'DevOps', color: '#475569', active: true },
 ]
 
 const tasks: Task[] = [
@@ -718,6 +718,13 @@ const comments: Comment[] = [
 ]
 
 export const sampleProject: ProjectData = {
+  /**
+   * 名稱刻意維持 `My Project`：頂欄改讀這個欄位之前寫死的就是它，
+   * 頂欄文字與寬度不變，compare.spec（整頁文字對 legacy）與 topbar-layout.spec 的寬度門檻都不受影響。
+   */
+  project: { id: 'pmis', name: 'My Project', pmId: 'm5' },
+  /** mock 不判斷權限：一律可以改 */
+  canEdit: true,
   groups,
   members,
   tasks,

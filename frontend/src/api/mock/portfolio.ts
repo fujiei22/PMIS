@@ -20,9 +20,23 @@ import type {
 const UPCOMING_LIMIT = 3
 
 /**
+ * 專案整體狀態，依任務狀態的數量算（不存欄位，後端同一套規則）：
+ * - 有任務且全部完成 → 'done'
+ * - 有任何進行中或已完成 → 'doing'
+ * - 其他（沒有任務、全部未開始、只有暫停或暫停加未開始）→ 'todo'
+ */
+export function projectStatusOf(counts: Record<TaskStatus, number>): ProjectStatus {
+  const total = counts.done + counts.doing + counts.paused + counts.todo
+  if (total > 0 && counts.done === total) return 'done'
+  if (counts.doing > 0 || counts.done > 0) return 'doing'
+  return 'todo'
+}
+
+/**
  * 把一份完整專案資料彙整成總覽用的摘要。mock 在這裡扮演後端的彙整邏輯，
  * 規則同 `api/types.ts` 檔頭的 wire 約定：
  *
+ * - status：`projectStatusOf(taskCounts)`。
  * - 起訖日：任務 start 的最小值 / end 的最大值；沒有任務時兩者都是今天。
  * - taskPlanned：`isPlannedDone` 為真的任務數（end 在今天之前），與 Dashboard 理論進度同一個定義。
  * - delayedTasks：`isLate` 為真的任務數，與 Dashboard「已延遲」同一個定義；和 taskCounts 重疊計數。
@@ -32,7 +46,7 @@ const UPCOMING_LIMIT = 3
  */
 export function summarizeProject(
   data: ProjectData,
-  meta: { id: string; name: string; pmId: string; status: ProjectStatus },
+  meta: { id: string; name: string; pmId: string },
   todayIso: ISODate,
 ): ProjectSummary {
   const todayIdx = dayIndex(todayIso)
@@ -63,6 +77,7 @@ export function summarizeProject(
 
   return {
     ...meta,
+    status: projectStatusOf(taskCounts),
     startDate: starts[0] ?? todayIso,
     dueDate: ends[ends.length - 1] ?? todayIso,
     taskTotal: tasks.length,

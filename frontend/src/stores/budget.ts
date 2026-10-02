@@ -14,5 +14,10 @@ export const useBudgetStore = defineStore('budget', () => {
     budget.value = { ...next }
   }
 
-  return { budget, setAll }
+  /** 換專案時清空（預算 ≤ 0 時摘要卡自己處理，不會除以 0，見 lib/budget.ts）。 */
+  function reset(): void {
+    setAll({ total: 0, actual: 0 })
+  }
+
+  return { budget, setAll, reset }
 })
