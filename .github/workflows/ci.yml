@@ -1,0 +1,135 @@
+# PR 與 main 的自動檢查。三個 job 平行執行：
+# - backend：ruff、mypy、pytest（連 PostgreSQL 18 的測試資料庫）、migration 一致性
+# - frontend：ESLint、型別檢查、單元測試、打包
+# - e2e：Playwright（Chromium）
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# 同一個 PR 推了新 commit，就取消還在跑的舊檢查；main 上的每次 push 都跑完。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pmis_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pmis_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/pmis_test
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安裝 uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          working-directory: backend
+
+      - name: 安裝相依套件（uv.lock 必須跟 pyproject.toml 一致）
+        run: uv sync --locked
+
+      - name: ruff check
+        run: uv run ruff check
+
+      - name: ruff format --check
+        run: uv run ruff format --check
+
+      - name: mypy
+        run: uv run mypy
+
+      - name: pytest
+        run: uv run pytest
+
+      - name: migration 一致性（models.py 改了就要有對應的 migration）
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/pmis_test
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安裝相依套件
+        run: npm ci
+
+      - name: ESLint（只檢查，不自動修正）
+        run: npx eslint .
+
+      - name: 型別檢查
+        run: npm run type-check
+
+      - name: 單元測試
+        run: npm run test:unit -- --run
+
+      - name: 打包
+        run: npm run build-only
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安裝相依套件
+        run: npm ci
+
+      - name: 安裝 Playwright 的 Chromium 與系統套件
+        run: npx playwright install --with-deps chromium
+
+      # CI 上 playwright.config.ts 用 1 個 worker、失敗重試 2 次；
+      # list 讓 log 裡逐條看得到結果，html 是失敗時上傳的報告。
+      - name: e2e 測試
+        run: npm run test:e2e -- --reporter=list,html
+
+      - name: 上傳 Playwright 報告
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 14
