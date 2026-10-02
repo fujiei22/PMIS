@@ -11,3 +11,7 @@ class ServiceError(Exception):
 
 class NotFound(ServiceError):
     """找不到、id 格式不對，或已經在回收桶裡 → 404。"""
+
+
+class InvalidInput(ServiceError):
+    """輸入不合法（例：例外日名稱空白、年份超出範圍）→ 422。"""
