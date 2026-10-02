@@ -28,6 +28,7 @@ from app.core.calendar_rules import (
     MIN_YEAR,
     OFFICIAL_NAME_MAX,
     CalendarSource,
+    has_control_char,
     is_default_workday,
 )
 
@@ -37,6 +38,8 @@ WEEKEND_CATEGORY = "星期六、星期日"
 SPECIAL_CATEGORY = "特定節日"
 # 新北市沒有名稱的列用類別補名稱；這兩類例外（普通週末不給名稱、紀念日的類別名稱太長）
 CATEGORY_NAMES = {WEEKEND_CATEGORY: "", "放假之紀念日及節日": "國定假日"}
+# 表頭認不得時只回顯第一格的前幾個字：選錯檔（例如 .env）時不能把整行（可能含密碼）印出來
+HEADER_PREVIEW = 20
 
 # 每個 CALENDAR_SOURCES 都要有標籤（tests/core/test_calendar_rules.py 檢查）。
 # key 用 str：資料庫讀出來的 source 是 str，查表時不必轉型
@@ -99,8 +102,12 @@ def parse_calendar_csv(raw: bytes) -> ParsedCalendar:
         source = "dgpa"
         _read_dgpa(rows[1:], collector)
     else:
+        first = header[0] if header else ""
+        preview = first[:HEADER_PREVIEW] + ("…" if len(first) > HEADER_PREVIEW else "")
         raise CalendarFormatError(
-            f"第 1 行：認不得的表頭「{','.join(header)}」。新北市的表頭是 {','.join(NTPC_HEADER)}；"
+            # !r：控制字元顯示成跳脫序列，不會直接進終端機
+            f"第 1 行：認不得的表頭（{len(header)} 欄，第一欄開頭是 {preview!r}），"
+            f"可能選錯檔了。新北市的表頭是 {','.join(NTPC_HEADER)}；"
             f"人事總處的是 {','.join(DGPA_HEADER)}（請選一般版，不是「Google 行事曆專用」版）"
         )
     if not collector.years:
@@ -173,10 +180,8 @@ class _Collector:
         self.seen.add(day)
         self.years.add(day.year)
 
-    def keep(self, day: date, *, is_workday: bool, name: str, line: int) -> None:
-        """跟預設規則不同、或有名稱的日子才存；名稱太長就拒絕（資料表有同樣的上限）。"""
-        if len(name) > OFFICIAL_NAME_MAX:
-            raise CalendarFormatError(f"第 {line} 行：名稱超過 {OFFICIAL_NAME_MAX} 字")
+    def keep(self, day: date, *, is_workday: bool, name: str) -> None:
+        """跟預設規則不同、或有名稱的日子才存（名稱先經過 `_check_name`）。"""
         if is_workday != is_default_workday(day) or name:
             self.days.append(OfficialDay(day=day, is_workday=is_workday, name=name))
 
@@ -230,12 +235,12 @@ def _read_ntpc(rows: list[list[str]], collector: _Collector) -> None:
                 f"第 {line} 行：isholiday 應為「是」或「否」，實際是 {is_holiday!r}"
             )
         is_workday = is_holiday == "否"
-        label = name or CATEGORY_NAMES.get(category, category)
+        label = _check_name(name or CATEGORY_NAMES.get(category, category), line)
         # 特定節日只有勞工放假的（勞動節）算；軍人節只限軍人，一般公司照常上班
         if category == SPECIAL_CATEGORY and "勞工" not in description:
             collector.skipped.append(OfficialDay(day=day, is_workday=is_workday, name=label))
             continue
-        collector.keep(day, is_workday=is_workday, name=label, line=line)
+        collector.keep(day, is_workday=is_workday, name=label)
 
 
 def _read_dgpa(rows: list[list[str]], collector: _Collector) -> None:
@@ -250,10 +255,10 @@ def _read_dgpa(rows: list[list[str]], collector: _Collector) -> None:
         if flag not in ("0", "2"):
             raise CalendarFormatError(f"第 {line} 行：是否放假應為 0 或 2，實際是 {flag!r}")
         is_workday = flag == "0"
-        name = remark
+        name = _check_name(remark, line)
         if not name and is_workday != is_default_workday(day):
             name = "補行上班日" if is_workday else "放假"
-        collector.keep(day, is_workday=is_workday, name=name, line=line)
+        collector.keep(day, is_workday=is_workday, name=name)
 
 
 def _cells(row: list[str], expected: int, line: int) -> list[str] | None:
@@ -264,6 +269,15 @@ def _cells(row: list[str], expected: int, line: int) -> list[str] | None:
     if len(cells) != expected:
         raise CalendarFormatError(f"第 {line} 行：欄位數 {len(cells)}，應為 {expected}")
     return cells
+
+
+def _check_name(name: str, line: int) -> str:
+    """名稱會存進資料庫、印在終端機、不用登入就回給前端：太長或含控制字元就拒絕整份。"""
+    if len(name) > OFFICIAL_NAME_MAX:
+        raise CalendarFormatError(f"第 {line} 行：名稱超過 {OFFICIAL_NAME_MAX} 字")
+    if has_control_char(name):
+        raise CalendarFormatError(f"第 {line} 行：名稱含控制字元（換行、tab、跳脫序列…）")
+    return name
 
 
 def _parse_day(raw: str, line: int) -> date:

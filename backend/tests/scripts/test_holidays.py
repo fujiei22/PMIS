@@ -8,7 +8,7 @@
   輸出帶星期、官方原值、新增或修改；刪不存在的、名稱空白都回 1。
   一次多天時其中一天失敗會整筆不存，所以 commit 之後才印「已新增」（不能先印再失敗）。
 - 參數格式錯（日期不是 YYYY-MM-DD、年份不是 2000–2200）由 argparse 擋，exit code 2，訊息是中文。
-- 檔案被 Excel 開著（PermissionError）回 1，提示關掉再試。
+- 檔案被 Excel 開著（PermissionError）回 1，提示關掉再試；超過 5 MB 的檔不讀（多半選錯檔）。
 - 資料庫連不上時回 1，不噴 traceback。
 """
 
@@ -16,13 +16,14 @@ import logging
 from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import NoReturn, Protocol
 
 import pytest
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.imports.holiday_csv import parse_calendar_csv
+from app.scripts import holidays
 from app.scripts.holidays import CHECK_FAILED, main
 from app.services.calendar import (
     covered_years,
@@ -231,13 +232,23 @@ def test_year_out_of_range(run: Runner, capsys: pytest.CaptureFixture[str]) -> N
 def test_import_file_locked_by_excel(
     run: Runner, tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def locked(self: Path) -> bytes:
+    def locked(self: Path, *args: object, **kwargs: object) -> NoReturn:
         raise PermissionError(13, "Permission denied")
 
-    monkeypatch.setattr(Path, "read_bytes", locked)
+    monkeypatch.setattr(Path, "open", locked)
 
     assert run("import", str(tmp_path / "辦公日曆表.csv")) == 1
     assert "可能正被 Excel 開著" in caplog.text
+
+
+def test_import_rejects_huge_file(
+    run: Runner, tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """指錯檔（例如備份檔、影片）時不把整個檔讀進記憶體。"""
+    monkeypatch.setattr(holidays, "MAX_FILE_BYTES", 10)
+
+    assert run("import", write(tmp_path, "big.csv", b"x" * 11)) == 1
+    assert "可能選錯檔了" in caplog.text
 
 
 def test_database_down(caplog: pytest.LogCaptureFixture) -> None:

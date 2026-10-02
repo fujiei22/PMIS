@@ -11,13 +11,19 @@ from typing import Literal
 from sqlalchemy import ColumnElement, delete, func, or_, select
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
-from app.core.calendar_rules import MAX_YEAR, MIN_YEAR, OVERRIDE_NAME_MAX, OVERRIDE_NOTE_MAX
+from app.core.calendar_rules import (
+    MAX_YEAR,
+    MIN_YEAR,
+    OVERRIDE_NAME_MAX,
+    OVERRIDE_NOTE_MAX,
+    has_control_char,
+)
 from app.imports.holiday_csv import ParsedCalendar, ensure_complete, parse_calendar_csv
 from app.models import CalendarOfficialDay, CalendarOfficialYear, CalendarOverride
 from app.services.errors import InvalidInput, NotFound
 
-# 寫官方日曆時的 advisory lock 鍵（"PMIS" 的 ASCII）：兩個人同時匯入時排隊，不撞主鍵。
-# 目前全系統只有這一把；之後別的功能要用 advisory lock，鍵不能跟它重複。
+# 寫工作日曆（官方日曆、例外日）時的 advisory lock 鍵（"PMIS" 的 ASCII）：兩個人同時寫入時排隊，
+# 不撞主鍵。目前全系統只有這一把；之後別的功能要用 advisory lock，鍵不能跟它重複。
 CALENDAR_WRITE_LOCK = 0x504D4953
 
 type EntrySource = Literal["official", "override"]
@@ -58,8 +64,7 @@ def replace_official_years(
     years = sorted(parsed.years)
     if not years:
         raise InvalidInput("檔案沒有任何年份")
-    # 交易結束時自動放開
-    session.execute(select(func.pg_advisory_xact_lock(CALENDAR_WRITE_LOCK)))
+    _lock_calendar_writes(session)
     in_years = or_(
         *(CalendarOfficialDay.day_on.between(date(y, 1, 1), date(y, 12, 31)) for y in years)
     )
@@ -68,10 +73,7 @@ def replace_official_years(
         delete(CalendarOfficialYear).where(CalendarOfficialYear.calendar_year.in_(years))
     )
     session.add_all(
-        CalendarOfficialDay(
-            day_on=d.day, is_workday=d.is_workday, name=d.name, source=parsed.source
-        )
-        for d in parsed.days
+        CalendarOfficialDay(day_on=d.day, is_workday=d.is_workday, name=d.name) for d in parsed.days
     )
     session.add_all(
         CalendarOfficialYear(calendar_year=y, source=parsed.source, imported_at=imported_at)
@@ -87,6 +89,13 @@ def get_calendar(
 
     `start`、`end` 都含在內；不給的那一端不設限。
     """
+    # 年份最先讀：三條查詢各看各的快照，讀的途中剛好有人匯入新年份時，只會少報涵蓋年份
+    # （畫面多提示「假日資料未公布」），不會宣稱某年完整、卻拿不到那年的假日
+    years = list(
+        session.scalars(
+            select(CalendarOfficialYear.calendar_year).order_by(CalendarOfficialYear.calendar_year)
+        )
+    )
     merged: dict[date, CalendarEntry] = {}
     official_in_range = _within(CalendarOfficialDay.day_on, start, end)
     for official in session.scalars(select(CalendarOfficialDay).where(*official_in_range)):
@@ -104,11 +113,6 @@ def get_calendar(
             name=override.name,
             source="override",
         )
-    years = list(
-        session.scalars(
-            select(CalendarOfficialYear.calendar_year).order_by(CalendarOfficialYear.calendar_year)
-        )
-    )
     return years, [merged[day] for day in sorted(merged)]
 
 
@@ -137,14 +141,20 @@ def get_override(session: Session, day: date) -> CalendarOverride | None:
 def set_override(
     session: Session, day: date, *, is_workday: bool, name: str, note: str = ""
 ) -> CalendarOverride:
-    """新增或更新某天的例外日。名稱去掉前後空白後 1–100 字，備註最多 500 字，年份 2000–2200。"""
+    """新增或更新某天的例外日。名稱去掉前後空白後 1–100 字，備註最多 500 字，年份 2000–2200；
+    名稱與備註不能含控制字元（名稱不用登入就看得到，備註只有管理員看得到）。
+    """
     name = name.strip()
     if not 1 <= len(name) <= OVERRIDE_NAME_MAX:
         raise InvalidInput(f"名稱要 1–{OVERRIDE_NAME_MAX} 字")
     if len(note) > OVERRIDE_NOTE_MAX:
         raise InvalidInput(f"備註最多 {OVERRIDE_NOTE_MAX} 字")
+    if has_control_char(name) or has_control_char(note):
+        raise InvalidInput("名稱與備註不能含控制字元（換行、tab、跳脫序列…）")
     if not MIN_YEAR <= day.year <= MAX_YEAR:
         raise InvalidInput(f"日期 {day.isoformat()} 的年份要在 {MIN_YEAR}–{MAX_YEAR}")
+    # 先鎖再查：兩個人同時新增同一天時，後到的會看到先到的那筆、改成更新，不撞主鍵
+    _lock_calendar_writes(session)
     override = get_override(session, day)
     if override is None:
         override = CalendarOverride(day_on=day, is_workday=is_workday, name=name, note=note)
@@ -159,6 +169,7 @@ def set_override(
 
 def remove_override(session: Session, day: date) -> None:
     """刪掉某天的例外日（真的刪，沒有回收桶）；那天沒有例外日丟 `NotFound`。"""
+    _lock_calendar_writes(session)
     override = get_override(session, day)
     if override is None:
         raise NotFound(f"{day.isoformat()} 沒有例外日（先用 list 查）")
@@ -177,6 +188,15 @@ def list_overrides(session: Session, year: int | None = None) -> list[CalendarOv
             .order_by(CalendarOverride.day_on)
         )
     )
+
+
+def _lock_calendar_writes(session: Session) -> None:
+    """拿工作日曆的寫入鎖，交易結束（commit／rollback）時自動放開。
+
+    正確性依賴預設的 READ COMMITTED：鎖到手之後的每條語句各取新快照，才看得到前一個寫入者
+    剛 commit 的資料。engine 若改成 REPEATABLE READ，快照在拿鎖前就定了，會撞主鍵或序列化失敗。
+    """
+    session.execute(select(func.pg_advisory_xact_lock(CALENDAR_WRITE_LOCK)))
 
 
 def _within(

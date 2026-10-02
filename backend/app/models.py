@@ -103,6 +103,16 @@ def _max_length(name: str, limit: int) -> CheckConstraint:
     return CheckConstraint(f"char_length({name}) <= {limit}", name=f"{name}_length")
 
 
+def _day_in_range(name: str) -> CheckConstraint:
+    """`CHECK (日期欄 BETWEEN DATE 'MIN_YEAR-01-01' AND DATE 'MAX_YEAR-12-31')`，約束名稱 ck_<表名>_<欄名>_range。
+
+    日期超出範圍（含 infinity）時，psycopg 讀出會出錯，整支 GET /api/calendar 就會 500。
+    """
+    return CheckConstraint(
+        f"{name} BETWEEN DATE '{MIN_YEAR}-01-01' AND DATE '{MAX_YEAR}-12-31'", name=f"{name}_range"
+    )
+
+
 def _live_only() -> dict[str, Any]:
     """部分索引只收活著的列（已刪除的不算重複、也不佔索引）。"""
     return {"postgresql_where": column("deleted_at").is_(None)}
@@ -463,11 +473,12 @@ class CalendarOfficialDay(CreatedAtMixin, Base):
 
     預設規則：ISO 星期 6、7 放假（普通週末不存）。依年份整年替換
     （services/calendar.py 的 replace_official_years），不軟刪。
+    來源記在年份（`CalendarOfficialYear.source`）：同一年的日子一定來自同一次匯入，不逐日存。
     """
 
     __tablename__ = "calendar_official_days"
     __table_args__ = (
-        _one_of("source", CALENDAR_SOURCES),
+        _day_in_range("day_on"),
         _max_length("name", OFFICIAL_NAME_MAX),
     )
 
@@ -475,7 +486,6 @@ class CalendarOfficialDay(CreatedAtMixin, Base):
     is_workday: Mapped[bool]
     # 只供顯示；沒有名稱的列解析時已補上（補假、國定假日、補行上班日…）
     name: Mapped[str] = mapped_column(server_default="")
-    source: Mapped[str]
 
 
 class CalendarOfficialYear(Base):
@@ -506,6 +516,7 @@ class CalendarOverride(TimestampMixin, Base):
 
     __tablename__ = "calendar_overrides"
     __table_args__ = (
+        _day_in_range("day_on"),
         CheckConstraint(f"char_length(name) BETWEEN 1 AND {OVERRIDE_NAME_MAX}", name="name_length"),
         _max_length("note", OVERRIDE_NOTE_MAX),
     )

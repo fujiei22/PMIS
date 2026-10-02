@@ -7,6 +7,8 @@
   補班日 → 上班日。
 - 人事總處沒有備註的非預設日補「放假」或「補行上班日」。
 - 普通週末、普通平日不存（預設規則就是這樣）。
+- 名稱含控制字元（終端機跳脫序列、換行…）整份拒絕：名稱會印在終端機、也會不用登入就回給前端。
+- 表頭認不得時只回顯第一欄開頭 20 個字：選錯檔（例如 .env）時不能把含密碼的整行印出來。
 - 格式錯一律整份拒絕，訊息帶行號；UTF-8 解不開改用 Big5（Excel 存檔的預設）。
   csv 模組自己丟的錯（引號沒關造成欄位過長）也轉成格式錯誤，不讓 traceback 漏出去。
 - 完整性：檔案不是整年時（被截斷、管理員自製的幾列）不能匯入，否則那年其他假日會被整年替換掉。
@@ -135,6 +137,10 @@ def test_blank_lines_are_ignored() -> None:
             (NTPC + "20260925,2026," + "長" * 101 + ",是,放假之紀念日及節日,\n").encode(),
             "第 2 行：名稱超過 100 字",
         ),
+        (
+            (NTPC + "20260925,2026,中秋\x1b[2J節,是,放假之紀念日及節日,\n").encode(),
+            "第 2 行：名稱含控制字元",
+        ),
         (b"\xff\xfe\xff", "不是 UTF-8"),
     ],
 )
@@ -150,6 +156,14 @@ def test_unknown_header_message_lists_both_formats() -> None:
     assert NTPC_HEADER_LINE in message
     assert DGPA_HEADER_LINE in message
     assert "Google 行事曆專用" in message
+
+
+def test_unknown_header_does_not_echo_whole_line() -> None:
+    with pytest.raises(CalendarFormatError) as caught:
+        parse_calendar_csv(b"DATABASE_URL=postgresql+psycopg://user:secret@db/pmis\n")
+    message = str(caught.value)
+    assert "secret" not in message
+    assert "1 欄，第一欄開頭是 'DATABASE_URL=postgre…'" in message
 
 
 def test_full_years_are_complete() -> None:

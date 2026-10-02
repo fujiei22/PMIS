@@ -214,7 +214,7 @@ model 的寫法：
 
 **讀取 API**：`GET /api/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD`
 
-- `from`、`to` 都選填，頭尾都算；不給的那一端不設限，都不給就回全部（10 年約 1,200 筆）。
+- `from`、`to` 都選填，頭尾都算；不給的那一端不設限，都不給就回全部（10 年約 200 筆）。
 - 回應有三個欄位：
   - `weekendDays`：預設週末，目前 `[6, 7]`。前端照它判斷預設規則，不要自己寫死。
   - `coveredYears`：官方日曆**完整**匯入的年份（遞增）。不在裡面的年份只套週末規則，畫面要提示「假日資料未公布」。
@@ -249,6 +249,8 @@ model 的寫法：
 - 用 `add`、`remove`、`list` 維護；`add` 一定要給 `--off` 或 `--workday`，可以一次給多個日期。
 - 同一天以例外日為準，重新匯入官方日曆不會蓋掉例外日。
 - 同一年後匯入的官方檔會整年蓋掉先匯入的（不分來源）；要修正某幾天請用例外日，不要改官方檔。
+- 名稱不用登入就看得到（`GET /api/calendar`）；內部資訊寫在 `--note`，只有管理員看得到。
+- 例外日沒辦法重新匯入：`alembic downgrade` 會刪掉三張表，降版前先 `holidays list > 例外日備份.txt`。
 
 ```sh
 uv run python -m app.scripts.holidays status

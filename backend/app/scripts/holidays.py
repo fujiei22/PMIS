@@ -17,7 +17,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from pydantic import ValidationError
-from sqlalchemy.exc import OperationalError, ProgrammingError, SQLAlchemyError
+from sqlalchemy.exc import DBAPIError, OperationalError, ProgrammingError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.calendar_rules import MAX_YEAR, MIN_YEAR, is_default_workday
@@ -55,6 +55,8 @@ EXAMPLES = f"""範例（在 backend/ 下執行）：
 """
 WEEKDAYS = "一二三四五六日"
 CHECK_FAILED = 3
+# 匯入檔的大小上限：新北市 2018–2027 的檔約 60 KB，人事總處一年約 15 KB；指錯檔時不把記憶體吃光
+MAX_FILE_BYTES = 5 * 1024 * 1024
 # 11 月起還沒有明年的假日資料就算問題（人事總處通常年中公布，新北市隨後更新）
 NEXT_YEAR_DUE_MONTH = 11
 
@@ -87,7 +89,9 @@ def main(
             "資料表不存在或版本不對：%s\n先在 backend/ 跑 uv run alembic upgrade head", exc.orig
         )
     except SQLAlchemyError as exc:
-        logger.error("資料庫錯誤，資料沒有改動，請稍後再試：%s", exc)
+        # 只印驅動的原始錯誤：str(exc) 會附上 SQL 與參數值
+        reason = exc.orig if isinstance(exc, DBAPIError) else exc
+        logger.error("資料庫錯誤，資料沒有改動，請稍後再試：%s", reason)
     except (ServiceError, CalendarFormatError) as exc:
         logger.error("失敗：%s", exc)
     return 1
@@ -126,8 +130,13 @@ def _parser() -> argparse.ArgumentParser:
     kind = add.add_mutually_exclusive_group(required=True)
     kind.add_argument("--off", action="store_true", help="這幾天放假")
     kind.add_argument("--workday", action="store_true", help="這幾天上班（例：臨時補班）")
-    add.add_argument("--name", required=True, help="名稱，例：颱風假、公司自訂假日、補班")
-    add.add_argument("--note", default="", help="備註")
+    add.add_argument(
+        "--name",
+        required=True,
+        help="名稱，例：颱風假、公司自訂假日、補班。不用登入就看得到（GET /api/calendar），"
+        "內部資訊請寫在 --note",
+    )
+    add.add_argument("--note", default="", help="備註（只有管理員看得到，不會回給前端）")
     add.set_defaults(handler=_add)
 
     remove = commands.add_parser("remove", help="刪掉例外日")
@@ -250,9 +259,11 @@ def _list(session: Session, args: argparse.Namespace, now: datetime) -> int:
 
 
 def _read_file(path: Path) -> bytes:
-    """讀整個檔案；找不到、被占用、其他讀取錯誤都轉成 `InvalidInput`（附下一步）。"""
+    """讀整個檔案（最多 5 MB）；找不到、被占用、太大、其他讀取錯誤都轉成 `InvalidInput`（附下一步）。"""
     try:
-        return path.read_bytes()
+        with path.open("rb") as file:
+            # 多讀一個 byte：讀得到就代表超過上限
+            content = file.read(MAX_FILE_BYTES + 1)
     except FileNotFoundError:
         raise InvalidInput(
             f"找不到檔案 {path}（相對路徑以目前資料夾 {Path.cwd()} 為準；建議用完整路徑）"
@@ -261,6 +272,11 @@ def _read_file(path: Path) -> bytes:
         raise InvalidInput(f"讀不到 {path}：檔案可能正被 Excel 開著，關掉後再試") from None
     except OSError as exc:
         raise InvalidInput(f"讀不到 {path}：{exc}") from None
+    if len(content) > MAX_FILE_BYTES:
+        raise InvalidInput(
+            f"{path} 超過 {MAX_FILE_BYTES // 1024 // 1024} MB，不像辦公日曆 CSV（官方檔不到 100 KB），可能選錯檔了"
+        )
+    return content
 
 
 def _describe_coverage(years: list[CalendarOfficialYear]) -> str:

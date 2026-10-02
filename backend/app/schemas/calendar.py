@@ -9,7 +9,7 @@ from app.schemas.common import CamelModel
 
 
 class CalendarQuery(BaseModel):
-    """查詢參數：兩端都可以不給（不設限）；都不給就回全部（10 年約 1,200 筆）。"""
+    """查詢參數：兩端都可以不給（不設限）；都不給就回全部（10 年約 200 筆）。"""
 
     # 多送的參數直接 422（跟請求 model 的 extra="forbid" 同一個規則）
     model_config = ConfigDict(extra="forbid")

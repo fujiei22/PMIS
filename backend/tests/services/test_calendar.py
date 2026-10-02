@@ -6,7 +6,7 @@
 - 整年替換：檔案涵蓋的年整年換掉，其他年份不動；同一份檔匯入兩次結果相同。
 - 例外日不會被重新匯入蓋掉，查詢時同一天以例外日為準。
 - 查詢的區間頭尾都算、兩端都可以不給（前端進頁時一次載全部）；涵蓋年份回傳全部。
-- 例外日名稱不能空白、年份要在 2000–2200、刪不存在的例外日要報錯
+- 例外日名稱不能空白、不能含控制字元，年份要在 2000–2200、刪不存在的例外日要報錯
   （指令稿才能告訴管理員打錯日期）。
 """
 
@@ -54,9 +54,21 @@ def parsed_of(source: CalendarSource, years: set[int], *days: OfficialDay) -> Pa
     )
 
 
-def official_days(db: Session) -> list[tuple[date, bool, str, str]]:
+def official_days(db: Session) -> list[tuple[date, bool, str]]:
     rows = db.scalars(select(CalendarOfficialDay).order_by(CalendarOfficialDay.day_on))
-    return [(r.day_on, r.is_workday, r.name, r.source) for r in rows]
+    return [(r.day_on, r.is_workday, r.name) for r in rows]
+
+
+def held_advisory_locks(db: Session) -> list[int]:
+    """這個連線目前持有的 advisory lock 鍵（單一 bigint 形式）。"""
+    return list(
+        db.scalars(
+            text(
+                "SELECT classid::bigint * 4294967296 + objid::bigint FROM pg_locks "
+                "WHERE locktype = 'advisory' AND pid = pg_backend_pid() AND objsubid = 1"
+            )
+        )
+    )
 
 
 def test_import_official_calendar_writes_complete_file(db: Session) -> None:
@@ -78,24 +90,25 @@ def test_import_takes_advisory_lock(db: Session) -> None:
     """鎖到交易結束才放：同一個交易裡查 pg_locks 看得到這把鎖。"""
     import_official_calendar(db, ntpc_full_year(2026, NTPC_2026_ROWS), imported_at=T0)
 
-    held = db.execute(
-        text(
-            "SELECT classid::bigint * 4294967296 + objid::bigint FROM pg_locks "
-            "WHERE locktype = 'advisory' AND pid = pg_backend_pid() AND objsubid = 1"
-        )
-    ).scalars()
-    assert CALENDAR_WRITE_LOCK in list(held)
+    assert CALENDAR_WRITE_LOCK in held_advisory_locks(db)
+
+
+def test_override_writes_take_the_same_lock(db: Session) -> None:
+    """兩個人同時新增同一天的例外日時排隊：後到的看得到先到的那筆，改成更新、不撞主鍵。"""
+    set_override(db, date(2026, 9, 29), is_workday=False, name="颱風假")
+
+    assert CALENDAR_WRITE_LOCK in held_advisory_locks(db)
 
 
 def test_import_stores_days_and_years(db: Session) -> None:
     replace_official_years(db, parse_calendar_csv(NTPC_SAMPLE), imported_at=T0)
 
     assert official_days(db) == [
-        (date(2023, 9, 23), True, "補行上班日", "ntpc"),
-        (date(2026, 5, 1), False, "勞動節", "ntpc"),
-        (date(2026, 9, 25), False, "中秋節", "ntpc"),
-        (date(2026, 10, 9), False, "補假", "ntpc"),
-        (date(2026, 10, 10), False, "國慶日", "ntpc"),
+        (date(2023, 9, 23), True, "補行上班日"),
+        (date(2026, 5, 1), False, "勞動節"),
+        (date(2026, 9, 25), False, "中秋節"),
+        (date(2026, 10, 9), False, "補假"),
+        (date(2026, 10, 10), False, "國慶日"),
     ]
     assert [(y.calendar_year, y.source, y.imported_at) for y in covered_years(db)] == [
         (2023, "ntpc", T0),
@@ -116,8 +129,8 @@ def test_reimport_replaces_only_the_years_in_the_file(db: Session) -> None:
     )
 
     assert official_days(db) == [
-        (date(2023, 9, 23), True, "補行上班日", "ntpc"),
-        (date(2026, 9, 25), False, "中秋節", "dgpa"),
+        (date(2023, 9, 23), True, "補行上班日"),
+        (date(2026, 9, 25), False, "中秋節"),
     ]
     assert [(y.calendar_year, y.source, y.imported_at) for y in covered_years(db)] == [
         (2023, "ntpc", T0),
@@ -204,6 +217,10 @@ def test_set_override_updates_existing(db: Session) -> None:
         (date(2026, 9, 29), "長" * 101, ""),
         (date(2026, 9, 29), "颱風假", "長" * 501),
         (date(1999, 12, 31), "颱風假", ""),
+        # 控制字元：終端機跳脫序列、換行、改變顯示方向的字元
+        (date(2026, 9, 29), "颱風\x1b[31m假", ""),
+        (date(2026, 9, 29), "颱風假", "第一行\n第二行"),
+        (date(2026, 9, 29), "颱風\u202e假", ""),
     ],
 )
 def test_set_override_rejects_bad_input(db: Session, day: date, name: str, note: str) -> None:
