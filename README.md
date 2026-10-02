@@ -2,7 +2,7 @@
 
 專案管理資訊系統（Project Management Information System）：單一專案的甘特圖、任務看板與 Issue 看板。
 
-前端（`frontend/`，Vue 3 + TypeScript）的資料目前走記憶體 mock。後端（`backend/`，Python／FastAPI ＋ PostgreSQL）已建骨架，只有健康檢查端點，前端還沒接上。
+前端（`frontend/`，Vue 3 + TypeScript）的資料目前走記憶體 mock。後端（`backend/`，Python／FastAPI ＋ PostgreSQL）有健康檢查與工作日曆（假日表）兩支端點，前端還沒接上。
 
 ```
 PMIS/

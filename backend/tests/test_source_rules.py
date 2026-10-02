@@ -11,8 +11,9 @@
 分層：
 - `services/`、`auth/`、`imports/` 不 import `fastapi` 與 `app.api`：service 丟自己的例外，
   由 `app/api/errors.py` 轉成 HTTP。
-- `api/routes/` 不直接查資料庫（不出現 `select(`、`.execute(`、`.scalar…(`），交給 service；
+- `api/routes/`、`scripts/` 不直接查資料庫（不出現 `select(`、`.execute(`、`.scalar…(`），交給 service；
   health.py 例外。
+- `imports/` 是解析外部檔案的純函式：不 import SQLAlchemy、`app.models`、`app.services`、`app.core.db`。
 - `models.py` 只 import SQLAlchemy、標準函式庫與 `app.core`。
 """
 
@@ -147,6 +148,18 @@ def web_imports(tree: ast.Module) -> list[int]:
     )
 
 
+def database_imports(tree: ast.Module) -> list[int]:
+    """import 了 SQLAlchemy、app.models、app.services 或 app.core.db（含底下的模組）。"""
+    lines = set()
+    for line, module in imported_modules(tree):
+        if module.split(".")[0] == "sqlalchemy" or any(
+            module == prefix or module.startswith(f"{prefix}.")
+            for prefix in ("app.models", "app.services", "app.core.db")
+        ):
+            lines.add(line)
+    return sorted(lines)
+
+
 def disallowed_model_imports(tree: ast.Module) -> list[int]:
     """models.py 只准 import SQLAlchemy、標準函式庫與 app.core（含底下的模組）。"""
     lines = set()
@@ -236,6 +249,19 @@ def test_detects_web_imports() -> None:
     assert web_imports(tree) == [1, 2, 3, 4]
 
 
+def test_detects_database_imports() -> None:
+    tree = ast.parse(
+        "import sqlalchemy\n"
+        "from sqlalchemy.orm import Session\n"
+        "from app.models import Task\n"
+        "from app.services.calendar import get_calendar\n"
+        "from app.core.db import create_session\n"
+        "from app.core.calendar_rules import MIN_YEAR\n"
+        "import csv\n"
+    )
+    assert database_imports(tree) == [1, 2, 3, 4, 5]
+
+
 def test_detects_disallowed_model_imports() -> None:
     tree = ast.parse(
         "import uuid\n"
@@ -306,6 +332,22 @@ def test_routes_do_not_query_database() -> None:
     assert not found, (
         f"以下端點直接查了資料庫：\n{listing(found)}\n"
         "端點只負責收參數、呼叫 service、回傳；查詢寫在 app/services/。"
+    )
+
+
+def test_scripts_do_not_query_database() -> None:
+    found = offenders(db_access_calls, lambda path: path.startswith("scripts/"))
+    assert not found, (
+        f"以下指令稿直接查了資料庫：\n{listing(found)}\n"
+        "指令稿跟端點一樣只負責收參數、呼叫 service、輸出；查詢寫在 app/services/。"
+    )
+
+
+def test_imports_do_not_touch_database() -> None:
+    found = offenders(database_imports, lambda path: path.startswith("imports/"))
+    assert not found, (
+        f"以下解析模組 import 了資料庫相關的模組：\n{listing(found)}\n"
+        "imports/ 只解析外部檔案、回傳資料；寫入資料庫交給 app/services/。"
     )
 
 

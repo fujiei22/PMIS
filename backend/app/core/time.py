@@ -21,3 +21,8 @@ def today(now: datetime | None = None) -> date:
     if moment.tzinfo is None:
         raise ValueError("now 必須帶時區")
     return moment.astimezone(local_zone()).date()
+
+
+def utc_now() -> datetime:
+    """現在（UTC、帶時區）。指令稿的時鐘；要算「今天」用 `today(utc_now())`。"""
+    return datetime.now(UTC)

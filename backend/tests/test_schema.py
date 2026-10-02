@@ -5,6 +5,7 @@
 
 import uuid
 from collections.abc import Callable
+from datetime import UTC, date, datetime
 
 import psycopg
 import pytest
@@ -12,9 +13,20 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.calendar_rules import (
+    CALENDAR_SOURCES,
+    MAX_YEAR,
+    MIN_YEAR,
+    OFFICIAL_NAME_MAX,
+    OVERRIDE_NAME_MAX,
+    OVERRIDE_NOTE_MAX,
+)
 from app.core.time import today
 from app.models import (
     Attachment,
+    CalendarOfficialDay,
+    CalendarOfficialYear,
+    CalendarOverride,
     Comment,
     Deletion,
     Issue,
@@ -376,3 +388,113 @@ def test_deleting_project_with_other_batches_is_not_blocked(db: Session) -> None
     assert db.scalars(select(Deletion.id)).all() == []
     for model in (Project, TaskGroup, Task, Issue, Comment, Attachment):
         assert db.scalars(select(model.id).execution_options(include_deleted=True)).all() == []
+
+
+# ---------- 工作日曆 ----------
+# 邊界值一律用 app/core/calendar_rules.py 的常數：改了常數卻忘了寫 migration 改 CHECK，這裡會失敗
+# （alembic check 不比對 CHECK 的內容，抓不到）。
+
+IMPORTED_AT = datetime(2026, 10, 2, tzinfo=UTC)
+DAY = date(2026, 9, 29)
+
+
+def assert_accepted(db: Session, write: Callable[[], object]) -> None:
+    """`write()` 寫入的資料要存得進去；寫完撤銷，不影響同一個測試接下來的寫入。"""
+    savepoint = db.begin_nested()
+    write()
+    db.flush()
+    savepoint.rollback()
+
+
+def official_day(day_on: date = DAY, name: str = "中秋節") -> CalendarOfficialDay:
+    return CalendarOfficialDay(day_on=day_on, is_workday=False, name=name)
+
+
+def official_year(calendar_year: int = 2026, source: str = "ntpc") -> CalendarOfficialYear:
+    return CalendarOfficialYear(calendar_year=calendar_year, source=source, imported_at=IMPORTED_AT)
+
+
+def override(day_on: date = DAY, name: str = "颱風假", note: str = "") -> CalendarOverride:
+    return CalendarOverride(day_on=day_on, is_workday=False, name=name, note=note)
+
+
+DAY_TABLES = [(official_day, "calendar_official_days"), (override, "calendar_overrides")]
+
+
+@pytest.mark.parametrize("source", CALENDAR_SOURCES)
+def test_official_year_accepts_every_source(db: Session, source: str) -> None:
+    assert_accepted(db, lambda: db.add(official_year(source=source)))
+
+
+def test_official_year_source_must_be_known(db: Session) -> None:
+    assert_rejected(
+        db, lambda: db.add(official_year(source="excel")), "ck_calendar_official_years_source"
+    )
+
+
+@pytest.mark.parametrize("year", [MIN_YEAR, MAX_YEAR])
+def test_official_year_range_accepts_both_ends(db: Session, year: int) -> None:
+    assert_accepted(db, lambda: db.add(official_year(calendar_year=year)))
+
+
+@pytest.mark.parametrize("year", [MIN_YEAR - 1, MAX_YEAR + 1])
+def test_official_year_must_be_in_range(db: Session, year: int) -> None:
+    assert_rejected(
+        db,
+        lambda: db.add(official_year(calendar_year=year)),
+        "ck_calendar_official_years_calendar_year_range",
+    )
+
+
+@pytest.mark.parametrize(("make", "table"), DAY_TABLES)
+@pytest.mark.parametrize("day", [date(MIN_YEAR, 1, 1), date(MAX_YEAR, 12, 31)])
+def test_day_range_accepts_both_ends(
+    db: Session, make: Callable[[date], object], table: str, day: date
+) -> None:
+    assert_accepted(db, lambda: db.add(make(day)))
+
+
+@pytest.mark.parametrize(("make", "table"), DAY_TABLES)
+@pytest.mark.parametrize("day", [date(MIN_YEAR - 1, 12, 31), date(MAX_YEAR + 1, 1, 1)])
+def test_days_must_be_in_range(
+    db: Session, make: Callable[[date], object], table: str, day: date
+) -> None:
+    """日期超出範圍時 psycopg 讀出可能出錯，整支 GET /api/calendar 會 500，所以資料庫也要擋。"""
+    assert_rejected(db, lambda: db.add(make(day)), f"ck_{table}_day_on_range")
+
+
+def test_official_day_name_length(db: Session) -> None:
+    assert_accepted(db, lambda: db.add(official_day(name="長" * OFFICIAL_NAME_MAX)))
+    assert_rejected(
+        db,
+        lambda: db.add(official_day(name="長" * (OFFICIAL_NAME_MAX + 1))),
+        "ck_calendar_official_days_name_length",
+    )
+
+
+def test_calendar_year_has_no_sequence(db: Session) -> None:
+    """calendar_year 是年份、不是流水號：SMALLINT 主鍵預設會變成 SMALLSERIAL，
+    migration 必須保留 autoincrement=False（alembic check 不比對預設值，抓不到）。"""
+    default = db.scalar(
+        text(
+            "SELECT column_default FROM information_schema.columns "
+            "WHERE table_schema = current_schema() "
+            "AND table_name = 'calendar_official_years' AND column_name = 'calendar_year'"
+        )
+    )
+    assert default is None
+
+
+@pytest.mark.parametrize("name", ["", "長" * (OVERRIDE_NAME_MAX + 1)])
+def test_override_name_length(db: Session, name: str) -> None:
+    assert_accepted(db, lambda: db.add(override(name="長" * OVERRIDE_NAME_MAX)))
+    assert_rejected(db, lambda: db.add(override(name=name)), "ck_calendar_overrides_name_length")
+
+
+def test_override_note_length(db: Session) -> None:
+    assert_accepted(db, lambda: db.add(override(note="長" * OVERRIDE_NOTE_MAX)))
+    assert_rejected(
+        db,
+        lambda: db.add(override(note="長" * (OVERRIDE_NOTE_MAX + 1))),
+        "ck_calendar_overrides_note_length",
+    )

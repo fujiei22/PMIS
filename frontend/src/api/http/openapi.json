@@ -1,6 +1,53 @@
 {
   "components": {
     "schemas": {
+      "CalendarDay": {
+        "description": "跟預設規則不同、或有名稱的一天。",
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "isWorkday": {
+            "title": "Isworkday",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "official",
+              "override"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "isWorkday",
+          "name",
+          "source"
+        ],
+        "title": "CalendarDay",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
       "HealthStatus": {
         "properties": {
           "status": {
@@ -14,6 +61,79 @@
         ],
         "title": "HealthStatus",
         "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WorkCalendar": {
+        "description": "工作日曆。\n\n前端算工作天：`weekendDays`（ISO 8601 星期，1 = 週一 … 7 = 週日）放假、其他上班，\n`days` 裡有的照它；不在 `coveredYears` 的年份只套週末規則，畫面要提示「假日資料未公布」。\n`days` 依日期遞增、同一天只有一筆；`coveredYears` 遞增，代表那幾年官方日曆已完整匯入。",
+        "properties": {
+          "coveredYears": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Coveredyears",
+            "type": "array"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarDay"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "weekendDays": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Weekenddays",
+            "type": "array"
+          }
+        },
+        "required": [
+          "weekendDays",
+          "coveredYears",
+          "days"
+        ],
+        "title": "WorkCalendar",
+        "type": "object"
       }
     }
   },
@@ -23,6 +143,78 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/calendar": {
+      "get": {
+        "description": "週末規則、官方資料完整涵蓋的年份，以及區間內跟預設規則不同或有名稱的日子。\n\n`from`、`to` 都可以不給；`from` 晚於 `to`、日期格式錯、多餘的參數回 422。",
+        "operationId": "read_calendar_api_calendar_get",
+        "parameters": [
+          {
+            "description": "區間起日（含），YYYY-MM-DD；不給就不設限",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "區間起日（含），YYYY-MM-DD；不給就不設限",
+              "title": "From"
+            }
+          },
+          {
+            "description": "區間迄日（含），YYYY-MM-DD；不給就不設限",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "區間迄日（含），YYYY-MM-DD；不給就不設限",
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkCalendar"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Calendar",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
     "/api/health": {
       "get": {
         "operationId": "health_api_health_get",

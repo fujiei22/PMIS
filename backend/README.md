@@ -4,7 +4,7 @@ Python（FastAPI）＋ PostgreSQL。技術一覽與使用慣例見 [`docs/refere
 
 ## 現況
 
-資料表與軟刪除（回收桶）機制已建好（`app/models.py`，規則見下面〈資料表與 migration〉〈軟刪除〉）。端點只有一支 `GET /api/health`（程式有在跑、資料庫連得上就回 `{"status": "ok"}`）；業務端點與登入還沒做，前端也還沒接上。
+資料表與軟刪除（回收桶）機制已建好（`app/models.py`，規則見下面〈資料表與 migration〉〈軟刪除〉）。端點有 `GET /api/health`（程式有在跑、資料庫連得上就回 `{"status": "ok"}`）與 `GET /api/calendar`（工作日曆，見下面〈工作日曆（假日表）〉）。其他業務端點與登入還沒做，前端也還沒接上。
 
 ## 安裝與指令
 
@@ -57,6 +57,7 @@ Python（FastAPI）＋ PostgreSQL。技術一覽與使用慣例見 [`docs/refere
 | `uv run alembic revision --autogenerate -m "說明"` | 依 `app/models.py` 的變更產生 migration |
 | `uv run alembic check` | 確認 `app/models.py` 沒有漏產 migration |
 | `uv run python -m app.scripts.export_openapi` | 匯出 OpenAPI 到 `frontend/src/api/http/openapi.json`（改了 API 才要跑，見〈API 契約與前端型別〉） |
+| `uv run python -m app.scripts.holidays <指令>` | 假日表管理：`status`／`import`／`add`／`remove`／`list`（`--help` 看範例），見〈工作日曆（假日表）〉 |
 
 ### 提交前
 
@@ -83,21 +84,25 @@ backend/
 │   ├── api/
 │   │   ├── main.py          把 routes/ 的 router 集合起來
 │   │   ├── deps.py          端點共用的依賴（SessionDep：每個請求一個資料庫 session）
-│   │   └── routes/          端點，一個主題一個檔（目前只有 health.py）
+│   │   └── routes/          端點，一個主題一個檔（health.py、calendar.py）
 │   ├── schemas/             wire 格式（Pydantic model）；common.py 的 CamelModel 是共用基底
-│   ├── scripts/             開發用指令稿（export_openapi.py：匯出 OpenAPI 給前端產生型別）
+│   ├── scripts/             指令稿（export_openapi.py 開發用；holidays.py 管理員維護假日表）
 │   ├── core/
 │   │   ├── config.py        設定（pydantic-settings，從環境變數與 .env 讀）
+│   │   ├── calendar_rules.py 工作日曆的共用規則：週末、年份範圍、名稱長度、來源清單
 │   │   ├── db.py            engine 與 session
 │   │   ├── soft_delete.py   軟刪除：SoftDeleteMixin 與「查詢自動排除已刪除」
-│   │   └── time.py          today()：用設定的 TIMEZONE 算「今天」
+│   │   └── time.py          today()：用設定的 TIMEZONE 算「今天」；utc_now()
 │   ├── services/            商業邏輯（不 import fastapi，丟 errors.py 的例外）
 │   │   ├── _live.py         get_live()：依 id 取一筆活著的資料
-│   │   └── errors.py        service 的例外（NotFound…）
+│   │   ├── calendar.py      工作日曆：官方日曆整年替換、查詢、例外日
+│   │   └── errors.py        service 的例外（NotFound、InvalidInput…）
+│   ├── imports/             匯入外部資料的純函式（不碰資料庫、不 import fastapi）：辦公日曆 CSV 解析與完整性檢查
 │   └── alembic/             migration：env.py、script.py.mako（新檔的範本）、versions/
 ├── tests/                   pytest；目錄對應 app/（tests/api/routes/ 對 app/api/routes/）
 │   ├── conftest.py          測試資料庫、交易 rollback、client 與 db fixture
 │   ├── db_guard.py          測試資料庫名稱檢查
+│   ├── calendar_samples.py  辦公日曆的真實 CSV 樣本與「完整一年」產生器
 │   ├── factories.py         測試資料工廠：make_member()、make_task()…、soft_delete()
 │   ├── helpers.py           assert_no_live_orphans()：活著的資料上層一定也活著
 │   ├── test_soft_delete.py  軟刪表清單；每種查詢都碰不到已刪除的資料
@@ -164,12 +169,14 @@ model 的寫法：
 - 繼承 `app/schemas/common.py` 的 `CamelModel`：Python 寫 snake_case，回應的 JSON 與 OpenAPI 是 camelCase，跟前端的欄位名稱一致。
 - 請求用的 model 另外加 `model_config = ConfigDict(extra="forbid")`：多送的欄位直接 422，這就是 PATCH 的欄位白名單。
 - `app/main.py` 設了 `separate_input_output_schemas=False`：同一個 model 在請求與回應裡用同一個 schema 名稱，前端的型別名稱才穩定（`test_openapi_snapshot.py` 也檢查這個設定）。
+- 422 一律用 FastAPI 標準格式（`detail` 是陣列）：查詢參數的跨欄位檢查寫在 query model 的 `model_validator`（例：`app/schemas/calendar.py` 的 `CalendarQuery`），不要手寫 `HTTPException(422, detail="字串")`——OpenAPI 只宣告標準格式，前端產生的型別處理不了字串。
 
 ### 免登入的例外
 
 每支端點預設都要登入與授權（登入還沒做）。目前明確開放、不必登入的：
 
 - `GET /api/health`：健康檢查
+- `GET /api/calendar`：工作日曆。**暫時**開放：登入還沒做；登入完成時跟其他端點一起加上驗證。寫入只有指令稿，沒有寫入 API
 - `/api/docs`、`/api/openapi.json`：FastAPI 自動產生的 API 文件
 
 ### 測試
@@ -200,6 +207,72 @@ model 的寫法：
 - 排序鍵 `position`：重排時整份重寫成 0..n-1；不設唯一（還原回來的列可能跟別人同號），讀取時 `ORDER BY position, id`。
 - 上層對下層的關聯（`Project.groups`、`Task.issues`…）一定要寫：ORM 靠它決定同一次 flush 先寫上層。連動刪除交給資料庫的 `ON DELETE`。
 - 結束日不早於開始日、`done` 只在完成時有值這類業務規則不在資料庫擋（那是前端的連動計算負責的）。
+
+### 工作日曆（假日表）
+
+前端用工作天算工期。預設規則：週六日（ISO 星期 6、7）放假、其他上班；資料表只存跟預設不同、或有名稱的日子。週末、年份範圍（2000–2200）、名稱長度、來源清單集中定義在 `app/core/calendar_rules.py`，解析、寫入、資料表的 CHECK、API 都從那裡拿。只存「跟預設不同」的日子等於把週末定義寫進了資料：改週末定義後，官方日曆要全部重新匯入。
+
+**讀取 API**：`GET /api/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+- `from`、`to` 都選填，頭尾都算；不給的那一端不設限，都不給就回全部（10 年約 200 筆）。
+- 回應有三個欄位：
+  - `weekendDays`：預設週末，目前 `[6, 7]`。前端照它判斷預設規則，不要自己寫死。
+  - `coveredYears`：官方日曆**完整**匯入的年份（遞增）。不在裡面的年份只套週末規則，畫面要提示「假日資料未公布」。
+  - `days`：依日期遞增、同一天只有一筆，有例外日時只回例外日（`source: "override"`）。`name` 只供顯示，前端不得拿它判斷邏輯。
+- `from` 晚於 `to`、日期格式錯、多餘的參數回 422。
+- 前端的 wire 約定（`frontend/src/api/types.ts`）等前端接這支 API 時再補。
+
+**三張表**（都不軟刪）：
+
+| 表 | 內容 |
+|---|---|
+| `calendar_official_days` | 官方日曆的特殊日 |
+| `calendar_official_years` | 完整涵蓋的年份，與每年最後一次匯入的來源、時間 |
+| `calendar_overrides` | 管理員的例外日 |
+
+**官方日曆的來源**：全靠手動匯入，程式不連外網（2026-10-02 定案）。兩種格式自動判別，依年份整年替換；官方檔要整年匯入，不完整就整份拒絕。
+
+- 新北市資料開放平臺「政府行政機關辦公日曆表」：2018 年起、含補假與補班，固定網址直接下載 CSV：`https://data.ntpc.gov.tw/api/datasets/308dcd75-6434-45bc-a95f-584da4fed251/csv/file`。
+- 行政院人事行政總處：政府資料開放平臺「[中華民國政府行政機關辦公日曆表](https://data.gov.tw/dataset/14718)」。每年網址不同；要選一般版，不是「Google 行事曆專用」版。
+
+人事總處通常年中公布明年的辦公日曆，公布後下載匯入。`status` 從 11 月起會把「還沒有明年資料」列為問題。
+
+**解析規則**：
+
+- 軍人節不算假日（說明是「軍人依國防部規定辦理」，一般公司照常上班）。每略過一筆都會印出來。
+- 補假、沒名稱的紀念日補上名稱（「補假」「國定假日」）。
+- 補班日是上班日。
+- Excel 存成 Big5 的檔案會自動改讀。
+
+**例外日**（颱風假、公司自訂假日、臨時補班）：
+
+- 用 `add`、`remove`、`list` 維護；`add` 一定要給 `--off` 或 `--workday`，可以一次給多個日期。
+- 同一天以例外日為準，重新匯入官方日曆不會蓋掉例外日。
+- 同一年後匯入的官方檔會整年蓋掉先匯入的（不分來源）；要修正某幾天請用例外日，不要改官方檔。
+- 名稱不用登入就看得到（`GET /api/calendar`）；內部資訊寫在 `--note`，只有管理員看得到。
+- 例外日沒辦法重新匯入：`alembic downgrade` 會刪掉三張表，降版前先 `holidays list > 例外日備份.txt`。
+
+```sh
+uv run python -m app.scripts.holidays status
+uv run python -m app.scripts.holidays import D:\下載\辦公日曆表.csv
+uv run python -m app.scripts.holidays add 2026-09-29 2026-09-30 --off --name 颱風假
+uv run python -m app.scripts.holidays add 2026-12-26 --workday --name 補班
+uv run python -m app.scripts.holidays remove 2026-09-29
+uv run python -m app.scripts.holidays list --year 2026
+```
+
+指令在 `backend/` 下執行，相對路徑以 `backend/` 為準，建議給完整路徑。`status --check` 在缺今年資料、或 11 月起還缺明年資料時回 3，可以拿來做監控或年度提醒。部署後在容器裡執行同一個指令（例：`docker compose exec app …`）；手動匯入的 CSV 要先放進容器（`docker compose cp`）。部署的 branch 要確認 image 裡有 uv，或改用 `python -m app.scripts.holidays`。
+
+**管理員常見錯誤**：
+
+| 訊息 | 原因 | 怎麼辦 |
+|---|---|---|
+| `不是 UTF-8 也不是 Big5` | 檔案編碼不對 | 用原始下載檔 |
+| `認不得的表頭` | 選錯檔（例如「Google 行事曆專用」版） | 選一般版 |
+| `資料不完整` | 不是整年 | 匯入整年的官方檔；單日用 `add` |
+| `連不上資料庫` | PostgreSQL 沒開，或 `DATABASE_URL` 錯 | 檢查服務與設定 |
+| `資料表不存在` | 沒跑 migration | `uv run alembic upgrade head` |
+| `沒有例外日` | 日期打錯 | 先 `list` |
 
 ### 軟刪除（回收桶）
 
