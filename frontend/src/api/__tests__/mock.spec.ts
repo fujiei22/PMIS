@@ -438,6 +438,27 @@ describe('api 進入點', () => {
   })
 })
 
+describe('getCalendar', () => {
+  /** 工作日曆：mock 回 2026–2027 的官方日曆（45 個放假日），每次都是複本；setCalendar 換掉、reset 還原。 */
+  it('回 45 筆、涵蓋 2026–2027、週末 [6, 7]，而且是複本', async () => {
+    const api = createMockApi(sampleProject)
+    const cal = await api.getCalendar()
+    expect(cal.days).toHaveLength(45)
+    expect(cal.coveredYears).toEqual([2026, 2027])
+    expect(cal.weekendDays).toEqual([6, 7])
+    cal.days.length = 0
+    expect((await api.getCalendar()).days).toHaveLength(45)
+  })
+
+  it('setCalendar 換掉之後，reset 還原成範例日曆', async () => {
+    const api = createMockApi(sampleProject)
+    api.setCalendar({ weekendDays: [6, 7], coveredYears: [2026], days: [] })
+    expect((await api.getCalendar()).coveredYears).toEqual([2026])
+    api.reset()
+    expect((await api.getCalendar()).coveredYears).toEqual([2026, 2027])
+  })
+})
+
 describe('listProjects', () => {
   it('回傳 7 個專案；是複本，改了不影響下一次', async () => {
     const api = createMockApi()

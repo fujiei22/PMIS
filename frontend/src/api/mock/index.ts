@@ -11,6 +11,7 @@ import {
 } from '@/api/types'
 import { isoFromIndex, todayIndex } from '@/lib/date'
 import { systemNow } from '@/lib/devClock'
+import { sampleCalendar } from '@/mocks/sampleCalendar'
 import { PORTFOLIO_CURRENT_USER, PORTFOLIO_MEMBERS } from '@/mocks/samplePortfolio'
 import { sampleProject } from '@/mocks/sampleProject'
 import type {
@@ -21,6 +22,7 @@ import type {
   ProjectData,
   SessionInfo,
   Task,
+  WorkCalendar,
 } from '@/types/models'
 
 /** 不需要登入就能呼叫的三支；其他每一支在沒登入時都回 401。 */
@@ -66,6 +68,8 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
   let latency = 0
   /** 登入中的人；null = 沒登入（`setSession(null)` 或 `logout()` 之後）。 */
   let session: SessionInfo | null = defaultSession()
+  /** `getCalendar` 回的日曆；`setCalendar` 可換，`reset()` 還原成範例。 */
+  let calendar: WorkCalendar = structuredClone(sampleCalendar)
   /** `setCanEdit` 的覆寫；null＝照資料（範例是 true）。 */
   let canEditOverride: boolean | null = null
 
@@ -182,6 +186,9 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
       call('listProjects', () =>
         buildPortfolio(store.snapshot(), isoFromIndex(todayIndex(systemNow()))),
       ),
+
+    // 工作日曆：全系統共用、不分專案；回複本，呼叫端改了也不影響下一次
+    getCalendar: () => call('getCalendar', () => structuredClone(calendar)),
 
     createTask: (task: Task) =>
       call('createTask', () => {
@@ -319,10 +326,15 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
       latency = 0
       session = defaultSession()
       canEditOverride = null
+      calendar = structuredClone(sampleCalendar)
     },
 
     setSession(info: SessionInfo | null): void {
       session = info ? { ...info } : null
+    },
+
+    setCalendar(cal: WorkCalendar): void {
+      calendar = structuredClone(cal)
     },
 
     setCanEdit(v: boolean): void {

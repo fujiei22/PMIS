@@ -7,6 +7,7 @@ import type {
   ProjectData,
   SessionInfo,
   Task,
+  WorkCalendar,
 } from '@/types/models'
 
 /** ===== wire 約定（後端 / adapter 必讀）=====
@@ -122,6 +123,11 @@ export interface ProjectApi {
   loadProject(id: string): Promise<ProjectData> //                           GET    /api/projects/:id
   /** 所有專案的摘要清單與成員名錄；總覽頁用。 */
   listProjects(): Promise<PortfolioData> //                                  GET    /api/projects
+  /**
+   * 工作日曆（週末規則＋假日與補班）；全系統共用，不帶專案 id、不帶 from/to，一次回全部（10 年約 200 筆）。
+   * 排程規則見 docs/reference/scheduling.md。401 照其他端點的規矩（先 notifyUnauthorized 再拋）。
+   */
+  getCalendar(): Promise<WorkCalendar> //                                    GET    /api/calendar
 
   createTask(task: Task): Promise<Task> //                                   POST   /api/tasks
   updateTask(id: string, patch: Partial<Task>): Promise<Task> //             PATCH  /api/tasks/:id
@@ -178,7 +184,8 @@ export interface MockApi extends ProjectApi {
   /** 每個呼叫的 response 延遲（ms）；事件仍然同步發出，不等延遲。 */
   setLatency(ms: number): void
   /**
-   * 回到初始資料（或換一份），並清掉注入的延遲與失敗、`setCanEdit` 的覆寫；登入狀態回到預設的已登入。
+   * 回到初始資料（或換一份），並清掉注入的延遲與失敗、`setCanEdit` 的覆寫、`setCalendar` 換的日曆；
+   * 登入狀態回到預設的已登入。
    * 訂閱不受影響。
    */
   reset(data?: ProjectData): void
@@ -192,4 +199,9 @@ export interface MockApi extends ProjectApi {
    * 寫入一律照做，擋寫入靠前端的資料層（真後端會回 403）。
    */
   setCanEdit(v: boolean): void
+  /**
+   * 之後的 `getCalendar` 改回這份日曆（e2e 測「假日未公布」、補班日用）。`reset()` 會還原成範例日曆。
+   * 要測載入失敗用 `failNext('getCalendar')`；要在第一次進 Dashboard 前設好才看得到效果。
+   */
+  setCalendar(cal: WorkCalendar): void
 }

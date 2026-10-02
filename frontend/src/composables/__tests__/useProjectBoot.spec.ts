@@ -402,7 +402,8 @@ describe('useProjectBoot：背景重載失敗的分類', () => {
     mockApi.setSession(null)
     await useProjectBoot('pmis').reload()
 
-    expect(heard).toHaveBeenCalledTimes(1)
+    // 專案資料與工作日曆並行載入，兩支都回 401、各通知一次；導回登入頁（expireSession）是冪等的
+    expect(heard).toHaveBeenCalled()
     expect(ui.loadState).toBe('ready')
     expect(ui.loadError).toBeNull()
     expect(useTaskStore().tasks).toHaveLength(30)

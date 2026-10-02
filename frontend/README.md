@@ -215,13 +215,14 @@ frontend/
 │   │   ├── task / issue / comment / member / budget / project.ts   資料層（單一專案；project 是專案本身與 canEdit）
 │   │   ├── portfolio.ts                       資料層（總覽的專案摘要與成員名錄）
 │   │   ├── session.ts                         資料層（登入者；給登入守衛與畫面顯示用，不做授權）
+│   │   ├── workCalendar.ts                    資料層（工作日曆：週末與假日，排程用；全系統共用，登出不重置）
 │   │   ├── _optimistic.ts                     樂觀更新的共用機制（tracker / runOptimistic / error sink）
 │   │   ├── _sync.ts                           api.subscribe 的唯一訂閱點，把事件路由到各資料 store
 │   │   ├── rows / filter / selection / ui.ts  派生層（Dashboard）
 │   │   └── overview.ts                        派生層（總覽）
 │   ├── types/             資料模型型別（models.ts）與畫面層共用型別（ui.ts：LoadState）
 │   ├── views/             頁面（總覽、Dashboard、登入）
-│   └── __tests__/         跨目錄的結構守衛（readme / no-query-selector）
+│   └── __tests__/         跨目錄的結構守衛（readme / no-query-selector）；單元測試共用前置 loadSample.ts（載入範例、工作日曆、固定時鐘）
 └── e2e/                   Playwright 測試與 helper
 ```
 
@@ -298,7 +299,7 @@ store 分三層，依賴**只能由上往下**：
 | 層 | 檔 | 職責 | 可以 import 誰 |
 |---|---|---|---|
 | 時鐘層 | `clock.ts` | `now` / `todayIdx` / `todayIso`（60 秒 tick） | 誰都不用 |
-| 資料層 | `task.ts`、`issue.ts`、`comment.ts`、`member.ts`、`budget.ts`、`project.ts`（＋共用的 `_optimistic.ts`、`_sync.ts`）；總覽的 `portfolio.ts`；登入者 `session.ts` | 專案資料的唯一擁有者；所有寫入都經 `@/api` | `@/api/*`、`@/lib/*`、`@/types/*`、`@/stores/clock`、其他資料 store、`_optimistic` / `_sync` |
+| 資料層 | `task.ts`、`issue.ts`、`comment.ts`、`member.ts`、`budget.ts`、`project.ts`（＋共用的 `_optimistic.ts`、`_sync.ts`）；總覽的 `portfolio.ts`；登入者 `session.ts`；工作日曆 `workCalendar.ts` | 專案資料的唯一擁有者；所有寫入都經 `@/api` | `@/api/*`、`@/lib/*`、`@/types/*`、`@/stores/clock`、其他資料 store、`_optimistic` / `_sync` |
 | 派生層 | `rows.ts`、`filter.ts`、`selection.ts`、`ui.ts`；總覽的 `overview.ts` | 從資料層算出畫面要的東西（可見列、篩選、選取、浮層 / 錯誤條 / 收合） | 所有層 |
 
 成員名錄有兩份：`portfolio.members`（總覽，含各專案的 PM）與 `member.members`（Dashboard，單一專案的成員）。總覽元件查成員一律用 `portfolio.byId`。指派類的下拉（＋指派、Issue 提出人與負責人）只列沒停用的人，用 `member.assignable(原本選的 id)`；頂欄成員篩選只列這個專案有被指派任務的人（`lib/filter.ts` 的 `filterableMembers`）。
@@ -457,6 +458,7 @@ store 分三層，依賴**只能由上往下**：
 | `logout()` | POST | `/api/auth/logout` | — | 204、清 cookie（沒登入也是 204） |
 | `loadProject(id)` | GET | `/api/projects/:id` | — | `ProjectData`（整包，含 `project` 與 `canEdit`；`tasks` / `groups` 的陣列順序就是顯示順序） |
 | `listProjects()` | GET | `/api/projects` | — | `PortfolioData`（所有專案的 `ProjectSummary` ＋ 成員名錄 ＋ `currentUserId`；`projects` 順序無意義，`members` 順序就是顯示順序） |
+| `getCalendar()` | GET | `/api/calendar` | — | `WorkCalendar`（`weekendDays`、`coveredYears`、`days`；全系統共用、不帶 from/to，一次回全部。後端已實作，見 `backend/README.md`〈工作日曆〉） |
 | `createTask()` | POST | `/api/tasks` | `Task`（含 client 產的 `id`） | `Task` |
 | `updateTask()` | PATCH | `/api/tasks/:id` | `Partial<Task>`（JSON merge patch） | `Task` |
 | `updateTasks()` | PATCH | `/api/tasks` | `Task[]`（**語意是整批 PUT**：body 是整筆 `Task[]`，不是 patch；已含 cascade 後的下游） | `Task[]`（server 最終狀態，client 直接套回） |

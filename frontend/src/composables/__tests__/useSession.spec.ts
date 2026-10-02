@@ -48,8 +48,12 @@ const STORE_DEFS: StoreDef[] = Object.entries(storeModules)
     ),
   )
 
-/** 不重置的 store：時鐘層（時間跟誰登入無關）。 */
-const EXEMPT = new Set(['clock'])
+/**
+ * 不重置的 store：
+ * - `clock`：時鐘層，時間跟誰登入無關。
+ * - `workCalendar`：工作日曆是全系統共用的公開資料（假日表），跟登入者無關；每次進 Dashboard 都會重抓。
+ */
+const EXEMPT = new Set(['clock', 'workCalendar'])
 
 /**
  * 把 store 的 state 轉成能直接比對的純資料（Set / Map 轉成標記過的陣列）。
@@ -143,11 +147,11 @@ describe('resetSession：登出後每個 store 都等於全新的初始狀態', 
     mockApi.reset()
   })
 
-  it('列舉得到 src/stores/ 底下的 store，豁免的只有時鐘層', () => {
+  it('列舉得到 src/stores/ 底下的 store，豁免的只有時鐘與工作日曆', () => {
     const ids = STORE_DEFS.map((d) => d.$id)
     expect(ids.length).toBeGreaterThanOrEqual(14)
     for (const id of EXEMPT) expect(ids).toContain(id)
-    expect([...EXEMPT]).toEqual(['clock'])
+    expect([...EXEMPT]).toEqual(['clock', 'workCalendar'])
   })
 
   it('照實際使用弄髒、再把每個欄位改掉 → resetSession() → 每個 store 等於全新 pinia 的初始狀態', async () => {
