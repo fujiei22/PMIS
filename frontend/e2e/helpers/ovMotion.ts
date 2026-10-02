@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 import { FIXED_NOW } from './clock'
 
 /**
@@ -90,7 +90,9 @@ export async function trace(
     document.body.appendChild(probeEl)
     let last = state.t0
     const ro = new ResizeObserver(() => {
-      const now = performance.now()
+      // 這一幀的開始時間（動畫時鐘），不是回呼當下：CSS 過渡照它推進；負載下某幀晚了、下一幀緊接著來時，
+      // 回呼時間只差幾 ms，拿它算速度會算出假的突變（批次③：ov-leave 連刪 chip 在平行跑時的誤判）
+      const now = (document.timeline.currentTime as number | null) ?? performance.now()
       const boxes: Record<string, Box | null> = {}
       for (const [name, sel] of Object.entries(targets)) {
         const el = document.querySelector(sel)
@@ -209,4 +211,46 @@ export function drift(boxes: Box[]): number {
 /** 單幀透明度跳 > 0.35（dt < 34 的幀才算）。 */
 export function opacityJumps(pts: { dt: number; o: number }[]): boolean {
   return pts.some((p, i) => i > 0 && p.dt < 34 && Math.abs(p.o - pts[i - 1]!.o) > 0.35)
+}
+
+/** 長幀：兩幀間隔超過這麼久，過渡在這段時間裡會一次走一大截，逐幀路徑量不到（不是程式的問題）。 */
+export const LONG_FRAME_MS = 50
+
+/** from 起 ms 毫秒內沒有長幀。 */
+export function calm(tr: Trace, from: number, ms: number, limit = LONG_FRAME_MS): boolean {
+  return tr.frames.every((f) => f.t < from || f.t > from + ms || f.dt <= limit)
+}
+
+/**
+ * 逐幀量測的前提檢查（同 page-motion.spec 的 G9）：run 每次從乾淨的頁面開始錄，回傳的 valid 是「這次量測的前提有沒有成立」
+ * （例：量測窗口沒碰上機器忙造成的長幀、過渡在同一幀起跑），不成立就重來，最多 tries 次。
+ * 最後一次照樣斷言：tries 次都不成立就失敗——程式退化讓前提永遠不成立時，測試照樣紅，不會被重來洗掉。
+ * why：前提沒成立時的說明（失敗訊息用）。
+ */
+export async function withPremise<T>(
+  run: () => Promise<{ value: T; valid: boolean; why?: string }>,
+  tries = 3,
+): Promise<T> {
+  let last!: { value: T; valid: boolean; why?: string }
+  for (let i = 0; i < tries && !last?.valid; i++) last = await run()
+  expect(last.valid, `${tries} 次前提都不成立（機器太忙？）${last.why ? `：${last.why}` : ''}`).toBe(true)
+  return last.value
+}
+
+/**
+ * selector 底下每個元素目前的 CSS 過渡起跑時間（document.timeline 的 ms，四捨五入；還沒定的不列）。
+ * 用來檢查「同一次更新裡的過渡在同一幀起跑」：主執行緒動畫（grid-template-rows）與合成器動畫（transform、opacity）
+ * 的起跑時間各自決定，機器忙時合成器晚一兩幀回報，兩者就分家。
+ */
+export function transitionStarts(page: Page, selector: string, props: string[]): Promise<number[]> {
+  return page.evaluate(
+    ({ selector, props }) =>
+      [...document.querySelectorAll(selector)].flatMap((el) =>
+        el
+          .getAnimations()
+          .filter((a) => a instanceof CSSTransition && props.includes(a.transitionProperty) && a.startTime != null)
+          .map((a) => Math.round(Number(a.startTime))),
+      ),
+    { selector, props },
+  )
 }

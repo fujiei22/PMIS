@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { clickInPage, hasMid, idle, openDashboard, peakThenFall, series, trace, ui, type Trace } from './helpers/motion'
+import { withPremise } from './helpers/ovMotion'
 
 /**
  * 錯誤列（ErrorBar）出現 / 關閉時頁面內容的銜接（動畫稽核批次 E 的 G11 / D14，docs/incidents/2026-09-30-motion-audit）。
@@ -253,39 +254,56 @@ test.describe('錯誤筆數變了讓錯誤列換行', () => {
   })
 
   test('少一行還沒收完就關掉最後一筆：從當下看得到的高度收起，甘特第一列與頂欄高度都沒有單幀跳動', async ({ page }) => {
-    const row = await firstRow(page)
-    const bare = (await page.locator(TOP).boundingBox())!.height
-    await ui(page, 'pushError', { label: label(1), error: {} })
-    await barSettled(page)
-    const oneLine = (await page.locator(TOP).boundingBox())!.height
-    await ui(page, 'pushError', { label: label(2), error: {} })
-    await barSettled(page)
-    const twoLines = (await page.locator(TOP).boundingBox())!.height
-    expect(twoLines - oneLine, '前提：兩筆排成兩行').toBeGreaterThan(20)
-
-    // 關掉一筆（少一行的補間開始），100ms 後（補間還沒跑完）再關掉最後一筆；兩下都在頁內排程，不隔往返
-    const tr = await trace(page, { row, top: TOP, bar: BAR }, () =>
-      page.evaluate(
-        ({ x, top }) => {
-          const w = window as unknown as { __trace: { t0: number }; __midH?: number }
-          const at = performance.now() - w.__trace.t0
-          ;(document.querySelector(x) as HTMLElement).click()
-          setTimeout(() => {
-            w.__midH = document.querySelector(top)!.getBoundingClientRect().height
-            ;(document.querySelector(x) as HTMLElement).click()
-          }, 100)
-          return at
-        },
-        { x: `${BAR} .error-x`, top: TOP },
-      ),
-    )
-    const mid = await page.evaluate(() => (window as unknown as { __midH?: number }).__midH ?? 0)
-    expect(mid, '前提：關最後一筆時，少一行的補間已經開始').toBeLessThan(twoLines - 3)
-    expect(mid, '前提：關最後一筆時，少一行的補間還沒跑完').toBeGreaterThan(oneLine + 3)
+    /*
+     * 關掉一筆（少一行的補間開始），頂欄真的開始變矮（少了 3px 以上）的那一幀就關掉最後一筆；兩下都在頁內，不隔往返。
+     * 不用固定 100ms：機器忙時補間可能還沒開始（平行跑實測關最後一筆時頂欄 157.5px，還是兩行的高度）。
+     * 前提：關最後一筆時少一行的補間在途中（頂欄介於一行與兩行之間）；不成立就重開頁面重來。
+     */
+    const r = await withPremise(async () => {
+      await openDashboard(page)
+      const row = await firstRow(page)
+      const bare = (await page.locator(TOP).boundingBox())!.height
+      await ui(page, 'pushError', { label: label(1), error: {} })
+      await barSettled(page)
+      const oneLine = (await page.locator(TOP).boundingBox())!.height
+      await ui(page, 'pushError', { label: label(2), error: {} })
+      await barSettled(page)
+      const twoLines = (await page.locator(TOP).boundingBox())!.height
+      let mid = 0
+      const tr = await trace(page, { row, top: TOP, bar: BAR }, async () => {
+        const res = await page.evaluate(
+          ({ x, top, twoLines }) =>
+            new Promise<{ at: number; mid: number }>((resolve, reject) => {
+              const w = window as unknown as { __trace: { t0: number } }
+              const at = performance.now() - w.__trace.t0
+              ;(document.querySelector(x) as HTMLElement).click()
+              const start = performance.now()
+              const tick = (): void => {
+                const h = document.querySelector(top)!.getBoundingClientRect().height
+                if (h < twoLines - 3) {
+                  ;(document.querySelector(x) as HTMLElement).click()
+                  resolve({ at, mid: h })
+                } else if (performance.now() - start > 2000) reject(new Error('頂欄 2 秒內沒有開始變矮'))
+                else requestAnimationFrame(tick)
+              }
+              requestAnimationFrame(tick)
+            }),
+          { x: `${BAR} .error-x`, top: TOP, twoLines },
+        )
+        mid = res.mid
+        return res.at
+      })
+      return {
+        value: { tr, row, bare, oneLine, twoLines },
+        valid: twoLines - oneLine > 20 && mid > oneLine + 3,
+        why: `關最後一筆時頂欄 ${mid.toFixed(1)}px（一行 ${oneLine.toFixed(1)}、兩行 ${twoLines.toFixed(1)}）`,
+      }
+    })
+    const { tr, bare, twoLines } = r
     await expect(page.locator(BAR), '前提：錯誤列收掉了').toHaveCount(0)
-    const r = slideY(tr, 'row', { minStep: HALF_LINE })
-    expect(r.moved, '前提：甘特第一列收回到沒有錯誤列的位置').toBeGreaterThan(twoLines - bare - 2)
-    expect(r.jumps, `第一列單幀瞬移的次數（最大單幀 ${r.maxStep.toFixed(1)}px）`).toBe(0)
+    const rs = slideY(tr, 'row', { minStep: HALF_LINE })
+    expect(rs.moved, '前提：甘特第一列收回到沒有錯誤列的位置').toBeGreaterThan(twoLines - bare - 2)
+    expect(rs.jumps, `第一列單幀瞬移的次數（最大單幀 ${rs.maxStep.toFixed(1)}px）`).toBe(0)
     const h = slideY(tr, 'top', { key: 'h', minStep: HALF_LINE })
     expect(h.jumps, `頂欄高度單幀瞬移的次數（最大單幀 ${h.maxStep.toFixed(1)}px）`).toBe(0)
     const os = barOpacity(tr, tr.at)

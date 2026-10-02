@@ -41,9 +41,30 @@ export async function openDashboard(page: Page, kind: PageKind): Promise<void> {
   await settle(page)
 }
 
-/** 等到動畫（面板 .26s、卡片 .18s、FLIP .16s）與捲動補間都停下來。 */
+/**
+ * 等到動畫（面板 .26s、卡片 .18s、FLIP .16s）與捲動補間都停下來：至少等 ms，之後每 100ms 看一次，
+ * 執行中的動畫是 0、而且每個捲動容器（含視窗）的位置連續兩次沒變才算停，最多再等 3 秒。
+ * 只固定等 ms 的話，機器忙時選取後的平滑捲動（460–1150ms，兩頁都是 JS 補間、getAnimations 看不到）或浮層動畫還在跑就擷取，
+ * 兩頁的幾何對不上——平行跑全套時「行為 1」「行為 7」偶發紅的原因。兩頁一視同仁。
+ */
 export async function settle(page: Page, ms = 500): Promise<void> {
   await page.waitForTimeout(ms)
+  let prev = ''
+  for (let i = 0; i < 30; i++) {
+    const cur = await page.evaluate(() => {
+      const running = document
+        .getAnimations()
+        .filter((a) => a.playState === 'running' && a.effect?.getComputedTiming().endTime !== Infinity).length
+      const scrolls = [...document.querySelectorAll('*')]
+        .filter((el) => el.scrollTop || el.scrollLeft)
+        .map((el) => `${el.scrollLeft},${el.scrollTop}`)
+        .join(';')
+      return `${running}|${window.scrollX},${window.scrollY}|${scrolls}`
+    })
+    if (cur === prev && cur.startsWith('0|')) return
+    prev = cur
+    await page.waitForTimeout(100)
+  }
 }
 
 /**

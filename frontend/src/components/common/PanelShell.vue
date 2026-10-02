@@ -36,13 +36,15 @@ const mounted = useDelayedUnmount(open, 320)
  * 展開完才放行 overflow，讓甘特的浮層與陰影不被切掉。legacy `ganttClip` :3641。
  * 展開途中外框還在長高、內容已經是全高：當下就放行的話，甘特有 z-index 的內容整張蓋在下方看板上
  * （動畫稽核 D3，legacy 同）。所以等 grid-template-rows 的 transitionend 才放行；收合一開始就裁。
+ * 用 clip 不用 hidden（legacy 是 hidden）：hidden 會讓 .panel-clip 成為捲動容器，黏住的甘特尺規、看板欄首改以它為基準，
+ * 收合第一幀就彈回面板裡的原位（實測尺規一幀 250px；總覽 OvPanel 的 C7 B 同一問題）；clip 一樣裁切，但不建立捲動容器。
  */
-const clip = ref<'visible' | 'hidden'>(open.value ? 'visible' : 'hidden')
+const clip = ref<'visible' | 'clip'>(open.value ? 'visible' : 'clip')
 let clipTimer: ReturnType<typeof setTimeout> | undefined
 
 watch(open, (on) => {
   clearTimeout(clipTimer)
-  clip.value = 'hidden'
+  clip.value = 'clip'
   if (!on) return
   const panelMs = parseDuration(getComputedStyle(document.documentElement).getPropertyValue('--t-panel'))
   clipTimer = setTimeout(() => {

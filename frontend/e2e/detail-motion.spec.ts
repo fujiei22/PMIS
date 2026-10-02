@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test'
-import { idle, openDashboard, openTaskDetail, pause, peakThenFall, series, trace, ui } from './helpers/motion'
+import { expect, test, type Page } from '@playwright/test'
+import { idle, openDashboard, openTaskDetail, pause, peakThenFall, series, trace, ui, type Trace } from './helpers/motion'
+import { withPremise } from './helpers/ovMotion'
 
 /** 詳情 Modal 的開關銜接（動畫稽核 G2 / G3 / G4 / G10 / G13）。 */
 test.use({ viewport: { width: 1920, height: 1080 } })
@@ -68,16 +69,43 @@ test('G2 關閉中再點一下，不會延長卸載', async ({ page }) => {
   expect(ms).toBeLessThan(280)
 })
 
+/**
+ * 頁內點開 t3 詳情，逐幀看 Modal 的透明度，淡入走到 0.15 以上的那一幀就點遮罩關閉（不用固定 60ms：機器忙時計時器晚到，
+ * Modal 已經開到接近全亮，峰值本來就會 ≥ 0.98）。回傳錄影與關閉時的透明度。
+ */
+async function openThenCloseMidway(page: Page): Promise<{ tr: Trace; at: number }> {
+  let at = 1
+  const tr = await trace(page, { modal: '.detail-modal', backdrop: '.detail-backdrop' }, async () => {
+    at = await page.evaluate(
+      () =>
+        new Promise<number>((resolve, reject) => {
+          ;(document.querySelector('[data-card="t3"] .caret') as HTMLElement).click()
+          const start = performance.now()
+          const tick = (): void => {
+            const m = document.querySelector('.detail-modal')
+            const o = m ? parseFloat(getComputedStyle(m.closest('.detail-layer') ?? m).opacity) * parseFloat(getComputedStyle(m).opacity) : 0
+            if (o > 0.15) {
+              ;(document.querySelector('.detail-backdrop') as HTMLElement | null)?.click()
+              resolve(o)
+            } else if (performance.now() - start > 2000) reject(new Error('詳情 2 秒內沒有開始淡入'))
+            else requestAnimationFrame(tick)
+          }
+          requestAnimationFrame(tick)
+        }),
+    )
+  })
+  return { tr, at }
+}
+
 test('G10 開到一半就關：Modal 與遮罩的透明度不先閃全亮、最亮之後一路往下', async ({ page }) => {
-  await openDashboard(page)
-  await page.locator('[data-card="t3"]').scrollIntoViewIfNeeded()
-  await idle(page)
-  const tr = await trace(page, { modal: '.detail-modal', backdrop: '.detail-backdrop' }, () =>
-    page.evaluate(() => {
-      ;(document.querySelector('[data-card="t3"] .caret') as HTMLElement).click()
-      setTimeout(() => (document.querySelector('.detail-backdrop') as HTMLElement | null)?.click(), 60)
-    }),
-  )
+  // 前提：關閉時 Modal 還在淡入途中（< 0.7）；那一幀剛好卡住、一次亮太多就重開頁面重來
+  const { tr } = await withPremise(async () => {
+    await openDashboard(page)
+    await page.locator('[data-card="t3"]').scrollIntoViewIfNeeded()
+    await idle(page)
+    const r = await openThenCloseMidway(page)
+    return { value: r, valid: r.at < 0.7, why: `關閉時 Modal 已亮到 ${r.at.toFixed(2)}` }
+  })
   for (const name of ['modal', 'backdrop']) {
     const r = peakThenFall(series(tr, name).map((b) => b.o))
     expect(r.peak, `${name} 被打斷了，最亮不到全亮`).toBeLessThan(0.98)

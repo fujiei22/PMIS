@@ -69,7 +69,8 @@ describe('GanttBar 的視覺狀態（契約 G、legacy :496-513）', () => {
       `left: ${(dayIndex(t.start) - useTaskStore().range.a) * ui.dayWidth}px`,
     )
     expect(bar.attributes('style')).toContain(`top: ${4 * ROW_HEIGHT + 6}px`)
-    expect(bar.attributes('style')).toContain(`width: ${9 * ui.dayWidth}px`)
+    // 寬度＝資料寬度＋縮放自動捲動的補償（--res-w，平常沒有）
+    expect(bar.attributes('style')).toContain(`width: calc(${9 * ui.dayWidth}px + var(--res-w, 0px))`)
     expect(bar.text()).toContain('前端框架建置')
   })
 
@@ -85,7 +86,7 @@ describe('GanttBar 的視覺狀態（契約 G、legacy :496-513）', () => {
     expect(bar.classes()).toContain('summary')
     expect(bar.attributes('data-status')).toBeUndefined()
     expect(bar.attributes('title')).toBe('前端開發（收合）')
-    expect(bar.attributes('style')).toContain(`width: ${5 * ui.dayWidth}px`)
+    expect(bar.attributes('style')).toContain(`width: calc(${5 * ui.dayWidth}px + var(--res-w, 0px))`)
     expect(bar.attributes('style')).toContain(`top: ${0 * ROW_HEIGHT + 12}px`)
     expect(w.findAll('.dot-zone')).toHaveLength(0)
   })

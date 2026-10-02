@@ -54,10 +54,13 @@ function longFrameBeforeLeave(tr: Trace, pressT: number): boolean {
   return tr.frames.some((f, i) => i <= first && f.t >= pressT && f.dt > LONG_FRAME_MS)
 }
 
+/** G9 的重來次數：平行跑十個 worker 時，3 次都碰上長幀的機率約 1/135（實測），提高到 5 次。 */
+const G9_TRIES = 5
+
 /**
  * 錄「進入 → 淡入途中按上一頁」。前提是在淡入途中按、而且按下到開始淡出之間沒有長幀：
  * 機器忙時淡入可能被一個長幀吃掉（0.02 → 1.00），或按下之後被長幀推到接近全亮，那時從高處往下淡出是對的、量不到 G9
- * ——回總覽重來，最多 3 次。keyframes 版沒有長幀時照樣是淡出第一幀就是 1，抓得到。
+ * ——回總覽重來，最多 G9_TRIES 次。keyframes 版沒有長幀時照樣是淡出第一幀就是 1，抓得到。
  * 回傳最後一次的錄影、按下時的透明度與這一次的前提成不成立。
  */
 async function traceEnterBack(page: Page, ov: OverviewPage): Promise<{ tr: Trace; pressedAt: number; valid: boolean }> {
@@ -65,7 +68,7 @@ async function traceEnterBack(page: Page, ov: OverviewPage): Promise<{ tr: Trace
   let pressedAt = 1
   let valid = false
   let pressT = 0
-  for (let attempt = 0; attempt < 3 && !valid; attempt++) {
+  for (let attempt = 0; attempt < G9_TRIES && !valid; attempt++) {
     if (attempt) {
       await expect(page.locator('.dash')).toHaveCount(0)
       await expect(ov.card('pmis')).toBeVisible()
@@ -89,7 +92,7 @@ test('G9 Dashboard 淡入途中按上一頁：從當下的透明度往回淡出�
   const ov = new OverviewPage(page)
   await ov.goto()
   const { tr, pressedAt, valid } = await traceEnterBack(page, ov)
-  expect(valid, `3 次都沒在淡入途中按到上一頁、或按下後碰上長幀（機器太忙；最後一次按下時 ${pressedAt.toFixed(2)}）`).toBe(true)
+  expect(valid, `${G9_TRIES} 次都沒在淡入途中按到上一頁、或按下後碰上長幀（機器太忙；最後一次按下時 ${pressedAt.toFixed(2)}）`).toBe(true)
   // 失敗訊息用：還沒帶 leave class 的 .dash 幀＝淡入中，帶了的＝淡出中
   const entering = tr.frames.filter((f) => f.boxes.dash && !f.boxes.leave).map((f) => f.boxes.dash!.o)
   const leaving = series(tr, 'leave').map((b) => b.o)

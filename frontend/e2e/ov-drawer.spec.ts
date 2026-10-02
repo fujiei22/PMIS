@@ -319,6 +319,62 @@ test.describe('一欄寬（換列）', () => {
     expect(Math.max(...after) - Math.min(...after), '按下後頁面還在被捲（補償沒停）').toBeLessThanOrEqual(1)
   })
 
+  /** 一欄寬：展開 pmis（m5）與 portal（m8），m5 換到下一列（payment），120ms 後 m8 也換列（app）；逐幀記 m5 抽屜在哪張卡下方與高度。 */
+  async function switchTwoLanes(page: Page): Promise<{ frames: { t: number; on: string | null; h: number }[]; hAtSecond: number }> {
+    await gotoOverview(page)
+    await page.locator(cardMain('pmis')).click()
+    await idle(page)
+    await page.locator(cardMain('portal')).click()
+    await idle(page)
+    return page.evaluate(async (P) => {
+      const drawer = (): HTMLElement | null => document.querySelector(`${P} [data-pm-col="m5"] .drawer`)
+      // 用 element.click()：不產生 pointerdown，不會把 m5 的換列補償當成使用者操作停掉
+      const click = (id: string): void => (document.querySelector(`${P} [data-project="${id}"] .card-main`) as HTMLElement).click()
+      const out: { t: number; on: string | null; h: number }[] = []
+      const t0 = performance.now()
+      let h = 0
+      click('payment')
+      setTimeout(() => {
+        h = drawer()?.getBoundingClientRect().height ?? 0
+        click('app')
+      }, 120)
+      await new Promise<void>((done) => {
+        const tick = (): void => {
+          const d = drawer()
+          if (d) out.push({ t: performance.now() - t0, on: d.dataset.drawer ?? null, h: d.getBoundingClientRect().height })
+          if (performance.now() - t0 < 1000) requestAnimationFrame(tick)
+          else done()
+        }
+        requestAnimationFrame(tick)
+      })
+      return { frames: out, hAtSecond: h }
+    }, P)
+  }
+
+  /** switchTwoLanes 加前提檢查：第二下點的時候 m5 抽屜還在收合途中（> 20px）；不成立就重開頁面重來，最多 3 次。 */
+  async function switchTwoLanesMidCollapse(page: Page): ReturnType<typeof switchTwoLanes> {
+    let r = await switchTwoLanes(page)
+    for (let attempt = 1; attempt < 3 && r.hAtSecond <= 20; attempt++) r = await switchTwoLanes(page)
+    return r
+  }
+
+  /**
+   * 既有 bug（批次 B review 發現）：一條泳道換列收合中，點另一條泳道的卡讓 expandedIds 換新，這條的 target 重算出
+   * 「同一張卡、同一個位置」但不同物件的值，watch 又跑一次；這時 grown 已是 false，走進「從收合途中打開」，
+   * 收到一半的抽屜直接搬到新列展開（修正前實測約 101–143px 時換位置）。修正後換列等待中的同一個 target 不重來，
+   * 照原本的計時在舊列收完才換列。
+   * 前提：第二下（m8 換列）點下去時，m5 的抽屜還在收合途中（高度 > 20px）；機器忙、晚太多就重開頁面重來，最多 3 次。
+   */
+  test('換列收合途中點另一條泳道的卡：這條的抽屜在舊列收完才換到新列，不在半途搬家', async ({ page }) => {
+    const r = await switchTwoLanesMidCollapse(page)
+    expect(r.hAtSecond, '第二下點的時候 m5 抽屜還在收合途中（前提；3 次都太晚＝機器太忙）').toBeGreaterThan(20)
+    const i = r.frames.findIndex((f) => f.on === 'payment')
+    expect(i, '最後換到 payment 下方').toBeGreaterThan(0)
+    const path = r.frames.map((f) => `${f.on}:${f.h.toFixed(0)}`).join(' ')
+    expect(r.frames[i - 1]!.h, `換到新列的前一幀，舊抽屜已經收完（${path}）`).toBeLessThanOrEqual(2)
+    expect(r.frames.at(-1)!.on).toBe('payment')
+  })
+
   test('兩條泳道的換列補償重疊：最後一條結束才還原根元素的 overflow-anchor，且還原成原值', async ({ page }) => {
     await gotoOverview(page)
     // 一欄寬時 m5（PMIS / 金流介接）與 m8（客戶入口 / 行動 App）都是兩列；各展開上面那張

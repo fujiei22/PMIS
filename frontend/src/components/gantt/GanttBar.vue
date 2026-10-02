@@ -182,7 +182,7 @@ function onDown(e: PointerEvent): void {
     :data-taskid="id"
     :data-status="status"
     :title="title"
-    :style="{ left: `${left}px`, top: `${top}px`, width: `${w}px` }"
+    :style="{ left: `${left}px`, top: `${top}px`, width: `calc(${w}px + var(--res-w, 0px))` }"
     role="button"
     @click.stop="onClick()"
     @pointerdown="onDown($event)"
@@ -236,6 +236,16 @@ function onDown(e: PointerEvent): void {
 </template>
 
 <style scoped>
+/*
+ * 縮放把手拖到邊緣自動捲動時，被拖那一端「捲動造成、還沒湊滿一天」的寬度補償（usePointerDrag 寫在條上，動畫稽核 D6 延伸）。
+ * 寬度綁定寫成 calc(資料寬度 + --res-w)；註冊成 <length> 才能在放開時用 Web Animations 從補償值補間回 0。
+ */
+@property --res-w {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
 /* 依狀態決定條色；契約 F：data-status → --bar，再由 color-mix 組出光暈 */
 .bar[data-status='todo'] {
   --bar: var(--st-todo-bar);

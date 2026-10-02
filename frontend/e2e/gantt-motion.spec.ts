@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { DashboardPage, html5Drag } from './helpers/dashboardPage'
+import { speedJumps } from './helpers/ovMotion'
 
 /**
  * 甘特面板的動畫銜接（動畫稽核批次 A，`docs/incidents/2026-09-30-motion-audit`）。
@@ -71,7 +72,9 @@ async function trace(
       document.body.appendChild(probe)
       let last = t0
       const ro = new ResizeObserver(() => {
-        const now = performance.now()
+        // 這一幀的開始時間（動畫時鐘），不是回呼當下：CSS 過渡照它推進；負載下某幀晚了、下一幀緊接著來時，
+        // 回呼時間只差幾 ms，拿它算速度會算出假的突變（批次③：ov-leave 連刪 chip 在平行跑時的誤判）
+        const now = (document.timeline.currentTime as number | null) ?? performance.now()
         const boxes: Record<string, Box | null> = {}
         for (const [name, sel] of Object.entries(targets)) {
           const el = document.querySelector(sel)
@@ -764,6 +767,26 @@ test.describe('甘特面板收合 / 展開（D3 / D12）', () => {
     await expect(page.locator('[data-rowtask]')).toHaveCount(30)
   })
 
+  /*
+   * 收合過渡中 .panel-clip 原本是 overflow: hidden：hidden 讓它變成捲動容器，黏住的尺規改以它為基準，
+   * 收合第一幀就彈回面板裡的原位（總覽 OvPanel 的 C7 B 同一問題）。clip 一樣裁切、但不建立捲動容器。
+   * 頁面捲到尺規黏在頂部列下方，收合甘特：面板底邊收到尺規之前（前 80ms 內），尺規一幀都不動。
+   */
+  test('甘特尺規黏住時收合甘特面板：收合剛開始尺規不先彈一下（overflow 用 clip）', async ({ page }) => {
+    const app = await openGantt(page)
+    const ruler = '[data-panel="gantt"] .gantt-ruler-row'
+    // 捲到甘特面板頂端在視窗外 300px：尺規黏在頂部列下方；下面還有看板與 Issue，收合時頁面不會被夾
+    await page.locator('[data-panel="gantt"]').evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top + 300))
+    await idle(page)
+    const stuck = await page.locator(ruler).evaluate((el) => el.getBoundingClientRect().top - el.closest('[data-panel]')!.getBoundingClientRect().top)
+    expect(stuck, '尺規黏住了（離面板頂端超過 250px）').toBeGreaterThan(250)
+    const tr = await trace(page, { ruler }, () => app.panelToggle('gantt').click(), { markOn: 'click', ms: 400 })
+    const at = tr.marks[0]!
+    const ys = tr.frames.filter((f) => f.boxes.ruler && f.t < at + 80).map((f) => f.boxes.ruler!.y)
+    expect(ys.length, '收合剛開始有幀').toBeGreaterThan(2)
+    expect(Math.max(...ys) - Math.min(...ys), `尺規 y 逐幀：${ys.map((y) => y.toFixed(0)).join(',')}`).toBeLessThanOrEqual(1)
+  })
+
   test('收合再展開：水平捲動位置不變，尺規跟著', async ({ page }) => {
     const app = await openGantt(page)
     await app.freezeGanttScroll(500)
@@ -806,9 +829,103 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
     await expect(app.bar('t3')).toHaveCSS('transform', 'none')
   })
 
+  /**
+   * D6 延伸：縮放把手拖到邊緣自動捲動。被拖的那一端要一直在游標下（捲動造成、還沒湊滿一天的差補在那一端），
+   * 另一端是固定的日期、跟著畫布捲動連續移動；放開才吸附到整天。
+   * 修正前被拖的那一端以整天吸附：隨捲動往遠離游標的方向滑、湊滿一天再一幀跳回（鋸齒，實測每幀 13px）。
+   * 右把手用 t3（專案前段，捲動位置 0 時看得到），拖到右緣；左把手用 t24（專案後段、沒有前置任務——有前置的開始日
+   * 不能早於前一個結束，左緣會被擋住），先捲到 t24 左邊留 700px，拖到左緣。
+   * end：被拖的那一端在畫面上的 x；away：這一幀往遠離游標的方向滑了多少（鋸齒的那一段）。
+   */
+  const RESIZE = [
+    {
+      name: '右把手拖到右緣',
+      id: 't3',
+      scrollTo: () => 0,
+      grab: (b: { x: number; width: number }) => b.x + b.width - 3,
+      edge: (sc: { x: number; width: number }) => sc.x + sc.width - 20,
+      end: (bx: { x: number; w: number }) => bx.x + bx.w,
+      away: (prev: number, cur: number) => prev - cur,
+    },
+    {
+      name: '左把手拖到左緣',
+      id: 't24',
+      scrollTo: (barLeft: number) => Math.max(0, barLeft - 700),
+      grab: (b: { x: number; width: number }) => b.x + 3,
+      edge: (sc: { x: number; width: number }) => sc.x + 20,
+      end: (bx: { x: number; w: number }) => bx.x,
+      away: (prev: number, cur: number) => cur - prev,
+    },
+  ]
+  for (const r of RESIZE) {
+    test(`縮放：${r.name}自動捲動，被拖的那一端一直在游標下、不鋸齒；放開才吸附`, async ({ page }) => {
+      const app = await openGantt(page)
+      await app.row(r.id).locator('.name').click()
+      await pause(page, 1300)
+      const barLeft = await app.bar(r.id).evaluate((el) => (el as HTMLElement).offsetLeft)
+      await app.freezeGanttScroll(r.scrollTo(barLeft))
+      const sc = (await app.ganttScroller.boundingBox())!
+      const b = (await app.bar(r.id).boundingBox())!
+      const y = b.y + b.height / 2
+      const grabX = r.grab(b)
+      const edgeX = r.edge(sc)
+      await page.mouse.move(grabX, y)
+      await page.mouse.down()
+      for (let i = 1; i <= 8; i++) {
+        await page.mouse.move(grabX + ((edgeX - grabX) * i) / 8, y)
+        await pause(page, 16)
+      }
+      const sl0 = await app.scrollLeftOf(app.ganttScroller)
+      // 游標停在邊緣：自動捲動一直跑
+      const tr = await trace(page, { bar: bar(r.id) }, () => pause(page, 1), { ms: 700 })
+      const sl1 = await app.scrollLeftOf(app.ganttScroller)
+      await page.mouse.up()
+      expect(Math.abs(sl1 - sl0), '自動捲動有在跑').toBeGreaterThan(100)
+      const ends = tr.frames.filter((f) => f.boxes.bar).map((f) => r.end(f.boxes.bar!))
+      const away = ends.slice(1).map((v, i) => r.away(ends[i]!, v))
+      expect(Math.max(...away), `被拖的那一端逐幀：${ends.map((v) => v.toFixed(0)).join(',')}`).toBeLessThanOrEqual(1.5)
+      // 放開：寬度補償拿掉，條落在整天的位置
+      await expect.poll(() => app.bar(r.id).evaluate((el) => (el as HTMLElement).style.getPropertyValue('--res-w'))).toBe('')
+    })
+  }
+
+  /*
+   * review：被拖的那一端被擋住時不補。t6 的前置是 t5，開始日不能早於 t5 的開始：左把手拖到左緣、自動捲動捲過那一天之後，
+   * 左緣停在限制上、跟著畫布等速往右走。修正前補償照加：補償把它拉回游標下不動，每湊滿一天又一幀往右跳一天（32px）。
+   */
+  test('縮放：左把手被前置任務擋住後，左緣跟著畫布等速移動、不一天一跳', async ({ page }) => {
+    const app = await openGantt(page)
+    await app.row('t6').locator('.name').click()
+    await pause(page, 1300)
+    const barLeft = await app.bar('t6').evaluate((el) => (el as HTMLElement).offsetLeft)
+    await app.freezeGanttScroll(Math.max(0, barLeft - 700))
+    const sc = (await app.ganttScroller.boundingBox())!
+    const b = (await app.bar('t6').boundingBox())!
+    const y = b.y + b.height / 2
+    const grabX = b.x + 3
+    const edgeX = sc.x + 20
+    await page.mouse.move(grabX, y)
+    await page.mouse.down()
+    for (let i = 1; i <= 8; i++) {
+      await page.mouse.move(grabX + ((edgeX - grabX) * i) / 8, y)
+      await pause(page, 16)
+    }
+    const tr = await trace(page, { bar: bar('t6') }, () => pause(page, 1), { ms: 700 })
+    await page.mouse.up()
+    const pts = tr.frames.filter((f) => f.boxes.bar).map((f) => ({ t: f.t, v: f.boxes.bar!.x }))
+    const detail = `左緣逐幀：${pts.map((p) => p.v.toFixed(0)).join(',')}`
+    expect(pts.at(-1)!.v - pts[0]!.v, `被擋住、跟著畫布往右走了（前提）；${detail}`).toBeGreaterThan(50)
+    expect(speedJumps(pts), detail).toBe(0)
+  })
+
   // review：自動捲動的補償（transform）不改資料，相依線原本只在資料變後跟一段——
   // 捲動停住（游標離開邊緣）或放開後回彈時，線彈回資料位置、跟被補償的條差到一天寬
-  test('拖條自動捲動、停住、放開回彈期間：t3 → t4 相依線兩端每一幀都貼著條', async ({ page }) => {
+  // 縮放（右把手，D6 延伸）同一套：補的是寬度，相依線從條的右緣出發，要跟著被補的右緣。grab：從條左緣往右抓幾 px
+  for (const { how, grab } of [
+    { how: '移動', grab: () => 24 },
+    { how: '右把手縮放', grab: (b: { width: number }) => b.width - 3 },
+  ]) {
+  test(`拖條（${how}）自動捲動、停住、放開回彈期間：t3 → t4 相依線兩端每一幀都貼著條`, async ({ page }) => {
     const app = await openGantt(page)
     await tagDeps(page, [['t3', 't4']])
     await app.row('t3').locator('.name').click()
@@ -817,7 +934,7 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
     const sc = (await app.ganttScroller.boundingBox())!
     const b = (await app.bar('t3').boundingBox())!
     const y = b.y + b.height / 2
-    const grabX = b.x + 24
+    const grabX = b.x + grab(b)
     const edgeX = sc.x + sc.width - 20
     await page.mouse.move(grabX, y)
     await page.mouse.down()
@@ -844,6 +961,7 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
     expect(tr.marks, '有放開').toHaveLength(1)
     expect(depGap(tr, 't3', 't4', 0), 't3 → t4 兩端與條').toBeLessThanOrEqual(4)
   })
+  }
 
   test('拖條超出專案起點（日期格往左長）：同一天的日期格與別的條每一幀都對齊', async ({ page }) => {
     const app = await openGantt(page)
@@ -881,4 +999,28 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
     const xs = tr.frames.filter((f) => f.t >= tr.marks[0]! && f.boxes.dragged).map((f) => f.boxes.dragged!.x)
     expect(Math.min(...xs), '被拖的條往左').toBeLessThan(b.x - 100)
   })
+})
+
+/**
+ * J2：甘特分類收合鈕收合時是「▶」（U+25B6）。Noto Sans TC（Google Fonts）以 unicode-range 分子集，
+ * 含 ▶ 的子集要等它第一次出現在畫面上才下載，到了之後「Fonts changed」整頁文字重排（批次 A 量到第一次收合 87–118ms 的長幀）。
+ * 啟動時就預載（lib/fontPreload.ts）：第一次收合之前這個子集已經在。
+ * 直接看 FontFace 的 status：Chrome 的 document.fonts.check 對 unicode-range 子集一律回 true（實測子集 unloaded 時也是 true）。
+ * 網路擋掉 Google Fonts 時沒有這些 @font-face，找不到就不用等。
+ */
+test('J2 第一次收合分類之前，含 ▶ 的字型子集已經載好（不在收合當下才下載、整頁重排）', async ({ page }) => {
+  await openGantt(page)
+  await page.evaluate(() => document.fonts.ready)
+  const faces = await page.evaluate(() => {
+    const weight = getComputedStyle(document.querySelector('[data-rowgroup] .caret')!).fontWeight
+    const covers = (range: string, cp: number): boolean =>
+      range.split(',').some((part) => {
+        const m = /U\+([0-9A-F]+)(?:-([0-9A-F]+))?/i.exec(part.trim())
+        return !!m && cp >= parseInt(m[1]!, 16) && cp <= parseInt(m[2] ?? m[1]!, 16)
+      })
+    return [...document.fonts]
+      .filter((f) => f.family.includes('Noto Sans TC') && f.weight === weight && covers(f.unicodeRange, 0x25b6))
+      .map((f) => f.status)
+  })
+  expect(faces.every((s) => s === 'loaded'), `含 ▶ 的 Noto Sans TC 子集狀態：${faces.join(',')}`).toBe(true)
 })

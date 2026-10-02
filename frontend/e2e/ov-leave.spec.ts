@@ -6,11 +6,11 @@ import {
   idle,
   jumpCount,
   opacityJumps,
-  pause,
   probe,
   series,
   speedJumps,
   trace,
+  withPremise,
   type Box,
   type Trace,
 } from './helpers/ovMotion'
@@ -195,28 +195,58 @@ test('清除排序：多出來的 chip 同時各自原地收起', async ({ page 
   }
 })
 
-test('排序位移途中被篩掉的卡：照常淡出、相對泳道原地不瞬移（C2 e）', async ({ page }) => {
-  await gotoOverview(page)
-  const search = page.getByTestId('overview-search')
-  const [pay] = await probe(page, '[data-view-panel="cards"] [data-project="payment"]', 'pay')
-  const body = '[data-view-panel="cards"] [data-pm-col="m5"] .lane-body'
+/**
+ * 「金流」只剩 m5 的 payment（往泳道第一格 FLIP）；在頁面裡逐幀看 payment 相對泳道的位置，真的在移動（離起點 > 2px、
+ * 這一幀還在動）時改成「p」（剩 m5 pmis、m8 app），payment 在 FLIP 途中離場。不用固定毫秒數：機器忙時 100ms 可能還沒開始
+ * FLIP、也可能已經跑完。回傳錄影與改成「p」的時間（trace 時間軸）。
+ */
+async function filterOutMidFlip(page: Page, pay: string, body: string): Promise<{ tr: Trace; t2: number }> {
   let t2 = 0
-  // 「金流」只剩 m5 的 payment（往泳道第一格 FLIP）；100ms 後改成「p」剩 m5 pmis、m8 app，payment 在 FLIP 途中離場
-  const tr = await trace(page, { pay: pay!, body }, async () => {
-    await search.fill('金流')
-    await pause(page, 100)
-    t2 = await page.evaluate(() => {
-      const input = document.querySelector('[data-testid="overview-search"]') as HTMLInputElement
-      input.value = 'p'
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-      return performance.now() - (window as unknown as TraceWindow).__ovTrace.t0
-    })
+  const tr = await trace(page, { pay, body }, async () => {
+    t2 = await page.evaluate(
+      ({ pay, body }) =>
+        new Promise<number>((resolve, reject) => {
+          const input = document.querySelector('[data-testid="overview-search"]') as HTMLInputElement
+          const rel = (): number =>
+            document.querySelector(pay)!.getBoundingClientRect().left - document.querySelector(body)!.getBoundingClientRect().left
+          const x0 = rel()
+          let prev = x0
+          input.value = '金流'
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+          const start = performance.now()
+          const tick = (): void => {
+            const x = rel()
+            if (Math.abs(x - x0) > 2 && Math.abs(x - prev) > 0.5) {
+              input.value = 'p'
+              input.dispatchEvent(new Event('input', { bubbles: true }))
+              resolve(performance.now() - (window as unknown as TraceWindow).__ovTrace.t0)
+            } else if (performance.now() - start > 2000) reject(new Error('payment 2 秒內沒有開始位移'))
+            else {
+              prev = x
+              requestAnimationFrame(tick)
+            }
+          }
+          requestAnimationFrame(tick)
+        }),
+      { pay, body },
+    )
+  })
+  return { tr, t2 }
+}
+
+test('排序位移途中被篩掉的卡：照常淡出、相對泳道原地不瞬移（C2 e）', async ({ page }) => {
+  const body = '[data-view-panel="cards"] [data-pm-col="m5"] .lane-body'
+  // 前提：篩掉時 payment 正在位移（篩掉前最後兩幀相對泳道的位置差 > 1px）；機器忙、這一幀剛好卡住就重開頁面重來
+  const { tr, t2 } = await withPremise(async () => {
+    await gotoOverview(page)
+    const [pay] = await probe(page, '[data-view-panel="cards"] [data-project="payment"]', 'pay')
+    const r = await filterOutMidFlip(page, pay!, body)
+    const before = relSeries(r.tr, 'pay', 'body').filter((p) => p.t < r.t2)
+    const moving = before.length > 2 && Math.abs(before.at(-1)!.x - before.at(-2)!.x) > 1
+    return { value: r, valid: moving, why: '篩掉時 payment 沒在位移' }
   })
   expect(tr.frames.at(-1)!.boxes.pay, 'payment 最後離場').toBeNull()
   const rel = relSeries(tr, 'pay', 'body')
-  const before = rel.filter((p) => p.t < t2)
-  expect(before.length).toBeGreaterThan(2)
-  expect(Math.abs(before.at(-1)!.x - before.at(-2)!.x), '篩掉時 payment 正在位移').toBeGreaterThan(1)
   expect(opacityJumps(rel), '透明度單幀跳').toBe(false)
   /*
    * 不瞬移、原地：從篩掉前的最後一幀起，相對泳道的位移 ≤ 4px（釘在含 FLIP 位移的看得到的位置；修正前釘在版面位置，
@@ -250,36 +280,33 @@ function sinceRemoval(tr: Trace, name: string, t2: number): (Box & { t: number; 
 }
 
 test('淡入中的卡被篩掉：透明度與縮放從當下接續淡出，不先跳回實心', async ({ page }) => {
-  await gotoOverview(page)
-  await page.getByTestId('overview-search').fill('p')
-  await idle(page)
-  // 「p」剩 m5 pmis、m8 app；清除後 portal 在 m8 泳道淡入，100ms 後篩「a」只剩 app：淡入中的 portal 被篩掉（m8 泳道留著）
-  let t2 = 0
-  const tr = await trace(page, { portal: '[data-view-panel="cards"] [data-project="portal"]' }, async () => {
-    t2 = await page.evaluate(
-      () =>
-        new Promise<number>((resolve) => {
-          ;(document.querySelector('[data-testid="overview-clear"]') as HTMLElement).click()
-          setTimeout(() => {
-            const input = document.querySelector('[data-testid="overview-search"]') as HTMLInputElement
-            input.value = 'a'
-            input.dispatchEvent(new Event('input', { bubbles: true }))
-            resolve(performance.now() - (window as unknown as TraceWindow).__ovTrace.t0)
-          }, 100)
-        }),
-    )
-  })
-  const s = sinceRemoval(tr, 'portal', t2)
+  // 「p」剩 m5 pmis、m8 app；清除後 portal 在 m8 泳道淡入，淡入走到 0.15 時篩「a」只剩 app：淡入中的 portal 被篩掉（m8 泳道留著）。
+  // 不用固定 100ms：機器忙時 portal 可能還沒開始淡入（平行跑實測 0.046）
+  const { tr, t2 } = await traceRemoveWhileEntering(
+    page,
+    async () => {
+      await gotoOverview(page)
+      await page.getByTestId('overview-search').fill('p')
+      await idle(page)
+    },
+    {
+      add: { sel: '[data-testid="overview-clear"]' },
+      remove: { sel: '[data-testid="overview-search"]', input: 'a' },
+      watch: '[data-view-panel="cards"] [data-project="portal"]',
+    },
+  )
+  const s = sinceRemoval(tr, 'el', t2)
   expect(Math.max(...s.map((b) => b.o)), '移除後最亮').toBeLessThan(0.95)
   expect(opacityJumps(s), '透明度單幀跳').toBe(false)
   // 進場的放大也接續（修正前寬度當幀長約 10px 回原尺寸）。卡片的重排不走內建 move，離場的卡不會被 Vue 再加位移
   expect(jumpCount(s.map((b) => ({ dt: b.dt, v: b.w }))), '縮放單幀跳').toBe(0)
 })
 
-/** 頁內點擊的對象：選擇器，加 text 時取文字含 text 的那一個。 */
+/** 頁內操作的對象：選擇器，加 text 時取文字含 text 的那一個；給 input 時是改它的值（派 input 事件），否則是點它。 */
 interface Click {
   sel: string
   text?: string
+  input?: string
 }
 
 /** 長幀：兩幀間隔超過這麼久，過渡在這段時間裡一次走一大截，量不到「從當下接續」。 */
@@ -306,17 +333,21 @@ async function traceRemoveWhileEntering(
         (a) =>
           new Promise<{ t: number; o: number }>((resolve, reject) => {
             const t0 = (window as unknown as TraceWindow).__ovTrace.t0
-            const find = (c: { sel: string; text?: string }): HTMLElement =>
-              (c.text
+            const act = (c: { sel: string; text?: string; input?: string }): void => {
+              const el = (c.text
                 ? [...document.querySelectorAll<HTMLElement>(c.sel)].find((e) => e.textContent?.includes(c.text!))
                 : document.querySelector<HTMLElement>(c.sel))!
-            find(a.add).click()
+              if (c.input === undefined) return el.click()
+              ;(el as HTMLInputElement).value = c.input
+              el.dispatchEvent(new Event('input', { bubbles: true }))
+            }
+            act(a.add)
             const start = performance.now()
             const tick = (): void => {
               const el = document.querySelector(a.watch)
               const o = el ? parseFloat(getComputedStyle(el).opacity) : 0
               if (o > 0.15) {
-                find(a.remove).click()
+                act(a.remove)
                 resolve({ t: performance.now() - t0, o })
               } else if (performance.now() - start > 2000) reject(new Error('2 秒內沒有開始淡入'))
               else requestAnimationFrame(tick)

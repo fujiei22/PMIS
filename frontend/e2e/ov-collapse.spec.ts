@@ -11,6 +11,8 @@ import {
   settledFor,
   speedJumps,
   trace,
+  transitionStarts,
+  withPremise,
   type Box,
   type Frame,
   type Trace,
@@ -118,6 +120,45 @@ function expectItemsSmooth(tr: Trace, names: string[], reversal: boolean): void 
   }
 }
 
+/** 頁內的一個操作：改搜尋字（派 input）、或點文字含 text 的那顆 sel。 */
+type Act = { type: string } | { click: string; text: string }
+
+/**
+ * 收到一半就反悔（打了又刪、勾了又取消）：頁內做 first，逐幀看面板底邊從 full 往 filtered 收了幾成，
+ * 走到三成以上的那一幀就做 second。不用固定毫秒數：機器忙時 80 / 100ms 的往返可能還沒開始收、也可能已經收到九成，
+ * 落在「掉了多深」的判斷門檻邊上（平行跑實測反悔時已收到 90.5%）。回傳錄影與反悔時收了幾成。
+ */
+async function reverseMidway(page: Page, first: Act, second: Act, r: Reversal): Promise<{ tr: Trace; at: number }> {
+  let at = 0
+  const tr = await traceLanes(page, async () => {
+    at = await page.evaluate(
+      ({ P, first, second, r }) =>
+        new Promise<number>((resolve, reject) => {
+          const act = (a: Act): void => {
+            if ('type' in a) {
+              const input = document.querySelector('[data-testid="overview-search"]') as HTMLInputElement
+              input.value = a.type
+              input.dispatchEvent(new Event('input', { bubbles: true }))
+            } else [...document.querySelectorAll<HTMLElement>(a.click)].find((e) => e.textContent?.includes(a.text))!.click()
+          }
+          act(first)
+          const start = performance.now()
+          const tick = (): void => {
+            const done = (r.full - document.querySelector(P)!.getBoundingClientRect().bottom) / (r.full - r.filtered)
+            if (done >= 0.3) {
+              act(second)
+              resolve(done)
+            } else if (performance.now() - start > 2000) reject(new Error('面板 2 秒內沒有開始收合'))
+            else requestAnimationFrame(tick)
+          }
+          requestAnimationFrame(tick)
+        }),
+      { P, first, second, r },
+    )
+  })
+  return { tr, at }
+}
+
 /**
  * 某一幀看得見的項目（由上往下）互不重疊（容 2px），回傳這些項目。
  * 兩個都留下的項目在重排時交錯而過是 move 的本意（例：打 p 時 m5 / m8 換順序），不算；
@@ -167,26 +208,25 @@ test('清除篩選：泳道原地長出，面板底邊一路長高、結尾不�
   expectLanesContinuous(tr)
 })
 
-test('打 p 80ms 內刪掉：離場中又回來的泳道從當下高度接續，面板底邊不上跳再推回（C2 c / T3）', async ({ page }) => {
-  await gotoOverview(page)
-  const search = page.getByTestId('overview-search')
-  const full = await bottomOf(page)
-  await search.fill('p')
-  await idle(page)
-  const filtered = await bottomOf(page)
-  await search.fill('')
-  await idle(page)
-  await search.focus()
-  const tr = await traceLanes(page, async () => {
-    await page.keyboard.type('p')
-    await pause(page, 80)
-    await page.keyboard.press('Backspace')
+test('打 p、收到三成就刪掉：離場中又回來的泳道從當下高度接續，面板底邊不上跳再推回（C2 c / T3）', async ({ page }) => {
+  // 前提：反悔時面板收合走到三到六成（那一幀剛好卡住、一次收太多就重開頁面重來）
+  const { tr, r } = await withPremise(async () => {
+    await gotoOverview(page)
+    const search = page.getByTestId('overview-search')
+    const full = await bottomOf(page)
+    await search.fill('p')
+    await idle(page)
+    const filtered = await bottomOf(page)
+    await search.fill('')
+    await idle(page)
+    const m = await reverseMidway(page, { type: 'p' }, { type: '' }, { full, filtered })
+    return { value: { tr: m.tr, r: { full, filtered } }, valid: m.at <= 0.6, why: `反悔時已收了 ${(m.at * 100).toFixed(0)}%` }
   })
   expect(lanesIn(tr), '反悔後四條泳道都在').toEqual(PMS)
-  expectLanesContinuous(tr, { full, filtered })
+  expectLanesContinuous(tr, r)
 })
 
-test('逐字打 app（每字 80ms）再逐字刪；100ms 內勾了狀態又取消：泳道不瞬移', async ({ page }) => {
+test('逐字打 app（每字 80ms）再逐字刪；勾了狀態收到三成就取消：泳道不瞬移', async ({ page }) => {
   await gotoOverview(page)
   await page.getByTestId('overview-search').focus()
   const a = await traceLanes(
@@ -206,23 +246,24 @@ test('逐字打 app（每字 80ms）再逐字刪；100ms 內勾了狀態又取�
   expect(lanesIn(a), '刪完四條泳道都回來').toEqual(PMS)
   expectLanesContinuous(a)
 
-  await gotoOverview(page)
-  await page.locator('[data-ov-dd="status"] button.dd-trigger').click()
-  await idle(page)
-  const opt = page.locator('[data-ov-dd="status"]').getByRole('button', { name: '進行中', exact: true })
-  const full = await bottomOf(page)
-  await opt.click()
-  await idle(page)
-  const filtered = await bottomOf(page)
-  await opt.click()
-  await idle(page)
-  const b = await traceLanes(page, async () => {
-    await opt.click()
-    await pause(page, 100)
-    await opt.click()
+  // 勾了狀態、收到三成就取消（前提同「打 p、收到三成就刪掉」）
+  const opt = { click: '[data-ov-dd="status"] .dd-item', text: '進行中' }
+  const { tr: b, r } = await withPremise(async () => {
+    await gotoOverview(page)
+    await page.locator('[data-ov-dd="status"] button.dd-trigger').click()
+    await idle(page)
+    const btn = page.locator('[data-ov-dd="status"]').getByRole('button', { name: '進行中', exact: true })
+    const full = await bottomOf(page)
+    await btn.click()
+    await idle(page)
+    const filtered = await bottomOf(page)
+    await btn.click()
+    await idle(page)
+    const m = await reverseMidway(page, opt, opt, { full, filtered })
+    return { value: { tr: m.tr, r: { full, filtered } }, valid: m.at <= 0.6, why: `反悔時已收了 ${(m.at * 100).toFixed(0)}%` }
   })
   expect(lanesIn(b), '取消後四條泳道都在').toEqual(PMS)
-  expectLanesContinuous(b, { full, filtered })
+  expectLanesContinuous(b, r)
 })
 
 /**
@@ -238,17 +279,58 @@ function bulge(tr: Trace, name: string): number {
   return Math.max(0, ...ys.map((y) => Math.max(lo - y, y - hi)))
 }
 
+/**
+ * 頁內直接改搜尋字（派 input，不等 Playwright 往返）並錄泳道；等 6 幀（過渡 260ms，還在跑）讀各泳道外層過渡的起跑時間。
+ * 合成器動畫（move 的 transform、opacity）的起跑時間要等合成器回報，機器忙時晚好幾幀，所以等久一點再讀。
+ */
+async function searchAndTrace(page: Page, value: string): Promise<{ tr: Trace; starts: number[] }> {
+  let starts: number[] = []
+  const tr = await traceLanes(page, async () => {
+    await page.evaluate((value) => {
+      const input = document.querySelector('[data-testid="overview-search"]') as HTMLInputElement
+      input.value = value
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }, value)
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          let n = 0
+          const f = (): void => void (++n >= 6 ? resolve() : requestAnimationFrame(f))
+          requestAnimationFrame(f)
+        }),
+    )
+    starts = await transitionStarts(page, `${P} .board > *`, ['transform', 'grid-template-rows', 'opacity'])
+  })
+  return { tr, starts }
+}
+
+/**
+ * N2 的前提：同一次更新裡，換順序泳道的 move（transform）與離場收合 / 進場長出（grid-template-rows、opacity）同一幀起跑
+ * （useCollapseReenter 的 startLeaveNow / onEnter 就是為了這個）。機器忙時合成器晚一兩幀才回報 transform / opacity 的起跑，
+ * grid-template-rows（主執行緒）先跑，換順序的泳道就鼓出去約 30px——那是 Chrome 在重負載下的排程，不是這裡要守的退化。
+ * 程式退化（不在同一幀起跑）時每次都分家，5 次前提都不成立照樣紅。
+ */
+const sameFrame = (starts: number[]): boolean => starts.length > 0 && new Set(starts).size === 1
+
 test('打 p 再清空：換順序的泳道路徑單調，離場收合、進場長出時都不先往反方向鼓出再回來（N2）', async ({ page }) => {
-  await gotoOverview(page)
-  const search = page.getByTestId('overview-search')
-  const out = await traceLanes(page, () => search.fill('p'))
+  const out = await withPremise(async () => {
+    await gotoOverview(page)
+    const r = await searchAndTrace(page, 'p')
+    return { value: r.tr, valid: sameFrame(r.starts), why: `打 p 的過渡起跑時間 ${r.starts.join(',')}` }
+  }, 5)
   expect([lanesIn(out, 0), lanesIn(out)], '四條泳道收到只剩 m5、m8').toEqual([PMS, ['m5', 'm8']])
-  await idle(page)
-  const back = await traceLanes(page, () => search.fill(''))
+  const back = await withPremise(async () => {
+    await gotoOverview(page)
+    await page.getByTestId('overview-search').fill('p')
+    await idle(page)
+    const r = await searchAndTrace(page, '')
+    return { value: r.tr, valid: sameFrame(r.starts), why: `清空的過渡起跑時間 ${r.starts.join(',')}` }
+  }, 5)
   expect(lanesIn(back), '清空後四條泳道都在').toEqual(PMS)
   for (const [label, tr] of [['打 p', out], ['清空', back]] as const) {
     for (const pm of ['m5', 'm8']) {
-      expect(bulge(tr, pm), `${label}：${pm} 走出起點與終點之間（px）`).toBe(0)
+      const path = series(tr, pm, tr.at).map((b) => `${b.y.toFixed(0)}(${b.dt.toFixed(0)})`).join(' ')
+      expect(bulge(tr, pm), `${label}：${pm} 走出起點與終點之間（px）；y(幀間隔ms)：${path}`).toBe(0)
       expect(reverses(series(tr, pm).map((b) => b.y)), `${label}：${pm} 折返`).toBe(false)
     }
   }
