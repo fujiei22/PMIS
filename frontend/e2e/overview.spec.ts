@@ -113,7 +113,7 @@ test.describe('總覽 卡片檢視', () => {
     await expect(drawer).toHaveCSS('position', 'static')
   })
 
-  test('每條泳道只展開一張：同一列換一張時抽屜不收、直接換內容；別條泳道不受影響', async ({ page }) => {
+  test('每條泳道只展開一張：同一列換一張時抽屜不收、交叉淡化換內容；別條泳道不受影響', async ({ page }) => {
     const ov = new OverviewPage(page); await ov.goto()
     await ov.card('pmis').locator('.card-name').click()
     await ov.card('portal').locator('.card-name').click()
@@ -135,6 +135,8 @@ test.describe('總覽 卡片檢視', () => {
     )
     await ov.card('app').locator('.card-name').click()
     expect(await minH).toBeGreaterThan(200)
+    // 同列換卡是交叉淡化：舊內容淡出期間新舊兩份都在，等舊的拿掉再讀
+    await expect(ov.drawer('app').locator('.qv-name')).toHaveCount(1)
     await expect(ov.drawer('app').locator('.qv-name')).toHaveText('行動 App v2')
     await expect(ov.cardMain('portal')).toHaveAttribute('aria-expanded', 'false')
     await expect(ov.cardMain('app')).toHaveAttribute('aria-expanded', 'true')

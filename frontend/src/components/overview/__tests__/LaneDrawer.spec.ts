@@ -12,12 +12,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { buildPortfolio } from '@/api/mock/portfolio'
 import LaneDrawer from '@/components/overview/LaneDrawer.vue'
+import { cancelHeight } from '@/composables/heightTween'
 import { PANEL_UNMOUNT_MS } from '@/constants/overview'
 import { deriveProject, type ProjectRow } from '@/lib/portfolio'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
 import { useOverviewStore } from '@/stores/overview'
 import { usePortfolioStore } from '@/stores/portfolio'
+
+// 照原本的行為跑，只記下呼叫
+vi.mock('@/composables/heightTween', async (importOriginal) => {
+  const m = await importOriginal<typeof import('@/composables/heightTween')>()
+  return { ...m, cancelHeight: vi.fn(m.cancelHeight) }
+})
 
 async function setup(cols: number) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
@@ -99,5 +106,15 @@ describe('LaneDrawer', () => {
     expect(style(w)).toContain('order: 3')
     expect(style(w)).toContain('1fr')
     expect(w.find('.drawer').attributes('data-drawer')).toBe('app')
+  })
+
+  it('卸載時停掉速覽框高的補間（同列換卡補間到一半泳道被篩掉）', async () => {
+    vi.mocked(cancelHeight).mockClear()
+    const w = await setup(3)
+    useOverviewStore().toggleExpandedInLane('portal', ['portal', 'app'])
+    await flushPromises()
+    const box = w.find('.drawer-box').element
+    w.unmount()
+    expect(cancelHeight).toHaveBeenCalledWith(box)
   })
 })

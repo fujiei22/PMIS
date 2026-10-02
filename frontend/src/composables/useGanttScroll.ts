@@ -1,5 +1,6 @@
 import { onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { dayFraction } from '@/lib/date'
+import { easeOutQuart, scrollTweenMs } from '@/lib/scrollTween'
 import { useClockStore } from '@/stores/clock'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -87,14 +88,14 @@ export function useGanttScroll(
       syncRuler()
       return
     }
-    // 距離越遠動畫越長，夾在 460-1150ms（legacy :2653）
-    const dur = Math.max(460, Math.min(1150, 340 + Math.abs(to - from) * 0.4))
+    // 距離越遠動畫越長（與總覽時間軸「今天」同一條，lib/scrollTween）
+    const dur = scrollTweenMs(to - from)
     const t0 = performance.now()
     const self = { raf: 0 }
     const step = (now: number): void => {
       if (anim !== self) return
       const p = Math.min(1, (now - t0) / dur)
-      sc.scrollLeft = from + (to - from) * (1 - Math.pow(1 - p, 4))
+      sc.scrollLeft = from + (to - from) * easeOutQuart(p)
       syncRuler()
       if (p < 1) self.raf = requestAnimationFrame(step)
       else anim = null

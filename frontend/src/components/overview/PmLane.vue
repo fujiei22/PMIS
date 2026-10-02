@@ -8,14 +8,18 @@ import Avatar from '@/components/common/Avatar.vue'
 import LaneDrawer from '@/components/overview/LaneDrawer.vue'
 import PmCountPill from '@/components/overview/PmCountPill.vue'
 import ProjectCard from '@/components/overview/ProjectCard.vue'
-import { computed, ref, watch, type ComponentPublicInstance } from 'vue'
+import { computed, onBeforeUnmount, onBeforeUpdate, onUpdated, ref, watch, type ComponentPublicInstance } from 'vue'
 import { freezeLeave } from '@/composables/freezeLeave'
+import { cancelHeight, holdHeight, releaseHeight } from '@/composables/heightTween'
+import { useFreezeReenter } from '@/composables/useFreezeReenter'
 import { useGridColumns } from '@/composables/useGridColumns'
 import { useRelativeFlip } from '@/composables/useRelativeFlip'
 import type { PmGroup } from '@/lib/portfolio'
 import { useOverviewStore } from '@/stores/overview'
 
 const props = defineProps<{ group: PmGroup }>()
+
+const laneIds = computed(() => props.group.rows.map((r) => r.p.id))
 
 /*
  * 巢狀 FLIP：泳道本身有重排動畫（CardBoard 的 ov-col），泳道內卡片若也用 TransitionGroup 內建的 move，
@@ -24,15 +28,54 @@ const props = defineProps<{ group: PmGroup }>()
  */
 const body = ref<ComponentPublicInstance | null>(null)
 const bodyEl = computed(() => body.value?.$el as HTMLElement | undefined)
-useRelativeFlip(bodyEl, 'data-project')
+const flip = useRelativeFlip(bodyEl, 'data-project')
+
+/**
+ * 離場的卡釘在更新前看得到的位置（C5）。速覽開著時篩掉同列的卡，抽屜的 order 在同一次 patch 裡
+ * 先被改掉（keyed diff 先更新留下來的抽屜、才移除離場的卡），freezeLeave 當下量到的已是重排後的 grid，
+ * 那張卡會先瞬移到抽屜下方再淡出；所以用 useRelativeFlip 在更新前記的快照。
+ */
+function freezeAtSnapshot(el: Element): void {
+  freezeLeave(el, flip.snapshotOf)
+}
+
+// 淡出途中的卡又被加回來（打錯字馬上刪）：從舊卡當下的位置、透明度與大小接續，不先消失再從頭淡入（R3）
+useFreezeReenter(bodyEl, 'data-project')
+
+/**
+ * 卡片網格的高度撐住再補間（C1 泳道層）：離場的卡釘成 absolute 後網格當幀就是新高度，泳道框會一幀縮掉、卡片畫到框外。
+ * 只在卡片有進出或換順序時撐：篩選時每條泳道都會重新渲染（group 每次都是新的），卡片沒變的也撐住再放開的話，
+ * 每條都要多逼一次版面計算（review M1）；抽屜開合、換箭頭也會讓泳道重新渲染，高度由抽屜自己的過渡逐幀帶動，本來就不用撐。
+ * onBeforeUpdate 時 props 已是新的，所以和上一次畫出來的卡片（rendered）比。
+ */
+let rendered = laneIds.value
+let held = false
+onBeforeUpdate(() => {
+  const ids = laneIds.value
+  held = ids.length !== rendered.length || ids.some((id, i) => id !== rendered[i])
+  rendered = ids
+  if (held) holdHeight(bodyEl.value)
+})
+onUpdated(() => {
+  if (held) releaseHeight(bodyEl.value)
+  held = false
+})
+// 泳道被篩掉（或切檢視）時停掉進行中的補間：元件拿掉後 rAF 不會自己停
+onBeforeUnmount(() => cancelHeight(bodyEl.value))
 
 const cols = useGridColumns(bodyEl)
 
 const overview = useOverviewStore()
-const laneIds = computed(() => props.group.rows.map((r) => r.p.id))
 
 // 時間軸可以同時展開多張：切回卡片（或篩選讓別的卡進到這條泳道）時，只留最後展開的那張
 watch(laneIds, (ids) => overview.keepLastExpandedInLane(ids), { immediate: true })
+
+/**
+ * 抽屜實際展開在哪張卡下方（LaneDrawer 回報）；那張卡畫指向抽屜的箭頭。換列時和選取不同步，所以不直接用 isExpanded。
+ * 初值同 LaneDrawer 掛載時的狀態（展開中的那張一掛上就是全開）：等它回報會晚一次更新，
+ * 切回卡片檢視、從 Dashboard 返回時箭頭會在已經全開的抽屜上方重新淡入。
+ */
+const openId = ref<string | null>(props.group.rows.find((r) => overview.isExpanded(r.p.id))?.p.id ?? null)
 </script>
 
 <template>
@@ -45,14 +88,14 @@ watch(laneIds, (ids) => overview.keepLastExpandedInLane(ids), { immediate: true 
         <span v-if="group.alertCount > 0" class="pm-alert"><b>{{ group.alertCount }}</b>&nbsp;需注意</span>
       </span>
     </div>
-    <!-- 篩選造成卡片進出、排序造成重排（A7 / A8）；離場的卡由 freezeLeave 釘在原位 -->
+    <!-- 篩選造成卡片進出、排序造成重排（A7 / A8）；離場的卡由 freezeLeave 釘在更新前看得到的位置 -->
     <TransitionGroup
       name="ov-card"
       tag="div"
       class="lane-body"
       ref="body"
       move-class="ov-card-still"
-      @before-leave="freezeLeave"
+      @before-leave="freezeAtSnapshot"
     >
       <!-- 卡片與抽屜在同一個 grid 裡，用 order 排位置：第 i 張卡是 2i，抽屜由 LaneDrawer 算出排在哪一列之後 -->
       <ProjectCard
@@ -60,9 +103,16 @@ watch(laneIds, (ids) => overview.keepLastExpandedInLane(ids), { immediate: true 
         :key="row.p.id"
         :row="row"
         :lane-ids="laneIds"
+        :arrow="openId === row.p.id"
         :style="{ order: i * 2 }"
       />
-      <LaneDrawer key="lane-drawer" :pm-id="group.pm.id" :rows="group.rows" :cols="cols" />
+      <LaneDrawer
+        key="lane-drawer"
+        :pm-id="group.pm.id"
+        :rows="group.rows"
+        :cols="cols"
+        @open-id="openId = $event"
+      />
     </TransitionGroup>
   </div>
 </template>
@@ -158,11 +208,14 @@ watch(laneIds, (ids) => overview.keepLastExpandedInLane(ids), { immediate: true 
  * 卡片網格；position: relative 讓 freezeLeave 與 useRelativeFlip 的 offset 以這裡為基準。
  * 列間距不用 row-gap：收合的抽屜也各佔一列（高度 0），row-gap 會變成多出來的空隙。
  * 改由卡片的 margin-bottom 與抽屜內的 padding 撐開。
+ * align-content: start：高度被 heightTween 撐在舊值時（卡片離場、網格少一列），多出來的空間留在下方；
+ * 預設 normal 等於 stretch，會把剩下的列拉高去填滿，留下的卡跟著變高（一欄寬時 142 → 294px）。平常網格高度等於內容，沒有差別。
  */
 .lane-body {
   position: relative;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  align-content: start;
   column-gap: var(--sp-5);
   padding: var(--sp-5) var(--sp-5) 0;
   min-height: 90px;

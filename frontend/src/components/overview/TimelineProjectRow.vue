@@ -24,7 +24,11 @@ const d = computed(() => props.row.d)
 
 /** 展開狀態放在 store（expandedIds），卡片與時間軸共用，可同時展開多列。 */
 const open = computed(() => overview.isExpanded(p.value.id))
-/** 收合動畫跑完前先別把速覽內容與 .qv-cap 拿掉（A3 / A27）。 */
+/**
+ * 收合動畫跑完前先別把速覽內容拿掉（A3 / A27）。
+ * .qv-cap 不用這個，直接 v-show="open"：跟速覽的 grid 過渡同一刻開始淡（T9），不然速覽收完了色框還留在列上。
+ * 用 v-show 不用 v-if：收合途中又點開時還是同一個元素，透明度從當下接續；v-if 會把淡到一半的拿掉、換一個從 0 淡入（閃一下）。
+ */
 const mounted = useDelayedUnmount(open, PANEL_UNMOUNT_MS)
 
 /**
@@ -56,10 +60,15 @@ function onKey(e: KeyboardEvent): void {
 
 const qv = ref<HTMLElement | null>(null)
 
-/** 展開動畫結束後，若速覽落在畫面外就把它捲進來（A28）；只捲垂直方向，所以對 .qv 呼叫。 */
+/**
+ * 展開動畫結束後，若速覽落在畫面外就把它捲進來（A28）；只捲垂直方向，所以對 .qv 呼叫。
+ * 只有最後展開的那列捲（T17；expandedIds 依展開先後排列）：很快連開兩列時，先開那列展開完就開始平滑捲動，
+ * 後開那列展開完時以捲到一半的位置判斷「看得見、不用捲」，先開那段捲動卻照跑，把後開那列推到黏住的標頭底下。
+ */
 function onWrapTransitionEnd(e: TransitionEvent): void {
   if (e.target !== e.currentTarget || e.propertyName !== 'grid-template-rows') return
-  if (!open.value) return
+  const ids = overview.expandedIds
+  if (!open.value || ids[ids.length - 1] !== p.value.id) return
   qv.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
 </script>
@@ -99,7 +108,7 @@ function onWrapTransitionEnd(e: TransitionEvent): void {
     </div>
 
     <div ref="qv" class="qv">
-      <Transition name="ov-fade"><i v-if="mounted" class="qv-cap"></i></Transition>
+      <Transition name="ov-fade"><i v-show="open" class="qv-cap"></i></Transition>
       <div
         class="quick-wrap"
         :style="{ gridTemplateRows: open ? '1fr' : '0fr' }"
@@ -109,7 +118,8 @@ function onWrapTransitionEnd(e: TransitionEvent): void {
         <div class="quick-clip">
           <div class="qv-pad">
             <div class="qv-box">
-              <Transition name="ov-fade" appear>
+              <!-- 不加 appear：切到時間軸、從 Dashboard 返回時展開中的速覽跟著檢視 / 頁面的淡入一起出現，自己再淡一次會比頁面晚（C14） -->
+              <Transition name="ov-fade">
                 <QuickView v-if="mounted" :row="row" with-head />
               </Transition>
             </div>
@@ -372,6 +382,12 @@ function onWrapTransitionEnd(e: TransitionEvent): void {
   border-bottom: 0;
   border-radius: var(--r-4) var(--r-4) 0 0;
   pointer-events: none;
+}
+
+/* 色框兩向都跟速覽的 grid 過渡同長（--t-panel），一起長出、一起收；寫在元件內特異度較高，蓋過共用 ov-fade 的 --t-base */
+.qv-cap.ov-fade-enter-active,
+.qv-cap.ov-fade-leave-active {
+  transition: opacity var(--t-panel) var(--ease);
 }
 
 .quick-wrap {

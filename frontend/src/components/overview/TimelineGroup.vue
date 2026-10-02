@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // 時間軸的一位 PM：可收合的群組列（收合時畫摘要 bar）＋ 底下的專案列；PM 色系變數由根元素 .g 提供給列與速覽。
-import { computed, ref, type ComponentPublicInstance } from 'vue'
+import { computed, onBeforeUpdate, onUpdated, ref, type ComponentPublicInstance } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import PmCountPill from '@/components/overview/PmCountPill.vue'
 import TimelineProjectRow from '@/components/overview/TimelineProjectRow.vue'
-import { freezeLeave } from '@/composables/freezeLeave'
+import { startLeaveNow, useCollapseReenter } from '@/composables/useCollapseReenter'
 import { useRelativeFlip } from '@/composables/useRelativeFlip'
 import { useDelayedUnmount } from '@/composables/useDelayedUnmount'
 import { PANEL_UNMOUNT_MS } from '@/constants/overview'
@@ -23,13 +23,44 @@ const props = defineProps<{
 /*
  * 巢狀 FLIP：群組本身有重排動畫（OverviewTimeline 的 ov-group），組內專案列若也用 TransitionGroup
  * 內建的 move，會用頁面上的絕對位置算位移、把群組的位移再算一次。所以列的重排改用相對於 .g-list 的位移
- * （useRelativeFlip），內建 move 以 `ov-row-still`（overview-motion.css 裡只寫 transition: none）停用；列的進出場照舊。做法同 PmLane。
+ * （useRelativeFlip），內建 move 以 `ov-row-still`（overview-motion.css 裡只寫 transition: none）停用。做法同 PmLane。
+ * 列的進出場是原地收合（ov-row，見 overview-motion.css）：重排與收合的單位都是列外層 .r-wrap。
  */
 const list = ref<ComponentPublicInstance | null>(null)
-useRelativeFlip(
-  computed(() => list.value?.$el as HTMLElement | undefined),
-  'data-project',
-)
+const listEl = computed(() => list.value?.$el as HTMLElement | undefined)
+
+/**
+ * 同一個專案的列在收起途中又回來時，從當下的高度接續長回去。和 CardBoard 的泳道不同，量與寫起點都綁在本元件，
+ * 不綁在列清單（TransitionGroup）上：列清單的插槽不隨 props 傳下去，它自己的重新渲染排在群組清單那一輪 patch 之後
+ * （本元件在那一輪 patch 裡就更新，props.group 每次篩選都是新的）。
+ * - 量（onBeforeUpdate）：那一輪 keyed diff 若搬動了這個群組的外層（篩選時群組順序跟著變，例：打 p 又刪掉時 m5 / m8 換回來），
+ *   裡面進行中的收合過渡會被取消、一下跳到 0；等列清單自己更新時才量，只量到 0、列從頭長（實測）。
+ * - 寫起點（onUpdated，要註冊在 useRelativeFlip 之前）：TransitionGroup 的 @enter 排在最後才呼叫，
+ *   那時 useRelativeFlip 量留下的列、OverviewTimeline 的群組 move 量群組位置都已經量完，量到的是「回來的列還是 0 高」的版面；
+ *   起點一寫上去，下面的列與群組就一幀被推下去約一列收剩的高度（實測 14px）。新進場的列在這裡已經掛上，先寫好再讓它們量。
+ *   @enter 仍綁著，當本元件沒更新時的後備；同一個 key 的起點用過就刪掉，不會寫兩次。
+ * - 進場中的列被搬動（群組外層被搬動、或列自己換順序）時進行中的長出會被取消、一幀長完：同樣在這裡、量之前從當下接續（resume）。
+ */
+const reenter = useCollapseReenter(listEl, 'data-row-wrap')
+onBeforeUpdate(reenter.snapshot)
+onUpdated(() => {
+  for (const el of Array.from(listEl.value?.children ?? [])) {
+    if (!el.classList.contains('ov-row-enter-active')) continue
+    reenter.onEnter(el)
+    reenter.resume(el)
+  }
+})
+useRelativeFlip(listEl, 'data-row-wrap')
+
+/**
+ * 離場的列：收起途中仍在版面流裡、看得到，但不能再 Tab 進去、點到或被讀屏讀成兩份。焦點在裡面就先移開。
+ * 不讀任何樣式（理由同 CardBoard 的 leaving：進場中被離場時，讀樣式會取消進行中的高度過渡、一幀跳到全高）。
+ */
+function leaving(el: Element): void {
+  const node = el as HTMLElement
+  if (node.contains(document.activeElement)) (document.activeElement as HTMLElement).blur()
+  node.inert = true
+}
 
 const overview = useOverviewStore()
 
@@ -97,15 +128,15 @@ function onKey(e: KeyboardEvent): void {
           class="g-list"
           ref="list"
           move-class="ov-row-still"
-          @before-leave="freezeLeave"
+          @before-leave="leaving"
+          @leave="startLeaveNow"
+          @enter="reenter.onEnter"
         >
-          <TimelineProjectRow
-            v-for="r in group.rows"
-            :key="r.p.id"
-            :row="r"
-            :start-idx="startIdx"
-            :dw="dw"
-          />
+          <div v-for="r in group.rows" :key="r.p.id" class="r-wrap" :data-row-wrap="r.p.id">
+            <div class="r-clip">
+              <TimelineProjectRow :row="r" :start-idx="startIdx" :dw="dw" />
+            </div>
+          </div>
         </TransitionGroup>
       </div>
     </div>
@@ -129,9 +160,7 @@ function onKey(e: KeyboardEvent): void {
   --pm-soft: color-mix(in srgb, var(--pm) 30%, var(--surface-1));
 }
 
-.g + .g {
-  border-top: 1px solid var(--border-1);
-}
+/* 群組之間的分隔線在 OverviewTimeline（.g-wrap + .g-wrap .g）：群組外包了一層原地收合的外層，.g 不再是兄弟 */
 
 .g-row {
   display: flex;
@@ -206,7 +235,10 @@ function onKey(e: KeyboardEvent): void {
 }
 
 
-/* 收合摘要條（照 GanttBar .summary） */
+/*
+ * 收合摘要條（照 GanttBar .summary）。收合中被篩選時範圍會變，left / width 要過渡（T13），不然一幀跳到新寬度。
+ * 時長用 --t-panel，跟群組收合同長（甘特的摘要條是 --t-bar，那裡跟的是條的拖曳）。
+ */
 .g-sum {
   position: absolute;
   top: 12px;
@@ -214,6 +246,18 @@ function onKey(e: KeyboardEvent): void {
   border-radius: var(--r-3);
   background: var(--text-3);
   z-index: 2;
+  transition:
+    left var(--t-panel) var(--ease),
+    width var(--t-panel) var(--ease);
+}
+
+/* 淡入淡出（共用 ov-fade）時一併列出 left / width，同時淡入淡出又變寬時兩者不互相蓋掉 */
+.g-sum.ov-fade-enter-active,
+.g-sum.ov-fade-leave-active {
+  transition:
+    opacity var(--t-base) var(--ease),
+    left var(--t-panel) var(--ease),
+    width var(--t-panel) var(--ease);
 }
 
 .g-rows {
@@ -227,8 +271,33 @@ function onKey(e: KeyboardEvent): void {
   overflow: clip;
 }
 
-/* 離場列由 freezeLeave 釘成 absolute，以這層為基準（A20） */
+/* useRelativeFlip 以這層為 offset 基準（列外層的 offsetParent）；離場列是原地收合、不釘位（A20） */
 .g-list {
   position: relative;
+}
+
+/* 列外層：原地收合（ov-row，見 overview-motion.css） */
+.r-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* 平常全高。:where() 讓特異度為 0，進出場 class 的 0fr 才蓋得過（理由同 OverviewTimeline 的 .g-wrap） */
+:where(.r-wrap) {
+  grid-template-rows: 1fr;
+}
+
+.r-clip {
+  min-height: 0;
+  min-width: 0;
+}
+
+/*
+ * 只在收起 / 長出時裁切：平常裁的話，hover / 選取時 bar 的光暈（A25）會在列的上下緣被切平。
+ * 一定要 clip 不能 hidden：hidden 會成為捲動容器，.p-left 與 .qv 的 sticky left:0 就失效（同 .g-clip）。
+ */
+.ov-row-enter-active > .r-clip,
+.ov-row-leave-active > .r-clip {
+  overflow: clip;
 }
 </style>
