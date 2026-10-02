@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.config import Settings, get_settings
-from app.core.time import today
+from app.core.time import today, utc_now
 
 
 @pytest.fixture
@@ -50,3 +50,8 @@ def test_today_without_argument_is_a_date() -> None:
 def test_unknown_timezone_is_rejected(value: str) -> None:
     with pytest.raises(ValidationError, match="TIMEZONE"):
         Settings(DATABASE_URL="postgresql+psycopg://u:p@localhost/db", TIMEZONE=value)
+
+
+def test_utc_now_has_timezone() -> None:
+    """排程與指令稿用的「現在」一律帶時區（ruff DTZ 規則；跟 today() 搭配、相減比較才不會出錯）。"""
+    assert utc_now().tzinfo is not None

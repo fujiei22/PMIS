@@ -18,6 +18,11 @@ ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 DRIVER = "postgresql+psycopg"
 
+# 新北市資料開放平臺的「政府行政機關辦公日曆表」（2018 年起，含補假、補班），固定網址的 CSV。
+NTPC_CALENDAR_URL = (
+    "https://data.ntpc.gov.tw/api/datasets/308dcd75-6434-45bc-a95f-584da4fed251/csv/file"
+)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -54,6 +59,23 @@ class Settings(BaseSettings):
             ZoneInfo(value)
         except (ZoneInfoNotFoundError, ValueError) as exc:
             raise ValueError(f"TIMEZONE 不是認得的時區名稱（例如 Asia/Taipei）：{value}") from exc
+        return value
+
+    # 背景排程的總開關（app/jobs/startup.py）：關掉時所有背景工作都不跑。測試固定關掉（tests/conftest.py）。
+    BACKGROUND_JOBS_ENABLED: bool = True
+
+    # 假日表每月自動同步（app/jobs/holiday_sync.py）。伺服器連不到外網時設成 false，
+    # 改用 `uv run python -m app.scripts.holidays import` 手動匯入。
+    HOLIDAY_SYNC_ENABLED: bool = True
+
+    # 自動同步抓的 CSV；只接受 https。
+    HOLIDAY_SOURCE_URL: str = NTPC_CALENDAR_URL
+
+    @field_validator("HOLIDAY_SOURCE_URL")
+    @classmethod
+    def require_https(cls, value: str) -> str:
+        if not value.startswith("https://"):
+            raise ValueError("HOLIDAY_SOURCE_URL 要以 https:// 開頭")
         return value
 
 

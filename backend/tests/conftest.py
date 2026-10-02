@@ -43,6 +43,8 @@ def pytest_configure(config: pytest.Config) -> None:
 
     # 環境變數優先於 backend/.env，所以 app 的設定、engine、alembic 從這裡開始都連測試資料庫。
     os.environ["DATABASE_URL"] = url
+    # 測試不跑背景排程：client fixture 會跑 lifespan，開著就會在背景連外網、用另一條連線碰測試資料庫。
+    os.environ["BACKGROUND_JOBS_ENABLED"] = "false"
     get_settings.cache_clear()
     get_engine.cache_clear()
 
