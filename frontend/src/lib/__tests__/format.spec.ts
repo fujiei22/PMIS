@@ -6,6 +6,7 @@ import {
   fmtMoney,
   fmtMoneyShort,
   fmtWorkdays,
+  fmtYears,
   shortDate,
   stripYear,
   visualLen,
@@ -85,5 +86,15 @@ describe('fmtWorkdays', () => {
   it('工期一律寫「N 工作天」', () => {
     expect(fmtWorkdays(7)).toBe('7 工作天')
     expect(fmtWorkdays(1)).toBe('1 工作天')
+  })
+})
+
+describe('fmtYears', () => {
+  it('連續年份寫成「A–B」，不連續的用頓號隔開', () => {
+    expect(fmtYears([2027])).toBe('2027')
+    expect(fmtYears([2027, 2028])).toBe('2027–2028')
+    expect(fmtYears([2027, 2029])).toBe('2027、2029')
+    expect(fmtYears([2027, 2028, 2029, 2031])).toBe('2027–2029、2031')
+    expect(fmtYears([])).toBe('')
   })
 })

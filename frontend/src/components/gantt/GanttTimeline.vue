@@ -11,7 +11,10 @@ export interface RulerDay {
   dd: string
   /** 星期的單字（日一二…）。 */
   wd: string
-  weekend: boolean
+  /** 非工作天（週末、放假日）：上底色。補班日是工作天，不上（規則見 docs/reference/scheduling.md〈工作天〉）。 */
+  off: boolean
+  /** 假日或補班日的名稱（放尺規格的 title）；普通日子是 ''。 */
+  name: string
   today: boolean
 }
 
@@ -49,7 +52,9 @@ defineProps<{
         v-for="d in days"
         :key="d.idx"
         class="day"
-        :class="{ weekend: d.weekend }"
+        :class="{ off: d.off }"
+        :data-idx="d.idx"
+        :title="d.name || undefined"
         :style="{ flex: `0 0 ${d.w}px` }"
       >
         <div class="dd">{{ d.dd }}</div>
@@ -106,7 +111,8 @@ defineProps<{
   border-right: 1px solid var(--bg-page);
 }
 
-.day.weekend {
+/* 非工作天（週末與放假日）；token 名沿用 --bg-weekend-head */
+.day.off {
   color: var(--text-3);
   font-weight: var(--fw-bold);
   background: var(--bg-weekend-head);
