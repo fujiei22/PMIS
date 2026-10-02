@@ -78,11 +78,13 @@ const me = computed(() => portfolio.byId(portfolio.currentUserId))
  * 先用 translateX 移回舊位置，再補間回 0（Web Animations，--t-panel / --ease）。
  * 成員觸發鈕的頭像疊自己是原地收合（寬度逐幀變，PmFilter），更新當下寬度還沒變，量到的位移是 0、不會疊兩次。
  * 比右緣不比左緣：變寬的那一項自己不動，它開著的選單（OvDropdown 錨在右緣）也就不被帶著跑。
+ * 寬度剛好卡在換行邊界時，變寬會讓篩選組整個換到下一行：右緣的差是換行造成的，照它補間會從錯的地方橫向滑進來、
+ * 垂直方向卻一幀跳過去。上緣有變就是版型換了，直接到位、不補間（同 Dashboard TopBar 一行 / 兩列切換）。
  */
 const filtersEl = ref<HTMLElement | null>(null)
 const slides = new Map<HTMLElement, Animation>()
-/** DOM 更新前記下的右緣（看得到的位置，含進行中的補間）；null＝這次不做。 */
-let slideFrom: Map<HTMLElement, number> | null = null
+/** DOM 更新前記下的右緣與上緣（看得到的位置，含進行中的補間）；null＝這次不做。 */
+let slideFrom: Map<HTMLElement, { right: number; top: number }> | null = null
 
 function cancelSlides(): void {
   for (const a of slides.values()) a.cancel()
@@ -99,7 +101,12 @@ watch(
     // jsdom 沒有 Web Animations
     slideFrom =
       box && typeof box.animate === 'function'
-        ? new Map(Array.from(box.children as HTMLCollectionOf<HTMLElement>, (el) => [el, el.getBoundingClientRect().right]))
+        ? new Map(
+            Array.from(box.children as HTMLCollectionOf<HTMLElement>, (el) => {
+              const r = el.getBoundingClientRect()
+              return [el, { right: r.right, top: r.top }]
+            }),
+          )
         : null
   },
   { flush: 'pre' },
@@ -114,10 +121,13 @@ watch(
     if (!from || !box) return
     // 進行中的補間先停掉，下面量到的才是版面位置（看得到的舊位置已經記在 from）
     cancelSlides()
-    const moves = Array.from(box.children as HTMLCollectionOf<HTMLElement>, (el) => ({
-      el,
-      dx: (from.get(el) ?? NaN) - el.getBoundingClientRect().right,
-    }))
+    const moves = Array.from(box.children as HTMLCollectionOf<HTMLElement>, (el) => {
+      const r = el.getBoundingClientRect()
+      const old = from.get(el)
+      return { el, dx: (old?.right ?? NaN) - r.right, dy: (old?.top ?? NaN) - r.top }
+    })
+    // 換行了：版型直接到位
+    if (moves.some((m) => Math.abs(m.dy) >= 0.5)) return
     const cs = getComputedStyle(document.documentElement)
     const timing = {
       duration: parseDuration(cs.getPropertyValue('--t-panel')),

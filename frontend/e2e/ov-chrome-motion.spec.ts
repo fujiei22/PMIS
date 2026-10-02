@@ -299,3 +299,53 @@ test.describe('平板直向', () => {
     expect(speedJumps(first), `新 chip x：${fmt(first)}`).toBe(0)
   })
 })
+
+/** 總覽頂欄是不是一行：篩選組（搜尋框）和標題同一行。 */
+function topBarOneRow(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const t = document.querySelector('.top-row .project')!.getBoundingClientRect()
+    const s = document.querySelector('.top-row .search')!.getBoundingClientRect()
+    return Math.abs(s.top - t.top) < 4
+  })
+}
+
+/** 二分搜尋頂欄剛好一行放得下的最窄視窗寬度（1024 已換行、1920 一行）。 */
+async function narrowestOneRow(page: Page): Promise<number> {
+  let lo = 1024
+  let hi = 1920
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2)
+    await page.setViewportSize({ width: mid, height: 1080 })
+    const fits = await topBarOneRow(page)
+    hi = fits ? mid : hi
+    lo = fits ? lo : mid
+  }
+  return hi
+}
+
+test('篩選項 FLIP：標籤變長讓頂欄換行時直接到位，不做錯誤的橫向滑動', async ({ page }) => {
+  await gotoOverview(page)
+  /*
+   * 找頂欄剛好一行放得下的最窄寬度：再窄 1px 篩選組就換到下一行。在這個寬度勾狀態（「狀態」→「狀態 1」，多約 10px），
+   * 篩選組整個換行：右緣的差是換行造成的、不是變寬，照右緣差補間會從錯的地方橫向滑進來、垂直方向卻一幀跳過去（review）。
+   * 版型換行時直接到位（同 Dashboard TopBar 一行 / 兩列切換的做法）。
+   */
+  const hi = await narrowestOneRow(page)
+  await page.setViewportSize({ width: hi, height: 1080 })
+  expect(await topBarOneRow(page), `${hi}px 一行放得下（前提）`).toBe(true)
+  await page.locator(`${STATUS} .dd-trigger`).click()
+  await idle(page)
+  const before = await page.locator('.top-row .search').boundingBox()
+  await page.locator(`${STATUS} .dd-item`).first().click()
+  const after = await page.locator('.top-row .search').boundingBox()
+  expect(Math.abs(after!.y - before!.y), '勾了之後換行（前提）').toBeGreaterThan(10)
+  const sliding = await page.evaluate(() =>
+    document.getAnimations().filter((a) => {
+      // 只數 element.animate() 的位移補間；「清除篩選」轉紅的顏色過渡是 CSSTransition，不算
+      if (a instanceof CSSTransition || a instanceof CSSAnimation) return false
+      const t = (a.effect as KeyframeEffect | null)?.target
+      return t instanceof Element && t.parentElement?.matches('.top-row .filters')
+    }).length,
+  )
+  expect(sliding, '篩選項的位移補間數').toBe(0)
+})
