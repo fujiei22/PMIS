@@ -103,7 +103,10 @@ describe('useProjectBoot', () => {
     const ui = useUiStore()
     let failOld!: (e: unknown) => void
     vi.spyOn(mockApi, 'loadProject').mockImplementationOnce(
-      () => new Promise((_, rej) => { failOld = rej }),
+      () =>
+        new Promise((_, rej) => {
+          failOld = rej
+        }),
     )
     // 第一次掛載：載入中
     const first = useProjectBoot().reload()
@@ -123,8 +126,18 @@ describe('useProjectBoot', () => {
     let okOld!: (v: ProjectData) => void
     let failNew!: (e: unknown) => void
     vi.spyOn(mockApi, 'loadProject')
-      .mockImplementationOnce(() => new Promise((r) => { okOld = r }))
-      .mockImplementationOnce(() => new Promise((_, rej) => { failNew = rej }))
+      .mockImplementationOnce(
+        () =>
+          new Promise((r) => {
+            okOld = r
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((_, rej) => {
+            failNew = rej
+          }),
+      )
     const first = useProjectBoot().reload()
     const second = useProjectBoot().reload()
     expect(ui.loadState).toBe('loading')

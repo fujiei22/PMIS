@@ -3,11 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, mockApi as maybeMockApi } from '@/api'
-import {
-  provideDomRegistry,
-  registerEl,
-  type DomRegistry,
-} from '@/composables/useDomRegistry'
+import { provideDomRegistry, registerEl, type DomRegistry } from '@/composables/useDomRegistry'
 import { usePointerDrag, type PointerDrag } from '@/composables/usePointerDrag'
 import { dayIndex, isoFromIndex } from '@/lib/date'
 import { sampleProject } from '@/mocks/sampleProject'
@@ -55,7 +51,12 @@ function mountDrag(): { api: PointerDrag; registry: DomRegistry; unmount: () => 
 function elAt(rect: { top: number; bottom: number; left?: number; right?: number }): HTMLElement {
   const el = document.createElement('div')
   el.getBoundingClientRect = () =>
-    ({ left: rect.left ?? 0, right: rect.right ?? 100, top: rect.top, bottom: rect.bottom }) as DOMRect
+    ({
+      left: rect.left ?? 0,
+      right: rect.right ?? 100,
+      top: rect.top,
+      bottom: rect.bottom,
+    }) as DOMRect
   return el
 }
 
@@ -423,7 +424,10 @@ describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）',
     let registry!: DomRegistry
     const scroller = document.createElement('div')
     let sl = 0
-    Object.defineProperty(scroller, 'scrollLeft', { get: () => sl, set: (v: number) => void (sl = v) })
+    Object.defineProperty(scroller, 'scrollLeft', {
+      get: () => sl,
+      set: (v: number) => void (sl = v),
+    })
     const Inner = defineComponent({
       setup() {
         api = usePointerDrag({ gantt: ref(scroller), chart: ref(null), vscroll: ref(null) })
@@ -524,7 +528,10 @@ describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）',
     vi.useFakeTimers()
     // 回彈時長讀 --t-bar；jsdom 沒有 tokens.css，這裡給 0.2s
     vi.spyOn(window, 'getComputedStyle').mockImplementation(
-      () => ({ getPropertyValue: (p: string) => (p === '--t-bar' ? '0.2s' : '') }) as unknown as CSSStyleDeclaration,
+      () =>
+        ({
+          getPropertyValue: (p: string) => (p === '--t-bar' ? '0.2s' : ''),
+        }) as unknown as CSSStyleDeclaration,
     )
     const { api: drag, registry, scroller, unmount } = mountWithScroller()
     registerEl(registry.bars, 't1')(document.createElement('div'))

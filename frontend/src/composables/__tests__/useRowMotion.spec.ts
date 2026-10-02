@@ -55,7 +55,12 @@ function mountMotion(initial: string[], timing = TIMING) {
   let motion!: RowMotion
   const Host = defineComponent({
     setup() {
-      motion = useRowMotion({ keys: () => keys.value, elementsOf, rowHeight: ROW, timing: () => timing })
+      motion = useRowMotion({
+        keys: () => keys.value,
+        elementsOf,
+        rowHeight: ROW,
+        timing: () => timing,
+      })
       return () => h('div')
     },
   })
@@ -131,7 +136,10 @@ describe('useRowMotion', () => {
   })
 
   it('時長 0（沒有 token 的環境）不補間', async () => {
-    const { keys, offsetOf, motion } = mountMotion(['g1', 't1', 'g2'], { duration: 0, ease: (x) => x })
+    const { keys, offsetOf, motion } = mountMotion(['g1', 't1', 'g2'], {
+      duration: 0,
+      ease: (x) => x,
+    })
     keys.value = ['g1', 'g2']
     await nextTick()
     expect(offsetOf('g2')).toBe(0)

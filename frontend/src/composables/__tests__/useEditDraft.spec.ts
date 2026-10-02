@@ -139,7 +139,10 @@ describe('useEditDraft', () => {
     const ui = useUiStore()
     ui.editing = { kind: 't', id: '別筆' }
     let onCommit: (v: string) => Promise<void> = async () => {}
-    const mounted = mountDraft((v) => onCommit(v), () => 't1')
+    const mounted = mountDraft(
+      (v) => onCommit(v),
+      () => 't1',
+    )
     onCommit = async () => {
       mounted.local.value = 'server'
     }
@@ -155,7 +158,10 @@ describe('useEditDraft', () => {
     const ui = useUiStore()
     ui.editing = { kind: 'i', id: 'i1' }
     let onCommit: (v: string) => Promise<void> = async () => {}
-    const mounted = mountDraft((v) => onCommit(v), () => null)
+    const mounted = mountDraft(
+      (v) => onCommit(v),
+      () => null,
+    )
     onCommit = async () => {
       mounted.local.value = 'server'
     }

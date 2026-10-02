@@ -52,8 +52,14 @@ export function summarizeProject(
   // ISODate 允許 ''（沒填日期）。空字串會排在最前面、dayIndex('') 是 NaN，
   // 所以起訖日、應完成數、近期任務只看有填日期的任務
   // ISODate 字串可以直接比大小，不必轉日索引
-  const starts = tasks.map((t) => t.start).filter(Boolean).sort()
-  const ends = tasks.map((t) => t.end).filter(Boolean).sort()
+  const starts = tasks
+    .map((t) => t.start)
+    .filter(Boolean)
+    .sort()
+  const ends = tasks
+    .map((t) => t.end)
+    .filter(Boolean)
+    .sort()
 
   return {
     ...meta,

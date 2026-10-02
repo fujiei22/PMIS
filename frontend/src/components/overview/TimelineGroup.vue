@@ -114,7 +114,9 @@ function onKey(e: KeyboardEvent): void {
         <PmCountPill :count="group.rows.length" />
       </div>
       <div class="g-canvas">
-        <Transition name="ov-fade"><i v-if="collapsed" class="g-sum" :style="sumStyle"></i></Transition>
+        <Transition name="ov-fade"
+          ><i v-if="collapsed" class="g-sum" :style="sumStyle"></i
+        ></Transition>
       </div>
     </div>
 
@@ -233,7 +235,6 @@ function onKey(e: KeyboardEvent): void {
   color: var(--text-1);
   white-space: nowrap;
 }
-
 
 /*
  * 收合摘要條（照 GanttBar .summary）。收合中被篩選時範圍會變，left / width 要過渡（T13），不然一幀跳到新寬度。

@@ -191,7 +191,10 @@ function sortValueOf(row: ProjectRow, k: string): number {
 }
 
 /** 點一次排序鍵：沒在清單裡就用預設方向加到最後，已經在就翻轉方向。回傳新陣列。 */
-export function bumpOverviewSort(sorts: readonly OverviewSort[], k: OverviewSortKey): OverviewSort[] {
+export function bumpOverviewSort(
+  sorts: readonly OverviewSort[],
+  k: OverviewSortKey,
+): OverviewSort[] {
   const i = sorts.findIndex((s) => s.k === k)
   if (i < 0) return [...sorts, { k, dir: OVERVIEW_SORT_DEFAULT_DIR[k] }]
   return sorts.map((s, j) => (j === i ? { k, dir: s.dir === 'asc' ? 'desc' : 'asc' } : s))

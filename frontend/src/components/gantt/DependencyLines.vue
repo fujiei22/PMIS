@@ -233,12 +233,7 @@ function askDelete(p: DepPath): void {
   </svg>
 
   <!-- 拖曳建立相依時的虛線預覽（S5 才會填 linkLine） -->
-  <svg
-    v-if="ui.linkLine"
-    class="link-layer"
-    :width="chartWidth"
-    :height="chartHeight"
-  >
+  <svg v-if="ui.linkLine" class="link-layer" :width="chartWidth" :height="chartHeight">
     <line
       :x1="ui.linkLine.x1"
       :y1="ui.linkLine.y1"

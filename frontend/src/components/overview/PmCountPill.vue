@@ -14,7 +14,9 @@ defineProps<{
     :class="{ 'with-unit': unit }"
     :title="`${count} 個專案`"
     :aria-label="`${count} 個專案`"
-  ><b>{{ count }}</b><template v-if="unit">&nbsp;{{ unit }}</template></span>
+    ><b>{{ count }}</b
+    ><template v-if="unit">&nbsp;{{ unit }}</template></span
+  >
 </template>
 
 <style scoped>

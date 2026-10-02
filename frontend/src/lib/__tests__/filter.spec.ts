@@ -83,9 +83,9 @@ describe('matchTask', () => {
     const f: TaskFilter = { ...base, dateMode: 'between', d1: '2026-09-18', d2: '2026-09-12' }
     expect(matchTask(task(), f, ctx())).toBe(true)
     expect(matchTask(task({ start: '2026-09-25', end: '2026-09-30' }), f, ctx())).toBe(false)
-    expect(matchTask(task({ start: '2026-09-25', end: '2026-09-30' }), { ...f, d2: '' }, ctx())).toBe(
-      true,
-    )
+    expect(
+      matchTask(task({ start: '2026-09-25', end: '2026-09-30' }), { ...f, d2: '' }, ctx()),
+    ).toBe(true)
   })
 })
 

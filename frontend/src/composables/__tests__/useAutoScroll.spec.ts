@@ -91,7 +91,7 @@ describe('useAutoScroll 的速度曲線', () => {
     sc.scrollLeft = 500
     auto.start()
     step()
-    expect(sc.scrollLeft).toBe(500 - (Math.min(1, (EDGE - x) / EDGE) * MAX))
+    expect(sc.scrollLeft).toBe(500 - Math.min(1, (EDGE - x) / EDGE) * MAX)
     expect(onScrolled).toHaveBeenCalledTimes(1)
     auto.stop()
   })
@@ -122,7 +122,7 @@ describe('useAutoScroll 的速度曲線', () => {
     auto.start()
     step()
     // pos=130、min=100 → -(72-30)/72*18
-    expect(vs.scrollTop).toBe(300 - (Math.min(1, (100 + EDGE - 130) / EDGE) * MAX))
+    expect(vs.scrollTop).toBe(300 - Math.min(1, (100 + EDGE - 130) / EDGE) * MAX)
     auto.stop()
   })
 

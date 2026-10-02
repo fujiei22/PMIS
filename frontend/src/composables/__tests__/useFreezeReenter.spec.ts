@@ -21,7 +21,11 @@ function fakeLayout(el: HTMLElement): void {
 }
 
 /** freezeLeave 釘住的離場元素：釘在 top / left，當下的透明度與縮放寫 inline（jsdom 的 computed 讀 inline）。 */
-function pinned(key: string, at: { top: number; left: number }, look: { o: number; s: number }): HTMLElement {
+function pinned(
+  key: string,
+  at: { top: number; left: number },
+  look: { o: number; s: number },
+): HTMLElement {
   const el = document.createElement('div')
   el.setAttribute('data-k', key)
   el.className = 'ov-card-leave-active ov-card-leave-to'
@@ -57,7 +61,9 @@ function setup(initial: string[]) {
               h('div', {
                 key: k,
                 'data-k': k,
-                class: entering.value.includes(k) ? 'ov-card-enter-from ov-card-enter-active' : undefined,
+                class: entering.value.includes(k)
+                  ? 'ov-card-enter-from ov-card-enter-active'
+                  : undefined,
                 ref: (n) => {
                   if (!n) return
                   box = (n as HTMLElement).parentElement!
@@ -71,7 +77,11 @@ function setup(initial: string[]) {
     { attachTo: document.body },
   )
   /** 把 key 從清單拿掉，換成一個釘住的離場元素（掛在容器最後，同 freezeLeave 的 absolute 不佔位）。 */
-  async function leave(key: string, at: { top: number; left: number }, look: { o: number; s: number }) {
+  async function leave(
+    key: string,
+    at: { top: number; left: number },
+    look: { o: number; s: number },
+  ) {
     keys.value = keys.value.filter((k) => k !== key)
     await nextTick()
     ghost = pinned(key, at, look)
@@ -92,7 +102,11 @@ type Call = { el: HTMLElement; frames: Keyframe[]; opts: KeyframeAnimationOption
 let calls: Call[] = []
 beforeEach(() => {
   calls = []
-  HTMLElement.prototype.animate = function (this: HTMLElement, frames: Keyframe[], opts: KeyframeAnimationOptions) {
+  HTMLElement.prototype.animate = function (
+    this: HTMLElement,
+    frames: Keyframe[],
+    opts: KeyframeAnimationOptions,
+  ) {
     calls.push({ el: this, frames, opts })
     return { id: String(opts.id ?? ''), cancel: vi.fn() } as unknown as Animation
   } as HTMLElement['animate']
@@ -113,7 +127,8 @@ function watchReflow(): { of: (el: Element) => string[] } {
     const cs = real(el, pseudo)
     return new Proxy(cs, {
       get(t, p) {
-        if (p === 'opacity') seen.set(el, [...(seen.get(el) ?? []), (el as HTMLElement).style.cssText])
+        if (p === 'opacity')
+          seen.set(el, [...(seen.get(el) ?? []), (el as HTMLElement).style.cssText])
         const v = Reflect.get(t, p, t) as unknown
         return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(t) : v
       },

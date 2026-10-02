@@ -11,10 +11,13 @@ import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import EnterLink from '@/components/overview/EnterLink.vue'
 
-const router = createRouter({ history: createMemoryHistory(), routes: [
-  { path: '/', component: { template: '<div />' } },
-  { path: '/projects/:id', name: 'dashboard', component: { template: '<div />' } },
-] })
+const router = createRouter({
+  history: createMemoryHistory(),
+  routes: [
+    { path: '/', component: { template: '<div />' } },
+    { path: '/projects/:id', name: 'dashboard', component: { template: '<div />' } },
+  ],
+})
 
 function setup(variant: 'edge' | 'head') {
   return mount(EnterLink, {

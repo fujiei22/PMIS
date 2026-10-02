@@ -28,7 +28,6 @@ const d = computed(() => props.row.d)
 
 const pm = computed(() => portfolio.byId(p.value.pmId))
 
-
 const LEVELS: readonly IssueLevel[] = ['A', 'B', 'C', 'D']
 /** 只列有未結 Issue 的等級；全為 0 時整列換成空值文案。 */
 const levels = computed(() =>
@@ -76,26 +75,48 @@ const upcoming = computed(() =>
         <PlanActualBar :actual="d.actualPct" :planned="d.plannedPct" :tone="BADGE_CLASS[d.badge]" />
         <div class="progress-foot">
           <span class="bar-frac mono">{{ p.taskDone }} / {{ p.taskTotal }}</span>
-          <span class="gap-note" :class="gapTone(d.gap)">{{ d.gap > 0 ? `落後 ${d.gap}%` : '進度正常' }}</span>
+          <span class="gap-note" :class="gapTone(d.gap)">{{
+            d.gap > 0 ? `落後 ${d.gap}%` : '進度正常'
+          }}</span>
         </div>
         <ul class="counts">
-          <li><i class="dot dot-done"></i>完成<b>{{ p.taskCounts.done }}</b></li>
-          <li><i class="dot dot-doing"></i>進行中<b>{{ p.taskCounts.doing }}</b></li>
-          <li><i class="dot dot-paused"></i>暫停<b>{{ p.taskCounts.paused }}</b></li>
-          <li><i class="dot dot-todo"></i>待辦<b>{{ p.taskCounts.todo }}</b></li>
+          <li>
+            <i class="dot dot-done"></i>完成<b>{{ p.taskCounts.done }}</b>
+          </li>
+          <li>
+            <i class="dot dot-doing"></i>進行中<b>{{ p.taskCounts.doing }}</b>
+          </li>
+          <li>
+            <i class="dot dot-paused"></i>暫停<b>{{ p.taskCounts.paused }}</b>
+          </li>
+          <li>
+            <i class="dot dot-todo"></i>待辦<b>{{ p.taskCounts.todo }}</b>
+          </li>
         </ul>
       </div>
 
       <div class="qb">
         <div class="qb-title">時程</div>
-        <div class="range"><span>{{ p.startDate }}</span><span class="range-arrow">→</span><span>{{ p.dueDate }}</span></div>
+        <div class="range">
+          <span>{{ p.startDate }}</span
+          ><span class="range-arrow">→</span><span>{{ p.dueDate }}</span>
+        </div>
         <div class="track time-track">
           <div class="fill fill-time" :style="{ width: d.timePct + '%' }"></div>
         </div>
         <dl class="kv">
-          <div><dt>總天數</dt><dd>{{ d.totalDays }}<span class="unit">天</span></dd></div>
-          <div><dt>已過</dt><dd>{{ d.elapsedDays }}<span class="unit">天</span></dd></div>
-          <div><dt>剩餘</dt><dd>{{ d.remainingDays }}<span class="unit">天</span></dd></div>
+          <div>
+            <dt>總天數</dt>
+            <dd>{{ d.totalDays }}<span class="unit">天</span></dd>
+          </div>
+          <div>
+            <dt>已過</dt>
+            <dd>{{ d.elapsedDays }}<span class="unit">天</span></dd>
+          </div>
+          <div>
+            <dt>剩餘</dt>
+            <dd>{{ d.remainingDays }}<span class="unit">天</span></dd>
+          </div>
         </dl>
       </div>
 
@@ -104,11 +125,15 @@ const upcoming = computed(() =>
         <dl class="kv kv-2">
           <div>
             <dt>已延遲任務</dt>
-            <dd :class="toneIf(p.delayedTasks)">{{ p.delayedTasks }}<span class="unit">項</span></dd>
+            <dd :class="toneIf(p.delayedTasks)">
+              {{ p.delayedTasks }}<span class="unit">項</span>
+            </dd>
           </div>
           <div>
             <dt>未結 Issue</dt>
-            <dd :class="toneIf(d.openIssueTotal)">{{ d.openIssueTotal }}<span class="unit">件</span></dd>
+            <dd :class="toneIf(d.openIssueTotal)">
+              {{ d.openIssueTotal }}<span class="unit">件</span>
+            </dd>
           </div>
         </dl>
         <div v-if="levels.length" class="levels">
@@ -123,14 +148,23 @@ const upcoming = computed(() =>
       <div class="qb">
         <div class="qb-title">成員與近期任務</div>
         <div v-if="members.length" class="members">
-          <Avatar v-for="x in members" :key="x.id" :member="x.m" :size="22" :ring="2" :overlap="6" />
+          <Avatar
+            v-for="x in members"
+            :key="x.id"
+            :member="x.m"
+            :size="22"
+            :ring="2"
+            :overlap="6"
+          />
         </div>
         <p v-else class="empty">尚未指派成員</p>
         <ul v-if="upcoming.length" class="tasks">
           <li v-for="u in upcoming" :key="u.key">
             <span class="task-name">{{ u.name }}</span>
             <span class="task-date" :class="{ 'due-soon': u.soon }">{{ u.date }}</span>
-            <span class="task-who"><Avatar :member="u.who" :size="18" />{{ u.who?.name ?? '?' }}</span>
+            <span class="task-who"
+              ><Avatar :member="u.who" :size="18" />{{ u.who?.name ?? '?' }}</span
+            >
           </li>
         </ul>
         <p v-else class="empty">沒有近期到期任務</p>

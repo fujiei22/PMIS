@@ -27,7 +27,11 @@ export interface DeferredPanels {
 const KEY: InjectionKey<DeferredPanels> = Symbol('deferredPanels')
 
 /** 沒有 provide 時（單元測試直接掛 TopBar 這類元件）：全部視為已掛。 */
-const NONE: DeferredPanels = { kanban: ref(true), issues: ref(true), ensure: () => Promise.resolve() }
+const NONE: DeferredPanels = {
+  kanban: ref(true),
+  issues: ref(true),
+  ensure: () => Promise.resolve(),
+}
 
 /** 進場過渡沒通知時（被打斷、沒有觸發）的保險：掛上後最晚這麼久開始排。 */
 const SETTLE_FALLBACK_MS = 1500
@@ -118,7 +122,8 @@ export function provideDeferredPanels(defer: boolean): DeferredPanels {
     const fallback = setTimeout(() => schedule(null), SETTLE_FALLBACK_MS)
     cancels.push(() => clearTimeout(fallback))
     const onUser = (): void => void ensure()
-    for (const t of USER_EVENTS) window.addEventListener(t, onUser, { capture: true, passive: true })
+    for (const t of USER_EVENTS)
+      window.addEventListener(t, onUser, { capture: true, passive: true })
     cancels.push(() => {
       for (const t of USER_EVENTS) window.removeEventListener(t, onUser, { capture: true })
     })

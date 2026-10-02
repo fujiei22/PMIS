@@ -2,7 +2,11 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h, nextTick } from 'vue'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { scrollIntoContainer, useFocusRequest, type FocusRequest } from '@/composables/useFocusScroll'
+import {
+  scrollIntoContainer,
+  useFocusRequest,
+  type FocusRequest,
+} from '@/composables/useFocusScroll'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'

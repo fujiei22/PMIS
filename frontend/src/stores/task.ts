@@ -183,7 +183,8 @@ export const useTaskStore = defineStore('task', () => {
       next.push(mine && taskTracker.dirty.has(id) ? mine : { ...server })
     }
     // server 還不知道、但本地改到一半的（例如 create 在飛時又被改名）留著
-    for (const t of tasks.value) if (!taskTracker.server.has(t.id) && taskTracker.dirty.has(t.id)) next.push(t)
+    for (const t of tasks.value)
+      if (!taskTracker.server.has(t.id) && taskTracker.dirty.has(t.id)) next.push(t)
     tasks.value = next
   }
 
@@ -427,7 +428,10 @@ export const useTaskStore = defineStore('task', () => {
     )
     tasks.value = next
     // review F2：這些值只在本地（拖曳的 tick、改名的 debounce），送出前不准被 reconcile 蓋掉
-    markDirty(taskTracker, changed.map((t) => t.id))
+    markDirty(
+      taskTracker,
+      changed.map((t) => t.id),
+    )
     return changed
   }
 
@@ -439,7 +443,10 @@ export const useTaskStore = defineStore('task', () => {
     // 有連動就送整批最終狀態，後端不重算（契約 A）。
     const single = !needsCascade(patch) && changed.length === 1
     const payload = changed.map((t) => cloneEntity(t))
-    clearDirty(taskTracker, payload.map((t) => t.id))
+    clearDirty(
+      taskTracker,
+      payload.map((t) => t.id),
+    )
     await runOptimistic<Task>({
       tracker: taskTracker,
       ids: payload.map((t) => t.id),
@@ -468,7 +475,10 @@ export const useTaskStore = defineStore('task', () => {
   async function commitTasks(changed: Task[]): Promise<void> {
     if (!changed.length) return
     const payload = changed.map((t) => cloneEntity(t))
-    clearDirty(taskTracker, payload.map((t) => t.id))
+    clearDirty(
+      taskTracker,
+      payload.map((t) => t.id),
+    )
     await runOptimistic<Task>({
       tracker: taskTracker,
       ids: payload.map((t) => t.id),

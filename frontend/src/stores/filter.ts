@@ -1,12 +1,11 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { anyTaskFilter as anyTaskFilterOf, matchTask as matchTaskOf, type TaskFilter } from '@/lib/filter'
 import {
-  bumpSort,
-  DEFAULT_ISSUE_SORT,
-  DEFAULT_TASK_SORT,
-  type SortKey,
-} from '@/lib/sort'
+  anyTaskFilter as anyTaskFilterOf,
+  matchTask as matchTaskOf,
+  type TaskFilter,
+} from '@/lib/filter'
+import { bumpSort, DEFAULT_ISSUE_SORT, DEFAULT_TASK_SORT, type SortKey } from '@/lib/sort'
 import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'

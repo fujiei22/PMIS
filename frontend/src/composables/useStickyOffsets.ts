@@ -1,4 +1,12 @@
-import { computed, inject, onBeforeUnmount, provide, ref, type ComputedRef, type InjectionKey } from 'vue'
+import {
+  computed,
+  inject,
+  onBeforeUnmount,
+  provide,
+  ref,
+  type ComputedRef,
+  type InjectionKey,
+} from 'vue'
 
 /** 會被量高度的元素 key：頂部列 + 三個面板頭。 */
 export type StickyKey = 'top' | 'gantt' | 'kanban' | 'issues'
@@ -58,7 +66,8 @@ export function useStickyOffsets(): StickyOffsets {
   onBeforeUnmount(() => ro?.disconnect())
 
   const panelTop = computed(() => heights.value.top)
-  const innerTop = (key: Exclude<StickyKey, 'top'>): number => heights.value.top + heights.value[key]
+  const innerTop = (key: Exclude<StickyKey, 'top'>): number =>
+    heights.value.top + heights.value[key]
 
   const api: StickyOffsets = { observe, panelTop, innerTop }
   provide(STICKY_KEY, api)

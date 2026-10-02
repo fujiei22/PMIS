@@ -26,7 +26,8 @@ describe('OvEmpty', () => {
   it('被篩掉：「沒有符合條件的專案」＋ 清除篩選', async () => {
     await usePortfolioStore().load(buildPortfolio(sampleProject, '2026-09-22'))
     const ov = useOverviewStore()
-    ov.toggleStatus('done'); ov.toggleAlert('late')
+    ov.toggleStatus('done')
+    ov.toggleAlert('late')
     const w = mount(OvEmpty)
     expect(w.text()).toContain('沒有符合條件的專案')
     await w.find('button').trigger('click')

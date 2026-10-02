@@ -96,9 +96,7 @@ export interface Comment {
  * 拖曳 / 放置的落點：分類（可分上下半）或某個任務。
  * 放在 models 而不是 ui store：`taskStore.moveTaskTo` 的參數型別，資料層不該 import 派生層（契約 E）。
  */
-export type DropTarget =
-  | { kind: 'g'; id: string; dir?: 'up' | 'down' }
-  | { kind: 't'; id: string }
+export type DropTarget = { kind: 'g'; id: string; dir?: 'up' | 'down' } | { kind: 't'; id: string }
 
 export interface ProjectData {
   groups: Group[]

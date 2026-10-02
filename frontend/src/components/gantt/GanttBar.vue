@@ -72,7 +72,9 @@ const selected = computed(() => props.kind === 'task' && selection.taskId === pr
 /** 光暈種類：前置 / 後續，沒有相依但同屬選取分類（或 soft 篩選命中）時算 group。legacy :2908 */
 const ringKind = computed<'up' | 'down' | 'group' | null>(() => {
   if (props.kind !== 'task') return null
-  return selection.related[props.task.id] ?? (selection.softHighlight[props.task.id] ? 'group' : null)
+  return (
+    selection.related[props.task.id] ?? (selection.softHighlight[props.task.id] ? 'group' : null)
+  )
 })
 
 /** 有選取而自己不相關 → 淡化。legacy `op` :2910 */

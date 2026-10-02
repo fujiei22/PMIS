@@ -123,7 +123,11 @@ const iValue = computed<string>(() => {
 })
 
 const iExists = computed(
-  () => !!iCal.value && !!(iCal.value.kind === 'task' ? taskStore.taskById(iCal.value.id) : issueStore.byId(iCal.value.id)),
+  () =>
+    !!iCal.value &&
+    !!(iCal.value.kind === 'task'
+      ? taskStore.taskById(iCal.value.id)
+      : issueStore.byId(iCal.value.id)),
 )
 
 const iCells = computed<Cell[]>(() => {

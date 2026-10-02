@@ -3,14 +3,7 @@ import { createMockStore } from '@/api/mock/store'
 import { ApiError, type MockApi, type ProjectApi, type ProjectEvent } from '@/api/types'
 import { isoFromIndex, todayIndex } from '@/lib/date'
 import { sampleProject } from '@/mocks/sampleProject'
-import type {
-  Comment,
-  Dependency,
-  Group,
-  Issue,
-  ProjectData,
-  Task,
-} from '@/types/models'
+import type { Comment, Dependency, Group, Issue, ProjectData, Task } from '@/types/models'
 
 /**
  * 記憶體版的 `ProjectApi`：後端還不存在時的唯一實作，也是單元測試與 e2e 的替身。
@@ -71,9 +64,10 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
    */
   function call<T>(method: keyof ProjectApi, work: () => T): Promise<T> {
     const injected = takeFailure(method)
-    if (injected) return settle<T>(() => {
-      throw injected
-    })
+    if (injected)
+      return settle<T>(() => {
+        throw injected
+      })
     let result: T
     try {
       result = work()
@@ -91,7 +85,12 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
       err.method ??= method
       return err
     }
-    return new ApiError('unknown', err instanceof Error ? err.message : String(err), undefined, method)
+    return new ApiError(
+      'unknown',
+      err instanceof Error ? err.message : String(err),
+      undefined,
+      method,
+    )
   }
 
   return {
@@ -100,7 +99,9 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
     // PMIS 摘要從 store 目前的資料即時彙整，Dashboard 的改動回總覽就看得到（spec 7b）。
     // 今天取系統時鐘：e2e 用 page.clock 固定，單元測試改呼叫 buildPortfolio 直接給日期。
     listProjects: () =>
-      call('listProjects', () => buildPortfolio(store.snapshot(), isoFromIndex(todayIndex(Date.now())))),
+      call('listProjects', () =>
+        buildPortfolio(store.snapshot(), isoFromIndex(todayIndex(Date.now()))),
+      ),
 
     createTask: (task: Task) =>
       call('createTask', () => {

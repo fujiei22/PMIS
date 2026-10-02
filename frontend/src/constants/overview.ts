@@ -7,23 +7,43 @@ import type { ProjectAlert, ProjectStatus } from '@/types/models'
  */
 
 /** 排序選單的四個鍵；dirLabel 顯示在選項右側（B2 .sort-dir）。 */
-export const OVERVIEW_SORT_KEYS: readonly { k: OverviewSortKey; label: string; dirLabel: { asc: string; desc: string } }[] = [
+export const OVERVIEW_SORT_KEYS: readonly {
+  k: OverviewSortKey
+  label: string
+  dirLabel: { asc: string; desc: string }
+}[] = [
   { k: 'gap', label: '落後進度百分比', dirLabel: { desc: '大到小', asc: '小到大' } },
   { k: 'start', label: '專案開始日', dirLabel: { asc: '早到晚', desc: '晚到早' } },
   { k: 'due', label: '專案到期日', dirLabel: { asc: '早到晚', desc: '晚到早' } },
   { k: 'issues', label: 'Issue 數量', dirLabel: { desc: '多到少', asc: '少到多' } },
 ]
 /** 專案狀態的中文標籤。 */
-export const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = { doing: '進行中', todo: '未開始', done: '已完成' }
+export const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
+  doing: '進行中',
+  todo: '未開始',
+  done: '已完成',
+}
 /** 需注意程度的中文標籤。 */
-export const PROJECT_ALERT_LABEL: Record<ProjectAlert, string> = { late: '落後', watch: '需注意', none: '無' }
+export const PROJECT_ALERT_LABEL: Record<ProjectAlert, string> = {
+  late: '落後',
+  watch: '需注意',
+  none: '無',
+}
 /** 狀態徽章的中文標籤。 */
 export const PROJECT_BADGE_LABEL: Record<ProjectBadgeKind, string> = {
-  late: '落後', watch: '需注意', doing: '進行中', todo: '未開始', done: '已完成',
+  late: '落後',
+  watch: '需注意',
+  doing: '進行中',
+  todo: '未開始',
+  done: '已完成',
 }
 /** 狀態 → CSS class 字尾。B2 的「需注意」沿用 --st-paused-* 色系，所以 class 叫 paused（.pill-paused / .p-block.paused）。 */
 export const BADGE_CLASS: Record<ProjectBadgeKind, string> = {
-  late: 'late', watch: 'paused', doing: 'doing', todo: 'todo', done: 'done',
+  late: 'late',
+  watch: 'paused',
+  doing: 'doing',
+  todo: 'todo',
+  done: 'done',
 }
 /** 時間軸一天寬（px）：Dashboard 甘特刻度上限 32px 的 22%（spec 目標 6）。 */
 export const TIMELINE_DAY_W = 32 * 0.22

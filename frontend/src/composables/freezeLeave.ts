@@ -13,7 +13,12 @@ const batches = new WeakMap<Element, Map<Element, LeaveRect>>()
 /** 看得到的位置：版面位置加上目前的 translate（FLIP / move 過渡進行中也對）。 */
 function measure(el: HTMLElement): LeaveRect {
   const t = currentTranslate(el)
-  return { top: el.offsetTop + t.y, left: el.offsetLeft + t.x, width: el.offsetWidth, height: el.offsetHeight }
+  return {
+    top: el.offsetTop + t.y,
+    left: el.offsetLeft + t.x,
+    width: el.offsetWidth,
+    height: el.offsetHeight,
+  }
 }
 
 /**

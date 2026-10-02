@@ -93,10 +93,7 @@ function cacheFor(map: object): Map<string, unknown> {
  * @param map 要寫進去的那張表
  * @param id 元素的識別（任務 / 分類 / 面板 key）
  */
-export function registerEl<K extends string>(
-  map: Map<K, HTMLElement>,
-  id: K,
-): (el: ElRef) => void {
+export function registerEl<K extends string>(map: Map<K, HTMLElement>, id: K): (el: ElRef) => void {
   const byId = cacheFor(map)
   const cached = byId.get(id) as ((el: ElRef) => void) | undefined
   if (cached) return cached

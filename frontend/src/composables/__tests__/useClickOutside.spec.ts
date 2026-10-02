@@ -165,7 +165,9 @@ describe('useClickOutside 的手指操作', () => {
     const bar = addNode('<div data-taskid="t1">bar</div>')
     down(bar)
     selection.taskId = 't1'
-    addNode('<div class="plain">x</div>').dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+    addNode('<div class="plain">x</div>').dispatchEvent(
+      new MouseEvent('click', { bubbles: true, detail: 1 }),
+    )
     expect(selection.taskId).toBe('t1')
   })
 
@@ -175,7 +177,9 @@ describe('useClickOutside 的手指操作', () => {
     down(bar, 'touch')
     bar.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
     selection.taskId = 't1'
-    addNode('<button>x</button>').dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }))
+    addNode('<button>x</button>').dispatchEvent(
+      new MouseEvent('click', { bubbles: true, detail: 0 }),
+    )
     expect(selection.taskId).toBe('t1')
   })
 })

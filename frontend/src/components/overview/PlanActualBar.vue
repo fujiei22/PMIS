@@ -24,7 +24,9 @@ const bar = computed(() => {
 <template>
   <div class="pa-bar">
     <div class="pin pin-plan" :style="{ left: planned + '%' }">
-      <span class="pin-label" :style="{ transform: `translateX(-${planned}%)` }">理論 {{ planned }}%</span>
+      <span class="pin-label" :style="{ transform: `translateX(-${planned}%)` }"
+        >理論 {{ planned }}%</span
+      >
       <i class="pin-arrow"></i>
     </div>
     <div
@@ -45,7 +47,9 @@ const bar = computed(() => {
     </div>
     <div class="pin pin-act" :style="{ left: actual + '%' }">
       <i class="pin-arrow"></i>
-      <span class="pin-label" :style="{ transform: `translateX(-${actual}%)` }">實際 {{ actual }}%</span>
+      <span class="pin-label" :style="{ transform: `translateX(-${actual}%)` }"
+        >實際 {{ actual }}%</span
+      >
     </div>
   </div>
 </template>

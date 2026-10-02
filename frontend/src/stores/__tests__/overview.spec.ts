@@ -21,7 +21,15 @@ describe('overview store', () => {
   it('預設：全部 7 個、排序 ① 落後↓ ② 到期↑、欄序 成員10 / 成員8 / 成員5 / 成員9', () => {
     const ov = useOverviewStore()
     // PMIS 即時彙整後落後 10（Task 4），排在 portal(13) 之後、payment(4) 之前
-    expect(ov.visibleRows.map((r) => r.p.id)).toEqual(['wiki', 'portal', 'pmis', 'payment', 'app', 'dw', 'vendor'])
+    expect(ov.visibleRows.map((r) => r.p.id)).toEqual([
+      'wiki',
+      'portal',
+      'pmis',
+      'payment',
+      'app',
+      'dw',
+      'vendor',
+    ])
     expect(ov.groups.map((g) => g.pm.name)).toEqual(['成員10', '成員8', '成員5', '成員9'])
     expect(ov.counts).toEqual({ projects: 7, alerts: 3, pms: 4 })
     expect(ov.anyFilter).toBe(false)
@@ -29,8 +37,10 @@ describe('overview store', () => {
 
   it('篩成員5 + 成員8 且狀態 進行中 / 未開始 → 4 個、2 個需注意、2 位 PM', () => {
     const ov = useOverviewStore()
-    ov.togglePm('m5'); ov.togglePm('m8')
-    ov.toggleStatus('doing'); ov.toggleStatus('todo')
+    ov.togglePm('m5')
+    ov.togglePm('m8')
+    ov.toggleStatus('doing')
+    ov.toggleStatus('todo')
     expect(ov.visibleRows.map((r) => r.p.id)).toEqual(['portal', 'pmis', 'payment', 'app'])
     expect(ov.counts).toEqual({ projects: 4, alerts: 2, pms: 2 })
     expect(ov.anyFilter).toBe(true)
@@ -63,7 +73,10 @@ describe('overview store', () => {
     const ov = useOverviewStore()
     expect(ov.pms.map((m) => m.id)).toEqual(['m5', 'm8', 'm9', 'm10'])
     expect(ov.pmOptionList.map((o) => [o.pm.name, o.doing, o.todo, o.hasAlert])).toEqual([
-      ['成員5', 2, 0, true], ['成員8', 2, 0, true], ['成員9', 0, 1, false], ['成員10', 1, 0, true],
+      ['成員5', 2, 0, true],
+      ['成員8', 2, 0, true],
+      ['成員9', 0, 1, false],
+      ['成員10', 1, 0, true],
     ])
   })
 
@@ -81,24 +94,33 @@ describe('overview store', () => {
   it('排序：bump 新鍵加在最後、再 bump 翻方向；drop 移除；reset 回預設', () => {
     const ov = useOverviewStore()
     ov.bumpSort('issues')
-    expect(ov.sorts).toEqual([{ k: 'gap', dir: 'desc' }, { k: 'due', dir: 'asc' }, { k: 'issues', dir: 'desc' }])
+    expect(ov.sorts).toEqual([
+      { k: 'gap', dir: 'desc' },
+      { k: 'due', dir: 'asc' },
+      { k: 'issues', dir: 'desc' },
+    ])
     ov.bumpSort('gap')
     expect(ov.sorts[0]).toEqual({ k: 'gap', dir: 'asc' })
     ov.dropSort('gap')
     expect(ov.sorts.map((s) => s.k)).toEqual(['due', 'issues'])
     ov.resetSort()
-    expect(ov.sorts).toEqual([{ k: 'gap', dir: 'desc' }, { k: 'due', dir: 'asc' }])
+    expect(ov.sorts).toEqual([
+      { k: 'gap', dir: 'desc' },
+      { k: 'due', dir: 'asc' },
+    ])
   })
 
   it('展開可多個並存；群組收合各自獨立；下拉互斥', () => {
     const ov = useOverviewStore()
-    ov.toggleExpanded('pmis'); ov.toggleExpanded('portal')
+    ov.toggleExpanded('pmis')
+    ov.toggleExpanded('portal')
     expect(ov.isExpanded('pmis') && ov.isExpanded('portal')).toBe(true)
     ov.toggleExpanded('pmis')
     expect(ov.isExpanded('pmis')).toBe(false)
     ov.toggleGroup('m5')
     expect([ov.isCollapsed('m5'), ov.isCollapsed('m8')]).toEqual([true, false])
-    ov.toggleDropdown('pm'); ov.toggleDropdown('status')
+    ov.toggleDropdown('pm')
+    ov.toggleDropdown('status')
     expect(ov.openDropdown).toBe('status')
     ov.toggleDropdown('status')
     expect(ov.openDropdown).toBe(null)
@@ -117,7 +139,9 @@ describe('overview store', () => {
 
   it('從時間軸切回卡片：同泳道多張展開時只留最後展開的那張', () => {
     const ov = useOverviewStore()
-    ov.toggleExpanded('app'); ov.toggleExpanded('pmis'); ov.toggleExpanded('portal')
+    ov.toggleExpanded('app')
+    ov.toggleExpanded('pmis')
+    ov.toggleExpanded('portal')
     ov.keepLastExpandedInLane(['portal', 'app'])
     expect(ov.expandedIds).toEqual(['pmis', 'portal'])
     ov.keepLastExpandedInLane(['pmis', 'payment'])

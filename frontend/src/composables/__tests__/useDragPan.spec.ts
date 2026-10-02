@@ -21,10 +21,19 @@ afterEach(() => {
 })
 
 /** 掛一個捲動容器，裡面放畫布與左欄；scrollLeft 自己接管（jsdom 沒有版面）。 */
-function setup(): { pan: DragPan; scroller: HTMLElement; canvas: HTMLElement; left: HTMLElement; clicks: () => number } {
+function setup(): {
+  pan: DragPan
+  scroller: HTMLElement
+  canvas: HTMLElement
+  left: HTMLElement
+  clicks: () => number
+} {
   const scroller = document.createElement('div')
   let sl = 200
-  Object.defineProperty(scroller, 'scrollLeft', { get: () => sl, set: (v: number) => void (sl = v) })
+  Object.defineProperty(scroller, 'scrollLeft', {
+    get: () => sl,
+    set: (v: number) => void (sl = v),
+  })
   const canvas = document.createElement('div')
   canvas.className = 'p-canvas'
   const left = document.createElement('div')
