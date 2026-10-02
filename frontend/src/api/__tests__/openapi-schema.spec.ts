@@ -4,7 +4,9 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import openapiTS, { astToString, COMMENT_HEADER } from 'openapi-typescript'
-import { expect, it } from 'vitest'
+import { expect, expectTypeOf, it } from 'vitest'
+import type { components } from '@/api/http/schema'
+import type { WorkCalendar } from '@/types/models'
 
 /**
  * 守住「`schema.ts` 是由 repo 裡的 `openapi.json` 產生的最新版」。
@@ -27,4 +29,14 @@ it('schema.ts 等於由 openapi.json 重新產生的結果', async () => {
     committed,
     'schema.ts 不是由 openapi.json 產生的最新版。改了 API 要依序跑：(1) backend/ 跑 uv run python -m app.scripts.export_openapi (2) frontend/ 跑 npm run gen:api；兩個產物連同程式一起 commit，schema.ts 不要手改',
   ).toBe(generated)
+})
+
+/**
+ * 前端手寫的 `WorkCalendar`（types/models.ts）要跟後端 OpenAPI 產生的型別一致。
+ * 這是型別層的檢查：不一致時 `vue-tsc --build` 會失敗（vitest 執行期不檢查型別）。
+ * 不一致時改 models.ts 對齊後端，不手改 schema.ts。
+ */
+// eslint-disable-next-line vitest/expect-expect -- expectTypeOf 是型別層斷言，由 vue-tsc 檢查；規則只認 expect
+it('WorkCalendar 跟後端 OpenAPI 的型別一致', () => {
+  expectTypeOf<WorkCalendar>().toEqualTypeOf<components['schemas']['WorkCalendar']>()
 })

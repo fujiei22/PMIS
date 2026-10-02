@@ -52,6 +52,23 @@ export interface Dependency {
   to: string
 }
 
+/** 工作日曆的一天（`GET /api/calendar`）：跟預設週末不同、或有名稱的日子。 */
+export interface CalendarDay {
+  date: ISODate
+  isWorkday: boolean
+  /** 只供顯示（中秋節、補假、颱風假…），不可拿來判斷邏輯 */
+  name: string
+  /** official：官方辦公日曆；override：管理員的例外日 */
+  source: 'official' | 'override'
+}
+
+/** 工作日曆：預設週末（ISO 星期，1 = 週一）、官方資料完整的年份、特殊日（依日期遞增）。 */
+export interface WorkCalendar {
+  weekendDays: number[]
+  coveredYears: number[]
+  days: CalendarDay[]
+}
+
 export interface Issue {
   id: string
   taskId: string
