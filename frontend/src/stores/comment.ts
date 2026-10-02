@@ -15,6 +15,7 @@ import {
 } from '@/stores/_optimistic'
 import { useClockStore } from '@/stores/clock'
 import { useMemberStore } from '@/stores/member'
+import { useProjectStore } from '@/stores/project'
 import type { Attachment, Comment } from '@/types/models'
 
 /** 詳細視窗裡的檔案列，比 Attachment 多一個作者名。 */
@@ -36,6 +37,9 @@ function localDay(d: Date): string {
  * 留言與附件。
  * 篩選條件（日期 / 成員）、頁籤、檢視模式沿用 legacy：跨次開啟保留；
  * 草稿與檔案多選則每次開啟詳情就清（openDetail 呼叫 resetDraft）。
+ *
+ * 唯讀（F2）：送出、刪留言、加 / 移草稿附件第一行擋 `canEdit`；清草稿（`resetDraft`）是清理，不擋。
+ * 分類守衛在 `stores/__tests__/readonly.spec.ts`。
  */
 export const useCommentStore = defineStore('comment', () => {
   const comments = ref<Comment[]>([])
@@ -168,6 +172,7 @@ export const useCommentStore = defineStore('comment', () => {
    * 就不覆蓋，寧可掉這一份也不要吃掉他正在打的。
    */
   async function send(targetId: string, targetKind: 'task' | 'issue'): Promise<void> {
+    if (!useProjectStore().canEdit) return
     if (!draft.value.trim() && !draftFiles.value.length) return
     const now = new Date(useClockStore().now)
     const pad = (n: number) => String(n).padStart(2, '0')
@@ -230,6 +235,7 @@ export const useCommentStore = defineStore('comment', () => {
    * review M1：附件日期同樣取本地日（送出時 `send` 會再蓋一次同一天的值）。
    */
   function addDraftFiles(files: FileList | File[]): void {
+    if (!useProjectStore().canEdit) return
     const now = useClockStore().now
     // 草稿階段先給暫時 id（v-for 的 key 與移除用），送出時 `send` 會換成 `<commentId>:<index>`
     const picked: CommentDraftFile[] = Array.from(files ?? []).map((f) => ({
@@ -254,12 +260,14 @@ export const useCommentStore = defineStore('comment', () => {
 
   /** 移掉草稿裡第 i 個附件，順手釋放它的 blob url。 */
   function removeDraft(i: number): void {
+    if (!useProjectStore().canEdit) return
     const [gone] = draftFiles.value.splice(i, 1)
     if (gone) revoke([gone])
   }
 
   /** 刪掉一則留言。legacy `onDelete` :3878 */
   async function remove(commentId: string): Promise<void> {
+    if (!useProjectStore().canEdit) return
     const gone = comments.value.find((c) => c.id === commentId)
     if (!gone) return
     comments.value = comments.value.filter((c) => c.id !== commentId)

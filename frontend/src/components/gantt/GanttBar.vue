@@ -5,6 +5,8 @@
 // 契約 G：props 是 task / summary 的 discriminated union，fragment root
 // （`.bar` 與兩個 `.dot-zone` 是兄弟，維持 legacy 的 DOM 結構），
 // 樣式全部拆成回傳 primitive 的小 computed——一條 hover 不會讓別條重畫。
+//
+// 唯讀時（F2）沒有左右把手與連線圓點，選取中的條也不能拖（按下去照樣平移畫布，見 usePointerDrag.startBar）。
 import { computed } from 'vue'
 import { registerEl, registerPair, useDomRegistry } from '@/composables/useDomRegistry'
 import { TOUCH_UI_QUERY, useMediaQuery } from '@/composables/useMediaQuery'
@@ -136,7 +138,7 @@ const title = computed(() => {
   const t = props.task
   const rel = ringKind.value
   return (
-    (selected.value ? '' : '點擊以選取後才能拖曳｜') +
+    (selected.value || !ui.canEdit ? '' : '點擊以選取後才能拖曳｜') +
     `${t.name}｜${t.start} → ${t.end}｜${lengthOf(t)} 天` +
     (rel ? `（${rel === 'up' ? '前置任務' : rel === 'down' ? '後續任務' : '同分類'}）` : '')
   )
@@ -180,6 +182,7 @@ function onDown(e: PointerEvent): void {
       [`rel-${ringKind}`]: !!ringKind,
       dimmed,
       still,
+      readonly: !ui.canEdit,
     }"
     :data-taskid="id"
     :data-status="status"
@@ -193,6 +196,7 @@ function onDown(e: PointerEvent): void {
   >
     <template v-if="kind === 'task'">
       <div
+        v-if="ui.canEdit"
         class="handle handle-l"
         :class="{ live: selected }"
         @pointerdown="drag.startBar($event, id, 'resL')"
@@ -202,6 +206,7 @@ function onDown(e: PointerEvent): void {
       </div>
       <div class="bar-label" :class="{ 'has-badge': issueOpen }">{{ label }}</div>
       <div
+        v-if="ui.canEdit"
         class="handle handle-r"
         :class="{ live: selected }"
         @pointerdown="drag.startBar($event, id, 'resR')"
@@ -209,7 +214,7 @@ function onDown(e: PointerEvent): void {
     </template>
   </div>
 
-  <template v-if="kind === 'task'">
+  <template v-if="kind === 'task' && ui.canEdit">
     <div
       :ref="dotRefs.L"
       class="dot-zone zone-l"
@@ -318,6 +323,12 @@ function onDown(e: PointerEvent): void {
     0 0 0 1px color-mix(in srgb, var(--bar) 55%, transparent),
     0 0 6px 1.5px color-mix(in srgb, var(--bar) 50%, transparent),
     0 0 12px 4px color-mix(in srgb, var(--bar) 20%, transparent);
+}
+
+/* 唯讀（F2）：選取中的條不能拖，游標照一般條；手指在上面照常能捲動 */
+.bar.selected.readonly {
+  cursor: pointer;
+  touch-action: auto;
 }
 
 .bar.rel-up:not(.selected) {

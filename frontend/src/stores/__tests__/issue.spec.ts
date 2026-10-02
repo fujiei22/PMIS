@@ -57,7 +57,7 @@ describe('issueStore', () => {
   it('addIssue 依傳進來的任務帶入預設值', () => {
     const s = useIssueStore()
     const task = useTaskStore().taskById('t3')!
-    const i = s.addIssue(task, task.assigneeIds[0]!)
+    const i = s.addIssue(task, task.assigneeIds[0]!)!
     expect(i.id).toMatch(UUID)
     expect(i.taskId).toBe('t3')
     expect(i.title).toBe('新 Issue（點擊可改名）')
@@ -122,7 +122,7 @@ describe('issueStore', () => {
       const s = useIssueStore()
       mockApi.failNext('createIssue')
       const task = useTaskStore().taskById('t3')!
-      const i = s.addIssue(task, 'm1')
+      const i = s.addIssue(task, 'm1')!
       await vi.waitFor(() => expect(s.byId(i.id)).toBeUndefined())
       expect(useUiStore().errors[0]!.label).toBe('新增 Issue')
     })

@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia'
 import type { LoadState } from '@/types/ui'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ApiError, type ApiErrorCode } from '@/api/types'
 import { newId } from '@/lib/id'
 import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useIssueStore } from '@/stores/issue'
+import { useProjectStore } from '@/stores/project'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import type { DropTarget } from '@/types/models'
@@ -236,6 +237,42 @@ export const useUiStore = defineStore('ui', () => {
   /** Issue 卡片是否展開編輯表單。legacy `expIssue` :1566 */
   const expandedIssues = ref<Record<string, boolean>>({})
 
+  // ── 唯讀（F2）──────────────────────────────────────────────────────────────
+  /**
+   * 登入者能不能改這個專案（後端算，存在 project store）。元件讀它藏掉入口；
+   * 開確認框 / 相依編輯器 / 負責人選擇器 / 就地編輯一律走下面的 action，唯讀時不開。
+   * 資料層另外再擋一次（task / issue / comment 的寫入 action），這裡只管畫面。
+   */
+  const canEdit = computed(() => useProjectStore().canEdit)
+
+  /** 兩步刪除確認的第一步；唯讀時不開。 */
+  function askDelete(kind: 'task' | 'group' | 'dep' | 'issue', id: string, label?: string): void {
+    if (!canEdit.value) return
+    confirm.value = label === undefined ? { kind, id, step: 1 } : { kind, id, step: 1, label }
+  }
+
+  /** 開相依編輯器；唯讀時不開。 */
+  function openDepEditor(taskId: string): void {
+    if (!canEdit.value) return
+    depEditFor.value = taskId
+  }
+
+  /** 展開 / 收合詳情裡的負責人選擇器；唯讀時只能收、不能開。 */
+  function toggleAssigneePicker(taskId: string): void {
+    if (pickerFor.value === taskId) {
+      pickerFor.value = null
+      return
+    }
+    if (!canEdit.value) return
+    pickerFor.value = taskId
+  }
+
+  /** 進就地編輯（分類名 / 任務名 / Issue 標題 / 詳情標題）；唯讀時不進。 */
+  function startEdit(kind: 'g' | 't' | 'i' | 'dt', id: string): void {
+    if (!canEdit.value) return
+    editing.value = { kind, id }
+  }
+
   // ── 拖曳共享狀態（S2 定型別、S3 元件讀、S5 填值）────────────────────────────
   const drag = ref<DragState | null>(null)
   const linkLine = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
@@ -417,6 +454,26 @@ export const useUiStore = defineStore('ui', () => {
   )
 
   /**
+   * 變成唯讀（例如背景重載回來時 PM 已經換人）：開著的編輯類浮層與就地編輯一律關掉，
+   * 不留「看得到卻不能用」的東西。詳細視窗、Lightbox、下拉這些看的東西不動。
+   */
+  watch(
+    canEdit,
+    (on) => {
+      if (on) return
+      editing.value = null
+      confirm.value = null
+      depEditFor.value = null
+      pickerFor.value = null
+      optionMenu.value = null
+      rowMenu.value = null
+      taskDatePicker.value = null
+      issueDatePicker.value = null
+    },
+    { flush: 'sync' },
+  )
+
+  /**
    * 展開中的 Issue 卡另外一條（review F8）：它只跟 Issue 清單有關，
    * 併在上面那條裡會讓任何一筆任務的改動都去掃一次整份 `expandedIssues`。
    * getter 回字串（id 以空白相接）——一樣是 primitive，值沒變就不進 callback。
@@ -464,6 +521,11 @@ export const useUiStore = defineStore('ui', () => {
     reset,
     confirm,
     depEditFor,
+    canEdit,
+    askDelete,
+    openDepEditor,
+    toggleAssigneePicker,
+    startEdit,
     optionMenu,
     rowMenu,
     taskDatePicker,

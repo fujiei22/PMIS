@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 頂部固定列：專案名、面板捷徑、成員篩選、七個篩選 pill、日期範圍、清除篩選、只顯示篩選結果。
+// 頂部固定列：專案名（唯讀時旁邊加灰色「唯讀」tag）、面板捷徑、成員篩選、七個篩選 pill、日期範圍、清除篩選、只顯示篩選結果。
 // legacy 對照：模板 :56-292、各 pill 的 label / options :3657-3764。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -16,6 +16,7 @@ import { parseDuration } from '@/lib/easing'
 import { toggleIn } from '@/lib/filter'
 import { fmtDate } from '@/lib/format'
 import { useFilterStore } from '@/stores/filter'
+import { useMemberStore } from '@/stores/member'
 import { useProjectStore } from '@/stores/project'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -25,6 +26,7 @@ const ui = useUiStore()
 const filter = useFilterStore()
 const taskStore = useTaskStore()
 const project = useProjectStore()
+const memberStore = useMemberStore()
 const sticky = useStickyOffsetsContext()
 const registry = useDomRegistry()
 /** 首屏外的面板延後掛載（K1）：捷徑跳到還沒掛的面板前先掛上 */
@@ -210,6 +212,19 @@ onBeforeUnmount(() => {
   document.fonts?.removeEventListener('loadingdone', measureFit)
   if (fitRaf !== undefined) cancelAnimationFrame(fitRaf)
 })
+
+/**
+ * 唯讀 tag（F2，decisions Q10）：已載入、而且登入者不是這個專案的 PM 時，專案名旁放灰色「唯讀」，
+ * 滑過說明是誰在管。還沒載入時 canEdit 也是 false，所以要先看專案載入了沒（meta.id），載入中才不會閃一下。
+ * 顏色照「狀態只用 tag 上色」：只有 tag 本身是灰的，頂欄其他地方不變。
+ */
+const readonly = computed(() => !!project.meta.id && !project.canEdit)
+const readonlyTitle = computed(() => {
+  const pm = memberStore.byId(project.meta.pmId)
+  return pm ? `此專案由 ${pm.name} 管理` : '此專案由其他 PM 管理'
+})
+// tag 出現 / 消失會改變標題那一段的寬度，篩選器放不放得下要重量（MutationObserver 只看篩選器裡面）
+watch(readonly, () => measureFit(), { flush: 'post' })
 
 /** 面板捷徑；點了捲到該面板。legacy `boardLinks` :3540 + `jumpPanel` :2223 */
 const boardLinks = [
@@ -407,6 +422,9 @@ function clearFilters(): void {
       </RouterLink>
       <!-- 專案名最多 100 字：放不下時截斷加「…」，滑過看全名 -->
       <h1 class="project" :title="project.meta.name">{{ project.meta.name }}</h1>
+      <span v-if="readonly" class="readonly-tag" data-testid="readonly-tag" :title="readonlyTitle"
+        >唯讀</span
+      >
 
       <nav class="boards">
         <div
@@ -665,6 +683,21 @@ function clearFilters(): void {
   text-overflow: ellipsis;
   white-space: nowrap;
   margin: 0;
+}
+
+/* 唯讀 tag（F2）：灰色膠囊，只有唯讀時出現；不可點 */
+.readonly-tag {
+  flex: 0 0 auto;
+  padding: var(--pad-pill);
+  border: 1px solid var(--border-1);
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  color: var(--text-muted);
+  font-size: var(--fs-pill);
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
 }
 
 .boards {

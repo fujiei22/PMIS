@@ -17,12 +17,14 @@ import { useFilterStore } from '@/stores/filter'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useTaskStore } from '@/stores/task'
+import { useUiStore } from '@/stores/ui'
 import type { TaskStatus } from '@/types/models'
 
 /** 看板欄的順序，逐字取自 legacy :2989。 */
 const COLUMNS: TaskStatus[] = ['todo', 'doing', 'paused', 'done']
 
 const actions = useTaskActions()
+const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 const memberStore = useMemberStore()
@@ -73,8 +75,11 @@ useFocusRequest((req) => {
         <SortMenu kind="task" />
       </div>
       <div class="spacer"></div>
-      <button class="mini" @click="taskStore.addGroup()">＋ 新增分類</button>
-      <button class="mini" @click="actions.addTaskWithDefaults()">＋ 新增任務</button>
+      <!-- 唯讀時（F2）不給新增 -->
+      <template v-if="ui.canEdit">
+        <button class="mini" @click="taskStore.addGroup()">＋ 新增分類</button>
+        <button class="mini" @click="actions.addTaskWithDefaults()">＋ 新增任務</button>
+      </template>
     </template>
 
     <div class="board">

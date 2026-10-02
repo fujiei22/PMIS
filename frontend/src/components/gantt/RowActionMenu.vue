@@ -41,13 +41,13 @@ function daysDown(): void {
 
 /** 開相依編輯器（本體在 DependencyEditor）。legacy `onOpenDeps` :2873 */
 function openDeps(): void {
-  if (task.value) ui.depEditFor = task.value.id
+  if (task.value) ui.openDepEditor(task.value.id)
   close()
 }
 
 /** 刪除任務走兩步確認。legacy `onAskDelete` :2891 */
 function askDelete(): void {
-  if (task.value) ui.confirm = { kind: 'task', id: task.value.id, step: 1 }
+  if (task.value) ui.askDelete('task', task.value.id)
   close()
 }
 

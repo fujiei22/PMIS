@@ -44,6 +44,10 @@ const GROUP_ORDER_KEY = 'groups:order'
  *
  * 每個寫入 action 都是樂觀的（契約 B）：先改本地、再打 api，
  * 失敗時把牽動到的 id 放回 `tracker.server`（最後已知的 server 狀態）。
+ *
+ * 唯讀（F2）：每個寫入 action（含只改本地、之後才送出的 `*Local` / `applyLocalPatch`）第一行
+ * `if (!useProjectStore().canEdit) return`，唯讀時不改本地、不打 api。這是畫面藏掉入口之外的安全網；
+ * 新增 action 要在 `stores/__tests__/readonly.spec.ts` 分類，沒分類會紅。
  */
 export const useTaskStore = defineStore('task', () => {
   const groups = ref<Group[]>([])
@@ -271,7 +275,8 @@ export const useTaskStore = defineStore('task', () => {
   // ── 分類 ─────────────────────────────────────────────────────────────────
 
   /** 新增分類，接在最後。legacy `addGroup` :1849 */
-  function addGroup(): Group {
+  function addGroup(): Group | null {
+    if (!useProjectStore().canEdit) return null
     const g: Group = { id: newId(), name: '新分類 ' + (groups.value.length + 1) }
     groups.value.push(g)
     void runOptimistic<Group>({
@@ -286,6 +291,7 @@ export const useTaskStore = defineStore('task', () => {
 
   /** 只改本地的分類名（逐鍵編輯的每一鍵走這條）。legacy `onEdit` :2799 */
   function renameGroupLocal(id: string, name: string): void {
+    if (!useProjectStore().canEdit) return
     const g = groupById(id)
     if (!g) return
     g.name = name
@@ -298,6 +304,7 @@ export const useTaskStore = defineStore('task', () => {
    * 它不看本地有沒有變——`useEditDraft` 已經逐鍵 apply 過了。
    */
   async function commitGroupPatch(id: string, patch: Partial<Group>): Promise<void> {
+    if (!useProjectStore().canEdit) return
     clearDirty(groupTracker, [id])
     await runOptimistic<Group>({
       tracker: groupTracker,
@@ -309,6 +316,7 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   async function renameGroup(id: string, name: string): Promise<void> {
+    if (!useProjectStore().canEdit) return
     const g = groupById(id)
     if (!g || g.name === name) return
     renameGroupLocal(id, name)
@@ -320,6 +328,7 @@ export const useTaskStore = defineStore('task', () => {
    * 指到已刪 id 的選取 / 浮層由派生層的 watch 自己清（契約 E）。
    */
   async function removeGroup(id: string): Promise<void> {
+    if (!useProjectStore().canEdit) return
     const issues = useIssueStore()
     const comments = useCommentStore()
     if (!groupById(id)) return
@@ -363,6 +372,7 @@ export const useTaskStore = defineStore('task', () => {
 
   /** 分類與相鄰的那個對調（只改本地）；已在頭尾就不動，回傳有沒有真的動。legacy `moveGroup` :1835 */
   function moveGroupLocal(id: string, dir: -1 | 1): boolean {
+    if (!useProjectStore().canEdit) return false
     const i = groups.value.findIndex((g) => g.id === id)
     const j = i + dir
     const a = groups.value[i]
@@ -377,12 +387,14 @@ export const useTaskStore = defineStore('task', () => {
 
   /** 對調並送出；拖曳中的每一次對調請改用 `moveGroupLocal` + `commitGroupOrder`。 */
   async function moveGroup(id: string, dir: -1 | 1): Promise<void> {
+    if (!useProjectStore().canEdit) return
     if (!moveGroupLocal(id, dir)) return
     await commitGroupOrder()
   }
 
   /** 把目前的分類順序送給後端（拖曳放開時送這一次）。 */
   async function commitGroupOrder(): Promise<void> {
+    if (!useProjectStore().canEdit) return
     // review F2：這一段順序就此送出（或本來就沒動），不再是「還沒送出的本地變更」
     groupTracker.dirty.delete(GROUP_ORDER_KEY)
     const ids = groups.value.map((g) => g.id)
@@ -428,6 +440,7 @@ export const useTaskStore = defineStore('task', () => {
     start: ISODate
     end: ISODate
   }): Task | null {
+    if (!useProjectStore().canEdit) return null
     if (!groupById(opts.groupId)) return null
     const t: Task = {
       id: newId(),
@@ -457,6 +470,7 @@ export const useTaskStore = defineStore('task', () => {
    * 拖曳的每個 tick 走這條——不打 api，放開時再用 `collectDirtyTasks` + `commitTasks` 送一次。
    */
   function applyLocalPatch(id: string, patch: Partial<Task>): Task[] {
+    if (!useProjectStore().canEdit) return []
     const { tasks: next, changed } = applyTaskPatch(
       tasks.value,
       deps.value,
@@ -475,6 +489,7 @@ export const useTaskStore = defineStore('task', () => {
 
   /** 改任務欄位並連動下游，然後送給後端。legacy `setTask` :2294 */
   async function updateTask(id: string, patch: Partial<Task>): Promise<void> {
+    if (!useProjectStore().canEdit) return
     const changed = applyLocalPatch(id, patch)
     if (!changed.length) return
     // 沒有 cascade 的單筆變更送 patch（JSON merge patch）；
@@ -499,6 +514,7 @@ export const useTaskStore = defineStore('task', () => {
    * 只給不牽動排程的欄位用（名稱 / 優先度…）——會 cascade 的欄位請走 `updateTask`。
    */
   async function commitTaskPatch(id: string, patch: Partial<Task>): Promise<void> {
+    if (!useProjectStore().canEdit) return
     clearDirty(taskTracker, [id])
     await runOptimistic<Task>({
       tracker: taskTracker,
@@ -511,6 +527,7 @@ export const useTaskStore = defineStore('task', () => {
 
   /** 把一批已經改好的任務送出去（拖曳放開時用）。 */
   async function commitTasks(changed: Task[]): Promise<void> {
+    if (!useProjectStore().canEdit) return
     if (!changed.length) return
     const payload = changed.map((t) => cloneEntity(t))
     clearDirty(
@@ -528,6 +545,7 @@ export const useTaskStore = defineStore('task', () => {
 
   /** 把目前的任務順序（含 groupId）送給後端（拖曳放開時送這一次）。 */
   async function commitTaskOrder(): Promise<void> {
+    if (!useProjectStore().canEdit) return
     const order = tasks.value.map((t) => ({ id: t.id, groupId: t.groupId }))
     // review F2：這一段搬動就此送出，順序與被改到 groupId 的那幾筆都不再是「未送出」
     taskTracker.dirty.delete(TASK_ORDER_KEY)
@@ -570,6 +588,7 @@ export const useTaskStore = defineStore('task', () => {
    * 這條路徑是日期選擇器直接寫完成日，不該牽動任何排程。
    */
   async function setTaskDoneDirect(id: string, done: ISODate | ''): Promise<void> {
+    if (!useProjectStore().canEdit) return
     const t = taskById(id)
     if (!t || t.done === done) return
     t.done = done
@@ -588,6 +607,7 @@ export const useTaskStore = defineStore('task', () => {
    * legacy 刪完視窗會卡住不關 :1761）。
    */
   async function removeTask(id: string): Promise<void> {
+    if (!useProjectStore().canEdit) return
     const issues = useIssueStore()
     const comments = useCommentStore()
     if (!taskById(id)) return
@@ -641,6 +661,7 @@ export const useTaskStore = defineStore('task', () => {
    * 落在任務上：從上往下拖就插在目標後面，從下往上拖就插在前面。
    */
   function moveTaskToLocal(id: string, target: DropTarget): boolean {
+    if (!useProjectStore().canEdit) return false
     if (!target || target.id === id) return false
     const list = tasks.value.slice()
     const i = list.findIndex((t) => t.id === id)
@@ -678,6 +699,7 @@ export const useTaskStore = defineStore('task', () => {
 
   /** 搬動並送出；拖曳中的每一次搬動請改用 `moveTaskToLocal` + `commitTaskOrder`。 */
   async function moveTaskTo(id: string, target: DropTarget): Promise<void> {
+    if (!useProjectStore().canEdit) return
     if (!moveTaskToLocal(id, target)) return
     await commitTaskOrder()
   }
@@ -694,6 +716,7 @@ export const useTaskStore = defineStore('task', () => {
    * 「沒有相依卻被推過」的日期）。
    */
   function addDep(from: string, to: string): boolean {
+    if (!useProjectStore().canEdit) return false
     if (!from || !to || from === to) return false
     // review F4：兩端都得是真的任務——摘要條的 `sum-<gid>` 不是
     if (!taskById(from) || !taskById(to)) return false
@@ -740,6 +763,7 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   async function removeDep(id: string): Promise<void> {
+    if (!useProjectStore().canEdit) return
     if (!deps.value.some((d) => d.id === id)) return
     deps.value = deps.value.filter((d) => d.id !== id)
     await runOptimistic<Dependency>({

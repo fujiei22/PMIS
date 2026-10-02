@@ -17,6 +17,7 @@
 - 由 `legacy/Dashboard.html` 的 React 原型改寫而成，行為已用 `e2e/compare.spec.ts` 逐項和原型對照過；新舊有差異時改 `src/`，不改 `legacy/`。
 - 資料全在記憶體 mock（`src/api/mock/`），重新整理就回到範例資料。後端待建，前端已整成「換掉 `src/api/` 的實作就能接」。
 - 有登入頁（`/login`）：沒登入時任何頁面都會導到登入頁，登入後回原頁。mock 預設已登入（登入者是總覽的 m11「成員11」）；登出後任何格式正確的帳號（英數與 `.` `_` `-`）、不空的密碼都登得進去，`wrong_password` / `outsider` / `locked_out` / `ad_down` 四個帳號固定登入失敗，用來看各種失敗文案。總覽頂欄右端的登入者點了有選單（目前只有「登出」）。Dashboard 的 `currentUserId` 仍是範例資料裡固定的成員（m1），只決定留言掛誰。
+- 唯讀模式：`ProjectData.canEdit`（後端算：登入者是不是這個專案的 PM）是 false 時，Dashboard 整頁唯讀——專案名旁一個灰色「唯讀」tag，改資料的入口全部拿掉，資料層再擋一次。mock 預設可編輯，e2e 用 `__mockApi.setCanEdit(false)` 切（`e2e/readonly.spec.ts`）。規則見〈store 的三層〉的唯讀那段。
 - Dashboard 依路由的 `/projects/:id` 載入（`api.loadProject(id)`），換專案時先清空資料層與選取、篩選（`useProjectBoot`）。mock 只有一份完整專案資料（`mocks/sampleProject.ts`），任何 id 都回這一份；頂欄的專案名來自它的 `project.name`（`My Project`）。
 - 總覽裡 PMIS 的摘要，是由那份範例專案即時彙整出來的（`api/mock/portfolio.ts` 的 `summarizeProject()`），所以在 Dashboard 改了任務，回到總覽看得到。
   - 其他 6 個專案是靜態摘要（`mocks/samplePortfolio.ts`）。
@@ -47,7 +48,7 @@
 
 | 畫面區塊 | 元件 |
 |---|---|
-| 頂部篩選列與錯誤條 | `layout/TopBar`（FilterDropdown、FilterCalendar、MemberPicker、common/ErrorBar） |
+| 頂部篩選列與錯誤條（專案名旁的唯讀 tag 也在這裡） | `layout/TopBar`（FilterDropdown、FilterCalendar、MemberPicker、common/ErrorBar） |
 | 四張摘要卡（總時長與進度合一張、任務狀態、Issue 統計、預算 vs. 支出） | `summary/SummaryCards` |
 | 甘特圖 | `gantt/GanttPanel`（GanttTimeline、GanttGroupRow、GanttTaskRow、GanttBars → GanttBar、DependencyLines）；任務列「⋮」的動作選單 `gantt/RowActionMenu` |
 | 任務看板 | `kanban/KanbanPanel`（KanbanHeader、TaskCard） |
@@ -82,6 +83,7 @@
 |---|---|
 | 加或改資料欄位 | `types/models.ts` → `api/types.ts`（檔頭 wire 約定）→ `api/mock/store.ts` → 對應資料層 store 的 action → 元件 → 各自旁邊的 `__tests__/` → 本檔〈端點對照表〉 |
 | 加一支 api 方法 | `api/types.ts` 的 `ProjectApi` → `api/mock/index.ts` → store action → 本檔〈端點對照表〉（`readme.spec.ts` 會比對兩邊） |
+| 加會改資料的操作（按鈕、選單、拖曳、就地編輯） | 資料層 action 第一行擋 `canEdit`，並在 `stores/__tests__/readonly.spec.ts` 分類 → 元件用 `ui.canEdit` 藏掉入口（開浮層走 `useMenus` / `ui.askDelete` 這類唯讀時自己不開的 action）→ `e2e/readonly.spec.ts` 加一條（見〈store 的三層〉的唯讀那段） |
 | 加畫面狀態（開關、選取、篩選） | 派生層 store 加欄位，元件直接寫：Dashboard 是 `ui` / `filter` / `selection`，總覽是 `overview` |
 | 加 store，或在 store 加欄位 | 該 store 的 `reset()`（或既有的清空函式）要清得到它，`composables/useSession.ts` 的 `resetSession()` 要呼叫到；登出後下一位使用者不能看到上一位的東西。`composables/__tests__/useSession.spec.ts` 檢查重置後每個 store 都等於全新的初始狀態，漏了就紅 |
 | 加登入者選單的項目（回收桶、匯入專案…） | `components/overview/UserMenu.vue`（加在「登出」上面） |
@@ -132,6 +134,7 @@ Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<s
 | 測試 | 守什麼 |
 |---|---|
 | `src/stores/__tests__/imports.spec.ts` | store 三層的 import 白名單，資料層不得引用派生層 |
+| `src/stores/__tests__/readonly.spec.ts` | Dashboard 資料層 store 的每個函式都要分類（寫入 / 讀取 / 內部 / 任何登入者都能做）；唯讀時每個寫入都不打 api、不改狀態 |
 | `src/__tests__/no-query-selector.spec.ts` | `src/**` 執行期不得用 `querySelector` 等 DOM 選擇器（唯一例外 `useClickOutside`） |
 | `src/__tests__/readme.spec.ts` | 本檔〈端點對照表〉〈錯誤碼對照表〉與 `api/types.ts` 一致；〈目錄結構〉的 composables 清單提到 `src/composables/` 底下每一支（新增 composable 要一起補說明） |
 | `src/mocks/__tests__/consistency.spec.ts` | 範例資料必須已是 cascade 之後的樣子 |
@@ -157,9 +160,10 @@ Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<s
 
 - `playwright.config.ts` 會自己起一份 dev server（`reuseExistingServer: false`），不必事先 `npm run dev`；port 由 `PLAYWRIGHT_PORT` 決定，預設 5174。
 - 全部 e2e 的時鐘固定在 `2026-09-18T10:00:00`（`e2e/helpers/clock.ts` 的 `setFixedTime(page)`），否則「已延遲」「今天」這類跟當下時間有關的斷言會隨日期改變。副作用：Vue 用 `Date.now()` 判斷事件是不是在 listener 掛上之前發生的，時鐘凍住時，同一個事件傳遞路徑上的第二個 Vue listener 會被略過（例：同一元素另掛 `@pointerdown.capture`）。同一個事件要做兩件事就合成一個 handler（`OverviewTimeline` 的 `onBodyPointerDown`）。
-- 靠 `window.__mockApi` 的 e2e，接上真後端之後會自動跳過（見[怎麼接後端](#怎麼接後端)）。共有四條：
+- 靠 `window.__mockApi` 的 e2e，接上真後端之後會自動跳過（見[怎麼接後端](#怎麼接後端)）。有這些：
   - `e2e/interactions.spec.ts`：兩條注入 api 失敗的測試。
   - `e2e/overview.spec.ts`：「載入失敗」與「Dashboard 改了資料回總覽看得到」。
+  - `e2e/readonly.spec.ts`：唯讀模式的各條（`setCanEdit`；最後一條「預設沒有唯讀 tag」不靠它）。
 - Dashboard 的 e2e 一律開 `/projects/pmis`（`e2e/helpers/dashboardPage.ts`）；總覽開 `/`（`e2e/helpers/overviewPage.ts`）。
 - 總覽網址帶 `#timeline` 會直接開時間軸檢視。這是**單向**的慣例：只在進頁時讀一次，切換檢視不會寫回網址，是給 e2e 與截圖用的。
 - 時間軸每次重建（進頁、面板收合再展開、空狀態切回來）都會橫向捲回今天，不保留上一次的橫向捲動位置，這是刻意的。
@@ -303,6 +307,14 @@ store 分三層，依賴**只能由上往下**：
 
 `session.ts` 存登入者（`info`：成員 id / 姓名 / 角色）與「問過後端了沒」（`checked`），只給登入守衛導頁與畫面顯示用；權限一律由後端判斷。
 
+**唯讀**（`canEdit` 是 false）分三層一致地關，加任何會改資料的東西都要三層一起做：
+
+1. **資料層擋**（安全網）：`task` / `issue` / `comment` 每個寫入 action（含只改本地、之後才送出的 `*Local` / `applyLocalPatch`、草稿附件）第一行 `if (!useProjectStore().canEdit) return`。`src/stores/__tests__/readonly.spec.ts` 要求每個函式都分類到 `WRITE_ACTIONS` / `READ_ACTIONS` / `INTERNAL_ACTIONS`（載入、事件、跟 server 對齊、清理）/ `ANY_USER_ACTIONS`（不受唯讀擋的寫入；目前沒有，之後的「改專案擁有者」會放這裡），新 action 沒分類就紅。
+2. **集中的開關點**：`useMenus` 的四支（選項選單、兩種日期選擇器、列尾「⋮」）與 `usePointerDrag` 會改資料的四種拖曳（條、連線、列與分類排序）唯讀時 no-op、也不攔下事件（點擊照常落到列 / 卡片去選取，按在條上照常平移畫布）；開刪除確認、相依編輯器、負責人選擇器、就地編輯一律走 `ui.askDelete` / `ui.openDepEditor` / `ui.toggleAssigneePicker` / `ui.startEdit`，唯讀時不開。變成唯讀的當下（例如背景重載回來 PM 已經換人），`ui` 會關掉開著的編輯類浮層。
+3. **元件藏掉入口**（看得到卻點不動最糟）：元件讀 `ui.canEdit`，新增 / 刪除鈕、「⋮」、排序把手、連線圓點與縮放把手、留言草稿區用 `v-if` 拿掉；看板卡片 `draggable` 綁它；只是顯示的膠囊拿掉 ▼、游標與 hover；輸入框加 `readonly`。頂欄的「唯讀」tag 在 `TopBar`（已載入而且 `canEdit` 是 false 才出現，滑過顯示「此專案由 ○○ 管理」）。
+
+伺服器回 403（PM 中途換人）照一般失敗走：`runOptimistic` 還原、錯誤條「沒有權限」。
+
 離開頁面時，兩邊的狀態處理方式不同：
 - `overview` store 會保留：從 Dashboard 回到總覽時，篩選、排序、展開與檢視都還在。
 - Dashboard 卸載時，`ui.resetTransient()` 會清掉詳細視窗與浮層這類暫態，回來時不會自己打開。
@@ -321,7 +333,7 @@ store 分三層，依賴**只能由上往下**：
 
 | | 誰可以寫 | 例子 |
 |---|---|---|
-| **UI 狀態欄位**：`ui` / `filter` / `comment` 裡描述畫面狀態的 `ref` | 元件可以直接寫 | `ui.editing = { kind: 't', id }`、`filter.issueMode = 'has'`、`comment.tab = 'files'` |
+| **UI 狀態欄位**：`ui` / `filter` / `comment` 裡描述畫面狀態的 `ref` | 元件可以直接寫；**打開**就地編輯、刪除確認、相依編輯器、負責人選擇器例外，走 `ui.startEdit` / `ui.askDelete` / `ui.openDepEditor` / `ui.toggleAssigneePicker`（唯讀時不開，關掉照樣直接寫 `null`） | `ui.editing = null`、`filter.issueMode = 'has'`、`comment.tab = 'files'` |
 | **資料欄位**：`tasks` / `issues` / `deps` / `groups` / `comments` | 只經 action | `taskStore.updateTask()`、`issueStore.update()`、`commentStore.send()` |
 
 分界在「有沒有連動」：資料欄位背後有 cascade 排程、api 呼叫與失敗還原、刪除時的懸空 id 清理，繞過 action 直接改陣列就會漏做這些；UI 狀態欄位沒有這層規則，走 action 只是多包一層。
@@ -357,7 +369,7 @@ store 分三層，依賴**只能由上往下**：
 | `data-rel` | 任務卡 | `up` / `down` / `group` / 空 | ✗ |
 | `data-status` | 甘特條 / 任務卡 / Issue 卡 | 狀態 key，或 `delayed` | ✗ |
 | `data-panel` | 面板外殼 | `gantt` / `kanban` / `issues` | ✗ |
-| `data-testid` | 摘要卡 `summary-progress`（含專案總時長） / `summary-tasks` / `summary-issues` / `summary-budget`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count`；甘特左欄的展開鈕 `gantt-left-toggle`（只在 < 900px 出現） | 固定字串 | ✗ |
+| `data-testid` | 摘要卡 `summary-progress`（含專案總時長） / `summary-tasks` / `summary-issues` / `summary-budget`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count`；甘特左欄的展開鈕 `gantt-left-toggle`（只在 < 900px 出現）；頂欄專案名旁的唯讀 tag `readonly-tag`（只在唯讀時出現） | 固定字串 | ✗ |
 
 總覽頁的屬性。legacy 沒有這一頁，所以下表全部都不能用在新舊對照測試：
 
@@ -536,7 +548,7 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 
 ### e2e 與 mock 把手
 
-dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (import.meta.env.DEV)`），e2e 用它注入延遲與失敗（`failNext` / `setLatency` / `reset` / `emit`）。總覽的載入失敗用 `failNext('listProjects')`。
+dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (import.meta.env.DEV)`），e2e 用它注入延遲與失敗（`failNext` / `setLatency` / `reset` / `emit`），以及切唯讀（`setCanEdit(false)`：之後的 `loadProject` 回 `canEdit: false`；mock 不判斷權限，寫入照做）。總覽的載入失敗用 `failNext('listProjects')`。
 
 接上真後端之後 `window.__mockApi` 會是 `undefined`，這幾條開頭就是 `test.skip(!__mockApi)`，會自動跳過，其餘照跑：`e2e/interactions.spec.ts` 的**那兩條**（api 失敗後還原並顯示錯誤條、載入失敗後重試）、`e2e/errorbar-motion.spec.ts` 的頁頂與捲到中段兩條（`failNext('updateTask')` 讓錯誤條出現；另四條直接呼叫 `ui.pushError`，不需要 mock）、`e2e/load-motion.spec.ts` 的重進 Dashboard（`setLatency`）與載入次數守門。要在真後端上也測失敗路徑，就換成在 `page.route()` 攔 HTTP 回錯誤碼。
 

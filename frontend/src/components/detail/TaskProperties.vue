@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 詳細視窗左欄（任務）：負責人、分類、時程、建立、完成日、優先度、執行狀態、相依、Issue 清單。
+// 唯讀時（F2）沒有指派 / 移除負責人、編輯相依、開立 Issue、刪除，膠囊只是顯示（點了不開選單）。
 // legacy 對照：模板 :887-1007，欄位來源是看板卡片那份 view-model（columns[].tasks :2999-3113）。
 import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
@@ -56,7 +57,7 @@ const pickerMounted = useDelayedUnmount(pickerOpen, 220)
 
 /** 展開 / 收合負責人選擇器。legacy `onTogglePicker` :3077 */
 function togglePicker(): void {
-  ui.pickerFor = pickerOpen.value ? null : props.task.id
+  ui.toggleAssigneePicker(props.task.id)
 }
 
 function removeAssignee(id: string): void {
@@ -96,12 +97,12 @@ function addIssue(): void {
 
 /** 刪任務走兩步確認；刪完 removeTask 會清 ui.detail 讓視窗正常關閉。legacy `onAskDelete` :3099 */
 function askDelete(): void {
-  ui.confirm = { kind: 'task', id: props.task.id, step: 1 }
+  ui.askDelete('task', props.task.id)
 }
 </script>
 
 <template>
-  <div class="props task-props">
+  <div class="props task-props" :class="{ readonly: !ui.canEdit }">
     <!-- 負責人 -->
     <div class="row">
       <div class="label"><span class="glyph">◍</span><span>負責人</span></div>
@@ -109,9 +110,13 @@ function askDelete(): void {
         <div v-for="m in assigned" :key="m.id" class="chip">
           <Avatar :member="m" :size="16" />
           <span>{{ m.name }}</span>
-          <span class="chip-x" role="button" @click.stop="removeAssignee(m.id)">✕</span>
+          <span v-if="ui.canEdit" class="chip-x" role="button" @click.stop="removeAssignee(m.id)"
+            >✕</span
+          >
         </div>
-        <div class="chip-add" role="button" @click.stop="togglePicker()">＋ 指派</div>
+        <div v-if="ui.canEdit" class="chip-add" role="button" @click.stop="togglePicker()">
+          ＋ 指派
+        </div>
       </div>
     </div>
     <div class="picker-wrap" :style="{ gridTemplateRows: pickerOpen ? '1fr' : '0fr' }">
@@ -134,11 +139,7 @@ function askDelete(): void {
     <!-- 分類 -->
     <div class="row">
       <div class="label"><span class="glyph">▤</span><span>分類</span></div>
-      <div
-        class="pill pill-plain"
-        role="button"
-        @click.stop="openOptionMenu($event, task.id, 'group')"
-      >
+      <div class="pill pill-plain" role="button" @click="openOptionMenu($event, task.id, 'group')">
         <span class="pill-text">{{ groupName }}</span
         ><span class="pill-caret">▼</span>
       </div>
@@ -147,11 +148,7 @@ function askDelete(): void {
     <!-- 時程 -->
     <div class="row">
       <div class="label"><span class="glyph">▦</span><span>時程</span></div>
-      <div
-        class="pill pill-plain mono"
-        role="button"
-        @click.stop="openTaskDatePicker($event, task.id)"
-      >
+      <div class="pill pill-plain mono" role="button" @click="openTaskDatePicker($event, task.id)">
         <span class="pill-text">{{ rangeLabel }}</span
         ><span class="pill-caret">▼</span>
       </div>
@@ -169,7 +166,7 @@ function askDelete(): void {
       <div
         class="pill pill-plain mono"
         role="button"
-        @click.stop="openIssueDatePicker($event, task.id, 'done', task.done, 'task')"
+        @click="openIssueDatePicker($event, task.id, 'done', task.done, 'task')"
       >
         <span class="pill-text">{{ donePill }}</span
         ><span class="pill-caret">▼</span>
@@ -183,7 +180,7 @@ function askDelete(): void {
         class="pill pill-prio"
         :style="{ background: pr.color }"
         role="button"
-        @click.stop="openOptionMenu($event, task.id, 'priority')"
+        @click="openOptionMenu($event, task.id, 'priority')"
       >
         <span class="pill-text">{{ pr.label }}</span
         ><span class="pill-caret on-solid">▼</span>
@@ -200,7 +197,7 @@ function askDelete(): void {
           background: `color-mix(in srgb, ${st.bar} 12%, transparent)`,
         }"
         role="button"
-        @click.stop="openOptionMenu($event, task.id, 'status')"
+        @click="openOptionMenu($event, task.id, 'status')"
       >
         <span class="status-dot" :style="{ background: st.bar }"></span>
         <span class="pill-text">{{ st.label }}</span
@@ -217,7 +214,12 @@ function askDelete(): void {
       <div class="dep-col">
         <div class="dep-line">前置：{{ predLabel }}</div>
         <div class="dep-line">後續：{{ succLabel }}</div>
-        <div class="dep-edit-link" role="button" @click.stop="ui.depEditFor = task.id">
+        <div
+          v-if="ui.canEdit"
+          class="dep-edit-link"
+          role="button"
+          @click.stop="ui.openDepEditor(task.id)"
+        >
           編輯相依關係
         </div>
       </div>
@@ -252,7 +254,7 @@ function askDelete(): void {
             borderColor: ISSUE_STATUS[i.status].bd,
           }"
           role="button"
-          @click.stop="openOptionMenu($event, i.id, 'istatus')"
+          @click="openOptionMenu($event, i.id, 'istatus')"
         >
           <span>{{ ISSUE_STATUS[i.status].label }}</span
           ><span class="issue-caret">▼</span>
@@ -261,7 +263,7 @@ function askDelete(): void {
       </div>
     </div>
 
-    <div class="foot">
+    <div v-if="ui.canEdit" class="foot">
       <div class="add-issue" role="button" @click.stop="addIssue()">＋ 開立 Issue</div>
       <div class="foot-gap"></div>
       <div class="delete-task" role="button" @click.stop="askDelete()">刪除</div>
@@ -421,6 +423,29 @@ function askDelete(): void {
 .pill:hover {
   filter: var(--hover-dim);
   box-shadow: var(--ring-node);
+}
+
+/* 唯讀（F2）：膠囊與 Issue 列上的狀態只是顯示，拿掉可以點的提示（列上的狀態點了等於點那一列：開 Issue） */
+.readonly .pill {
+  cursor: default;
+}
+
+.readonly .issue-status {
+  cursor: inherit;
+}
+
+.readonly .pill:hover {
+  filter: none;
+  box-shadow: none;
+}
+
+.readonly .issue-status:hover {
+  filter: none;
+}
+
+.readonly .pill-caret,
+.readonly .issue-caret {
+  display: none;
 }
 
 .pill-plain {

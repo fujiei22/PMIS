@@ -11,6 +11,10 @@ const EMPTY_META: ProjectMeta = { id: '', name: '', pmId: '' }
  *
  * `canEdit` 由後端算，前端不自己拿 `meta.pmId` 比對登入者（權限規則只留在後端一處）。
  * 還沒載入時是 false：資料還沒到，不該有任何寫入。
+ *
+ * 唯讀（F2）：`canEdit` 是 false 時，task / issue / comment 的寫入 action 第一行就 return（資料層的安全網）；
+ * 畫面讀 `ui.canEdit` 藏掉入口。唯一不受它擋的寫入是之後的「改專案擁有者」（F8，任何登入者都能做），
+ * 會列在 `stores/__tests__/readonly.spec.ts` 的 `ANY_USER_ACTIONS`。
  */
 export const useProjectStore = defineStore('project', () => {
   const meta = ref<ProjectMeta>({ ...EMPTY_META })

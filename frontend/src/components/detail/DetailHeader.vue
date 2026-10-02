@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 詳細視窗的標題列：堆疊返回鈕、可雙擊編輯的標題、關閉 ✕。
+// 唯讀時（F2）標題只是顯示：雙擊不進編輯（ui.startEdit 擋），也拿掉可編輯的游標與 hover。
 // legacy 對照：模板 :865-881，titleEdit / titleKey :3796-3803。
 import { computed, nextTick, ref, watch } from 'vue'
 import { visualLen } from '@/lib/format'
@@ -49,7 +50,7 @@ watch(editing, async (on) => {
 })
 
 function startEdit(): void {
-  ui.editing = { kind: 'dt', id: props.editId }
+  ui.startEdit('dt', props.editId)
 }
 
 function endEdit(): void {
@@ -87,7 +88,14 @@ function onKey(e: KeyboardEvent): void {
         <span class="back-title">{{ stackTitle }}</span>
       </div>
 
-      <div v-if="!editing" class="detail-title" @dblclick="startEdit()">{{ name }}</div>
+      <div
+        v-if="!editing"
+        class="detail-title"
+        :class="{ readonly: !ui.canEdit }"
+        @dblclick="startEdit()"
+      >
+        {{ name }}
+      </div>
       <textarea
         v-else
         ref="inputEl"
@@ -171,6 +179,14 @@ function onKey(e: KeyboardEvent): void {
 
 .detail-title:hover {
   background: var(--surface-3);
+}
+
+.detail-title.readonly {
+  cursor: auto;
+}
+
+.detail-title.readonly:hover {
+  background: transparent;
 }
 
 .detail-title-input {

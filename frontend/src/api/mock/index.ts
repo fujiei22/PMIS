@@ -65,6 +65,8 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
   let latency = 0
   /** 登入中的人；null = 沒登入（`setSession(null)` 或 `logout()` 之後）。 */
   let session: SessionInfo | null = defaultSession()
+  /** `setCanEdit` 的覆寫；null＝照資料（範例是 true）。 */
+  let canEditOverride: boolean | null = null
 
   function emit(e: ProjectEvent): void {
     // review M4：一個 handler 拋錯不能連累其他 handler，更不能讓呼叫端的 promise 變成 reject
@@ -164,8 +166,13 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
       }),
 
     // mock 只有一份完整專案：不看 id、任何 id 都回它（README〈現況〉）；
-    // 權限也不判斷，canEdit 照資料（範例是 true）
-    loadProject: () => call('loadProject', () => store.snapshot()),
+    // 權限也不判斷，canEdit 照資料（範例是 true），e2e 用 setCanEdit 改
+    loadProject: () =>
+      call('loadProject', () => {
+        const data = store.snapshot()
+        if (canEditOverride !== null) data.canEdit = canEditOverride
+        return data
+      }),
 
     // PMIS 摘要從 store 目前的資料即時彙整，Dashboard 的改動回總覽就看得到（spec 7b）。
     // 今天取系統時鐘：e2e 用 page.clock 固定，單元測試改呼叫 buildPortfolio 直接給日期。
@@ -309,10 +316,15 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
       failures.clear()
       latency = 0
       session = defaultSession()
+      canEditOverride = null
     },
 
     setSession(info: SessionInfo | null): void {
       session = info ? { ...info } : null
+    },
+
+    setCanEdit(v: boolean): void {
+      canEditOverride = v
     },
   }
 

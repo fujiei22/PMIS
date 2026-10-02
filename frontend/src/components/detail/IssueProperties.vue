@@ -2,6 +2,7 @@
 // 詳細視窗左欄（Issue）：等級 / 分類 / 所屬任務 / 建立者 / 負責人 / 期限 / 完成日 / 建立 / 處理狀態
 // ＋ 測試環境四欄與問題描述、對策、BIOS 解決版本。
 // legacy 對照：模板 :1009-1092，issueDetail :3281-3346。
+// 唯讀時（F2）膠囊只是顯示（點了不開選單）、輸入框 readonly、沒有刪除鈕。
 import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import { useEditDraft, type EditDraft } from '@/composables/useEditDraft'
@@ -13,11 +14,13 @@ import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useTaskStore } from '@/stores/task'
+import { useUiStore } from '@/stores/ui'
 import type { Issue } from '@/types/models'
 
 const props = defineProps<{ issue: Issue }>()
 
 const clock = useClockStore()
+const ui = useUiStore()
 const issueStore = useIssueStore()
 const taskStore = useTaskStore()
 const memberStore = useMemberStore()
@@ -90,15 +93,11 @@ function removeIssue(): void {
 </script>
 
 <template>
-  <div class="props issue-props">
+  <div class="props issue-props" :class="{ readonly: !ui.canEdit }">
     <!-- 等級 -->
     <div class="row">
       <div class="label"><span class="glyph">⚑</span><span>等級 Class</span></div>
-      <div
-        class="pill pill-plain"
-        role="button"
-        @click.stop="openOptionMenu($event, issue.id, 'ipri')"
-      >
+      <div class="pill pill-plain" role="button" @click="openOptionMenu($event, issue.id, 'ipri')">
         <span class="level-dot" :style="{ background: cls.color }"></span>
         <span class="pill-text bold" :style="{ color: cls.text }">{{ cls.label }}</span>
         <span class="pill-caret">▼</span>
@@ -108,11 +107,7 @@ function removeIssue(): void {
     <!-- 分類 -->
     <div class="row">
       <div class="label"><span class="glyph">▤</span><span>分類 Item</span></div>
-      <div
-        class="pill pill-plain"
-        role="button"
-        @click.stop="openOptionMenu($event, issue.id, 'iitem')"
-      >
+      <div class="pill pill-plain" role="button" @click="openOptionMenu($event, issue.id, 'iitem')">
         <span class="pill-text">{{ itemLabel }}</span
         ><span class="pill-caret">▼</span>
       </div>
@@ -125,7 +120,7 @@ function removeIssue(): void {
         class="pill pill-plain"
         :title="taskName"
         role="button"
-        @click.stop="openOptionMenu($event, issue.id, 'itask')"
+        @click="openOptionMenu($event, issue.id, 'itask')"
       >
         <span class="pill-text">{{ taskName }}</span
         ><span class="pill-caret">▼</span>
@@ -138,7 +133,7 @@ function removeIssue(): void {
       <div
         class="pill pill-plain pill-avatar"
         role="button"
-        @click.stop="openOptionMenu($event, issue.id, 'icreator')"
+        @click="openOptionMenu($event, issue.id, 'icreator')"
       >
         <Avatar :member="creator" :size="18" />
         <span class="pill-text">{{ creatorName }}</span
@@ -152,7 +147,7 @@ function removeIssue(): void {
       <div
         class="pill pill-plain pill-avatar"
         role="button"
-        @click.stop="openOptionMenu($event, issue.id, 'iowner')"
+        @click="openOptionMenu($event, issue.id, 'iowner')"
       >
         <Avatar
           v-for="(m, i) in ownerAvatars"
@@ -173,7 +168,7 @@ function removeIssue(): void {
       <div
         class="pill pill-plain mono"
         role="button"
-        @click.stop="openIssueDatePicker($event, issue.id, 'due', issue.due)"
+        @click="openIssueDatePicker($event, issue.id, 'due', issue.due)"
       >
         <span class="pill-text">{{ duePill }}</span
         ><span class="pill-caret">▼</span>
@@ -186,7 +181,7 @@ function removeIssue(): void {
       <div
         class="pill pill-plain mono"
         role="button"
-        @click.stop="openIssueDatePicker($event, issue.id, 'done', issue.done)"
+        @click="openIssueDatePicker($event, issue.id, 'done', issue.done)"
       >
         <span class="pill-text">{{ donePill }}</span
         ><span class="pill-caret">▼</span>
@@ -209,7 +204,7 @@ function removeIssue(): void {
           background: `color-mix(in srgb, ${ist.fg} 12%, transparent)`,
         }"
         role="button"
-        @click.stop="openOptionMenu($event, issue.id, 'istatus')"
+        @click="openOptionMenu($event, issue.id, 'istatus')"
       >
         <span class="status-dot" :style="{ background: ist.fg }"></span>
         <span class="pill-text">{{ ist.label }}</span
@@ -229,6 +224,7 @@ function removeIssue(): void {
           <input
             :value="issue.pcb"
             placeholder="A0"
+            :readonly="!ui.canEdit"
             @click.stop
             @input="onField('pcb', $event)"
             @blur="flushField('pcb')"
@@ -239,6 +235,7 @@ function removeIssue(): void {
           <input
             :value="issue.bios"
             placeholder="06+0.03"
+            :readonly="!ui.canEdit"
             @click.stop
             @input="onField('bios', $event)"
             @blur="flushField('bios')"
@@ -249,6 +246,7 @@ function removeIssue(): void {
           <input
             :value="issue.os"
             placeholder="Win11 24H2"
+            :readonly="!ui.canEdit"
             @click.stop
             @input="onField('os', $event)"
             @blur="flushField('os')"
@@ -259,6 +257,7 @@ function removeIssue(): void {
           <input
             :value="issue.ptype"
             placeholder="I/O Function"
+            :readonly="!ui.canEdit"
             @click.stop
             @input="onField('ptype', $event)"
             @blur="flushField('ptype')"
@@ -274,6 +273,7 @@ function removeIssue(): void {
         <textarea
           :value="issue.desc"
           placeholder="重現步驟、環境條件與實際現象…"
+          :readonly="!ui.canEdit"
           @click.stop
           @input="onField('desc', $event)"
           @blur="flushField('desc')"
@@ -284,6 +284,7 @@ function removeIssue(): void {
         <textarea
           :value="issue.solution"
           placeholder="處理方式、對策與驗證結果…"
+          :readonly="!ui.canEdit"
           @click.stop
           @input="onField('solution', $event)"
           @blur="flushField('solution')"
@@ -294,6 +295,7 @@ function removeIssue(): void {
         <input
           :value="issue.solvedBios"
           placeholder="例如 06+0.05"
+          :readonly="!ui.canEdit"
           @click.stop
           @input="onField('solvedBios', $event)"
           @blur="flushField('solvedBios')"
@@ -301,7 +303,7 @@ function removeIssue(): void {
       </label>
     </div>
 
-    <div class="foot">
+    <div v-if="ui.canEdit" class="foot">
       <div class="foot-gap"></div>
       <div class="delete-issue" role="button" @click.stop="removeIssue()">刪除 Issue</div>
     </div>
@@ -358,6 +360,20 @@ function removeIssue(): void {
 .pill:hover {
   filter: var(--hover-dim);
   box-shadow: var(--ring-node);
+}
+
+/* 唯讀（F2）：膠囊只是顯示，拿掉可以點的提示 */
+.readonly .pill {
+  cursor: default;
+}
+
+.readonly .pill:hover {
+  filter: none;
+  box-shadow: none;
+}
+
+.readonly .pill-caret {
+  display: none;
 }
 
 .pill-plain {
@@ -534,6 +550,22 @@ function removeIssue(): void {
   background: var(--surface-1);
   border-color: var(--accent);
   outline: none;
+}
+
+/* 唯讀的輸入框：focus 不換底色、不亮框，也不顯示範例提示字（空欄位就是空的） */
+.field input[readonly]:focus {
+  background: var(--surface-3);
+  border-color: transparent;
+}
+
+.field textarea[readonly]:focus {
+  background: var(--surface-2);
+  border-color: var(--border-1);
+}
+
+.field input[readonly]::placeholder,
+.field textarea[readonly]::placeholder {
+  color: transparent;
 }
 
 .foot {

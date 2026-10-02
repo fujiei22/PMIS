@@ -192,9 +192,9 @@ onBeforeUnmount(() => {
   if (raf !== undefined) cancelAnimationFrame(raf)
 })
 
-/** 點線 → 兩步刪除確認。legacy `onDelete` :2982 */
+/** 點線 → 兩步刪除確認。legacy `onDelete` :2982。唯讀時（F2）ui.askDelete 不開，提示也不提刪除。 */
 function askDelete(p: DepPath): void {
-  ui.confirm = { kind: 'dep', id: p.id, step: 1, label: p.label }
+  ui.askDelete('dep', p.id, p.label)
 }
 </script>
 
@@ -222,13 +222,14 @@ function askDelete(p: DepPath): void {
       v-for="p in paths"
       :key="`hit-${p.id}`"
       class="dep-hit"
+      :class="{ readonly: !ui.canEdit }"
       :points="p.pts"
       fill="none"
       stroke="transparent"
       stroke-width="11"
       @click.stop="askDelete(p)"
     >
-      <title>{{ p.title }}</title>
+      <title>{{ ui.canEdit ? p.title : p.label }}</title>
     </polyline>
   </svg>
 
@@ -278,6 +279,10 @@ function askDelete(p: DepPath): void {
 .dep-hit {
   pointer-events: stroke;
   cursor: pointer;
+}
+
+.dep-hit.readonly {
+  cursor: auto;
 }
 
 .link-layer {

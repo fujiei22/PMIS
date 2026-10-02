@@ -6,6 +6,7 @@ import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useIssueStore } from '@/stores/issue'
+import { useProjectStore } from '@/stores/project'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -368,5 +369,87 @@ describe('uiStore', () => {
     expect(ui.panelOff.gantt).toBe(true)
     expect(ui.dayWidth).toBe(20)
     expect(ui.collapsedGroups.has('g1')).toBe(true)
+  })
+})
+
+describe('uiStore 的唯讀（F2）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    useClockStore().now = NOW
+    useUiStore()
+    useTaskStore().load(structuredClone(sampleProject))
+  })
+
+  /** 變成唯讀：同一份專案、canEdit 改 false（後端算的值變了，例如背景重載時 PM 已經換人）。 */
+  function becomeReadonly(): void {
+    const project = useProjectStore()
+    project.setAll(project.meta, false)
+  }
+
+  it('canEdit 跟著 project store', () => {
+    const ui = useUiStore()
+    expect(ui.canEdit).toBe(true)
+    becomeReadonly()
+    expect(ui.canEdit).toBe(false)
+  })
+
+  it('可編輯時 askDelete / openDepEditor / toggleAssigneePicker / startEdit 照常打開', () => {
+    const ui = useUiStore()
+    ui.askDelete('dep', 'd1', 'A → B')
+    expect(ui.confirm).toEqual({ kind: 'dep', id: 'd1', step: 1, label: 'A → B' })
+    ui.askDelete('task', 't1')
+    expect(ui.confirm).toEqual({ kind: 'task', id: 't1', step: 1 })
+    ui.openDepEditor('t1')
+    expect(ui.depEditFor).toBe('t1')
+    ui.toggleAssigneePicker('t1')
+    expect(ui.pickerFor).toBe('t1')
+    ui.toggleAssigneePicker('t1')
+    expect(ui.pickerFor).toBeNull()
+    ui.startEdit('g', 'g1')
+    expect(ui.editing).toEqual({ kind: 'g', id: 'g1' })
+  })
+
+  it('唯讀時這幾支一律不開', () => {
+    const ui = useUiStore()
+    becomeReadonly()
+    ui.askDelete('task', 't1')
+    ui.openDepEditor('t1')
+    ui.toggleAssigneePicker('t1')
+    ui.startEdit('t', 't1')
+    expect([ui.confirm, ui.depEditFor, ui.pickerFor, ui.editing]).toEqual([null, null, null, null])
+  })
+
+  it('變成唯讀時關掉編輯類的浮層與就地編輯，看的東西（詳細視窗、下拉）不動', () => {
+    const ui = useUiStore()
+    ui.openDetail('t1', 'task')
+    ui.toggleDropdown('ksort')
+    ui.startEdit('dt', 't1')
+    ui.askDelete('task', 't2')
+    ui.openDepEditor('t2')
+    ui.toggleAssigneePicker('t1')
+    ui.optionMenu = { id: 't1', kind: 'status', left: 0, top: 0 }
+    ui.rowMenu = { id: 't1', left: 0, top: 0 }
+    ui.taskDatePicker = { id: 't1', target: 'start', month: '2026-09', left: 0, top: 0 }
+    ui.issueDatePicker = {
+      id: 'i1',
+      field: 'due',
+      kind: 'issue',
+      month: '2026-09',
+      left: 0,
+      top: 0,
+    }
+
+    becomeReadonly()
+
+    expect(ui.editing).toBeNull()
+    expect(ui.confirm).toBeNull()
+    expect(ui.depEditFor).toBeNull()
+    expect(ui.pickerFor).toBeNull()
+    expect(ui.optionMenu).toBeNull()
+    expect(ui.rowMenu).toBeNull()
+    expect(ui.taskDatePicker).toBeNull()
+    expect(ui.issueDatePicker).toBeNull()
+    expect(ui.detail?.id).toBe('t1')
+    expect(ui.openDropdown).toBe('ksort')
   })
 })

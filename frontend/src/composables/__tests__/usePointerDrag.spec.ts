@@ -7,6 +7,7 @@ import { provideDomRegistry, registerEl, type DomRegistry } from '@/composables/
 import { usePointerDrag, type PointerDrag } from '@/composables/usePointerDrag'
 import { dayIndex, isoFromIndex } from '@/lib/date'
 import { sampleProject } from '@/mocks/sampleProject'
+import { useProjectStore } from '@/stores/project'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -584,6 +585,58 @@ describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）',
     document.dispatchEvent(pointer('pointermove', 468, 0))
     expect(dayIndex(tasks.taskById('t28')!.start)).toBe(s0 - 1)
     document.dispatchEvent(pointer('pointerup', 468, 0))
+    unmount()
+  })
+})
+
+describe('usePointerDrag 的唯讀（F2）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mockApi.reset(structuredClone(sampleProject))
+    useTaskStore().load(structuredClone(sampleProject))
+    const project = useProjectStore()
+    project.setAll(project.meta, false)
+  })
+
+  afterEach(() => {
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+  })
+
+  it('會改資料的四種拖曳不開始，也不攔下事件（按在條上照樣落到畫布去平移）', () => {
+    const ui = useUiStore()
+    const { api: drag, unmount } = mountDrag()
+    const starts: [string, (e: PointerEvent) => void][] = [
+      ['startBar', (e) => drag.startBar(e, 't1', 'move')],
+      ['startLink', (e) => drag.startLink(e, 't1', 'R')],
+      ['startReorder', (e) => drag.startReorder(e, 't4')],
+      ['startGroupReorder', (e) => drag.startGroupReorder(e, 'g1')],
+    ]
+    // 每一種記下「有沒有開始拖」與「有沒有攔下事件」，一次比對
+    const result: Record<string, { dragging: boolean; stopped: boolean }> = {}
+    for (const [name, start] of starts) {
+      const e = pointer('pointerdown') as unknown as PointerEvent
+      const stop = vi.spyOn(e, 'stopPropagation')
+      start(e)
+      result[name] = { dragging: ui.drag !== null, stopped: stop.mock.calls.length > 0 }
+    }
+    const idle = { dragging: false, stopped: false }
+    expect(result).toEqual({
+      startBar: idle,
+      startLink: idle,
+      startReorder: idle,
+      startGroupReorder: idle,
+    })
+    unmount()
+  })
+
+  it('平移照常', () => {
+    const ui = useUiStore()
+    const { api: drag, unmount } = mountDrag()
+    drag.startPan(pointer('pointerdown') as unknown as PointerEvent)
+    expect(ui.drag?.kind).toBe('pan')
+    document.dispatchEvent(pointer('pointerup'))
+    expect(ui.drag).toBeNull()
     unmount()
   })
 })

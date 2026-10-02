@@ -254,7 +254,7 @@ describe('taskStore', () => {
   it('addGroup 依現有數量命名並接在最後，送出時帶目前專案的 id', () => {
     const s = useTaskStore()
     const createGroup = vi.spyOn(api, 'createGroup')
-    const g = s.addGroup()
+    const g = s.addGroup()!
     expect(g.name).toBe('新分類 7')
     expect(s.groups[s.groups.length - 1]!.id).toBe(g.id)
     expect(useUiStore().collapsedGroups.has(g.id)).toBe(false)
@@ -576,7 +576,7 @@ describe('taskStore', () => {
       s.moveGroupLocal('g1', 1)
       const pending = s.commitGroupOrder()
 
-      const g = s.addGroup()
+      const g = s.addGroup()!
       await new Promise((r) => setTimeout(r, 0))
       finishReorder()
       await pending

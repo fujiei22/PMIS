@@ -391,6 +391,16 @@ describe('mock api', () => {
     })
     expect((await api.loadProject('pmis')).tasks).toHaveLength(0)
   })
+
+  it('setCanEdit(false) 之後 loadProject 回唯讀；寫入照做（mock 不判斷權限）；reset() 清掉覆寫', async () => {
+    api.setCanEdit(false)
+    expect((await api.loadProject('pmis')).canEdit).toBe(false)
+    await expect(api.updateTask('t1', { name: '照樣寫得進去' })).resolves.toMatchObject({
+      name: '照樣寫得進去',
+    })
+    api.reset()
+    expect((await api.loadProject('pmis')).canEdit).toBe(true)
+  })
 })
 
 // ── api 進入點（review F11）────────────────────────────────────────────────
