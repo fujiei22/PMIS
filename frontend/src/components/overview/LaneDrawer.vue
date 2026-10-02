@@ -79,6 +79,8 @@ watch([shown, grown], () => emit('open-id', grown.value ? (shown.value?.row.p.id
 const root = ref<HTMLElement | null>(null)
 const box = ref<HTMLElement | null>(null)
 let timer: ReturnType<typeof setTimeout> | undefined
+/** 換列等待中（舊抽屜在舊列收合、計時到了才到新列展開）的目標；計時器到了用它。 */
+let pending: Slot | null = null
 
 /** 使用者自己捲動的輸入：收到就停掉換列補償。pointerdown：拖捲軸、在畫面上按下（觸發換列的那一下在補償開始前就過了）。 */
 const USER_SCROLL = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const
@@ -135,6 +137,14 @@ async function grow(): Promise<void> {
 }
 
 watch(target, (t) => {
+  // 換列等待中又來一個「同一張卡、同一個位置」的 target：別條泳道的選取變了，expandedIds 換新、這裡重算出內容相同的新物件。
+  // 照原本的計時繼續在舊列收合，只換成新的資料物件——否則這時 grown 已是 false，會被當成「從收合途中打開」，
+  // 收到一半的抽屜直接搬到新列展開（批次 B review 發現的既有 bug）
+  if (pending && t && t.row.p.id === pending.row.p.id && t.order === pending.order) {
+    pending = t
+    return
+  }
+  pending = null
   clearTimeout(timer)
   stopFollow?.()
   const cur = shown.value
@@ -162,9 +172,11 @@ watch(target, (t) => {
   if (isOpen) {
     grown.value = false
     if (t.order > cur.order) followCollapse()
+    pending = t
     timer = setTimeout(() => {
       stopFollow?.()
-      shown.value = t
+      shown.value = pending ?? t
+      pending = null
       void grow()
     }, PANEL_UNMOUNT_MS)
     return
