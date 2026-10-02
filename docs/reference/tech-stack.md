@@ -33,7 +33,8 @@ PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 | `npm run type-check` | `vue-tsc --build` | 只做型別檢查（含 `e2e/` 這個 project） |
 | `npm run preview` | `vite preview` | 在本機預覽打包結果 |
 | `npm run lint` | `eslint . --fix --cache` | ESLint 檢查並自動修正 |
-| `npm run format` | `prettier --write src/` | 用 Prettier 格式化 `src/` |
+| `npm run format` | `prettier --write src/` | 用 Prettier 格式化 `src/`（產生檔列在 `.prettierignore`，不排版） |
+| `npm run gen:api` | `openapi-typescript src/api/http/openapi.json -o src/api/http/schema.ts` | 由後端匯出的 OpenAPI 產生 API 型別；改了 API 才要跑，見〈後端：使用慣例〉的〈API 契約〉 |
 | `npm run test:unit` | `vitest` | Vitest 單元測試（watch 模式；一次跑完用 `npm run test:unit -- --run`） |
 | `npm run test:e2e` | `playwright test` | Playwright E2E 測試（自己起一份 dev server） |
 
@@ -120,6 +121,7 @@ PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 | `uv run alembic upgrade head` | `alembic.ini`、`app/alembic/env.py` | 套用所有 migration（連 `DATABASE_URL`） |
 | `uv run alembic revision --autogenerate -m "說明"` | 同上 | 依 `app/models.py` 的變更產生 migration |
 | `uv run alembic check` | 同上 | 確認 `app/models.py` 沒有漏產 migration |
+| `uv run python -m app.scripts.export_openapi` | `app/scripts/export_openapi.py` | 匯出 OpenAPI 到 `frontend/src/api/http/openapi.json`；改了 API 才要跑，見〈API 契約〉 |
 
 `[tool.*]` 都在 `backend/pyproject.toml`。提交前至少跑一次 `ruff check`、`ruff format --check`、`mypy`、`pytest`。
 
@@ -131,8 +133,10 @@ PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 
 ### API 契約
 - 端點、錯誤碼、事件規則以 [`frontend/README.md` 的「怎麼接後端」](../../frontend/README.md#怎麼接後端)為準。
-- 前端型別由 FastAPI 產生的 OpenAPI 產生，給 `frontend/src/api/http/` 的 adapter 使用。CI 重新產生一次並與 repo 內的版本比對，不一致就失敗。
-- 請求資料一律經 Pydantic model 驗證；沒列在 model 裡的欄位一律不寫入。
+- 前端型別由 FastAPI 產生的 OpenAPI 產生，給 `frontend/src/api/http/` 的 adapter 使用。兩個產物都進版控、不手改：後端 `uv run python -m app.scripts.export_openapi` 匯出 `frontend/src/api/http/openapi.json`，前端 `npm run gen:api` 再由它產生 `schema.ts`（openapi-typescript）。
+- **改了端點或 request / response model，依序跑上面兩個指令**，產物連同程式一起 commit；忘了跑，CI 的比對測試會失敗（見〈CI〉）。細節見 [`backend/README.md` 的〈API 契約與前端型別〉](../../backend/README.md#api-契約與前端型別)。
+- wire 格式的欄位名稱是 camelCase：Pydantic model 繼承 `backend/app/schemas/common.py` 的 `CamelModel`，Python 照樣寫 snake_case。
+- 請求資料一律經 Pydantic model 驗證；沒列在 model 裡的欄位一律不寫入（請求用的 model 設 `extra="forbid"`，多送的欄位直接 422）。
 
 ### 即時推送
 - SSE 端點是 `/api/events`，每則 `data` 是一個 `ProjectEvent` 的 JSON，事件規則見 [`frontend/README.md` 的「事件」](../../frontend/README.md#事件)。
@@ -168,4 +172,7 @@ PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
   - `backend`：`uv sync --locked`、`ruff check`、`ruff format --check`、`mypy`、`pytest`（連 PostgreSQL 18 容器裡的 `pmis_test`）、`alembic check`。
   - `frontend`：ESLint（只檢查、不自動修正）、Prettier（`prettier --check src/`，跟 `npm run format` 同範圍）、`npm run type-check`、`npm run test:unit -- --run`、`npm run build-only`。
   - `e2e`：Playwright（Chromium）；失敗時上傳 `playwright-report`。
-- 尚未加入：OpenAPI 型別比對（第一支業務 API 時加）。
+- OpenAPI 型別比對：不另開 job，由上面兩個 job 的測試各擋一段。
+  - `backend` 的 pytest 跑 `backend/tests/test_openapi_snapshot.py`：`app.openapi()` 的輸出跟 `frontend/src/api/http/openapi.json` 不同就失敗（程式 → JSON）。
+  - `frontend` 的單元測試跑 `frontend/src/api/__tests__/openapi-schema.spec.ts`：用 openapi-typescript 的 Node API 由 `openapi.json` 重新產生一次，跟 `schema.ts` 不同就失敗（JSON → TypeScript）。
+  - 產生檔 `schema.ts` 不經 ESLint（`eslint.config.ts` 的忽略清單），兩個產生檔都不經 Prettier（`frontend/.prettierignore`）。

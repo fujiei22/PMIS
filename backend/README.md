@@ -56,6 +56,7 @@ Python（FastAPI）＋ PostgreSQL。技術一覽與使用慣例見 [`docs/refere
 | `uv run alembic upgrade head` | 套用所有 migration |
 | `uv run alembic revision --autogenerate -m "說明"` | 依 `app/models.py` 的變更產生 migration |
 | `uv run alembic check` | 確認 `app/models.py` 沒有漏產 migration |
+| `uv run python -m app.scripts.export_openapi` | 匯出 OpenAPI 到 `frontend/src/api/http/openapi.json`（改了 API 才要跑，見〈API 契約與前端型別〉） |
 
 ### 提交前
 
@@ -68,7 +69,7 @@ uv run mypy
 uv run pytest
 ```
 
-CI 在 Linux 上跑同樣的檢查，另外加 `alembic check`（見 `.github/workflows/ci.yml`）。
+改了端點或 request / response model，另外要重新產生前端型別，見〈API 契約與前端型別〉。CI 在 Linux 上跑同樣的檢查，另外加 `alembic check`（見 `.github/workflows/ci.yml`）。
 
 ## 目錄結構
 
@@ -83,6 +84,8 @@ backend/
 │   │   ├── main.py          把 routes/ 的 router 集合起來
 │   │   ├── deps.py          端點共用的依賴（SessionDep：每個請求一個資料庫 session）
 │   │   └── routes/          端點，一個主題一個檔（目前只有 health.py）
+│   ├── schemas/             wire 格式（Pydantic model）；common.py 的 CamelModel 是共用基底
+│   ├── scripts/             開發用指令稿（export_openapi.py：匯出 OpenAPI 給前端產生型別）
 │   ├── core/
 │   │   ├── config.py        設定（pydantic-settings，從環境變數與 .env 讀）
 │   │   └── db.py            engine 與 session
@@ -90,6 +93,7 @@ backend/
 ├── tests/                   pytest；目錄對應 app/（tests/api/routes/ 對 app/api/routes/）
 │   ├── conftest.py          測試資料庫、交易 rollback、client 與 db fixture
 │   ├── db_guard.py          測試資料庫名稱檢查
+│   ├── test_openapi_snapshot.py  frontend/src/api/http/openapi.json 跟程式一致
 │   ├── test_async_whitelist.py   async def 白名單
 │   └── test_alembic_ini.py  alembic.ini 只能有 ASCII
 ├── alembic.ini              Alembic 設定（只能寫英文）
@@ -118,6 +122,37 @@ backend/
 
 - 端點與一般函式一律用 `def`。只有 SSE（`/api/events`）與 AI 串流回應用 `async def`，而且裡面不呼叫同步的資料庫（`async def` 裡做同步的資料庫存取，會讓整支程式停住，所有請求一起等）。
 - `tests/test_async_whitelist.py` 讀 `app/` 的原始碼：出現 `async def` 的檔案必須列在它的 `ASYNC_ALLOWED`（目前是空的），否則測試失敗。
+
+### API 契約與前端型別
+
+前端呼叫 API 用的型別由後端程式產生，兩個產物都進版控、都不手改：
+
+| 檔案 | 怎麼產生 |
+|---|---|
+| `frontend/src/api/http/openapi.json` | `app/scripts/export_openapi.py` 從 `app.openapi()` 匯出（鍵排序、固定縮排，API 沒變就一個字都不變；不需要資料庫） |
+| `frontend/src/api/http/schema.ts` | 前端的 `npm run gen:api` 用 openapi-typescript 從上面那份產生 |
+
+**改了端點或 request / response model（欄位、型別、預設值、端點的 docstring）之後，依序跑這兩個指令，產物連同程式一起 commit：**
+
+```sh
+# 在 backend/
+uv run python -m app.scripts.export_openapi
+# 在 frontend/（還沒裝過前端套件要先 npm ci）
+npm run gen:api
+```
+
+忘了跑會被兩支測試擋下，CI 現有的 `backend` 與 `frontend` job 都會跑到：
+
+- `tests/test_openapi_snapshot.py`：`app.openapi()` 跟 `openapi.json` 不同就紅（程式 → JSON）。
+- `frontend/src/api/__tests__/openapi-schema.spec.ts`：由 `openapi.json` 重新產生一次，跟 `schema.ts` 不同就紅（JSON → TypeScript）。
+
+兩個產物遇到合併衝突時不要手動合併：取任一邊後重跑上面兩個指令。
+
+model 的寫法：
+
+- 繼承 `app/schemas/common.py` 的 `CamelModel`：Python 寫 snake_case，回應的 JSON 與 OpenAPI 是 camelCase，跟前端的欄位名稱一致。
+- 請求用的 model 另外加 `model_config = ConfigDict(extra="forbid")`：多送的欄位直接 422，這就是 PATCH 的欄位白名單。
+- `app/main.py` 設了 `separate_input_output_schemas=False`：同一個 model 在請求與回應裡用同一個 schema 名稱，前端的型別名稱才穩定（`test_openapi_snapshot.py` 也檢查這個設定）。
 
 ### 免登入的例外
 
