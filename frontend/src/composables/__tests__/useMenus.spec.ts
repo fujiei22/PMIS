@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { useSampleCalendar } from '@/__tests__/loadSample'
+import { loadSample, useSampleCalendar } from '@/__tests__/loadSample'
 import { clearMenuAnchors, menuAnchors, useMenus } from '@/composables/useMenus'
 import { anchorCalendar, anchorOptionMenu, anchorRowMenu } from '@/lib/anchor'
 import { sampleProject } from '@/mocks/sampleProject'
@@ -146,6 +146,26 @@ describe('useMenus', () => {
     menus.openIssueDatePicker(triggerAt(10, 10, 30), 'i1', 'due', '')
     clearMenuAnchors()
     expect(menuAnchors).toEqual({ option: null, row: null, taskDate: null, issueDate: null })
+  })
+})
+
+/**
+ * 起訖日期選擇器預設對準哪一端（規則見 docs/reference/scheduling.md）：
+ * 有前置、還沒開始的任務，開始日由前置決定、不能改，所以直接對準結束日；其他從開始日填起。
+ */
+describe('useMenus 的起訖日期選擇器對準哪一端', () => {
+  beforeEach(async () => {
+    await loadSample()
+  })
+
+  it('有前置、未開始的 t5：對準結束日，月份跟著結束日（10/07）', () => {
+    useMenus().openTaskDatePicker(triggerAt(0, 0, 0), 't5')
+    expect(useUiStore().taskDatePicker).toMatchObject({ target: 'end', month: '2026-10' })
+  })
+
+  it('未開始的根任務 t24：對準開始日', () => {
+    useMenus().openTaskDatePicker(triggerAt(0, 0, 0), 't24')
+    expect(useUiStore().taskDatePicker?.target).toBe('start')
   })
 })
 

@@ -1,4 +1,5 @@
 import { anchorCalendar, anchorOptionMenu, anchorRowMenu, viewport } from '@/lib/anchor'
+import { predecessorIds, startBlock } from '@/lib/schedule'
 import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
@@ -31,7 +32,7 @@ export function clearMenuAnchors(): void {
 export interface Menus {
   /** 開狀態 / 優先度 / 分類 / Issue 欄位的選項選單。 */
   openOptionMenu: (e: MouseEvent, id: string, kind: OptionMenuKind) => void
-  /** 開任務的起訖日期選擇器（一定從 start 端開始填）。 */
+  /** 開任務的起訖日期選擇器：從開始日填起；開始日不能改（有前置、未開始）時對準結束日。 */
   openTaskDatePicker: (e: MouseEvent, taskId: string) => void
   /** 開甘特任務列「⋮」的動作選單；再點同一列的「⋮」就關掉。 */
   toggleRowMenu: (e: MouseEvent, taskId: string) => void
@@ -102,15 +103,21 @@ export function useMenus(): Menus {
     }
   }
 
+  /**
+   * 開任務的起訖日期選擇器，月份跟著對準的那一端（推算後的值）。
+   * 有前置、還沒開始的任務，開始日由前置決定、選了也不會生效（規則見 docs/reference/scheduling.md），
+   * 所以直接對準結束日；其他任務照舊從開始日填起。
+   */
   function openTaskDatePicker(e: MouseEvent, taskId: string): void {
     if (!ui.canEdit) return
     e.stopPropagation()
     const t = taskStore.taskById(taskId)
     if (!t) return
+    const target = startBlock(t, predecessorIds(taskStore.deps)) ? 'end' : 'start'
     ui.taskDatePicker = {
       id: taskId,
-      target: 'start',
-      month: t.start.slice(0, 7),
+      target,
+      month: t[target].slice(0, 7),
       ...anchorCalendar(rectOf(e, 'taskDate'), viewport(), 'task'),
     }
   }

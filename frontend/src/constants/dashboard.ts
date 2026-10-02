@@ -155,8 +155,6 @@ export const BASELINE_LOCK_TEXT = {
   calendarError: '假日資料載入失敗，暫時不能上鎖',
 } as const
 
-/* ── Task 10 ── */
-
 /**
  * 屬性面板「計畫基準」列的文案（規則見 docs/reference/scheduling.md〈基準與基準鎖〉）。
  * unlocked：規劃中，基準跟著排程走，不顯示日期（免得被當成固定的原計畫）；none：上鎖但這筆沒有基準（舊資料）。
@@ -169,3 +167,15 @@ export const BASELINE_ROW_TEXT = {
   late: (n: string) => `晚 ${n}`,
   lockedOn: (on: string) => `基準鎖定於 ${on}`,
 } as const
+
+/**
+ * 日期選擇器裡停用格子的說明（EDIT_BLOCK_TEXT、OVERDUE_SHRINK_TEXT 以外的情況）；
+ * 顯示成看得見的一行 caption，觸控看不到 title。
+ */
+export const PICK_LIMIT_TEXT = {
+  startAfterToday: '已開始：開始日最晚是今天',
+  doneBeforeStart: '完成日不能早於開始日',
+} as const
+
+/** 日期選擇器底部的本月假日；list 是已組好的「M/D 名稱」清單（以頓號連接）。 */
+export const MONTH_HOLIDAYS_TEXT = (list: string): string => `本月假日：${list}`

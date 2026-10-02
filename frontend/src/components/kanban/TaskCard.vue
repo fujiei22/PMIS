@@ -1,16 +1,31 @@
 <script setup lang="ts">
 // 任務看板上的一張卡：分類、名稱、優先度、狀態、時程 / 完成日期、負責人、Issue 徽章。
 // 唯讀時（F2）沒有刪除鈕與工期 ▲▼、不能拖，狀態 / 時程 / 完成日期只是顯示（點了不開選單）。
+// 工期顯示有效工期（工作天），▲▼ 依排程規則停用並在 title 寫原因（規則見 docs/reference/scheduling.md）。
 // legacy 對照：模板 :584-633，columns[].tasks :2999-3113。
 import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import Pill from '@/components/common/Pill.vue'
 import { useDomRegistry, registerEl } from '@/composables/useDomRegistry'
 import { useMenus } from '@/composables/useMenus'
-import { DELAYED, LATE_TITLE, PRIORITY, TASK_STATUS } from '@/constants/dashboard'
-import { dayIndex, isoFromIndex, lengthOf } from '@/lib/date'
-import { EMPTY_LABEL, fmtDate, fmtWorkdays, shortDate, stripYear } from '@/lib/format'
-import { isLate, lateDays } from '@/lib/schedule'
+import {
+  DELAYED,
+  EDIT_BLOCK_TEXT,
+  LATE_TITLE,
+  OVERDUE_SHRINK_TEXT,
+  PRIORITY,
+  TASK_STATUS,
+} from '@/constants/dashboard'
+import { EMPTY_LABEL, fmtDate, fmtWorkdays, shortDate, stripYear, WORKDAY_UNIT } from '@/lib/format'
+import {
+  DURATION_MAX,
+  durationBlock,
+  durationOf,
+  isLate,
+  isOverdue,
+  lateDays,
+} from '@/lib/schedule'
+import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useSelectionStore } from '@/stores/selection'
@@ -24,6 +39,7 @@ const props = defineProps<{ task: Task }>()
 const registry = useDomRegistry()
 
 const calendar = useWorkCalendarStore()
+const clock = useClockStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
@@ -52,7 +68,27 @@ const rel = computed<'up' | 'down' | 'group' | ''>(
 const dimmed = computed(() => selection.hasSelection && !selected.value && !rel.value)
 
 const groupName = computed(() => taskStore.groupById(props.task.groupId)?.name ?? '未分類')
-const days = computed(() => lengthOf(props.task))
+/** 有效工期（工作天）：顯示與 ▲▼ 加減都以它為準（規則見 docs/reference/scheduling.md〈有效工期〉）。 */
+const days = computed(() => durationOf(props.task, calendar.workdays))
+
+/** ▲ 的狀態：已完成停用（結束日就是完成日，title 寫原因）；到上限 DURATION_MAX 也停用。 */
+const up = computed(() => {
+  const block = durationBlock(props.task)
+  if (block) return { disabled: true, title: EDIT_BLOCK_TEXT[block] }
+  return { disabled: days.value >= DURATION_MAX, title: `加一個${WORKDAY_UNIT}` }
+})
+
+/**
+ * ▼ 的狀態：已完成停用；逾期時停用（結束日暫定今天，減了也不會提早，title 寫原因）；
+ * 只剩 1 工作天也停用。
+ */
+const down = computed(() => {
+  const block = durationBlock(props.task)
+  if (block) return { disabled: true, title: EDIT_BLOCK_TEXT[block] }
+  if (isOverdue(props.task, calendar.workdays, clock.todayIdx))
+    return { disabled: true, title: OVERDUE_SHRINK_TEXT }
+  return { disabled: days.value <= 1, title: `減一個${WORKDAY_UNIT}` }
+})
 const rangeShort = computed(
   () => `${stripYear(fmtDate(props.task.start))} → ${stripYear(fmtDate(props.task.end))}`,
 )
@@ -73,15 +109,19 @@ const issueBadge = computed(() => ({
   count: openIssues.value || issues.value.length,
 }))
 
-/** 工期加一天。legacy `onDaysUp` :3081 */
+/**
+ * 工期加一個工作天：以有效工期為準送 `{ duration }`，結束日與下游由排程推算。停用時不動作。
+ * legacy `onDaysUp` :3081（legacy 是結束日加一個日曆天）
+ */
 function daysUp(): void {
-  taskStore.updateTask(props.task.id, { end: isoFromIndex(dayIndex(props.task.end) + 1) })
+  if (up.value.disabled) return
+  taskStore.updateTask(props.task.id, { duration: days.value + 1 })
 }
 
-/** 工期減一天；至少留一天。legacy `onDaysDown` :3082 */
+/** 工期減一個工作天；停用時（已完成、逾期、只剩 1 工作天）不動作。legacy `onDaysDown` :3082 */
 function daysDown(): void {
-  if (dayIndex(props.task.end) <= dayIndex(props.task.start)) return
-  taskStore.updateTask(props.task.id, { end: isoFromIndex(dayIndex(props.task.end) - 1) })
+  if (down.value.disabled) return
+  taskStore.updateTask(props.task.id, { duration: days.value - 1 })
 }
 
 /** 刪除任務走兩步確認。legacy `onAskDelete` :3100 */
@@ -162,11 +202,28 @@ function toggleDetail(): void {
           <span class="range-value" :class="{ late }">{{ rangeShort }}</span>
         </span>
         <span class="range-sep"></span>
-        <span class="range-days" title="工期（天）" @click="stopIfEditable">
-          <span class="days-num">{{ days }}</span>
+        <!-- 卡片放不下「N 工作天」（平板四欄時 ▲▼ 會被擠出膠囊）：畫面只放數字，單位寫在 title 與 aria-label -->
+        <span class="range-days" :title="`工期（${WORKDAY_UNIT}）`" @click="stopIfEditable">
+          <span class="days-num" :aria-label="fmtWorkdays(days)">{{ days }}</span>
           <span v-if="ui.canEdit" class="days-step">
-            <span class="step" role="button" title="加一天" @click.stop="daysUp()">▲</span>
-            <span class="step" role="button" title="減一天" @click.stop="daysDown()">▼</span>
+            <span
+              class="step"
+              :class="{ disabled: up.disabled }"
+              role="button"
+              :aria-disabled="up.disabled ? 'true' : undefined"
+              :title="up.title"
+              @click.stop="daysUp()"
+              >▲</span
+            >
+            <span
+              class="step"
+              :class="{ disabled: down.disabled }"
+              role="button"
+              :aria-disabled="down.disabled ? 'true' : undefined"
+              :title="down.title"
+              @click.stop="daysDown()"
+              >▼</span
+            >
           </span>
         </span>
       </span>
@@ -512,6 +569,14 @@ function toggleDetail(): void {
 .step:hover {
   background: var(--border-1);
   color: var(--text-2);
+}
+
+/* 停用（已完成、逾期的 ▼、到上下限）：同列選單 :disabled 的字色，游標不變、沒有 hover */
+.step.disabled,
+.step.disabled:hover {
+  background: transparent;
+  color: var(--glyph-disabled);
+  cursor: default;
 }
 
 .done-on {
