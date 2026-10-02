@@ -18,7 +18,8 @@ interface Entering {
   ease: (p: number) => number
 }
 
-const hasClass = (el: Element, suffix: string): boolean => Array.from(el.classList).some((k) => k.endsWith(suffix))
+const hasClass = (el: Element, suffix: string): boolean =>
+  Array.from(el.classList).some((k) => k.endsWith(suffix))
 
 /** 元素還在離場中：Vue 收完離場才拿掉 *-leave-active（同 key 回來時提早移除的不拿，見 onEnter）。 */
 const isLeaving = (el: Element): boolean => hasClass(el, '-leave-active')
@@ -40,7 +41,9 @@ function fullHeight(node: Element): number {
 
 /** 元素上進行中的高度過渡（grid-template-rows 的 CSSTransition）；jsdom 沒有 getAnimations。 */
 function heightTransition(el: Element): Animation | undefined {
-  return el.getAnimations?.().find((a) => (a as CSSTransition).transitionProperty === 'grid-template-rows')
+  return el
+    .getAnimations?.()
+    .find((a) => (a as CSSTransition).transitionProperty === 'grid-template-rows')
 }
 
 /**
@@ -84,7 +87,11 @@ export function startLeaveNow(el: Element): void {
 export function useCollapseReenter(
   container: MaybeRefOrGetter<HTMLElement | null | undefined>,
   keyAttr: string,
-): { onEnter: (el: Element) => void; resume: (item: Element | VNode) => void; snapshot: () => void } {
+): {
+  onEnter: (el: Element) => void
+  resume: (item: Element | VNode) => void
+  snapshot: () => void
+} {
   let leaving = new Map<string, Leaving>()
   let entering = new Map<Element, Entering>()
 
@@ -99,7 +106,11 @@ export function useCollapseReenter(
       const key = c.getAttribute(keyAttr)
       if (!key) continue
       if (isLeaving(c)) {
-        next.set(key, { h: c.getBoundingClientRect().height, o: parseFloat(getComputedStyle(c).opacity), el: c })
+        next.set(key, {
+          h: c.getBoundingClientRect().height,
+          o: parseFloat(getComputedStyle(c).opacity),
+          el: c,
+        })
         continue
       }
       if (!hasClass(c, '-enter-active')) continue
@@ -153,7 +164,8 @@ export function useCollapseReenter(
     node.style.opacity = String(snap.o)
     void node.offsetHeight
     node.style.transition = ''
-    for (const k of Array.from(node.classList)) if (k.endsWith('-enter-from')) node.classList.remove(k)
+    for (const k of Array.from(node.classList))
+      if (k.endsWith('-enter-from')) node.classList.remove(k)
     node.style.gridTemplateRows = ''
     node.style.opacity = ''
   }
@@ -172,7 +184,13 @@ export function useCollapseReenter(
     const snap = el ? entering.get(el) : undefined
     if (!el || !snap) return
     entering.delete(el)
-    if (snap.anim.playState === 'running' || !el.isConnected || !hasClass(el, '-enter-active') || !snap.dur) return
+    if (
+      snap.anim.playState === 'running' ||
+      !el.isConnected ||
+      !hasClass(el, '-enter-active') ||
+      !snap.dur
+    )
+      return
     const node = el as HTMLElement
     const full = fullHeight(node)
     const e = snap.ease(Math.min(1, snap.t / snap.dur))

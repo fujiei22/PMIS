@@ -62,7 +62,12 @@ function leaving(el: Element): void {
     </template>
     <!-- 有欄 ↔ 空狀態之間淡入淡出（A17）；stage 撐住交換時的高度（hook 只收一個參數，Vue 仍自己偵測過渡結束） -->
     <div ref="stage" class="ov-stage">
-      <Transition name="ov-fade" mode="out-in" @before-leave="holdHeight(stage)" @enter="releaseHeight(stage)">
+      <Transition
+        name="ov-fade"
+        mode="out-in"
+        @before-leave="holdHeight(stage)"
+        @enter="releaseHeight(stage)"
+      >
         <!-- PM 泳道的進出與重排（A9）：原地收合 / 長出（ov-col，見 overview-motion.css） -->
         <TransitionGroup
           v-if="!showEmpty"

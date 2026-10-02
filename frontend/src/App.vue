@@ -11,7 +11,12 @@ import { notifyPageEntered, notifyPageSettled } from '@/router/pageSwap'
 
 <template>
   <RouterView v-slot="{ Component, route }">
-    <Transition name="page-view" mode="out-in" @enter="notifyPageEntered" @after-enter="notifyPageSettled">
+    <Transition
+      name="page-view"
+      mode="out-in"
+      @enter="notifyPageEntered"
+      @after-enter="notifyPageSettled"
+    >
       <component :is="Component" :key="route.path" />
     </Transition>
   </RouterView>

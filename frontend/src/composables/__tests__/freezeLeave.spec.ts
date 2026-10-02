@@ -34,7 +34,8 @@ describe('freezeLeave', () => {
         offsetTop: {
           configurable: true,
           get: () =>
-            kids.slice(0, kids.indexOf(k)).filter((s) => s.style.position !== 'absolute').length * 50,
+            kids.slice(0, kids.indexOf(k)).filter((s) => s.style.position !== 'absolute').length *
+            50,
         },
         offsetLeft: { configurable: true, get: () => 0 },
         offsetWidth: { configurable: true, get: () => 300 },
@@ -99,12 +100,18 @@ describe('freezeLeave', () => {
     const seen: string[] = []
     for (const k of kids) {
       Object.defineProperties(k, {
-        offsetTop: { configurable: true, get: () => (seen.push(k.style.transition), kids.indexOf(k) * 50) },
+        offsetTop: {
+          configurable: true,
+          get: () => (seen.push(k.style.transition), kids.indexOf(k) * 50),
+        },
         offsetLeft: { configurable: true, get: () => 0 },
         offsetWidth: { configurable: true, get: () => 300 },
         offsetHeight: { configurable: true, get: () => 50 },
       })
-      ;(k as unknown as { getAnimations: () => unknown[] }).getAnimations = () => (seen.push(k.style.transition), [])
+      ;(k as unknown as { getAnimations: () => unknown[] }).getAnimations = () => (
+        seen.push(k.style.transition),
+        []
+      )
     }
     // 同一輪的第一個量完同父層全部子元素；第二個用快取，但讀自己的動畫之前也要先設好
     freezeLeave(kids[0]!)
@@ -119,7 +126,10 @@ describe('freezeLeave', () => {
     const parent = document.createElement('div')
     const el = parent.appendChild(document.createElement('div'))
     let during = ''
-    Object.defineProperty(el, 'offsetTop', { configurable: true, get: () => ((during = el.style.transition), 0) })
+    Object.defineProperty(el, 'offsetTop', {
+      configurable: true,
+      get: () => ((during = el.style.transition), 0),
+    })
     freezeLeave(el)
     expect(during).toBe('all 0s')
     expect(el.style.transition).toBe('')
@@ -128,13 +138,33 @@ describe('freezeLeave', () => {
 
   it('只有縮放的 transform 過渡（進場的 scale）留著接續；有位移的、讀不到 keyframes 的照樣取消', () => {
     const el = document.createElement('div')
-    const kf = (from: string) => ({ getKeyframes: () => [{ transform: from }, { transform: 'none' }] })
+    const kf = (from: string) => ({
+      getKeyframes: () => [{ transform: from }, { transform: 'none' }],
+    })
     const scale = { transitionProperty: 'transform', effect: kf('scale(0.96)'), cancel: vi.fn() }
-    const move = { transitionProperty: 'transform', effect: kf('translate(12px, 0px)'), cancel: vi.fn() }
-    const matrix = { transitionProperty: 'transform', effect: kf('matrix(1, 0, 0, 1, 0, -4)'), cancel: vi.fn() }
-    const rise = { transitionProperty: 'transform', effect: kf('translateY(-4px)'), cancel: vi.fn() }
+    const move = {
+      transitionProperty: 'transform',
+      effect: kf('translate(12px, 0px)'),
+      cancel: vi.fn(),
+    }
+    const matrix = {
+      transitionProperty: 'transform',
+      effect: kf('matrix(1, 0, 0, 1, 0, -4)'),
+      cancel: vi.fn(),
+    }
+    const rise = {
+      transitionProperty: 'transform',
+      effect: kf('translateY(-4px)'),
+      cancel: vi.fn(),
+    }
     const bare = { transitionProperty: 'transform', effect: null, cancel: vi.fn() }
-    ;(el as unknown as { getAnimations: () => unknown[] }).getAnimations = () => [scale, move, matrix, rise, bare]
+    ;(el as unknown as { getAnimations: () => unknown[] }).getAnimations = () => [
+      scale,
+      move,
+      matrix,
+      rise,
+      bare,
+    ]
     freezeLeave(el)
     expect(scale.cancel).not.toHaveBeenCalled()
     for (const a of [move, matrix, rise, bare]) expect(a.cancel).toHaveBeenCalledTimes(1)

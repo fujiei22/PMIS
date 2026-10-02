@@ -1,13 +1,6 @@
 import { ApiError } from '@/api/types'
 import { reachable } from '@/lib/schedule'
-import type {
-  Comment,
-  Dependency,
-  Group,
-  Issue,
-  ProjectData,
-  Task,
-} from '@/types/models'
+import type { Comment, Dependency, Group, Issue, ProjectData, Task } from '@/types/models'
 
 /**
  * mock api 的記憶體資料庫：只負責「存」與「連動刪」，不負責延遲、失敗與事件。

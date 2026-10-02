@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { EMPTY_LABEL, fileSize, fmtDate, fmtMoney, fmtMoneyShort, shortDate, stripYear, visualLen } from '@/lib/format'
+import {
+  EMPTY_LABEL,
+  fileSize,
+  fmtDate,
+  fmtMoney,
+  fmtMoneyShort,
+  shortDate,
+  stripYear,
+  visualLen,
+} from '@/lib/format'
 
 describe('format', () => {
   it('fmtDate 空字串回「選擇日期」', () => {

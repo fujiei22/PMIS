@@ -2,7 +2,10 @@ import { onBeforeUnmount, ref, toValue, watch, type MaybeRefOrGetter, type Ref }
 
 /** 從 computed style 的 `grid-template-columns`（已解析成 px 清單）數欄數；讀不到時當 1 欄。 */
 export function countGridColumns(template: string): number {
-  const n = template.trim().split(/\s+/).filter((x) => x && x !== 'none').length
+  const n = template
+    .trim()
+    .split(/\s+/)
+    .filter((x) => x && x !== 'none').length
   return Math.max(1, n)
 }
 
@@ -12,7 +15,9 @@ export function countGridColumns(template: string): number {
  *
  * @param container grid 容器；會重建的元素（TransitionGroup 根）傳 getter
  */
-export function useGridColumns(container: MaybeRefOrGetter<HTMLElement | null | undefined>): Ref<number> {
+export function useGridColumns(
+  container: MaybeRefOrGetter<HTMLElement | null | undefined>,
+): Ref<number> {
   const cols = ref(1)
   let ro: ResizeObserver | undefined
 

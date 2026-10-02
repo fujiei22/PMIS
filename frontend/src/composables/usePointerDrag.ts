@@ -159,7 +159,9 @@ export function usePointerDrag(els: DragElements): PointerDrag {
         )
       } else if (d.kind === 'resL') {
         // 左把手不能越過結束日
-        track(taskStore.applyLocalPatch(d.id, { start: isoFromIndex(Math.min(d.s0 + delta, d.e0)) }))
+        track(
+          taskStore.applyLocalPatch(d.id, { start: isoFromIndex(Math.min(d.s0 + delta, d.e0)) }),
+        )
       } else {
         track(taskStore.applyLocalPatch(d.id, { end: isoFromIndex(Math.max(d.e0 + delta, d.s0)) }))
       }
@@ -197,7 +199,8 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   function shiftEls(id: string, kind: BarDragKind): HTMLElement[] {
     const bar = registry.bars.get(id)
     const dots = registry.linkDots.get(id)
-    const els = kind === 'move' ? [bar, dots?.L, dots?.R] : kind === 'resL' ? [bar, dots?.L] : [dots?.R]
+    const els =
+      kind === 'move' ? [bar, dots?.L, dots?.R] : kind === 'resL' ? [bar, dots?.L] : [dots?.R]
     return els.filter((el): el is HTMLElement => !!el)
   }
 
@@ -241,18 +244,25 @@ export function usePointerDrag(els: DragElements): PointerDrag {
       easing: cs.getPropertyValue('--ease').trim() || 'ease',
     }
     // jsdom 沒有 Web Animations
-    const canAnimate = (el: HTMLElement): boolean => !!px && typeof el.animate === 'function' && timing.duration > 0
+    const canAnimate = (el: HTMLElement): boolean =>
+      !!px && typeof el.animate === 'function' && timing.duration > 0
     const anims: Animation[] = []
     for (const el of shiftEls(id, kind)) {
       el.style.transform = ''
-      if (canAnimate(el)) anims.push(el.animate([{ transform: `translateX(${px}px)` }, { transform: 'none' }], timing))
+      if (canAnimate(el))
+        anims.push(
+          el.animate([{ transform: `translateX(${px}px)` }, { transform: 'none' }], timing),
+        )
     }
     const bar = registry.bars.get(id)
     const w = widthOf(kind, px)
     if (bar && w) {
       bar.style.removeProperty('--res-w')
       // --res-w 在 GanttBar 用 @property 註冊成 <length>，才補間得動
-      if (canAnimate(bar)) anims.push(bar.animate([{ '--res-w': `${w}px` }, { '--res-w': '0px' }] as Keyframe[], timing))
+      if (canAnimate(bar))
+        anims.push(
+          bar.animate([{ '--res-w': `${w}px` }, { '--res-w': '0px' }] as Keyframe[], timing),
+        )
     }
     rebound = anims.length ? { id, anims } : null
     // 回彈跑完才算結束；這段期間又開了新的補償（又拖了一條）就留給它，不能清掉
@@ -351,7 +361,12 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     d.over = best
 
     const now = performance.now()
-    if (best && best.id !== d.id && now - d.lastAt > REORDER_MS && Math.abs(y - d.lastY) > REORDER_PX) {
+    if (
+      best &&
+      best.id !== d.id &&
+      now - d.lastAt > REORDER_MS &&
+      Math.abs(y - d.lastY) > REORDER_PX
+    ) {
       d.lastAt = now
       d.lastY = y
       if (taskStore.moveTaskToLocal(d.id, best)) dragged.add(d.id)
@@ -593,7 +608,8 @@ export function usePointerDrag(els: DragElements): PointerDrag {
 
     if (d.kind === 'reorder' || d.kind === 'greorder') {
       // 真的拖過（不是只按一下把手）才吞；只按一下的 click 落在把手上，把手自己會 stop
-      if (Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) >= REORDER_CLICK_PX) swallowNextClick()
+      if (Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) >= REORDER_CLICK_PX)
+        swallowNextClick()
     } else if (d.kind === 'link') {
       // 命中條或圓點都算，都沒中就用最後壓到的那一列（legacy :2574-2576）
       const to = hitTaskAt(e.clientX, e.clientY) ?? ui.nearTaskId

@@ -19,7 +19,8 @@ function stubMatchMedia(initial: boolean) {
       calls.push(query)
       return {
         matches: initial,
-        addEventListener: (_: string, fn: Listener) => listeners.set(query, [...(listeners.get(query) ?? []), fn]),
+        addEventListener: (_: string, fn: Listener) =>
+          listeners.set(query, [...(listeners.get(query) ?? []), fn]),
       }
     }),
   )

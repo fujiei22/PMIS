@@ -233,7 +233,12 @@ onBeforeUnmount(() => {
 
     <!-- 時間軸 ↔ 空狀態之間淡入淡出（A17）；stage 撐住交換時的高度（hook 只收一個參數，Vue 仍自己偵測過渡結束） -->
     <div ref="stage" class="ov-stage">
-      <Transition name="ov-fade" mode="out-in" @before-leave="holdHeight(stage)" @enter="releaseHeight(stage)">
+      <Transition
+        name="ov-fade"
+        mode="out-in"
+        @before-leave="holdHeight(stage)"
+        @enter="releaseHeight(stage)"
+      >
         <OvEmpty v-if="showEmpty" key="empty" class="tl-empty" />
         <div v-else key="timeline" class="tl">
           <!-- sticky 尺規：左欄標題 + 月份列 / 週刻度；在 isolated 的 .tl-chart 之外，速覽才蓋不到它 -->
@@ -299,7 +304,13 @@ onBeforeUnmount(() => {
                 @enter="reenter.onEnter"
                 @vue:before-update="reenter.snapshot"
               >
-                <div v-for="g in groups" :key="g.pm.id" class="g-wrap" :data-g-wrap="g.pm.id" @vue:updated="reenter.resume">
+                <div
+                  v-for="g in groups"
+                  :key="g.pm.id"
+                  class="g-wrap"
+                  :data-g-wrap="g.pm.id"
+                  @vue:updated="reenter.resume"
+                >
                   <div class="g-wrap-clip">
                     <TimelineGroup :group="g" :start-idx="range.startIdx" :dw="DW" />
                   </div>

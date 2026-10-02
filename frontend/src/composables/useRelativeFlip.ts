@@ -23,14 +23,21 @@ export function currentScale(el: Element): number {
  * @param ms 時長；0（reduced motion）只取消不播
  * @param easing Web Animations 的 easing 字串
  */
-export function playFlip(el: HTMLElement, from: { dx: number; dy: number; scale: number }, ms: number, easing: string): void {
+export function playFlip(
+  el: HTMLElement,
+  from: { dx: number; dy: number; scale: number },
+  ms: number,
+  easing: string,
+): void {
   // jsdom 沒有 getAnimations / animate
   for (const a of el.getAnimations?.() ?? []) if (a.id === FLIP_ID) a.cancel()
   if (!ms || typeof el.animate !== 'function') return
   const scaled = Math.abs(from.scale - 1) > 0.001
   el.animate(
     [
-      { transform: `translate(${from.dx}px, ${from.dy}px)${scaled ? ` scale(${from.scale})` : ''}` },
+      {
+        transform: `translate(${from.dx}px, ${from.dy}px)${scaled ? ` scale(${from.scale})` : ''}`,
+      },
       { transform: `translate(0px, 0px)${scaled ? ' scale(1)' : ''}` },
     ],
     { duration: ms, easing, composite: 'add', id: FLIP_ID },
@@ -91,7 +98,12 @@ export function useRelativeFlip(
       const t = currentTranslate(el)
       const top = el.offsetTop
       const left = el.offsetLeft
-      const seen = { top: top + t.y, left: left + t.x, width: el.offsetWidth, height: el.offsetHeight }
+      const seen = {
+        top: top + t.y,
+        left: left + t.x,
+        width: el.offsetWidth,
+        height: el.offsetHeight,
+      }
       before.set(el.getAttribute(keyAttr)!, { seen, top, left })
       byEl.set(el, seen)
     }

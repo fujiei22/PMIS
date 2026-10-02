@@ -100,7 +100,10 @@ describe('commentStore', () => {
 
   it('addDraftFiles / removeDraft / resetDraft', () => {
     const c = useCommentStore()
-    c.addDraftFiles([{ name: 'a.txt', size: 1 } as unknown as File, { name: 'b.txt', size: 2 } as unknown as File])
+    c.addDraftFiles([
+      { name: 'a.txt', size: 1 } as unknown as File,
+      { name: 'b.txt', size: 2 } as unknown as File,
+    ])
     expect(c.draftFiles.map((f) => f.name)).toEqual(['a.txt', 'b.txt'])
     c.removeDraft(0)
     expect(c.draftFiles.map((f) => f.name)).toEqual(['b.txt'])

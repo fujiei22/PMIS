@@ -50,15 +50,7 @@ export type DropdownKey =
  * S4 追加的具名型別；欄位本身與 §介面契約 D 的 `optionMenu.kind` 完全相同。
  */
 export type OptionMenuKind =
-  | 'priority'
-  | 'status'
-  | 'group'
-  | 'ipri'
-  | 'iitem'
-  | 'istatus'
-  | 'itask'
-  | 'icreator'
-  | 'iowner'
+  'priority' | 'status' | 'group' | 'ipri' | 'iitem' | 'istatus' | 'itask' | 'icreator' | 'iowner'
 
 /** 任務 ↔ Issue 切換動畫的長度（ms）。legacy `navAnim()` :2270 */
 const NAV_ANIM_MS = 280

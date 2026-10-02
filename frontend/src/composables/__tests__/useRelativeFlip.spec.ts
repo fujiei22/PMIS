@@ -49,7 +49,11 @@ let running = new Map<HTMLElement, { id: string; cancel: () => void }[]>()
 beforeEach(() => {
   calls = []
   running = new Map()
-  HTMLElement.prototype.animate = function (this: HTMLElement, frames: Keyframe[], opts: KeyframeAnimationOptions) {
+  HTMLElement.prototype.animate = function (
+    this: HTMLElement,
+    frames: Keyframe[],
+    opts: KeyframeAnimationOptions,
+  ) {
     calls.push({ el: this, frames, opts })
     const a = { id: String(opts.id ?? ''), cancel: vi.fn() }
     running.set(this, [...(running.get(this) ?? []), a])
@@ -72,7 +76,10 @@ describe('useRelativeFlip', () => {
     keys.value = ['b', 'a']
     await nextTick()
     const [a] = callOf(w, 'a')
-    expect(a!.frames).toEqual([{ transform: 'translate(0px, -50px)' }, { transform: 'translate(0px, 0px)' }])
+    expect(a!.frames).toEqual([
+      { transform: 'translate(0px, -50px)' },
+      { transform: 'translate(0px, 0px)' },
+    ])
     expect(a!.opts).toMatchObject({ composite: 'add', id: FLIP_ID })
     expect(callOf(w, 'b')[0]!.frames[0]).toEqual({ transform: 'translate(0px, 50px)' })
     for (const k of ['a', 'b']) expect(styleOf(w, k).transition).toBe('')
@@ -117,7 +124,10 @@ describe('useRelativeFlip', () => {
       { transform: 'translate(0px, 0px) scale(1)' },
     ])
     // 沒有縮放的照舊只播位移
-    expect(callOf(w, 'a')[0]!.frames).toEqual([{ transform: 'translate(0px, -50px)' }, { transform: 'translate(0px, 0px)' }])
+    expect(callOf(w, 'a')[0]!.frames).toEqual([
+      { transform: 'translate(0px, -50px)' },
+      { transform: 'translate(0px, 0px)' },
+    ])
   })
 
   it('位移中、版面位置沒變的更新（打字但篩選結果不變）：上一段 FLIP 照跑，不從 0 速重新起跳', async () => {
@@ -144,7 +154,9 @@ describe('useRelativeFlip', () => {
             h(
               'div',
               { ref: box },
-              keys.value.map((k) => h('div', { key: k, 'data-k': k, ref: (el) => el && fakeLayout(el as HTMLElement) })),
+              keys.value.map((k) =>
+                h('div', { key: k, 'data-k': k, ref: (el) => el && fakeLayout(el as HTMLElement) }),
+              ),
             )
         },
       }),

@@ -95,7 +95,11 @@ describe('store 分層（契約 E）', () => {
       .map((d) => d.spec)
       .sort()
     expect(runtime).toEqual(['@/stores/filter', '@/stores/selection', '@/stores/ui', '@/stores/ui'])
-    expect(depsIn(src).filter((d) => d.typeOnly).map((d) => d.spec)).toEqual(['@/stores/rows'])
+    expect(
+      depsIn(src)
+        .filter((d) => d.typeOnly)
+        .map((d) => d.spec),
+    ).toEqual(['@/stores/rows'])
   })
 
   it.each(DATA_LAYER)('%s 只 import 白名單內的模組', (file) => {

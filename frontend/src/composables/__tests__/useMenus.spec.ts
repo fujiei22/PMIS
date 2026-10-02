@@ -104,8 +104,19 @@ describe('useMenus', () => {
       ...anchorCalendar(rect, VP, 'issue'),
     })
 
-    menus.openIssueDatePicker(triggerAt(rect.left, rect.top, rect.bottom), 't1', 'done', '2026-03-09', 'task')
-    expect(ui.issueDatePicker).toMatchObject({ id: 't1', field: 'done', kind: 'task', month: '2026-03' })
+    menus.openIssueDatePicker(
+      triggerAt(rect.left, rect.top, rect.bottom),
+      't1',
+      'done',
+      '2026-03-09',
+      'task',
+    )
+    expect(ui.issueDatePicker).toMatchObject({
+      id: 't1',
+      field: 'done',
+      kind: 'task',
+      month: '2026-03',
+    })
   })
 
   it('開各種浮層時記下觸發元素（給 useCloseOnScroll 判斷捲動有沒有把它帶走）', () => {

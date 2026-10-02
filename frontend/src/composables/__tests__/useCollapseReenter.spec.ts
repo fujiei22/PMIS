@@ -153,7 +153,9 @@ describe('useCollapseReenter', () => {
       const atReflow: string[] = []
       Object.defineProperty(el, 'offsetHeight', {
         get: () => {
-          atReflow.push(`${el.style.transition}|${el.style.gridTemplateRows}|${el.style.opacity}|${el.style.transitionDelay}`)
+          atReflow.push(
+            `${el.style.transition}|${el.style.gridTemplateRows}|${el.style.opacity}|${el.style.transitionDelay}`,
+          )
           return 0
         },
       })

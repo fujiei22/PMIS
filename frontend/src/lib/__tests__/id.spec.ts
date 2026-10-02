@@ -6,7 +6,11 @@ const V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}
 
 /** 暫時把 crypto.randomUUID 換掉（不能直接指派，jsdom 的 Crypto 是唯讀屬性）。 */
 function stubRandomUUID(value: Crypto['randomUUID'] | undefined): void {
-  Object.defineProperty(globalThis.crypto, 'randomUUID', { value, configurable: true, writable: true })
+  Object.defineProperty(globalThis.crypto, 'randomUUID', {
+    value,
+    configurable: true,
+    writable: true,
+  })
 }
 
 const original = globalThis.crypto.randomUUID

@@ -27,7 +27,9 @@ describe('anchorOptionMenu', () => {
 
   it('靠右時往左收，靠左時不小於 8', () => {
     expect(anchorOptionMenu({ left: 1400, top: 10, bottom: 30 }, 3, VP).left).toBe(1440 - 240)
-    expect(anchorOptionMenu({ left: 0, top: 10, bottom: 30 }, 3, { width: 100, height: 900 }).left).toBe(8)
+    expect(
+      anchorOptionMenu({ left: 0, top: 10, bottom: 30 }, 3, { width: 100, height: 900 }).left,
+    ).toBe(8)
   })
 })
 
@@ -46,7 +48,9 @@ describe('anchorRowMenu', () => {
 
   it('左右都不超出視窗', () => {
     expect(anchorRowMenu({ left: 10, right: 34, top: 10, bottom: 30 }, VP).left).toBe(8)
-    expect(anchorRowMenu({ left: 1500, right: 1524, top: 10, bottom: 30 }, VP).left).toBe(1440 - ROW_MENU_W - 8)
+    expect(anchorRowMenu({ left: 1500, right: 1524, top: 10, bottom: 30 }, VP).left).toBe(
+      1440 - ROW_MENU_W - 8,
+    )
   })
 })
 

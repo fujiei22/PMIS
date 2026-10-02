@@ -355,7 +355,12 @@ describe('uiStore', () => {
     expect(ui.filterCalendarOpen).toBe(false)
     expect(ui.pickerFor).toBeNull()
     expect(ui.editing).toBeNull()
-    expect([ui.linkLine, ui.nearTaskId, ui.hoverTaskId, ui.rowMenu]).toEqual([null, null, null, null])
+    expect([ui.linkLine, ui.nearTaskId, ui.hoverTaskId, ui.rowMenu]).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ])
     expect(ui.drag).toBeNull()
     expect(ui.zooming).toBe(false)
     expect(ui.errors).toEqual([])

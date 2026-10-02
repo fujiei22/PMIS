@@ -20,7 +20,9 @@ const WEIGHTS = [400, 500, 700] as const
  * 開始下載 LATE_GLYPHS 所在的字型子集；不等它完成、失敗也不影響畫面（之後第一次出現時瀏覽器照樣會自己載）。
  * @param fonts 字型集合（測試注入用）；沒有 FontFaceSet 的環境（jsdom）直接跳過。
  */
-export function preloadLateGlyphs(fonts: FontFaceSet | undefined = globalThis.document?.fonts): void {
+export function preloadLateGlyphs(
+  fonts: FontFaceSet | undefined = globalThis.document?.fonts,
+): void {
   if (typeof fonts?.load !== 'function') return
   for (const w of WEIGHTS) fonts.load(`${w} 16px "${FAMILY}"`, LATE_GLYPHS).catch(() => {})
 }

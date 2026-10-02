@@ -69,9 +69,7 @@ async function download(f: CommentFile): Promise<void> {
 /** 依序下載選取的檔，間隔 220ms 免得瀏覽器擋掉連續下載。legacy :3918 */
 function downloadSelected(): void {
   if (!selected.value.length) return
-  files.value
-    .filter((f) => isOn(f.id))
-    .forEach((f, i) => setTimeout(() => download(f), i * 220))
+  files.value.filter((f) => isOn(f.id)).forEach((f, i) => setTimeout(() => download(f), i * 220))
 }
 
 function openLightbox(f: CommentFile): void {
@@ -145,7 +143,12 @@ function dateOf(at: string): string {
           <div></div>
         </div>
         <div v-for="f in files" :key="f.id" class="file-row" :class="{ on: isOn(f.id) }">
-          <div class="checkbox" :class="{ on: isOn(f.id) }" role="button" @click.stop="toggle(f.id)">
+          <div
+            class="checkbox"
+            :class="{ on: isOn(f.id) }"
+            role="button"
+            @click.stop="toggle(f.id)"
+          >
             {{ isOn(f.id) ? '✓' : '' }}
           </div>
           <div class="row-name">

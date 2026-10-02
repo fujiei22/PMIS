@@ -229,7 +229,8 @@ async function jumpPanel(key: 'gantt' | 'kanban' | 'issues'): Promise<void> {
   await deferredPanels.ensure()
   const el = registry.panels.get(key)
   if (!el) return
-  const top = el.getBoundingClientRect().top + window.scrollY - sticky.panelTop.value - PANEL_JUMP_GAP
+  const top =
+    el.getBoundingClientRect().top + window.scrollY - sticky.panelTop.value - PANEL_JUMP_GAP
   window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
 }
 
@@ -250,7 +251,11 @@ const prioOptions = computed<FilterOption[]>(() =>
   })),
 )
 const groupOptions = computed<FilterOption[]>(() =>
-  taskStore.groups.map((g) => ({ key: g.id, label: g.name, checked: filter.groupIds.includes(g.id) })),
+  taskStore.groups.map((g) => ({
+    key: g.id,
+    label: g.name,
+    checked: filter.groupIds.includes(g.id),
+  })),
 )
 const issueModeOptions = computed<FilterOption[]>(() =>
   [
@@ -278,7 +283,12 @@ const issueStatusOptions = computed<FilterOption[]>(() =>
 )
 
 // ── 日期模式 ──────────────────────────────────────────────────────────────
-const DATE_MODE_LABEL = { off: '日期', gt: '日期 大於', lt: '日期 小於', between: '日期 介於' } as const
+const DATE_MODE_LABEL = {
+  off: '日期',
+  gt: '日期 大於',
+  lt: '日期 小於',
+  between: '日期 介於',
+} as const
 const dateModeOptions = computed<FilterOption[]>(() =>
   [
     { key: 'off', label: '不篩選' },
@@ -336,8 +346,16 @@ function snapshotPills(box: HTMLElement): Map<HTMLElement, PillRect> {
     if (!el.classList.contains('date-pill') && !el.classList.contains('tilde')) continue
     const t = getComputedStyle(el).transform
     // jsdom 沒有 DOMMatrixReadOnly
-    const dx = t && t !== 'none' && typeof DOMMatrixReadOnly !== 'undefined' ? new DOMMatrixReadOnly(t).m41 : 0
-    rects.set(el, { top: el.offsetTop, left: el.offsetLeft + dx, width: el.offsetWidth, height: el.offsetHeight })
+    const dx =
+      t && t !== 'none' && typeof DOMMatrixReadOnly !== 'undefined'
+        ? new DOMMatrixReadOnly(t).m41
+        : 0
+    rects.set(el, {
+      top: el.offsetTop,
+      left: el.offsetLeft + dx,
+      width: el.offsetWidth,
+      height: el.offsetHeight,
+    })
   }
   return rects
 }
@@ -395,7 +413,8 @@ function clearFilters(): void {
           role="button"
           @click="jumpPanel(b.key)"
         >
-          <span class="board-icon">{{ b.icon }}</span><span>{{ b.label }}</span>
+          <span class="board-icon">{{ b.icon }}</span
+          ><span>{{ b.label }}</span>
         </div>
       </nav>
 
@@ -465,7 +484,10 @@ function clearFilters(): void {
             :active="filter.issueStatuses.length > 0"
             :options="issueStatusOptions"
             @pick="
-              filter.issueStatuses = toggleIn(filter.issueStatuses, $event as IssueStatus | 'delayed')
+              filter.issueStatuses = toggleIn(
+                filter.issueStatuses,
+                $event as IssueStatus | 'delayed',
+              )
             "
           />
         </span>

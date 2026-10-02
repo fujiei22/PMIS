@@ -106,10 +106,20 @@ function toggleMember(id: string): void {
 <template>
   <div class="activity-toolbar">
     <div class="tabs">
-      <div class="tab tab-comments" :class="{ on: comment.tab === 'comments' }" role="button" @click="pickTab('comments')">
+      <div
+        class="tab tab-comments"
+        :class="{ on: comment.tab === 'comments' }"
+        role="button"
+        @click="pickTab('comments')"
+      >
         留言 {{ commentCount }}
       </div>
-      <div class="tab tab-files" :class="{ on: comment.tab === 'files' }" role="button" @click="pickTab('files')">
+      <div
+        class="tab tab-files"
+        :class="{ on: comment.tab === 'files' }"
+        role="button"
+        @click="pickTab('files')"
+      >
         檔案 {{ fileCount }}
       </div>
     </div>
@@ -125,7 +135,8 @@ function toggleMember(id: string): void {
         role="button"
         @click="toggleDateDropdown()"
       >
-        <span class="dd-glyph">▦</span><span>{{ dateLabel }}</span><span class="dd-caret">▼</span>
+        <span class="dd-glyph">▦</span><span>{{ dateLabel }}</span
+        ><span class="dd-caret">▼</span>
       </div>
       <!-- 兩個下拉的進出場用 base.css 的 pop -->
       <Transition name="pop">
@@ -150,7 +161,9 @@ function toggleMember(id: string): void {
           </div>
           <div class="cal-bar">
             <div class="cal-title">{{ calTitle }}</div>
-            <div class="cal-nav" role="button" @click="calMonth = clock.todayIso.slice(0, 7)">今天</div>
+            <div class="cal-nav" role="button" @click="calMonth = clock.todayIso.slice(0, 7)">
+              今天
+            </div>
             <div class="cal-arrow" role="button" @click="shiftCal(-1)">‹</div>
             <div class="cal-arrow" role="button" @click="shiftCal(1)">›</div>
           </div>
@@ -186,7 +199,9 @@ function toggleMember(id: string): void {
         @click="ui.toggleDropdown('cmem')"
       >
         <span class="dd-glyph">◍</span>
-        <span>{{ comment.memberIds.length ? `成員 ${comment.memberIds.length}` : '全部成員' }}</span>
+        <span>{{
+          comment.memberIds.length ? `成員 ${comment.memberIds.length}` : '全部成員'
+        }}</span>
         <span class="dd-caret">▼</span>
       </div>
       <Transition name="pop">

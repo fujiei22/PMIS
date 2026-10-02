@@ -50,7 +50,9 @@ describe('OvSortControls', () => {
     const w = mount(OvSortControls, { attachTo: document.body })
     const ov = useOverviewStore()
     const at = (left: number) =>
-      vi.spyOn(w.find('.sort-trigger').element, 'getBoundingClientRect').mockReturnValue({ left } as DOMRect)
+      vi
+        .spyOn(w.find('.sort-trigger').element, 'getBoundingClientRect')
+        .mockReturnValue({ left } as DOMRect)
 
     // 平板直向：按鈕在 647px，218px 寬的選單往右開會超出 768
     at(647)

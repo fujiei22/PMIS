@@ -103,7 +103,9 @@ function onWrapTransitionEnd(e: TransitionEvent): void {
         <span class="p-num c-gap" :class="gapTone(d.gap)">{{ d.gap }}%</span>
       </div>
       <div class="p-canvas">
-        <div class="bar" :style="barStyle"><span class="bar-label">{{ p.name }}</span></div>
+        <div class="bar" :style="barStyle">
+          <span class="bar-label">{{ p.name }}</span>
+        </div>
       </div>
     </div>
 

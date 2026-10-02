@@ -3,8 +3,14 @@
    下拉與排序選單用 base.css 的 pop（transition，動畫稽核 T12；原本的 ov-pop 是 keyframes，快速開關會跳回全亮）。 */
 
 /* 淡入淡出：空狀態、摘要 bar、速覽內容、.qv-cap（A13 / A17 / A27） */
-.ov-fade-enter-active, .ov-fade-leave-active { transition: opacity var(--t-base) var(--ease); }
-.ov-fade-enter-from, .ov-fade-leave-to { opacity: 0; }
+.ov-fade-enter-active,
+.ov-fade-leave-active {
+  transition: opacity var(--t-base) var(--ease);
+}
+.ov-fade-enter-from,
+.ov-fade-leave-to {
+  opacity: 0;
+}
 
 /*
  * 總覽內的檢視切換與載入完成（A10 / A18）：新的淡入並上移 4px，舊的淡出。切頁過渡（A29）在 base.css 的 page-view。
@@ -12,22 +18,52 @@
  * 離場也列 transform，淡入途中的上移跟著收完，不一幀跳回原位。
  * 舊檢視還在淡出（--t-fast）時切回原檢視是 Vue out-in 的限制：離場開始後不能取消，要等它淡完、再重新淡入。
  */
-.ov-view-enter-active { transition: opacity var(--t-panel) var(--ease), transform var(--t-panel) var(--ease); }
-.ov-view-enter-from { opacity: 0; transform: translateY(4px); }
-.ov-view-leave-active { transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease); }
-.ov-view-leave-to { opacity: 0; }
+.ov-view-enter-active {
+  transition:
+    opacity var(--t-panel) var(--ease),
+    transform var(--t-panel) var(--ease);
+}
+.ov-view-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+.ov-view-leave-active {
+  transition:
+    opacity var(--t-fast) var(--ease),
+    transform var(--t-fast) var(--ease);
+}
+.ov-view-leave-to {
+  opacity: 0;
+}
 
 /* 卡片、欄、時間軸群組與列：進出與重排（A7 / A8 / A9 / A20） */
-.ov-card-move, .ov-col-move, .ov-row-move, .ov-group-move { transition: transform var(--t-panel) var(--ease); }
+.ov-card-move,
+.ov-col-move,
+.ov-row-move,
+.ov-group-move {
+  transition: transform var(--t-panel) var(--ease);
+}
 /*
  * 泳道內卡片 / 群組內列的重排交給 useRelativeFlip（Web Animations 做相對位移），TransitionGroup 的 move-class 指到這兩個 class 停用內建 move。
  * 要真的寫出 transition: none：Vue 判斷要不要跑內建 move 時會複製第一個子元素加上 move-class 看有沒有 transform 過渡；
  * 指到不存在的 class 會讓它照元素自己的 transition 判斷。!important：元素自己的 class 宣告了 transform 過渡時也停得住。
  */
-.ov-card-still, .ov-row-still { transition: none !important; }
+.ov-card-still,
+.ov-row-still {
+  transition: none !important;
+}
 /* 卡片同一個 key 在離場途中又回來時，由 composables/useFreezeReenter.ts 從舊卡當下的位置、透明度與縮放接續（它會先拿掉 ov-card-enter-from）。 */
-.ov-card-enter-active, .ov-card-leave-active { transition: opacity var(--t-panel) var(--ease), transform var(--t-panel) var(--ease); }
-.ov-card-enter-from, .ov-card-leave-to { opacity: 0; transform: scale(0.96); }
+.ov-card-enter-active,
+.ov-card-leave-active {
+  transition:
+    opacity var(--t-panel) var(--ease),
+    transform var(--t-panel) var(--ease);
+}
+.ov-card-enter-from,
+.ov-card-leave-to {
+  opacity: 0;
+  transform: scale(0.96);
+}
 /*
  * 泳道、時間軸群組、時間軸列：原地收合進出場（user 選方案 2）。項目外層是 grid（0fr ↔ 1fr 跟著內容高度），
  * 內層裁切（min-height: 0; overflow: clip——clip 不建立捲動容器，sticky 標頭照常黏住）；間距與框線都放在裁切層裡面
@@ -38,17 +74,33 @@
  * 時間軸列的裁切層只在進出場時裁（TimelineGroup 的 .r-clip）：平常裁的話 bar 的光暈（A25）會在列的上下緣被切平。
  * ov-fold：成員面板的「清除勾選」那列（PmFilter 的 .mp-tools，T14），同一套原地長出 / 收起，面板高度逐幀連續。
  */
-.ov-col-enter-active, .ov-col-leave-active,
-.ov-group-enter-active, .ov-group-leave-active,
-.ov-row-enter-active, .ov-row-leave-active,
-.ov-fold-enter-active, .ov-fold-leave-active {
-  transition: grid-template-rows var(--t-panel) var(--ease), opacity var(--t-panel) var(--ease), transform var(--t-panel) var(--ease);
+.ov-col-enter-active,
+.ov-col-leave-active,
+.ov-group-enter-active,
+.ov-group-leave-active,
+.ov-row-enter-active,
+.ov-row-leave-active,
+.ov-fold-enter-active,
+.ov-fold-leave-active {
+  transition:
+    grid-template-rows var(--t-panel) var(--ease),
+    opacity var(--t-panel) var(--ease),
+    transform var(--t-panel) var(--ease);
 }
-.ov-col-enter-from, .ov-col-leave-to,
-.ov-group-enter-from, .ov-group-leave-to,
-.ov-row-enter-from, .ov-row-leave-to,
-.ov-fold-enter-from, .ov-fold-leave-to { grid-template-rows: 0fr; opacity: 0; }
-.ov-fold-leave-active { pointer-events: none; }
+.ov-col-enter-from,
+.ov-col-leave-to,
+.ov-group-enter-from,
+.ov-group-leave-to,
+.ov-row-enter-from,
+.ov-row-leave-to,
+.ov-fold-enter-from,
+.ov-fold-leave-to {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+.ov-fold-leave-active {
+  pointer-events: none;
+}
 
 /*
  * 內建 move 的子元素平常不宣告任何過渡。Vue 在下一次更新時拿掉 *-move 想停住進行中的位移，
@@ -60,9 +112,9 @@
  * 時間軸列（.g-list > .r-wrap）不用：內建 move 已由 ov-row-still 停用。頭像疊沒有重排（勾選前後都照 PM 順序），不設 move。
  */
 :where(
-  [data-view="overview"] .sorts > *,
-  [data-view="overview"] .board > *,
-  [data-view="overview"] .tl-groups > *
+  [data-view='overview'] .sorts > *,
+  [data-view='overview'] .board > *,
+  [data-view='overview'] .tl-groups > *
 ) {
   transition: none;
 }
@@ -77,16 +129,44 @@
  * --ov-slot-mr 平常值（頭像疊的重疊 -7px）、--ov-slot-mr0 寬度 0 時的值（抵掉父層 flex gap，插入 / 移除當幀不先跳一個 gap）。
  * 過渡都寫在外層：Vue 只等外層自己的 transitionend（子元素冒上來的不算）。.ov-slot 要放在進出場 class 之前（同特異度靠順序）。
  */
-.ov-slot { display: grid; grid-template-columns: 1fr; flex: 0 0 auto; margin-right: var(--ov-slot-mr, 0px); }
-.ov-slot-clip { display: flex; min-width: 0; }
-.ov-chip-move { transition: transform var(--t-panel) var(--ease); }
-.ov-chip-enter-active, .ov-chip-leave-active,
-.ov-av-enter-active, .ov-av-leave-active {
-  transition: grid-template-columns var(--t-panel) var(--ease), margin-right var(--t-panel) var(--ease), opacity var(--t-panel) var(--ease);
+.ov-slot {
+  display: grid;
+  grid-template-columns: 1fr;
+  flex: 0 0 auto;
+  margin-right: var(--ov-slot-mr, 0px);
+}
+.ov-slot-clip {
+  display: flex;
+  min-width: 0;
+}
+.ov-chip-move {
+  transition: transform var(--t-panel) var(--ease);
+}
+.ov-chip-enter-active,
+.ov-chip-leave-active,
+.ov-av-enter-active,
+.ov-av-leave-active {
+  transition:
+    grid-template-columns var(--t-panel) var(--ease),
+    margin-right var(--t-panel) var(--ease),
+    opacity var(--t-panel) var(--ease);
 }
 /* 離場中不攔點擊（同 base.css 的 pop-leave-active）：收到一半的 ✕ 不能再被點到 */
-.ov-chip-leave-active, .ov-av-leave-active { pointer-events: none; }
-.ov-chip-enter-from, .ov-chip-leave-to,
-.ov-av-enter-from, .ov-av-leave-to { grid-template-columns: 0fr; margin-right: var(--ov-slot-mr0, 0px); opacity: 0; }
-.ov-chip-enter-active > .ov-slot-clip, .ov-chip-leave-active > .ov-slot-clip,
-.ov-av-enter-active > .ov-slot-clip, .ov-av-leave-active > .ov-slot-clip { overflow: clip; }
+.ov-chip-leave-active,
+.ov-av-leave-active {
+  pointer-events: none;
+}
+.ov-chip-enter-from,
+.ov-chip-leave-to,
+.ov-av-enter-from,
+.ov-av-leave-to {
+  grid-template-columns: 0fr;
+  margin-right: var(--ov-slot-mr0, 0px);
+  opacity: 0;
+}
+.ov-chip-enter-active > .ov-slot-clip,
+.ov-chip-leave-active > .ov-slot-clip,
+.ov-av-enter-active > .ov-slot-clip,
+.ov-av-leave-active > .ov-slot-clip {
+  overflow: clip;
+}

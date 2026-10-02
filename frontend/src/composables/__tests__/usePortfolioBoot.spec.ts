@@ -56,7 +56,12 @@ describe('usePortfolioBoot', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const ov = useOverviewStore()
     let failOld!: (e: unknown) => void
-    vi.spyOn(api, 'listProjects').mockImplementationOnce(() => new Promise((_, rej) => { failOld = rej }))
+    vi.spyOn(api, 'listProjects').mockImplementationOnce(
+      () =>
+        new Promise((_, rej) => {
+          failOld = rej
+        }),
+    )
     // 第一次掛載：載入中
     const first = usePortfolioBoot().reload()
     expect(ov.loadState).toBe('loading')
@@ -105,8 +110,18 @@ describe('usePortfolioBoot', () => {
     let okOld!: (v: Awaited<ReturnType<typeof api.listProjects>>) => void
     let failNew!: (e: unknown) => void
     vi.spyOn(api, 'listProjects')
-      .mockImplementationOnce(() => new Promise((r) => { okOld = r }))
-      .mockImplementationOnce(() => new Promise((_, rej) => { failNew = rej }))
+      .mockImplementationOnce(
+        () =>
+          new Promise((r) => {
+            okOld = r
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((_, rej) => {
+            failNew = rej
+          }),
+      )
     const first = usePortfolioBoot().reload()
     const second = usePortfolioBoot().reload()
     expect(ov.loadState).toBe('loading')

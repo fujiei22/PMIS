@@ -47,7 +47,9 @@ const confirmView = useConfirmProps()
  * 只在「從別頁切進來、而且不還原到非 0 的捲動位置」時延後。直接開頁 / 重新整理沒有切頁淡入要保護；
  * 上一頁 / 下一頁回到捲過的位置時，新頁在掛上當下就要是最終高度（spec 7b，router/pageSwap.ts）。
  */
-const { kanban: kanbanReady, issues: issuesReady } = provideDeferredPanels(isPageSwapping() && !swapRestoresScroll())
+const { kanban: kanbanReady, issues: issuesReady } = provideDeferredPanels(
+  isPageSwapping() && !swapRestoresScroll(),
+)
 
 /**
  * 首屏看得到的面板一律同步掛（高螢幕、甘特收合時）：上一個面板的下緣在視窗內，下一個就在同一次更新裡掛上，

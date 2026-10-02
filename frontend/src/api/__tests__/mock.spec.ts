@@ -59,7 +59,9 @@ describe('mock api', () => {
     expect(created.id).toBe('new-1')
     const data = await api.loadProject()
     expect(data.tasks.some((t) => t.id === 'new-1')).toBe(true)
-    expect(events).toEqual([{ type: 'task.created', payload: expect.objectContaining({ id: 'new-1' }) }])
+    expect(events).toEqual([
+      { type: 'task.created', payload: expect.objectContaining({ id: 'new-1' }) },
+    ])
   })
 
   it('createTask 重複 id → ApiError conflict（409），資料不變', async () => {
@@ -76,7 +78,10 @@ describe('mock api', () => {
     const out = await api.updateTask('t1', { name: '改名' })
     expect(out.name).toBe('改名')
     expect(out.start).toBe(sampleProject.tasks[0]!.start)
-    expect(events[0]).toEqual({ type: 'task.updated', payload: expect.objectContaining({ name: '改名' }) })
+    expect(events[0]).toEqual({
+      type: 'task.updated',
+      payload: expect.objectContaining({ name: '改名' }),
+    })
     const err = await api.updateTask('nope', { name: 'x' }).catch((e: unknown) => e)
     expect((err as ApiError).code).toBe('not_found')
     expect((err as ApiError).status).toBe(404)
@@ -343,7 +348,16 @@ describe('mock api', () => {
   })
 
   it('reset(data) 換成指定的資料', async () => {
-    api.reset({ groups: [], members: [], tasks: [], deps: [], issues: [], comments: [], budget: { total: 0, actual: 0 }, currentUserId: 'm1' })
+    api.reset({
+      groups: [],
+      members: [],
+      tasks: [],
+      deps: [],
+      issues: [],
+      comments: [],
+      budget: { total: 0, actual: 0 },
+      currentUserId: 'm1',
+    })
     expect((await api.loadProject()).tasks).toHaveLength(0)
   })
 })

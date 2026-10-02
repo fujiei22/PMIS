@@ -166,7 +166,8 @@ onBeforeUnmount(cancelSlides)
         :data-view-switch="v.key"
         @click="overview.setView(v.key)"
       >
-        <span class="view-icon" aria-hidden="true">{{ v.icon }}</span><span>{{ v.label }}</span>
+        <span class="view-icon" aria-hidden="true">{{ v.icon }}</span
+        ><span>{{ v.label }}</span>
       </button>
     </nav>
 
@@ -176,7 +177,13 @@ onBeforeUnmount(cancelSlides)
         <div class="search" :class="{ on: hasQuery, disabled: notReady }">
           <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true">
             <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6" />
-            <path d="m10.5 10.5 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            <path
+              d="m10.5 10.5 3 3"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+            />
           </svg>
           <input
             ref="searchInput"
@@ -198,7 +205,13 @@ onBeforeUnmount(cancelSlides)
             @click="clearQuery"
           >
             <svg viewBox="0 0 12 12" aria-hidden="true">
-              <path d="M3 3l6 6M9 3l-6 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              <path
+                d="M3 3l6 6M9 3l-6 6"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+              />
             </svg>
           </button>
         </div>

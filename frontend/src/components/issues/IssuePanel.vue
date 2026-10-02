@@ -96,7 +96,12 @@ const columns = computed<Column[]>(() => {
 
   const buckets = new Map<string, Issue[]>(defs.map((d) => [d.k, []]))
   for (const i of visibleIssues.value) buckets.get(defs[0]!.of(i))?.push(i)
-  return defs.map((d) => ({ k: d.k, label: d.label, color: d.color, items: buckets.get(d.k) ?? [] }))
+  return defs.map((d) => ({
+    k: d.k,
+    label: d.label,
+    color: d.color,
+    items: buckets.get(d.k) ?? [],
+  }))
 })
 
 /** 欄數交給 CSS（--cols）：桌機一欄一組並排，平板直向由 media query 改兩欄。 */
@@ -125,7 +130,8 @@ function pickGroupBy(k: 'status' | 'level' | 'item'): void {
  * 並把 Issue 面板展開。legacy `addIssueTop` :3765。
  */
 function addIssueTop(): void {
-  const task = (selection.taskId ? taskStore.taskById(selection.taskId) : null) ?? taskStore.tasks[0]
+  const task =
+    (selection.taskId ? taskStore.taskById(selection.taskId) : null) ?? taskStore.tasks[0]
   if (!task) return
   // addIssue 在任務不存在時回 null（S2 契約），這裡一併擋掉
   if (!actions.addIssueForTask(task.id)) return

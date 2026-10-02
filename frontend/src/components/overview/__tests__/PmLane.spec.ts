@@ -39,17 +39,21 @@ function stubColumns(n: number): void {
     const cs = real(el, pseudo)
     if (!(el instanceof HTMLElement) || !el.classList.contains('lane-body')) return cs
     return new Proxy(cs, {
-      get: (t, k) => (k === 'gridTemplateColumns' ? Array(n).fill('300px').join(' ') : Reflect.get(t, k)),
+      get: (t, k) =>
+        k === 'gridTemplateColumns' ? Array(n).fill('300px').join(' ') : Reflect.get(t, k),
     })
   })
 }
 
 /** @param expanded 掛載前先展開的專案（照順序，模擬從時間軸帶過來的狀態） */
 async function setup(expanded: string[] = []) {
-  const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: '/', component: { template: '<div />' } },
-    { path: '/projects/:id', name: 'dashboard', component: { template: '<div />' } },
-  ] })
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/projects/:id', name: 'dashboard', component: { template: '<div />' } },
+    ],
+  })
   useClockStore().now = new Date('2026-09-22T10:00:00').getTime()
   await usePortfolioStore().load(buildPortfolio(sampleProject, '2026-09-22'))
   const ov = useOverviewStore()
@@ -135,7 +139,15 @@ describe('PmLane', () => {
     w.vm.$.appContext.config.errorHandler = (e) => errors.push(e)
     // 卡片有進出（拿掉第一張）、同時留下的那張 render 拋錯
     w.vm.$.appContext.config.warnHandler = () => {}
-    const bad = { ...group.rows[1]!, p: new Proxy(group.rows[1]!.p, { get: (t, k) => { if (k === 'name') throw new Error('render 失敗'); return Reflect.get(t, k) } }) }
+    const bad = {
+      ...group.rows[1]!,
+      p: new Proxy(group.rows[1]!.p, {
+        get: (t, k) => {
+          if (k === 'name') throw new Error('render 失敗')
+          return Reflect.get(t, k)
+        },
+      }),
+    }
     await w.setProps({ group: { ...group, rows: [bad] } })
     expect(errors.length, '有 render 錯誤').toBeGreaterThan(0)
     expect(holdHeight).toHaveBeenCalledTimes(1)

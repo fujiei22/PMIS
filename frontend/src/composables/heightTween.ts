@@ -17,7 +17,10 @@
 import { tokenMs, tokenValue } from '@/composables/motionTokens'
 import { parseEasing } from '@/lib/easing'
 
-export interface Timing { duration: number; ease: (p: number) => number }
+export interface Timing {
+  duration: number
+  ease: (p: number) => number
+}
 
 /** 一個進行中的補間。 */
 interface Tween {
@@ -89,12 +92,18 @@ function naturalHeights(els: readonly HTMLElement[]): number[] {
  */
 function tick(now: number): void {
   frame = undefined
-  const items = [...tweens].map(([el, tw]) => ({ el, tw, p: Math.min(1, (now - tw.t0) / tw.duration), batch: 0 }))
+  const items = [...tweens].map(([el, tw]) => ({
+    el,
+    tw,
+    p: Math.min(1, (now - tw.t0) / tw.duration),
+    batch: 0,
+  }))
   for (let i = 1; i < items.length; i++) {
     const it = items[i]!
     for (let j = 0; j < i; j++) {
       const prev = items[j]!
-      if (prev.batch >= it.batch && (prev.el.contains(it.el) || it.el.contains(prev.el))) it.batch = prev.batch + 1
+      if (prev.batch >= it.batch && (prev.el.contains(it.el) || it.el.contains(prev.el)))
+        it.batch = prev.batch + 1
     }
   }
   let unpin: (() => void) | undefined

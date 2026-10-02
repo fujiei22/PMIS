@@ -109,7 +109,9 @@ export function useGanttScroll(
   function listen(el: HTMLElement | null): void {
     if (listening) for (const t of USER_EVENTS) listening.removeEventListener(t, stopScroll, true)
     listening = el
-    if (el) for (const t of USER_EVENTS) el.addEventListener(t, stopScroll, { capture: true, passive: true })
+    if (el)
+      for (const t of USER_EVENTS)
+        el.addEventListener(t, stopScroll, { capture: true, passive: true })
   }
 
   function jumpToday(animated = false): void {

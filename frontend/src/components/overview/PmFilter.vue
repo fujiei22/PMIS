@@ -58,7 +58,9 @@ const morePms = computed(() => !hasSel.value && overview.pms.length > 3)
       </span>
       <Transition name="ov-av">
         <span v-if="hasSel" class="ov-slot mp-count-slot">
-          <span class="ov-slot-clip"><span class="mp-count">{{ selCount }}</span></span>
+          <span class="ov-slot-clip"
+            ><span class="mp-count">{{ selCount }}</span></span
+          >
         </span>
       </Transition>
     </template>
@@ -88,7 +90,8 @@ const morePms = computed(() => !hasSel.value && overview.pms.length > 3)
             <span class="mp-name-text">{{ o.pm.name }}</span>
           </span>
           <span class="mp-meta">
-            進行中 <b>{{ o.doing }}</b><span class="sep">·</span>未開始 <b>{{ o.todo }}</b>
+            進行中 <b>{{ o.doing }}</b
+            ><span class="sep">·</span>未開始 <b>{{ o.todo }}</b>
           </span>
         </span>
         <span class="mp-box" aria-hidden="true">✓</span>

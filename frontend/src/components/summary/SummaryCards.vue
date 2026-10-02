@@ -35,7 +35,9 @@ const doneTasks = computed(() => tasks.value.filter((t) => t.status === 'done').
  * 對照測試已遮掉這幾個數字，見 README〈刻意保留的差異〉。
  */
 const planDone = computed(() => tasks.value.filter((t) => isPlannedDone(t, clock.todayIdx)).length)
-const actualPct = computed(() => (total.value ? Math.round((doneTasks.value / total.value) * 100) : 0))
+const actualPct = computed(() =>
+  total.value ? Math.round((doneTasks.value / total.value) * 100) : 0,
+)
 const planPct = computed(() => (total.value ? Math.round((planDone.value / total.value) * 100) : 0))
 const gap = computed(() => actualPct.value - planPct.value)
 const gapLabel = computed(() => {
@@ -86,7 +88,9 @@ const issueStatusRows = computed(() =>
     count: issues.value.filter((x) => x.status === k).length,
   })),
 )
-const delayedIssues = computed(() => issues.value.filter((i) => isLateIssue(i, clock.todayIdx)).length)
+const delayedIssues = computed(
+  () => issues.value.filter((i) => isLateIssue(i, clock.todayIdx)).length,
+)
 
 // ── 卡 4：預算 vs. 支出（半圓儀表；演算法在 lib/budget）───────────────────
 const budget = computed(() => budgetStore.budget)
@@ -223,15 +227,21 @@ const needleAngle = computed(() => gaugeAngle(ratio.value))
         <div class="budget-legend">
           <div class="legend-row">
             <span class="legend-label">Total:</span>
-            <span class="legend-count budget-num" :title="fmtMoney(budget.total)">{{ fmtMoneyShort(budget.total) }}</span>
+            <span class="legend-count budget-num" :title="fmtMoney(budget.total)">{{
+              fmtMoneyShort(budget.total)
+            }}</span>
           </div>
           <div class="legend-row">
             <span class="legend-label">Actual:</span>
-            <span class="legend-count budget-num" :title="fmtMoney(budget.actual)">{{ fmtMoneyShort(budget.actual) }}</span>
+            <span class="legend-count budget-num" :title="fmtMoney(budget.actual)">{{
+              fmtMoneyShort(budget.actual)
+            }}</span>
           </div>
           <div class="legend-row" :class="{ late: overBudget }">
             <span class="legend-label">{{ overBudget ? 'Over:' : 'Remaining:' }}</span>
-            <span class="legend-count budget-num" :title="fmtMoney(remaining)">{{ fmtMoneyShort(remaining) }}</span>
+            <span class="legend-count budget-num" :title="fmtMoney(remaining)">{{
+              fmtMoneyShort(remaining)
+            }}</span>
           </div>
         </div>
       </div>

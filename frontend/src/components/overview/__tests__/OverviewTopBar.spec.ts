@@ -60,7 +60,11 @@ describe('OverviewTopBar', () => {
     const w = mount(OverviewTopBar, { attachTo: document.body })
     await w.find('[data-ov-dd="status"] button.dd-trigger').trigger('click')
     const items = w.findAll('[data-ov-dd="status"] .dd-item')
-    expect(items.map((i) => i.text().replace('✓', '').trim())).toEqual(['未開始', '進行中', '已完成'])
+    expect(items.map((i) => i.text().replace('✓', '').trim())).toEqual([
+      '未開始',
+      '進行中',
+      '已完成',
+    ])
     await items[0]!.trigger('click')
     expect(w.find('[data-ov-dd="status"] .dd-trigger').text()).toContain('狀態 1')
     w.unmount()
