@@ -338,9 +338,14 @@ test.describe('總覽 頁面', () => {
     await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
     const link = ov.card('dw').getByRole('link', { name: /進入/ })
     await link.scrollIntoViewIfNeeded()
-    const y = await page.evaluate(() => window.scrollY)
+    // 在頁面裡同一個 task 讀捲動位置並點連結：router 存的就是這個值。分兩步（先問再點）時中間隔一次往返，
+    // 機器忙時速覽展開後的平滑捲動（A28）可能還在走，存下的位置和量到的差幾 px（平行跑實測 404 → 409）
+    const y = await link.evaluate((el) => {
+      const at = window.scrollY
+      ;(el as HTMLElement).click()
+      return at
+    })
     expect(y).toBeGreaterThan(100)
-    await link.click()
     await expect(page.locator('[data-panel="gantt"]')).toBeVisible()
     await page.goBack()
     await expect(ov.card('wiki')).toBeVisible()

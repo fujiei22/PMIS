@@ -71,7 +71,9 @@ async function trace(
       document.body.appendChild(probe)
       let last = t0
       const ro = new ResizeObserver(() => {
-        const now = performance.now()
+        // 這一幀的開始時間（動畫時鐘），不是回呼當下：CSS 過渡照它推進；負載下某幀晚了、下一幀緊接著來時，
+        // 回呼時間只差幾 ms，拿它算速度會算出假的突變（批次③：ov-leave 連刪 chip 在平行跑時的誤判）
+        const now = (document.timeline.currentTime as number | null) ?? performance.now()
         const boxes: Record<string, Box | null> = {}
         for (const [name, sel] of Object.entries(targets)) {
           const el = document.querySelector(sel)

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { DashboardPage, html5Drag, stepDrag } from './helpers/dashboardPage'
+import { idle } from './helpers/motion'
 
 /**
  * spec §目標行為 4、5 的拖曳部分：
@@ -122,6 +123,8 @@ test('分類拖曳交換順序', async ({ page }) => {
   await page.getByRole('button', { name: '全部收合' }).click()
   await expect(app.row('t1')).toHaveCount(0)
   expect((await app.rowOrder()).slice(0, 2)).toEqual(['G:g1', 'G:g2'])
+  // 收合的列高與分類列的上移補間跑完才量把手：機器忙時補間還在跑，量到的是半途的位置，拖的距離就不夠越過下一塊的一半
+  await idle(page)
 
   const gb = (await app.groupRow('g1').locator('.grip').boundingBox())!
   const x = gb.x + gb.width / 2

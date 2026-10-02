@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { gotoOverview, idle, jumpCount, opacityJumps, pause, series, trace, type Trace } from './helpers/ovMotion'
+import { gotoOverview, idle, jumpCount, opacityJumps, pause, series, trace, withPremise, type Trace } from './helpers/ovMotion'
 
 /** 時間軸的銜接（動畫稽核 T9、T10、T13、T17）。 */
 test.use({ viewport: { width: 1920, height: 1080 } })
@@ -132,22 +132,45 @@ test.describe('速覽色框、摘要 bar、連開兩列（T9、T13、T17）', ()
   })
 
   test('速覽收合途中又點開：色框從當下的透明度接續，不先歸零再淡入（T9）', async ({ page }) => {
-    await gotoOverview(page, '#timeline')
     const P = `${T} [data-project="pmis"]`
-    await page.locator(`${P} .p-row`).click()
-    await idle(page)
-    // 收合後 120ms（色框淡到一半左右）再點開；在頁面裡送，間隔才準
-    const tr = await trace(
-      page,
-      { cap: `${P} .qv-cap` },
-      () =>
-        page.evaluate((sel) => {
-          const r = document.querySelector(sel) as HTMLElement
-          r.click()
-          setTimeout(() => r.click(), 120)
-        }, `${P} .p-row`),
-      { ms: 800 },
-    )
+    /*
+     * 收合後色框淡到 0.7 以下的那一幀就點開（頁內逐幀看，不用固定毫秒數：機器忙時 120ms 的計時器晚到，色框已經淡過頭）。
+     * 前提：點開時色框還在淡出途中（0.3–0.7）；那一幀剛好卡住、一次淡太多就重開頁面重來。
+     */
+    const { tr, at } = await withPremise(async () => {
+      await gotoOverview(page, '#timeline')
+      await page.locator(`${P} .p-row`).click()
+      await idle(page)
+      let at = 1
+      const tr = await trace(
+        page,
+        { cap: `${P} .qv-cap` },
+        async () => {
+          at = await page.evaluate(
+            ({ row, cap }) =>
+              new Promise<number>((resolve, reject) => {
+                const r = document.querySelector(row) as HTMLElement
+                r.click()
+                const start = performance.now()
+                const tick = (): void => {
+                  const c = document.querySelector(cap)
+                  const o = c ? parseFloat(getComputedStyle(c).opacity) : 0
+                  if (o < 0.7) {
+                    r.click()
+                    resolve(o)
+                  } else if (performance.now() - start > 2000) reject(new Error('色框 2 秒內沒有開始淡出'))
+                  else requestAnimationFrame(tick)
+                }
+                requestAnimationFrame(tick)
+              }),
+            { row: `${P} .p-row`, cap: `${P} .qv-cap` },
+          )
+        },
+        { ms: 800 },
+      )
+      return { value: { tr, at }, valid: at > 0.3, why: `點開時色框已淡到 ${at.toFixed(2)}` }
+    })
+    expect(at, '點開時色框還在淡出途中').toBeLessThan(0.7)
     const caps = series(tr, 'cap', tr.at)
     expect(Math.min(...caps.map((b) => b.o)), '途中最淡的一幀（有淡下去、但沒有歸零）').toBeGreaterThan(0.2)
     expect(Math.min(...caps.map((b) => b.o)), '途中最淡的一幀').toBeLessThan(0.9)

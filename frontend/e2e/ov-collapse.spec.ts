@@ -11,6 +11,8 @@ import {
   settledFor,
   speedJumps,
   trace,
+  transitionStarts,
+  withPremise,
   type Box,
   type Frame,
   type Trace,
@@ -238,17 +240,58 @@ function bulge(tr: Trace, name: string): number {
   return Math.max(0, ...ys.map((y) => Math.max(lo - y, y - hi)))
 }
 
+/**
+ * 頁內直接改搜尋字（派 input，不等 Playwright 往返）並錄泳道；等 6 幀（過渡 260ms，還在跑）讀各泳道外層過渡的起跑時間。
+ * 合成器動畫（move 的 transform、opacity）的起跑時間要等合成器回報，機器忙時晚好幾幀，所以等久一點再讀。
+ */
+async function searchAndTrace(page: Page, value: string): Promise<{ tr: Trace; starts: number[] }> {
+  let starts: number[] = []
+  const tr = await traceLanes(page, async () => {
+    await page.evaluate((value) => {
+      const input = document.querySelector('[data-testid="overview-search"]') as HTMLInputElement
+      input.value = value
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }, value)
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          let n = 0
+          const f = (): void => void (++n >= 6 ? resolve() : requestAnimationFrame(f))
+          requestAnimationFrame(f)
+        }),
+    )
+    starts = await transitionStarts(page, `${P} .board > *`, ['transform', 'grid-template-rows', 'opacity'])
+  })
+  return { tr, starts }
+}
+
+/**
+ * N2 的前提：同一次更新裡，換順序泳道的 move（transform）與離場收合 / 進場長出（grid-template-rows、opacity）同一幀起跑
+ * （useCollapseReenter 的 startLeaveNow / onEnter 就是為了這個）。機器忙時合成器晚一兩幀才回報 transform / opacity 的起跑，
+ * grid-template-rows（主執行緒）先跑，換順序的泳道就鼓出去約 30px——那是 Chrome 在重負載下的排程，不是這裡要守的退化。
+ * 程式退化（不在同一幀起跑）時每次都分家，5 次前提都不成立照樣紅。
+ */
+const sameFrame = (starts: number[]): boolean => starts.length > 0 && new Set(starts).size === 1
+
 test('打 p 再清空：換順序的泳道路徑單調，離場收合、進場長出時都不先往反方向鼓出再回來（N2）', async ({ page }) => {
-  await gotoOverview(page)
-  const search = page.getByTestId('overview-search')
-  const out = await traceLanes(page, () => search.fill('p'))
+  const out = await withPremise(async () => {
+    await gotoOverview(page)
+    const r = await searchAndTrace(page, 'p')
+    return { value: r.tr, valid: sameFrame(r.starts), why: `打 p 的過渡起跑時間 ${r.starts.join(',')}` }
+  }, 5)
   expect([lanesIn(out, 0), lanesIn(out)], '四條泳道收到只剩 m5、m8').toEqual([PMS, ['m5', 'm8']])
-  await idle(page)
-  const back = await traceLanes(page, () => search.fill(''))
+  const back = await withPremise(async () => {
+    await gotoOverview(page)
+    await page.getByTestId('overview-search').fill('p')
+    await idle(page)
+    const r = await searchAndTrace(page, '')
+    return { value: r.tr, valid: sameFrame(r.starts), why: `清空的過渡起跑時間 ${r.starts.join(',')}` }
+  }, 5)
   expect(lanesIn(back), '清空後四條泳道都在').toEqual(PMS)
   for (const [label, tr] of [['打 p', out], ['清空', back]] as const) {
     for (const pm of ['m5', 'm8']) {
-      expect(bulge(tr, pm), `${label}：${pm} 走出起點與終點之間（px）`).toBe(0)
+      const path = series(tr, pm, tr.at).map((b) => `${b.y.toFixed(0)}(${b.dt.toFixed(0)})`).join(' ')
+      expect(bulge(tr, pm), `${label}：${pm} 走出起點與終點之間（px）；y(幀間隔ms)：${path}`).toBe(0)
       expect(reverses(series(tr, pm).map((b) => b.y)), `${label}：${pm} 折返`).toBe(false)
     }
   }
