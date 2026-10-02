@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { ApiError } from '@/api/types'
 import ErrorBar from '@/components/common/ErrorBar.vue'
 import { useUiStore } from '@/stores/ui'
@@ -40,6 +41,27 @@ describe('ErrorBar', () => {
     expect(w.text()).toContain('×2')
     await w.find('.error-x').trigger('click')
     expect(ui.errors).toHaveLength(0)
+  })
+
+  it('關掉最後一筆後整條拿掉，不留做高度過渡的外層佔位置', async () => {
+    const ui = useUiStore()
+    ui.pushError({ label: '更新任務', error: new ApiError('network', 'x') })
+    const w = mount(ErrorBar)
+    expect(w.find('[data-errorbar]').exists()).toBe(true)
+    await w.find('.error-x').trigger('click')
+    expect(w.find('[data-errorbar]').exists()).toBe(false)
+    expect(w.find('.error-slot').exists()).toBe(false)
+  })
+
+  it('讀不到補間時長（--t-panel）時不補間：進出場的 done 當場呼叫，關掉最後一筆就整條拿掉', async () => {
+    const ui = useUiStore()
+    // 不用 test-utils 預設的 Transition stub，真的走 onEnter / onLeave（jsdom 沒有 CSS 變數，時長讀成 0）
+    const w = mount(ErrorBar, { global: { stubs: { transition: false } } })
+    ui.pushError({ label: '更新任務', error: new ApiError('network', 'x') })
+    await nextTick()
+    expect(w.find('[data-errorbar]').exists()).toBe(true)
+    await w.find('.error-x').trigger('click')
+    expect(w.find('.error-slot').exists()).toBe(false)
   })
 
   it('最多列 3 筆，其餘收成「還有 N 筆」', () => {

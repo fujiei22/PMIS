@@ -66,6 +66,16 @@ export const useTaskStore = defineStore('task', () => {
   // ── 載入（spec 目標 5）────────────────────────────────────────────────────
 
   /**
+   * 請求序號（照 portfolio store）：重進 Dashboard 改成背景重載、切頁時先載之後，
+   * 快速進出會有好幾發同時在飛、回來的順序也不一定。回應比畫面上現有資料的那一發還舊才丟掉；
+   * 較早的一發先回來照樣套用（後發的那一發之後失敗時，畫面上仍有這份資料）。
+   * 推來的整包（`project.reloaded`）也算一發，晚回來的舊 load 不蓋掉它。
+   */
+  let loadSeq = 0
+  /** 畫面上的資料來自第幾發；0 表示還沒套用過。 */
+  let appliedSeq = 0
+
+  /**
    * 載入整包專案資料並分給各 store。
    *
    * 不帶參數 = 走 `api.loadProject()`；帶 `data` = 直接採用
@@ -76,11 +86,11 @@ export const useTaskStore = defineStore('task', () => {
    * `useProjectBoot().reload()` 接（契約 E）。
    */
   async function load(data?: ProjectData): Promise<void> {
-    if (data) {
-      applyProject(data)
-      return
-    }
-    applyProject(await api.loadProject())
+    const ticket = ++loadSeq
+    const next = data ?? (await api.loadProject())
+    if (ticket < appliedSeq) return
+    appliedSeq = ticket
+    applyProject(next)
   }
 
   /** 把一份 ProjectData 灌進各個 store，並重置三個 tracker。 */

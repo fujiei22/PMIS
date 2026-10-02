@@ -201,14 +201,23 @@ select {
   font-weight: var(--fw-medium);
 }
 
-/* ---------- 切頁過渡（App.vue，A29）：舊頁淡出、新頁淡入 ---------- */
+/* ---------- 切頁過渡（App.vue，A29）：舊頁淡出、新頁淡入 ----------
+   用 transition 不用 keyframes（理由同下面的浮層）：淡入途中再切頁時從當下的透明度往回淡出，
+   不會先跳回全亮（G9）。keyframes 的時鐘從新頁掛上那一幀就開始走，掛載後的長幀把淡入吃掉、
+   卡幾幀就直接全亮（K1）；transition 要等 Vue 隔兩幀拿掉 enter-from 才起步，實測落在長幀之後。
+   頁面根元素（DashboardView 的 .dash、ProjectsOverviewView 的 .ov）不要寫 opacity / transition，會蓋掉這裡。 */
 
 .page-view-enter-active {
-  animation: fadeIn var(--t-base) var(--ease);
+  transition: opacity var(--t-base) var(--ease);
 }
 
 .page-view-leave-active {
-  animation: fadeOut var(--t-fast) var(--ease);
+  transition: opacity var(--t-fast) var(--ease);
+}
+
+.page-view-enter-from,
+.page-view-leave-to {
+  opacity: 0;
 }
 
 /* ---------- 浮層進出場（Vue <Transition> 的 class；批次 D 定義，頂欄浮層（批次 C）沿用） ----------

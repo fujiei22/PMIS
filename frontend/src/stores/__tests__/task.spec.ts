@@ -61,6 +61,57 @@ describe('taskStore', () => {
     expect(s.tasks).toHaveLength(30)
   })
 
+  it('好幾發 load 同時在飛、回來順序顛倒時，較舊的回應不蓋掉較新的', async () => {
+    const s = useTaskStore()
+    const older = structuredClone(sampleProject)
+    older.tasks[0]!.name = '較舊的快照'
+    const newer = structuredClone(sampleProject)
+    newer.tasks[0]!.name = '較新的快照'
+    let releaseOlder!: () => void
+    vi.spyOn(api, 'loadProject')
+      .mockImplementationOnce(() => new Promise((r) => (releaseOlder = () => r(older))))
+      .mockImplementationOnce(() => Promise.resolve(newer))
+    const first = s.load()
+    await s.load()
+    releaseOlder()
+    await first
+    expect(s.tasks[0]!.name).toBe('較新的快照')
+  })
+
+  it('load 還在飛時推來 project.reloaded 整包：晚回來的 load 不蓋掉它', async () => {
+    const s = useTaskStore()
+    const older = structuredClone(sampleProject)
+    older.tasks[0]!.name = '較舊的快照'
+    const pushed = structuredClone(sampleProject)
+    pushed.tasks[0]!.name = '推來的整包'
+    let releaseOlder!: () => void
+    vi.spyOn(api, 'loadProject').mockImplementationOnce(
+      () => new Promise((r) => (releaseOlder = () => r(older))),
+    )
+    const first = s.load()
+    await s.load(pushed)
+    releaseOlder()
+    await first
+    expect(s.tasks[0]!.name).toBe('推來的整包')
+  })
+
+  it('較早的一發先回來照樣套用（不只認最後一發）', async () => {
+    const s = useTaskStore()
+    const older = structuredClone(sampleProject)
+    older.tasks[0]!.name = '較早的一發'
+    let releaseNewer!: (e: unknown) => void
+    vi.spyOn(api, 'loadProject')
+      .mockImplementationOnce(() => Promise.resolve(older))
+      .mockImplementationOnce(() => new Promise((_, reject) => (releaseNewer = reject)))
+    const first = s.load()
+    const second = s.load()
+    await first
+    expect(s.tasks[0]!.name).toBe('較早的一發')
+    releaseNewer(new ApiError('network', 'x'))
+    await expect(second).rejects.toThrow()
+    expect(s.tasks[0]!.name).toBe('較早的一發')
+  })
+
   it('load 後保留已收合的分類（收合是畫面狀態，不隨資料重載）', async () => {
     const s = useTaskStore()
     const ui = useUiStore()

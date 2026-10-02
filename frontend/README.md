@@ -31,8 +31,10 @@
               失敗：放回最後已知的 server 狀態，錯誤條經注入的 sink 顯示
 讀取  元件 ◀── 派生層 store（rows / filter / selection / ui）◀── 資料層
 事件  api.subscribe ──▶ stores/_sync.ts ──▶ 各資料層 store 的 applyEvent
-啟動  DashboardView ──▶ useProjectBoot()：注入 sink、loadProject()、訂閱事件
-      ProjectsOverviewView ──▶ usePortfolioBoot()：第一次 loading、之後背景重載 ──▶ api.listProjects()
+啟動  router.beforeEach ──▶ preloadProject() / preloadPortfolio()：切頁一開始就先載目標頁（不阻塞導航）
+      DashboardView ──▶ useProjectBoot()：注入 sink、沿用先載的那一發（loadProject()）、訂閱事件
+      ProjectsOverviewView ──▶ usePortfolioBoot()：沿用先載的那一發 ──▶ api.listProjects()
+      兩頁都是第一次顯示載入中、之後背景重載（畫面維持 ready，失敗只記 console）
 ```
 
 演算法（日期、cascade、篩選、排序）是 `src/lib/` 的純函式，store 只存狀態並把它們接起來。
@@ -85,6 +87,8 @@
 | 加總覽的互動或 UI 變化 | 元件 ＋ `assets/overview-motion.css`（過渡 class 唯一定義處）＋ `e2e/overview-motion.spec.ts`（在 spec〈動畫清單〉加一項，就在這裡補一條守衛） |
 | 加 Dashboard 的浮層（選單、日期選擇器、對話框） | 元件包 `<Transition name="pop \| dialog \| fade">`（根元素與對話框本體不寫 transition / animation / opacity / transform）；fixed 浮層接 `useCloseOnScroll`、開啟函式放 `useMenus`（記觸發元素）；鎖頁面捲動用 `useScrollLock`；`e2e/popover-motion.spec.ts` / `dialog-motion.spec.ts` 加一條離場守衛。頂欄的篩選下拉 / 成員面板 / 日期日曆、看板與 Issue 的排序選單、Issue 分欄下拉也是 `pop`（absolute 掛在觸發鈕或容器下，不是 fixed）：頂欄一行時傳 `align="end"`（右緣對齊，觸發鈕往左變寬時選單不動）、兩列時 `start`；排序選單以 `.sorts` / `.tools` 為定位基準、打開當下量好位置（`--menu-x` / `--menu-y`），開著期間不跟著觸發鈕；點了不該關掉浮層的觸發元件（例：日期膠囊）標 `data-keep-popup`。守衛在 `e2e/dash-menu-motion.spec.ts` |
 | 改 Dashboard 頂欄篩選項或排序 chip 的版面 | 頂欄一行時篩選條件變動會把篩選項 FLIP 到新位置（`TopBar` 的 pre / post watcher，比右緣；一行 / 兩列切換與縮放不做；`measureFit` 扣掉補間中的位移再量）；日期膠囊與「～」用 `fade` 淡入淡出，離場中的由 `freezeLeave` 釘成 absolute（不佔版面、不算進 `measureFit` 與位移補間，一行 / 兩列切換時直接藏起來）；排序 chip 是 `TransitionGroup` ＋ `.sort-chip-slot > .sort-chip-clip` 原地橫向展開 / 收起，父層要提供 `--sorts-gap`；離場中的 chip 還在 DOM，測試讀 chip 要用會重試的寫法（`expect.poll`） |
+| 改切頁過渡或頁面的載入流程 | 切頁淡入淡出是 `assets/base.css` 的 `page-view-*`（transition，淡入途中切走會從當下的透明度往回淡出；頁面根元素 `.dash` / `.ov` 不寫 opacity / transition / animation，會蓋掉它）；`router/pageSwap.ts` 等新頁插入（`@enter`）才還原捲動，新頁插入當下要已經是最終高度。載入：`router/index.ts` 的 `beforeEach` 在 path 變或初始導航時呼叫 `preloadProject` / `preloadPortfolio`，頁面掛載時 boot 的 `reload()` 取走沿用——**同一次進頁只打一次 load**（`failNext` 類測試只擋一發，靠這個維持語意）；已經 ready 時背景重載、失敗不蓋掉內容。守衛 `e2e/page-motion.spec.ts`、`e2e/load-motion.spec.ts` |
+| 改錯誤條的內容或版面 | `common/ErrorBar.vue`：在 TopBar 第二列、文件流裡（不是浮層，契約 C），兩層 `.error-slot`（`overflow: clip`，`v-if` 拿掉的是這層）/ `.error-bar`（`role="alert"`、`data-errorbar`）；進場、離場、筆數變了而換行三種高度變化都用 Web Animations 在 `.error-slot` 補間 `height` ＋透明度（`<Transition :css="false">` 的 `onEnter` / `onLeave` 與內容 watcher 共用 `tween()`，時長 `--t-panel`、曲線 `--ease`），每次從畫面上看得到的高度與透明度起步，中途接手（進場途中換行、少一行途中關掉最後一筆）不跳；不用 grid `0fr ↔ 1fr`（裡層被補間寫上 px 高度時會撐住外層的 `0fr`）；每次從沒有錯誤變成有錯誤換一個 key（收起途中又來一筆時舊的照收完）。下面的內容與 sticky 面板頭因此逐幀被推開 / 收回；捲到中段時 Chrome 的 scroll anchoring 會補償，內容不動、頂欄往下蓋。守衛 `e2e/errorbar-motion.spec.ts` |
 | 改 Dashboard 或總覽在平板上的版面或手指操作 | 見下方〈平板與觸控〉；`e2e/tablet.spec.ts`（Dashboard）、`e2e/overview-tablet.spec.ts`（總覽），都是 768×1024 觸控；Dashboard 1200px 以上的版面要跟 legacy 對得上（`compare.spec.ts` 在 1440 / 1920 對照 legacy 幾何；頂欄例外，見〈刻意保留的差異〉） |
 | 改 Dashboard 頂欄的篩選器（加減項目、改文字） | `layout/TopBar.vue`：一行放不下時整排移到第二列，由 `measureFit` 量實際寬度切 `.stacked`（不靠斷點，不用另調寬度）；兩列時日期日曆以日期那一組（`.date-group`）為基準、左緣對齊（`FilterCalendar` 的 `align`），這一組比日曆窄時往左挪到不超出視窗（可超出的量 `--cal-overhang` 取自列的左右留白 `--top-row-pad-x`，改留白只改這個變數）；`e2e/topbar-layout.spec.ts` 守版型與日曆位置，加了篩選項讓 1536 也放不下時要改它的寬度 |
 
@@ -165,8 +169,8 @@ frontend/
 │   ├── assets/            tokens.css（設計 token）、base.css（全域樣式、keyframes、Dashboard 浮層共用的 pop / dialog / fade 過渡）、overview-motion.css（總覽的過渡 class）
 │   ├── components/        元件，依畫面區塊分子目錄（common / layout / summary / gantt / kanban / issues / detail / dialogs / overview）
 │   ├── composables/       可重用的組合式函式
-│   │   ├── useProjectBoot.ts    啟動層：注入 error sink、載入狀態、訂閱事件
-│   │   ├── usePortfolioBoot.ts  總覽的啟動層：第一次顯示載入中，之後背景重載不閃
+│   │   ├── useProjectBoot.ts    啟動層：注入 error sink、載入狀態（第一次載入中、之後背景重載）、訂閱事件；preloadProject 給 router 切頁先載
+│   │   ├── usePortfolioBoot.ts  總覽的啟動層：第一次顯示載入中，之後背景重載不閃；preloadPortfolio 給 router 切頁先載
 │   │   ├── useDomRegistry.ts    DOM 登錄表（執行期不再用選擇器找元素）
 │   │   ├── useTaskActions.ts    新增任務 / Issue 的預設值（派生層讀取集中在這）
 │   │   ├── useEditDraft.ts      逐鍵編輯：本地即時 + api debounce
@@ -184,7 +188,7 @@ frontend/
 │   ├── constants/         畫面用常數（dashboard.ts：狀態 / 優先度 / 等級的標籤與顏色；overview.ts：總覽的排序鍵、標籤、尺寸；api.ts：API_ERROR_TEXT）
 │   ├── lib/               純函式（日期、月曆格、排程連動、篩選、排序、格式化、id、CSS 時長 / 曲線 token 轉 JS（easing.ts）…）
 │   ├── mocks/             範例資料
-│   ├── router/            路由（pageSwap.ts：切頁過渡結束後才還原捲動位置）
+│   ├── router/            路由（index.ts：切頁時先載目標頁資料；pageSwap.ts：切頁過渡結束後才還原捲動位置）
 │   ├── stores/            Pinia store（三層，見下）
 │   │   ├── clock.ts                           時鐘層
 │   │   ├── task / issue / comment / member.ts   資料層（單一專案）
@@ -249,6 +253,7 @@ COMPARE_DUMP=node_modules/.tmp/cmp npm run test:e2e -- e2e/compare.spec.ts
 - **甘特列的快捷鈕**：legacy 滑鼠移到任務列上會撐開「▲ ▼ ⇄ ✕」並省掉日期的年份；新頁改成列尾一直顯示的「⋮」，動作收在它開的選單（user 決定：只想標記任務時快捷鈕很干擾，▲ ▼ 也看不出是工期 ±1 天）。對照測試比文字時兩邊都拿掉列尾動作字與年份（`e2e/helpers/compare.ts` 的 `maskActs`），情境 8 的相依 / 刪除各走各的路（`compare.spec.ts` 的 `rowAction`）；點任務列的位置改在名稱區 x=70（`ROW_NAME_POS`）。
 - **頂欄放不下時改兩列**：篩選器在標題與右端之間一行放不下時（預設篩選約 1470px 以下；啟用日期範圍、專案名稱較長時門檻更高），新頁把篩選器整排移到滿寬的第二列、靠左排，標籤和它的下拉一定在同一行（`TopBar` 的 `measureFit` 量實際寬度切 `.stacked`）。legacy 是篩選器擠在中間自己換成兩行，標籤和下拉會被拆開（user 回報 15.6 吋筆電常見的 1200～1470px 排版怪異）。兩邊頂欄高度因此不同（1440 時差 2px），對照測試的看板欄 y 與整頁高改從頂欄底部量起（`e2e/helpers/compare.ts` 的 `geoSnapshot`），頂欄以下的幾何照樣 ±1px。兩列時日期日曆也不同：legacy 一律對齊篩選器右緣，篩選器滿寬時會離日期膠囊很遠；新頁改以日期那一組為基準、左緣對齊「日期」（user 決定），日曆在 DOM 裡也移進日期那一組（legacy 在「清除篩選」之後）。對照測試都在日曆關上之後才擷取，不受影響。
 - **頂欄與面板的浮層**：legacy 的篩選下拉、成員面板、日期日曆、排序選單關閉時瞬間消失，新頁有離場淡出（批次 D 的 `pop`）；legacy 的日曆遮罩被 `.top-bar` 的 transform 限制成只蓋頂欄，會吃掉頂欄其他控制項的第一下點擊，新頁拿掉遮罩、點外面照常關（點擊照常送達），點另一顆日期膠囊只切換要填的端點、日曆不關；頂欄一行時下拉與成員面板右緣對齊往左展開（legacy 一律 `left: 0`，勾選讓觸發鈕變寬時選單跟著移）；排序選單開著時固定在打開時的位置（legacy 跟著觸發鈕跑）；一行時篩選項變寬整排平滑滑動、排序 chip 原地展開收起（legacy 一幀跳）。對照測試在 settle 之後才擷取，`[data-dd]` 序列不變。
+- **錯誤條的出現與關閉**：legacy 出現時整頁一幀被推下約 40px、關閉一幀收回；新頁原地展開 / 收起並淡入淡出（`ErrorBar.vue`）。對照測試沒有讓錯誤條出現的情境，不受影響。
 - **成員拖曳指派**：legacy 可以把成員篩選面板的列拖到甘特條或任務卡上指派，新頁移除了這個功能（user 決定；平板無法可靠支援原生拖放），指派一律在詳細視窗的「＋指派」。對照測試不比這個。
 - **相依編輯器的位置**：legacy 一直垂直置中，增刪前置 / 後續任務時上下兩端一起跳；新頁打開時置中、之後上緣固定，只往下長（user 決定）。對照測試只比寬高，不受影響。
 - **文字之間的空白**：兩頁的文字節點切法不同（legacy 把每個 `{{ }}` 包成一層元素、元素之間留著模板縮排的空白節點），比對前會把文字裡的空白全部去掉。字級與間距的差異改由幾何量測把關。
@@ -319,7 +324,7 @@ store 分三層，依賴**只能由上往下**：
 | `data-col` | 看板欄內容區 | 狀態 key | ✓ |
 | `data-dd` | 所有下拉的觸發器與面板 | `1` | ✓ |
 | `data-zoom` | 甘特縮放滑桿 | `1` | ✓ |
-| `data-errorbar` | 錯誤條容器（同一元素帶 `role="alert"`） | 空值 | ✗ |
+| `data-errorbar` | 錯誤條容器（同一元素帶 `role="alert"`；外面還有一層 `.error-slot` 做高度補間，`v-if` 拿掉的是那層，關閉後整條不留） | 空值 | ✗ |
 | `data-keep-selection` | 只改怎麼看、點了不清選取的控制項（平板甘特左欄的展開鈕） | 空值 | ✗ |
 | `data-keep-popup` | 點了不關浮層的觸發元件（頂欄的日期膠囊：日曆開著時點它只切換要填的端點） | 空值 | ✗ |
 | `data-loadstate` / `data-load-error` | 載入中 / 失敗畫面的容器與錯誤訊息（Dashboard 與總覽共用 `LoadingState`） | 空值 | ✗ |
@@ -346,10 +351,11 @@ store 分三層，依賴**只能由上往下**：
 
 `data-ov-dd` 刻意和 Dashboard 的 `data-dd` 分開：它不在 `useClickOutside` 的保留清單裡，總覽的浮層改由 `useDismiss` 關閉。
 
-總覽 e2e 還依賴下表這些 class，**改名時要同步改測試**。用到的檔是 `e2e/overview.spec.ts`、`e2e/overview-motion.spec.ts`、`e2e/overview-tablet.spec.ts`、`e2e/helpers/overviewPage.ts`：
+總覽 e2e 還依賴下表這些 class，**改名時要同步改測試**。用到的檔是 `e2e/overview.spec.ts`、`e2e/overview-motion.spec.ts`、`e2e/overview-tablet.spec.ts`、`e2e/page-motion.spec.ts`、`e2e/helpers/overviewPage.ts`：
 
 | 用途 | class |
 |---|---|
+| 頁面根元素 | `.dash`（Dashboard；`page-motion.spec` 量它的透明度） |
 | 頂欄與下拉 | `.dd-trigger` `.dd-menu` `.alert-dot` |
 | 排序 | `.sort-trigger` `.sort-menu` `.sort-chip` `.chip-label` `.chip-x` `.chip-arrow` |
 | 面板 | `.panel-head` `.panel-title` `.panel-toggle` `.panel-body` `.panel-caret` |
@@ -476,12 +482,17 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 
 dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (import.meta.env.DEV)`），e2e 用它注入延遲與失敗（`failNext` / `setLatency` / `reset` / `emit`）。總覽的載入失敗用 `failNext('listProjects')`。
 
-接上真後端之後 `window.__mockApi` 會是 `undefined`，`e2e/interactions.spec.ts` 裡**那兩條**（api 失敗後還原並顯示錯誤條、載入失敗後重試）開頭就是 `test.skip(!__mockApi)`，會自動跳過，其餘照跑。要在真後端上也測失敗路徑，就換成在 `page.route()` 攔 HTTP 回錯誤碼。
+接上真後端之後 `window.__mockApi` 會是 `undefined`，這幾條開頭就是 `test.skip(!__mockApi)`，會自動跳過，其餘照跑：`e2e/interactions.spec.ts` 的**那兩條**（api 失敗後還原並顯示錯誤條、載入失敗後重試）、`e2e/errorbar-motion.spec.ts` 的頁頂與捲到中段兩條（`failNext('updateTask')` 讓錯誤條出現；另四條直接呼叫 `ui.pushError`，不需要 mock）、`e2e/load-motion.spec.ts` 的重進 Dashboard（`setLatency`）與載入次數守門。要在真後端上也測失敗路徑，就換成在 `page.route()` 攔 HTTP 回錯誤碼。
+
+**每次進頁只打一次 load**：`failNext` 只擋下一發，切頁先載（`router` 的 `beforeEach`）與頁面掛載的 `reload()` 共用同一發，失敗與重試的測試才有意義；`load-motion.spec` 的次數守門守這一點。
 
 ### 還沒做的（接後端時要補）
 
 - **逾時與取消**：`ProjectApi` 目前沒有 `AbortSignal`，也沒有逾時。網路實作至少要給每個請求一個逾時（逾時 → `ApiError('network')`）；離開頁面或連續改動時要能取消前一發。
 - **authn / authz**：`ProjectApi` 完全沒有身分概念，**每一支端點都要後端自己做認證與授權**。`ProjectData.currentUserId` 只是「留言掛誰、頭像顯示誰」的顯示用欄位，是 client 送什麼就是什麼，**絕對不能拿它當身分**。
+  - 兩頁重進時的背景重載失敗**只記 console、畫面維持舊資料**（Dashboard 的 `useProjectBoot`、總覽的 `usePortfolioBoot`）。加上登入之後，session 過期 / 撤權 / 專案被刪（401 / 403 / 404）不能也這樣吞掉：`ApiErrorCode` 補 `unauthorized` / `forbidden`，背景失敗遇到這幾種就清掉資料、切成錯誤或導回登入頁，只有 `network` 才維持舊資料。
+  - 登出 / 換使用者要有明確的重置：清資料層（task / issue / comment / member / portfolio）與 `selection` / `filter`，兩個 `loadState` 設回 `idle`；不然下一位進頁時是背景重載，會先看到上一位的資料。
+  - 加登入守衛時，`router/index.ts` 的先載守衛要排在它**後面**（守衛依註冊順序執行），未登入或被擋下的導航才不會先打出需要認證的請求。
 - **PATCH body 要用 schema 白名單驗欄位**：`updateTask` / `updateGroup` / `updateIssue` 送的是 JSON merge patch，後端必須逐欄位比對允許清單再寫入，**不可以整包 merge 進實體**（mass-assignment；也要擋 `__proto__` / `constructor` / `prototype` 這類鍵造成的原型污染）。同理 `createTask` 這些帶完整實體的端點也要過一次 schema。
 - **多人衝突**：現在是「後到的覆蓋先到的」，沒有版本號或 `If-Match`。同時編輯同一筆的情境沒有處理（spec 已排除）。附帶一提：`dirty`（本地改了還沒送出）只保護**本地**不被 reconcile 蓋掉，**不保護 server 端**——那段值還沒上 wire，別的 client 這段時間寫進去的東西，等它送出時一樣會被覆蓋。
 - **附件上傳驗證**：`comment.addDraftFiles` 直接 `URL.createObjectURL`，沒有任何檢查。要補檔案大小上限、MIME 型別與副檔名白名單（三者都要，只擋副檔名擋不住偽裝的檔案），**伺服器端再驗一次**。
@@ -490,7 +501,14 @@ dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (im
   2. DashboardView 從 `route.params.id` 取 id 傳給 `useProjectBoot()`。`App.vue` 的頁面 key 已經是 `route.path`，換專案時 Dashboard 會重新掛載、重新載入。
   3. 換專案時要清空資料層（task / issue / comment / member）與 `selection` / `filter`，不能只靠 `ui.resetTransient()`（它只清暫態浮層）。
   4. 總覽的 PMIS 摘要目前由 mock 從範例專案彙整，接上後改由後端的 `listProjects()` 提供。
+  5. 切頁先載已經收到路由的 id（`router/index.ts` 的 `preloadProject(String(to.params.id))`），把它往下傳給 `loadProject(id)`。
+  6. 換了專案不走背景重載**已經做了**：`useProjectBoot.ts` 的 `loadedId` 記著 store 裡是哪個專案，不同就走「載入中」（單元測試守），畫面不會先秀上一個專案、也不會在 B 的頁面改到 A。剩下要處理的是換專案時先載把 `ui.loadState` 切成 loading，正在淡出的舊頁會閃一下「載入中」（例如等新頁掛上才切）。
+- **切頁先載與背景重載的競賽**（mock 延遲為 0，現在不會發生）：
+  - **事件空窗**：先載的快照在導航一開始就打，`subscribe` 要到 Dashboard 掛載（舊頁淡出之後）才開始，這段時間別人改的事件會漏接。接後端時把訂閱提前，或訂閱後比對版本再補一次 `project.reloaded`。
+  - **整包覆蓋**：背景重載回來時使用者已經能操作，`applyProject` 會整包覆蓋本地，包括還沒送出（`dirty`）的改動，語意同 `project.reloaded`。延遲大的後端要考慮背景重載遇到 `dirty` / `inflight` 時延後套用。
+  - **舊快照蓋回已完成的寫入**：Dashboard 背景重載的請求若在某次寫入之前被後端處理、卻在寫入的 response 之後才回來，`inflight` / `dirty` 都已清空，`applyProject` 會把那筆蓋回舊值（server 其實是新值）。整包資料帶版本或時間戳、比本地已確認的舊就丟掉，可以一併解決上一點。
+  - **讀寫先後**：Dashboard 剛送出修改就切回總覽時，先載的 `listProjects()` 可能比那次修改先被後端處理，總覽短暫顯示舊值、下次載入才更新。
 - **總覽的規模**：時間軸範圍涵蓋所有專案與今天，日刻度與底色格的 DOM 節點數跟天數成正比。專案變多、時間跨度拉長時，要考慮限縮範圍或做虛擬化。
 - **總覽的篩選不寫進網址**：重新整理或分享連結時，篩選條件不會保留。
-- **`prefers-reduced-motion`**：全專案都還沒支援。總覽的過渡集中在 `assets/overview-motion.css` 與各元件的 `transition`，要支援時從這裡下手。Dashboard 的浮層在 `assets/base.css` 的「浮層進出場」段（pop / dialog / fade）與 `DetailModal.vue` 的 detail-fade / detail-pop。
+- **`prefers-reduced-motion`**：全專案都還沒支援。總覽的過渡集中在 `assets/overview-motion.css` 與各元件的 `transition`，要支援時從這裡下手。Dashboard 的浮層在 `assets/base.css` 的「浮層進出場」段（pop / dialog / fade）與 `DetailModal.vue` 的 detail-fade / detail-pop；切頁的 `page-view-*` 在 `assets/base.css`，錯誤條的進出場與換行補間在 `ErrorBar.vue` 的 `tween()`（Web Animations，讀 `--t-panel`；CSS 的 reduced-motion 規則管不到，要在這裡判斷）。
 - **CSP**：目前沒有 Content-Security-Policy；上線前在伺服器或 CDN 層補上，至少限制 `script-src` / `style-src` / `img-src`（`blob:` 要放行，附件預覽用得到）。
