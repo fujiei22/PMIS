@@ -764,6 +764,26 @@ test.describe('甘特面板收合 / 展開（D3 / D12）', () => {
     await expect(page.locator('[data-rowtask]')).toHaveCount(30)
   })
 
+  /*
+   * 收合過渡中 .panel-clip 原本是 overflow: hidden：hidden 讓它變成捲動容器，黏住的尺規改以它為基準，
+   * 收合第一幀就彈回面板裡的原位（總覽 OvPanel 的 C7 B 同一問題）。clip 一樣裁切、但不建立捲動容器。
+   * 頁面捲到尺規黏在頂部列下方，收合甘特：面板底邊收到尺規之前（前 80ms 內），尺規一幀都不動。
+   */
+  test('甘特尺規黏住時收合甘特面板：收合剛開始尺規不先彈一下（overflow 用 clip）', async ({ page }) => {
+    const app = await openGantt(page)
+    const ruler = '[data-panel="gantt"] .gantt-ruler-row'
+    // 捲到甘特面板頂端在視窗外 300px：尺規黏在頂部列下方；下面還有看板與 Issue，收合時頁面不會被夾
+    await page.locator('[data-panel="gantt"]').evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top + 300))
+    await idle(page)
+    const stuck = await page.locator(ruler).evaluate((el) => el.getBoundingClientRect().top - el.closest('[data-panel]')!.getBoundingClientRect().top)
+    expect(stuck, '尺規黏住了（離面板頂端超過 250px）').toBeGreaterThan(250)
+    const tr = await trace(page, { ruler }, () => app.panelToggle('gantt').click(), { markOn: 'click', ms: 400 })
+    const at = tr.marks[0]!
+    const ys = tr.frames.filter((f) => f.boxes.ruler && f.t < at + 80).map((f) => f.boxes.ruler!.y)
+    expect(ys.length, '收合剛開始有幀').toBeGreaterThan(2)
+    expect(Math.max(...ys) - Math.min(...ys), `尺規 y 逐幀：${ys.map((y) => y.toFixed(0)).join(',')}`).toBeLessThanOrEqual(1)
+  })
+
   test('收合再展開：水平捲動位置不變，尺規跟著', async ({ page }) => {
     const app = await openGantt(page)
     await app.freezeGanttScroll(500)

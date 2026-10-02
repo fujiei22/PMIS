@@ -46,18 +46,18 @@ describe('PanelShell 的 overflow（D3）', () => {
     const w = mountShell()
     ui.panelOff.gantt = true
     await nextTick()
-    expect(clipOf(w)).toBe('hidden')
+    expect(clipOf(w)).toBe('clip')
 
     ui.panelOff.gantt = false
     await nextTick()
-    expect(clipOf(w)).toBe('hidden')
+    expect(clipOf(w)).toBe('clip')
 
     // 內容裡別的屬性 / 別的元素冒泡上來的 transitionend 不算
     await w.find('.panel-body').trigger('transitionend')
     w.find('.panel-body').element.dispatchEvent(transitionEnd('opacity'))
     w.find('.content').element.dispatchEvent(transitionEnd('grid-template-rows', true))
     await nextTick()
-    expect(clipOf(w)).toBe('hidden')
+    expect(clipOf(w)).toBe('clip')
 
     w.find('.panel-body').element.dispatchEvent(transitionEnd('grid-template-rows'))
     await nextTick()
@@ -71,7 +71,7 @@ describe('PanelShell 的 overflow（D3）', () => {
     await nextTick()
     ui.panelOff.gantt = false
     await nextTick()
-    expect(clipOf(w)).toBe('hidden')
+    expect(clipOf(w)).toBe('clip')
 
     vi.advanceTimersByTime(1000)
     await nextTick()
@@ -90,6 +90,6 @@ describe('PanelShell 的 overflow（D3）', () => {
 
     vi.advanceTimersByTime(1000)
     await nextTick()
-    expect(clipOf(w)).toBe('hidden')
+    expect(clipOf(w)).toBe('clip')
   })
 })
