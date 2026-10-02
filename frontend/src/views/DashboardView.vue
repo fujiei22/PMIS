@@ -52,12 +52,13 @@ const { kanban: kanbanReady, issues: issuesReady } = provideDeferredPanels(isPag
 /**
  * 首屏看得到的面板一律同步掛（高螢幕、甘特收合時）：上一個面板的下緣在視窗內，下一個就在同一次更新裡掛上，
  * 第一幀就完整、不會在看得到的地方晚一步冒出來。掛載當下 TopBar 的 measureFit 已經算過版面，這裡讀位置不多花。
+ * 用頁面座標（加回 scrollY）：延後只發生在會捲回頂端的切頁，掛載當下 router 還沒捲（還是上一頁的捲動位置）。
  */
 function mountVisible(): void {
   if (ui.loadState !== 'ready') return
   const bottomInView = (key: 'gantt' | 'kanban'): boolean => {
     const el = registry.panels.get(key)
-    return !!el && el.getBoundingClientRect().bottom < window.innerHeight
+    return !!el && el.getBoundingClientRect().bottom + window.scrollY < window.innerHeight
   }
   if (!kanbanReady.value) {
     if (bottomInView('gantt')) kanbanReady.value = true

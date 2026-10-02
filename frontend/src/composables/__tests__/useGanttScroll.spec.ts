@@ -167,6 +167,21 @@ describe('useGanttScroll', () => {
     expect(sc.scrollLeft).toBe(10)
   })
 
+  it('掛載時甘特收合著（沒有 scroller）：不捲，展開後任務數變了也不會被拉回今天（review）', async () => {
+    const taskStore = useTaskStore()
+    const scroller = ref<HTMLElement | null>(null)
+    mountScroll(scroller, ref(rulerEl()))
+    // 展開：使用者捲到別的日期
+    const sc = scrollerEl(40_000, 800)
+    scroller.value = sc
+    await nextTick()
+    sc.scrollLeft = 10
+    // 新增 / 刪除任務、背景重載讓任務數變了
+    taskStore.load({ ...structuredClone(sampleProject), tasks: structuredClone(sampleProject).tasks.slice(1) })
+    await nextTick()
+    expect(sc.scrollLeft).toBe(10)
+  })
+
   it('onZoom 改 dayWidth，160ms 內 zooming 為真', () => {
     const ui = useUiStore()
     const api = mountScroll(ref(scrollerEl()), ref(rulerEl()))

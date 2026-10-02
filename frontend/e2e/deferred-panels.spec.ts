@@ -124,3 +124,21 @@ test('直接開 Dashboard（重新整理）：不延後，一開始就有看板�
   )
   expect(at).toEqual({ kanban: true, issues: true })
 })
+
+test('總覽捲到下面才點「進入」：照樣延後（首屏看得到的判斷用頁面座標，不受上一頁的捲動位置影響）', async ({ page }) => {
+  await new OverviewPage(page).goto()
+  // 總覽本身在 1080 高捲不了多少：在 #app 後面墊一塊 3000px 讓頁面可捲（只加文件高度，不影響面板在頁面裡的位置）。
+  // 捲 600px：甘特下緣（頁面座標約 1598）減掉捲動量落在 1080 以內，用視窗座標判斷就會誤以為看板在首屏、不延後
+  await page.evaluate(() => {
+    const pad = document.createElement('div')
+    pad.style.height = '3000px'
+    document.body.appendChild(pad)
+    window.scrollTo(0, 600)
+  })
+  await pause(page, 100)
+  expect(await page.evaluate(() => window.scrollY), '總覽捲下去了（前提）').toBe(600)
+  const frames = await recordEnter(page)
+  const shown = frames.filter((f) => f.o >= 0)
+  expect(shown.length, 'Dashboard 有掛上').toBeGreaterThan(0)
+  expect(shown[0]!.kanban, 'Dashboard 第一幀沒有看板').toBe(false)
+})

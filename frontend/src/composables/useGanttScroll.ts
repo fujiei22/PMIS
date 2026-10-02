@@ -149,10 +149,12 @@ export function useGanttScroll(
    * 就在任務到齊、DOM 更新完時立刻捲。legacy 是掛載後 60ms 才跳（`setTimeout(() => this.jumpToday(), 60)`，:1926）：
    * 從總覽切進來時那 60ms 落在 Dashboard 淡入期間，捲動逼出整頁版面計算、onscroll 再同步尺規，長幀把淡入吃掉（動畫稽核 K1）。
    * 掛載當下頁面還是透明的（切頁淡入的 enter-from），捲動看不到；直接開頁時第一幀就停在今天。
+   * 任務到齊就算跳過了：面板收合著（沒有 scroller）時 jumpToday 什麼都不做，同 legacy，展開時照 D12 回到記住的位置；
+   * 不能等到有 scroller 才算，否則展開後任務數一變（新增、刪除、背景重載）就把使用者捲到的位置拉回今天（review）。
    */
   let jumped = false
   function initialJump(): void {
-    if (jumped || !taskStore.tasks.length || !scroller.value) return
+    if (jumped || !taskStore.tasks.length) return
     jumped = true
     jumpToday(false)
     stopInitialJump()
