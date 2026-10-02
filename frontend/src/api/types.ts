@@ -177,11 +177,19 @@ export interface MockApi extends ProjectApi {
   failNext(method: keyof ProjectApi, err?: ApiError, times?: number): void
   /** 每個呼叫的 response 延遲（ms）；事件仍然同步發出，不等延遲。 */
   setLatency(ms: number): void
-  /** 回到初始資料（或換一份），並清掉注入的延遲與失敗；登入狀態回到預設的已登入。訂閱不受影響。 */
+  /**
+   * 回到初始資料（或換一份），並清掉注入的延遲與失敗、`setCanEdit` 的覆寫；登入狀態回到預設的已登入。
+   * 訂閱不受影響。
+   */
   reset(data?: ProjectData): void
   /**
    * 換登入狀態（mock 預設已登入）。null = 登出（等同 session 過期或被移出名單）：
    * 之後除了 getSession / login / logout 的每一發都回 401 並通知 `onUnauthorized`。
    */
   setSession(info: SessionInfo | null): void
+  /**
+   * 之後的 `loadProject` 回的 `canEdit` 改成這個值（唯讀模式 F2 的 e2e 用）。mock 不判斷權限：
+   * 寫入一律照做，擋寫入靠前端的資料層（真後端會回 403）。
+   */
+  setCanEdit(v: boolean): void
 }

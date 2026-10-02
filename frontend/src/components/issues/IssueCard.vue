@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Issue 看板上的一張卡：所屬任務、標題、等級、處理狀態、期限 / 解決日期、負責人，
 // 以及 ▼ 展開後的編輯表單（基本資訊 / 測試環境 / 描述與對策）。
+// 唯讀時（F2）沒有刪除鈕、不能改名，等級 / 狀態 / 日期與展開表單只是顯示（輸入框 readonly、選單不開）。
 // legacy 對照：模板 :709-834，issueList :3125-3238。
 import { computed, nextTick, ref, watch } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
@@ -93,7 +94,7 @@ watch(editing, async (v) => {
 
 function startEdit(e: MouseEvent): void {
   e.stopPropagation()
-  ui.editing = { kind: 'i', id: props.issue.id }
+  ui.startEdit('i', props.issue.id)
 }
 
 /**
@@ -190,7 +191,7 @@ function flushField(field: TextField): void {
 
 /** 刪除 Issue 走兩步確認。legacy `onDelete` :3237 */
 function askDelete(): void {
-  ui.confirm = { kind: 'issue', id: props.issue.id, step: 1 }
+  ui.askDelete('issue', props.issue.id)
 }
 
 /** ⤢ 開 Issue 詳情（視窗本體由 S6 做）。legacy `onOpenDetail` :3199 */
@@ -202,7 +203,7 @@ function openDetail(): void {
 <template>
   <div
     class="icard"
-    :class="{ on, strong: strongSelected, rel, dimmed, overdue }"
+    :class="{ on, strong: strongSelected, rel, dimmed, overdue, readonly: !ui.canEdit }"
     :ref="registerEl(registry.issueRows, issue.id)"
     :data-issuerow="issue.id"
     :data-selected="String(on)"
@@ -210,7 +211,9 @@ function openDetail(): void {
     role="button"
     @click.stop="selection.selectIssue(issue.id)"
   >
-    <div class="del" role="button" title="刪除 Issue" @click.stop="askDelete()">✕</div>
+    <div v-if="ui.canEdit" class="del" role="button" title="刪除 Issue" @click.stop="askDelete()">
+      ✕
+    </div>
     <div class="task-name" :title="taskName">{{ taskName }}</div>
 
     <div class="title-row">
@@ -229,7 +232,7 @@ function openDetail(): void {
         class="cls"
         :style="{ color: cl.text }"
         role="button"
-        @click.stop="openOptionMenu($event, issue.id, 'ipri')"
+        @click="openOptionMenu($event, issue.id, 'ipri')"
       >
         <span class="cls-dot" :style="{ background: cl.color }"></span>
         <span>{{ cl.label }}</span>
@@ -241,11 +244,11 @@ function openDetail(): void {
         class="st"
         :style="{ color: st.fg, background: `color-mix(in srgb, ${st.fg} 12%, transparent)` }"
         role="button"
-        @click.stop="openOptionMenu($event, issue.id, 'istatus')"
+        @click="openOptionMenu($event, issue.id, 'istatus')"
       >
         <span class="st-dot" :style="{ background: st.fg }"></span>
         <span>{{ st.label }}</span>
-        <span class="st-caret">▼</span>
+        <span v-if="ui.canEdit" class="st-caret">▼</span>
       </div>
       <div v-if="overdue" class="late-chip">
         <span class="late-dot"></span><span>{{ DELAYED.label }}</span>
@@ -255,17 +258,17 @@ function openDetail(): void {
     <div class="dates">
       <Pill
         label="期限"
-        caret
-        clickable
-        @click.stop="openIssueDatePicker($event, issue.id, 'due', issue.due)"
+        :caret="ui.canEdit"
+        :clickable="ui.canEdit"
+        @click="openIssueDatePicker($event, issue.id, 'due', issue.due)"
       >
         <span :class="{ overdue }">{{ dueLabel }}</span>
       </Pill>
       <Pill
         label="解決日期"
-        caret
-        clickable
-        @click.stop="openIssueDatePicker($event, issue.id, 'done', issue.done)"
+        :caret="ui.canEdit"
+        :clickable="ui.canEdit"
+        @click="openIssueDatePicker($event, issue.id, 'done', issue.done)"
       >
         <span :class="issue.done ? 'done-on' : 'done-off'">{{ doneLabel }}</span>
       </Pill>
@@ -305,7 +308,7 @@ function openDetail(): void {
                 <div
                   class="field-pill"
                   role="button"
-                  @click.stop="openOptionMenu($event, issue.id, 'ipri')"
+                  @click="openOptionMenu($event, issue.id, 'ipri')"
                 >
                   <span class="field-dot" :style="{ background: cl.color }"></span>
                   <span class="field-value strong" :style="{ color: cl.text }">{{ cl.label }}</span>
@@ -317,7 +320,7 @@ function openDetail(): void {
                 <div
                   class="field-pill"
                   role="button"
-                  @click.stop="openOptionMenu($event, issue.id, 'iitem')"
+                  @click="openOptionMenu($event, issue.id, 'iitem')"
                 >
                   <span class="field-value">{{ itemLabel }}</span>
                   <span class="field-caret">▼</span>
@@ -329,7 +332,7 @@ function openDetail(): void {
                   class="field-pill"
                   :title="taskName"
                   role="button"
-                  @click.stop="openOptionMenu($event, issue.id, 'itask')"
+                  @click="openOptionMenu($event, issue.id, 'itask')"
                 >
                   <span class="field-value">{{ taskName }}</span>
                   <span class="field-caret">▼</span>
@@ -340,7 +343,7 @@ function openDetail(): void {
                 <div
                   class="field-pill avatar-pill"
                   role="button"
-                  @click.stop="openOptionMenu($event, issue.id, 'icreator')"
+                  @click="openOptionMenu($event, issue.id, 'icreator')"
                 >
                   <span
                     class="field-avatar"
@@ -356,7 +359,7 @@ function openDetail(): void {
                 <div
                   class="field-pill avatar-pill"
                   role="button"
-                  @click.stop="openOptionMenu($event, issue.id, 'iowner')"
+                  @click="openOptionMenu($event, issue.id, 'iowner')"
                 >
                   <span
                     v-for="m in ownerAvatars"
@@ -380,7 +383,7 @@ function openDetail(): void {
                 <div
                   class="field-pill mono"
                   role="button"
-                  @click.stop="openIssueDatePicker($event, issue.id, 'due', issue.due)"
+                  @click="openIssueDatePicker($event, issue.id, 'due', issue.due)"
                 >
                   <span class="field-value">{{ duePill }}</span>
                   <span class="field-caret">▼</span>
@@ -391,7 +394,7 @@ function openDetail(): void {
                 <div
                   class="field-pill mono"
                   role="button"
-                  @click.stop="openIssueDatePicker($event, issue.id, 'done', issue.done)"
+                  @click="openIssueDatePicker($event, issue.id, 'done', issue.done)"
                 >
                   <span class="field-value">{{ donePill }}</span>
                   <span class="field-caret">▼</span>
@@ -407,6 +410,7 @@ function openDetail(): void {
                 <span class="field-label">Issue 型態</span>
                 <input
                   class="text-input"
+                  :readonly="!ui.canEdit"
                   :value="issue.ptype"
                   placeholder="I/O Function"
                   @input="setField('ptype', $event)"
@@ -417,6 +421,7 @@ function openDetail(): void {
                 <span class="field-label">PCB</span>
                 <input
                   class="text-input"
+                  :readonly="!ui.canEdit"
                   :value="issue.pcb"
                   placeholder="A0"
                   @input="setField('pcb', $event)"
@@ -427,6 +432,7 @@ function openDetail(): void {
                 <span class="field-label">BIOS + EC Ver.</span>
                 <input
                   class="text-input"
+                  :readonly="!ui.canEdit"
                   :value="issue.bios"
                   placeholder="06+0.03"
                   @input="setField('bios', $event)"
@@ -437,6 +443,7 @@ function openDetail(): void {
                 <span class="field-label">OS Ver.</span>
                 <input
                   class="text-input"
+                  :readonly="!ui.canEdit"
                   :value="issue.os"
                   placeholder="Win11 24H2"
                   @input="setField('os', $event)"
@@ -447,6 +454,7 @@ function openDetail(): void {
                 <span class="field-label">Solved BIOS</span>
                 <input
                   class="text-input"
+                  :readonly="!ui.canEdit"
                   :value="issue.solvedBios"
                   placeholder="解決版本"
                   @input="setField('solvedBios', $event)"
@@ -462,6 +470,7 @@ function openDetail(): void {
                 <span class="field-label">問題描述</span>
                 <textarea
                   class="text-input area"
+                  :readonly="!ui.canEdit"
                   :value="issue.desc"
                   placeholder="重現步驟、環境條件與實際現象…"
                   @input="setField('desc', $event)"
@@ -472,6 +481,7 @@ function openDetail(): void {
                 <span class="field-label">對策</span>
                 <textarea
                   class="text-input area"
+                  :readonly="!ui.canEdit"
                   :value="issue.solution"
                   placeholder="處理方式、對策與驗證結果…"
                   @input="setField('solution', $event)"
@@ -629,6 +639,35 @@ function openDetail(): void {
 
 .cls:hover {
   background: var(--surface-3);
+}
+
+/* 唯讀（F2）：等級、狀態、展開表單的欄位只是顯示，拿掉可以點的提示；標題不能改名，游標照卡片 */
+.icard.readonly .title {
+  cursor: inherit;
+}
+
+/* 等級與狀態點了等於點卡片（選取），游標跟卡片一樣；展開表單裡的欄位點了沒有反應 */
+.icard.readonly .cls,
+.icard.readonly .st {
+  cursor: inherit;
+}
+
+.icard.readonly .field-pill {
+  cursor: default;
+}
+
+.icard.readonly .cls:hover {
+  background: transparent;
+}
+
+.icard.readonly .st:hover,
+.icard.readonly .field-pill:hover {
+  filter: none;
+  box-shadow: none;
+}
+
+.icard.readonly .field-caret {
+  display: none;
 }
 
 .cls-dot {
@@ -982,6 +1021,16 @@ function openDetail(): void {
 .text-input:focus {
   border-color: var(--accent);
   outline: none;
+}
+
+/* 唯讀的輸入框：不亮框、不顯示範例提示字（空欄位就是空的） */
+.text-input[readonly]:hover,
+.text-input[readonly]:focus {
+  border-color: var(--border-1);
+}
+
+.text-input[readonly]::placeholder {
+  color: transparent;
 }
 
 .text-input.area {

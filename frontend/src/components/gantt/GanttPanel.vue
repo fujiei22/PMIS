@@ -268,8 +268,11 @@ function toggleAllGroups(): void {
             <!-- 只有文字、不加箭頭符號（legacy `allGroupsCaret` :4106） -->
             {{ allCollapsed ? '全部展開' : '全部收合' }}
           </button>
-          <button class="mini" @click="taskStore.addGroup()">＋ 分類</button>
-          <button class="mini" @click="actions.addTaskWithDefaults()">＋ 任務</button>
+          <!-- 唯讀時（F2）不給新增；收合 / 展開是看的，照常 -->
+          <template v-if="ui.canEdit">
+            <button class="mini" @click="taskStore.addGroup()">＋ 分類</button>
+            <button class="mini" @click="actions.addTaskWithDefaults()">＋ 任務</button>
+          </template>
         </span>
         <!--
           窄版左欄的展開鈕：放在欄頭右端、貼著要展開的那條邊，» 朝右＝往右展開，展開後轉成 « 朝左＝收回。

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 甘特左欄的分類列：把手、收合箭頭、分類名、工期天數、刪除鈕。
+// 唯讀時（F2）沒有把手與刪除鈕、不能改名；收合照常。
 // legacy 對照：模板 :429-440，groupRows :2762-2813。
 import { computed, nextTick, ref, watch } from 'vue'
 import { useDomRegistry, registerEl } from '@/composables/useDomRegistry'
@@ -69,7 +70,7 @@ watch(editing, async (on) => {
 
 function startEdit(e: MouseEvent): void {
   e.stopPropagation()
-  ui.editing = { kind: 'g', id: props.group.id }
+  ui.startEdit('g', props.group.id)
 }
 
 /**
@@ -106,7 +107,7 @@ function onEditKey(e: KeyboardEvent): void {
 /** 刪除分類走兩步確認。legacy `onDelete` :2809 */
 function askDelete(e: MouseEvent): void {
   e.stopPropagation()
-  ui.confirm = { kind: 'group', id: props.group.id, step: 1 }
+  ui.askDelete('group', props.group.id)
 }
 
 /** 看板卡片拖到分類列 → 搬進這個分類（放在第一筆之前）。legacy `onDrop` :2813 */
@@ -131,6 +132,7 @@ function onDrop(e: DragEvent): void {
     @drop="onDrop"
   >
     <div
+      v-if="ui.canEdit"
       class="grip"
       :class="{ grabbing: lifted }"
       @click.stop
@@ -153,7 +155,7 @@ function onDrop(e: DragEvent): void {
       @keydown="onEditKey"
     />
     <div class="span">{{ span }}d</div>
-    <div class="del" role="button" title="刪除分類" @click="askDelete">✕</div>
+    <div v-if="ui.canEdit" class="del" role="button" title="刪除分類" @click="askDelete">✕</div>
   </div>
 </template>
 

@@ -24,6 +24,10 @@ export function clearMenuAnchors(): void {
   for (const k of Object.keys(menuAnchors) as MenuAnchorKind[]) menuAnchors[k] = null
 }
 
+/**
+ * 四支都會自己 `stopPropagation()`（觸發元素不必寫 `@click.stop`）：可編輯時點擊不往上傳，
+ * 不會順便選取所在的列 / 卡片；唯讀時不開、也不攔，點擊照常落到列 / 卡片去選取。
+ */
 export interface Menus {
   /** 開狀態 / 優先度 / 分類 / Issue 欄位的選項選單。 */
   openOptionMenu: (e: MouseEvent, id: string, kind: OptionMenuKind) => void
@@ -44,6 +48,9 @@ export interface Menus {
 /**
  * 開三種浮層選單，位置由觸發元素的 bounding rect 算（含視窗邊界翻轉）。
  * 定位公式在 lib/anchor.ts；這裡只負責量 rect、湊 store 需要的欄位。
+ *
+ * 這四種浮層都是改資料用的：唯讀時（`ui.canEdit` 是 false）一律不開、也不攔下點擊（F2），
+ * 元件不必各自判斷，觸發元素的游標與 hover 樣式由元件依 `ui.canEdit` 拿掉。
  */
 export function useMenus(): Menus {
   const clock = useClockStore()
@@ -86,6 +93,8 @@ export function useMenus(): Menus {
   }
 
   function openOptionMenu(e: MouseEvent, id: string, kind: OptionMenuKind): void {
+    if (!ui.canEdit) return
+    e.stopPropagation()
     ui.optionMenu = {
       id,
       kind,
@@ -94,6 +103,8 @@ export function useMenus(): Menus {
   }
 
   function openTaskDatePicker(e: MouseEvent, taskId: string): void {
+    if (!ui.canEdit) return
+    e.stopPropagation()
     const t = taskStore.taskById(taskId)
     if (!t) return
     ui.taskDatePicker = {
@@ -105,6 +116,8 @@ export function useMenus(): Menus {
   }
 
   function toggleRowMenu(e: MouseEvent, taskId: string): void {
+    if (!ui.canEdit) return
+    e.stopPropagation()
     if (ui.rowMenu?.id === taskId) {
       ui.rowMenu = null
       return
@@ -119,6 +132,8 @@ export function useMenus(): Menus {
     iso: ISODate | '',
     kind: 'issue' | 'task' = 'issue',
   ): void {
+    if (!ui.canEdit) return
+    e.stopPropagation()
     ui.issueDatePicker = {
       id,
       field,

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 任務看板上的一張卡：分類、名稱、優先度、狀態、時程 / 完成日期、負責人、Issue 徽章。
+// 唯讀時（F2）沒有刪除鈕與工期 ▲▼、不能拖，狀態 / 時程 / 完成日期只是顯示（點了不開選單）。
 // legacy 對照：模板 :584-633，columns[].tasks :2999-3113。
 import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
@@ -76,7 +77,12 @@ function daysDown(): void {
 
 /** 刪除任務走兩步確認。legacy `onAskDelete` :3100 */
 function askDelete(): void {
-  ui.confirm = { kind: 'task', id: props.task.id, step: 1 }
+  ui.askDelete('task', props.task.id)
+}
+
+/** 工期格：可編輯時點了不選卡片（裡面是 ▲▼）；唯讀時沒有 ▲▼，點了當成點卡片。 */
+function stopIfEditable(e: MouseEvent): void {
+  if (ui.canEdit) e.stopPropagation()
 }
 
 /** 開始拖卡片；`task:<id>` 是甘特列與分類列認得的格式。legacy `onCardDragStart` :3090 */
@@ -95,18 +101,20 @@ function toggleDetail(): void {
 <template>
   <div
     class="card"
-    :class="{ selected, dimmed, late, [`rel-${rel}`]: !!rel }"
+    :class="{ selected, dimmed, late, [`rel-${rel}`]: !!rel, readonly: !ui.canEdit }"
     :ref="registerEl(registry.cards, task.id)"
     :data-card="task.id"
     :data-selected="String(selected)"
     :data-rel="rel"
     :data-status="status"
-    draggable="true"
+    :draggable="ui.canEdit"
     role="button"
     @click.stop="selection.toggleTask(task.id, 'card')"
     @dragstart="onDragStart"
   >
-    <div class="del" role="button" title="刪除任務" @click.stop="askDelete()">✕</div>
+    <div v-if="ui.canEdit" class="del" role="button" title="刪除任務" @click.stop="askDelete()">
+      ✕
+    </div>
     <div class="group" :title="groupName">{{ groupName }}</div>
 
     <div class="title-row">
@@ -122,11 +130,11 @@ function toggleDetail(): void {
           background: `color-mix(in srgb, ${st.bar} 12%, transparent)`,
         }"
         role="button"
-        @click.stop="openOptionMenu($event, task.id, 'status')"
+        @click="openOptionMenu($event, task.id, 'status')"
       >
         <span class="st-dot" :style="{ background: st.bar }"></span>
         <span>{{ st.label }}</span>
-        <span class="st-caret">▼</span>
+        <span v-if="ui.canEdit" class="st-caret">▼</span>
       </div>
       <div v-if="late" class="late-chip">
         <span class="late-dot"></span><span>{{ DELAYED.label }}</span>
@@ -139,15 +147,15 @@ function toggleDetail(): void {
           class="range-main"
           :title="rangeFull"
           role="button"
-          @click.stop="openTaskDatePicker($event, task.id)"
+          @click="openTaskDatePicker($event, task.id)"
         >
           <span class="range-label">時程</span>
           <span class="range-value" :class="{ late }">{{ rangeShort }}</span>
         </span>
         <span class="range-sep"></span>
-        <span class="range-days" title="工期（天）" @click.stop>
+        <span class="range-days" title="工期（天）" @click="stopIfEditable">
           <span class="days-num">{{ days }}</span>
-          <span class="days-step">
+          <span v-if="ui.canEdit" class="days-step">
             <span class="step" role="button" title="加一天" @click.stop="daysUp()">▲</span>
             <span class="step" role="button" title="減一天" @click.stop="daysDown()">▼</span>
           </span>
@@ -155,9 +163,9 @@ function toggleDetail(): void {
       </span>
       <Pill
         label="完成日期"
-        caret
-        clickable
-        @click.stop="openIssueDatePicker($event, task.id, 'done', task.done, 'task')"
+        :caret="ui.canEdit"
+        :clickable="ui.canEdit"
+        @click="openIssueDatePicker($event, task.id, 'done', task.done, 'task')"
       >
         <span :class="task.done ? 'done-on' : 'done-off'">{{ doneLabel }}</span>
       </Pill>
@@ -331,6 +339,21 @@ function toggleDetail(): void {
 .st:hover {
   filter: var(--hover-dim);
   box-shadow: var(--ring-node);
+}
+
+/* 唯讀（F2）：狀態與時程只是顯示，拿掉 hover；點了等於點卡片（選取），游標跟卡片一樣 */
+.card.readonly .st,
+.card.readonly .range-main {
+  cursor: inherit;
+}
+
+.card.readonly .st:hover {
+  filter: none;
+  box-shadow: none;
+}
+
+.card.readonly .range-main:hover {
+  filter: none;
 }
 
 .st-dot {

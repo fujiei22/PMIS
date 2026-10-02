@@ -185,7 +185,8 @@ useFocusRequest((req) => {
         <SortMenu kind="issue" />
       </div>
       <div class="spacer"></div>
-      <button class="mini" @click="addIssueTop()">＋ 新增 Issue</button>
+      <!-- 唯讀時（F2）不給新增 -->
+      <button v-if="ui.canEdit" class="mini" @click="addIssueTop()">＋ 新增 Issue</button>
     </template>
 
     <div class="board" :style="{ '--cols': colCount }">

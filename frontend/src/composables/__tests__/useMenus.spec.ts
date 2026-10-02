@@ -4,6 +4,7 @@ import { clearMenuAnchors, menuAnchors, useMenus } from '@/composables/useMenus'
 import { anchorCalendar, anchorOptionMenu, anchorRowMenu } from '@/lib/anchor'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
+import { useProjectStore } from '@/stores/project'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 
@@ -142,6 +143,29 @@ describe('useMenus', () => {
     menus.toggleRowMenu(triggerAt(10, 10, 30), 't1')
     menus.openIssueDatePicker(triggerAt(10, 10, 30), 'i1', 'due', '')
     clearMenuAnchors()
+    expect(menuAnchors).toEqual({ option: null, row: null, taskDate: null, issueDate: null })
+  })
+})
+
+describe('useMenus 的唯讀（F2）', () => {
+  it('唯讀時四種浮層都不開，也不記觸發元素', () => {
+    const project = useProjectStore()
+    project.setAll(project.meta, false)
+    clearMenuAnchors()
+    const ui = useUiStore()
+    const menus = useMenus()
+
+    menus.openOptionMenu(triggerAt(10, 10, 30), 't1', 'status')
+    menus.openTaskDatePicker(triggerAt(10, 10, 30), 't1')
+    menus.toggleRowMenu(triggerAt(10, 10, 30), 't1')
+    menus.openIssueDatePicker(triggerAt(10, 10, 30), 'i1', 'due', '')
+
+    expect([ui.optionMenu, ui.taskDatePicker, ui.rowMenu, ui.issueDatePicker]).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ])
     expect(menuAnchors).toEqual({ option: null, row: null, taskDate: null, issueDate: null })
   })
 })

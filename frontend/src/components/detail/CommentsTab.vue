@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 留言頁籤：倒序的留言串（含附件縮圖）＋ 底部草稿區（拖檔、貼圖、選檔、Enter 送出）。
+// 唯讀時（F2）只能看與開大圖：沒有草稿區、沒有刪留言。
 // legacy 對照：模板 :1161-1228，commentRows :3871-3888、draft :3932-3962。
 import { computed, ref } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
@@ -92,7 +93,13 @@ function openLightbox(name: string, size: number, url: string): void {
             <div class="comment-author">{{ memberStore.byId(c.memberId)?.name ?? '成員' }}</div>
             <div class="comment-when">{{ whenOf(c.at) }}</div>
             <div class="head-gap"></div>
-            <div class="comment-del" role="button" title="刪除留言" @click="comment.remove(c.id)">
+            <div
+              v-if="ui.canEdit"
+              class="comment-del"
+              role="button"
+              title="刪除留言"
+              @click="comment.remove(c.id)"
+            >
               ✕
             </div>
           </div>
@@ -128,6 +135,7 @@ function openLightbox(name: string, size: number, url: string): void {
     </div>
 
     <div
+      v-if="ui.canEdit"
       class="draft-zone"
       :class="{ over: dropOver }"
       @dragover.prevent="dropOver = true"

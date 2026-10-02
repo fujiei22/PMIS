@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 甘特左欄的任務列：把手、狀態點、任務名、起訖日期 + 工期、列尾的「⋮」（動作選單 RowActionMenu）。
+// 唯讀時（F2）沒有把手與「⋮」、不能改名，日期膠囊只是顯示（點了不開日期選擇器）。
 // legacy 對照：模板 :442-466，groupRows[].tasks :2814-2877。
 import { computed, nextTick, ref, watch } from 'vue'
 import { useDomRegistry, registerEl } from '@/composables/useDomRegistry'
@@ -114,6 +115,11 @@ function onSelect(): void {
   selection.toggleTask(props.task.id)
 }
 
+/** 工期格：可編輯時點了不選列（同 legacy）；唯讀時整個日期膠囊都只是顯示，點了當成點列。 */
+function stopIfEditable(e: MouseEvent): void {
+  if (ui.canEdit) e.stopPropagation()
+}
+
 /** 雙擊任務名進就地編輯。legacy `onEdit` :2876 */
 const editing = computed(() => ui.editing?.kind === 't' && ui.editing.id === props.task.id)
 const inputEl = ref<HTMLInputElement | null>(null)
@@ -129,7 +135,7 @@ watch(editing, async (on) => {
 
 function startEdit(e: MouseEvent): void {
   e.stopPropagation()
-  ui.editing = { kind: 't', id: props.task.id }
+  ui.startEdit('t', props.task.id)
 }
 
 /**
@@ -198,6 +204,7 @@ function onDrop(e: DragEvent): void {
     @drop="onDrop"
   >
     <div
+      v-if="ui.canEdit"
       class="grip"
       :class="{ grabbing: lifted }"
       @click.stop
@@ -222,25 +229,26 @@ function onDrop(e: DragEvent): void {
       :key="slim ? 'slim' : 'full'"
       ref="dateEl"
       class="date"
-      :class="{ open: calOpen, slim, swap: dateSwap }"
+      :class="{ open: calOpen, slim, swap: dateSwap, readonly: !ui.canEdit }"
       @animationend.self="dateSwap = false"
     >
       <div
         class="date-range"
         :title="rangeTitle"
         role="button"
-        @click.stop="openTaskDatePicker($event, task.id)"
+        @click="openTaskDatePicker($event, task.id)"
       >
         <span class="date-text" :class="{ late }">{{ rangeText }}</span>
       </div>
       <template v-if="!slim">
         <span class="date-sep"></span>
-        <div class="date-days" title="工期（天）" @click.stop>
+        <div class="date-days" title="工期（天）" @click="stopIfEditable">
           <span class="days-num">{{ days }}</span>
         </div>
       </template>
     </div>
     <span
+      v-if="ui.canEdit"
       class="more"
       :class="{ open: menuOpen }"
       role="button"
@@ -249,7 +257,7 @@ function onDrop(e: DragEvent): void {
       aria-haspopup="menu"
       :aria-expanded="menuOpen"
       :data-rowmore="task.id"
-      @click.stop="toggleRowMenu($event, task.id)"
+      @click="toggleRowMenu($event, task.id)"
       >⋮</span
     >
   </div>
@@ -383,6 +391,11 @@ function onDrop(e: DragEvent): void {
   background: var(--surface-3);
 }
 
+/* 唯讀（F2）：膠囊只是顯示，拿掉可以點的提示 */
+.date.readonly:hover {
+  background: transparent;
+}
+
 .date.open {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
@@ -400,6 +413,15 @@ function onDrop(e: DragEvent): void {
 
 .date-range:hover {
   filter: var(--hover-dim);
+}
+
+/* 唯讀時點膠囊等於點列（選取），游標跟列一樣 */
+.date.readonly .date-range {
+  cursor: inherit;
+}
+
+.date.readonly .date-range:hover {
+  filter: none;
 }
 
 .date-text {

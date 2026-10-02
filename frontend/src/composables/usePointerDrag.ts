@@ -12,6 +12,7 @@ import type { DropTarget } from '@/types/models'
 
 /**
  * 甘特圖上的七種指標拖曳：條的移動 / 左右縮放、拉線建相依、列與分類重排、畫布平移。
+ * 唯讀時（`ui.canEdit` 是 false，F2）只剩平移：會改資料的四種 `start*` 一律 no-op。
  *
  * 全部走 document 層的 pointermove / pointerup（legacy `_mm` / `_mu` :1923-1924），
  * 指標一旦離開原本的元素也不會斷。狀態寫進 `uiStore.drag`，
@@ -410,7 +411,8 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   }
 
   function startBar(e: PointerEvent, id: string, kind: 'move' | 'resL' | 'resR'): void {
-    if (e.button !== 0) return
+    // 唯讀（F2）：不開始、也不 stopPropagation，按在條上照樣落到畫布去平移
+    if (!ui.canEdit || e.button !== 0) return
     e.stopPropagation()
     const t = taskStore.taskById(id)
     if (!t) return
@@ -429,6 +431,7 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   }
 
   function startLink(e: PointerEvent, id: string, side: 'L' | 'R'): void {
+    if (!ui.canEdit) return
     e.stopPropagation()
     e.preventDefault()
     const t = taskStore.taskById(id)
@@ -445,13 +448,13 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   }
 
   function startReorder(e: PointerEvent, id: string): void {
-    if (e.button !== 0) return
+    if (!ui.canEdit || e.button !== 0) return
     e.stopPropagation()
     begin({ kind: 'reorder', id, over: null, lastAt: 0, lastY: 0 }, e)
   }
 
   function startGroupReorder(e: PointerEvent, id: string): void {
-    if (e.button !== 0) return
+    if (!ui.canEdit || e.button !== 0) return
     e.stopPropagation()
     begin({ kind: 'greorder', id, lastAt: 0 }, e)
   }

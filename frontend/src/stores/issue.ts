@@ -16,9 +16,13 @@ import {
 } from '@/stores/_optimistic'
 import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
+import { useProjectStore } from '@/stores/project'
 import type { Issue, Task } from '@/types/models'
 
-/** Issue 清單與它的增刪改。Issue 一定掛在某個任務底下。 */
+/**
+ * Issue 清單與它的增刪改。Issue 一定掛在某個任務底下。
+ * 唯讀（F2）：寫入 action 第一行擋 `canEdit`（同 task store；分類守衛在 `stores/__tests__/readonly.spec.ts`）。
+ */
 export const useIssueStore = defineStore('issue', () => {
   const issues = ref<Issue[]>([])
   /** 最後已知的 server 狀態（契約 B）。 */
@@ -109,7 +113,8 @@ export const useIssueStore = defineStore('issue', () => {
    * 「沒有負責人就掛目前登入者」要讀 member store，留在呼叫端一起算（契約 E）。
    * 期限預設跟任務結束日同一天。
    */
-  function addIssue(task: Task, creatorId: string): Issue {
+  function addIssue(task: Task, creatorId: string): Issue | null {
+    if (!useProjectStore().canEdit) return null
     const issue: Issue = {
       id: newId(),
       taskId: task.id,
@@ -143,6 +148,7 @@ export const useIssueStore = defineStore('issue', () => {
 
   /** 只改本地（逐鍵編輯的每一鍵走這條）。legacy `setIssue` :2280 */
   function applyLocalPatch(id: string, patch: Partial<Issue>): Partial<Issue> | null {
+    if (!useProjectStore().canEdit) return null
     const i = byId(id)
     if (!i) return null
     const next = { ...patch }
@@ -166,6 +172,7 @@ export const useIssueStore = defineStore('issue', () => {
    * 它不看本地有沒有變——`useEditDraft` 已經逐鍵 apply 過了。
    */
   async function commitIssuePatch(id: string, patch: Partial<Issue>): Promise<void> {
+    if (!useProjectStore().canEdit) return
     clearDirty(tracker, [id])
     await runOptimistic<Issue>({
       tracker,
@@ -178,6 +185,7 @@ export const useIssueStore = defineStore('issue', () => {
 
   /** 改 Issue 欄位；進 closed 補完成日、離開 closed 清掉，然後送給後端。 */
   async function updateIssue(id: string, patch: Partial<Issue>): Promise<void> {
+    if (!useProjectStore().canEdit) return
     const sent = applyLocalPatch(id, patch)
     if (!sent) return
     await commitIssuePatch(id, sent)
@@ -188,6 +196,7 @@ export const useIssueStore = defineStore('issue', () => {
    * 指到它的選取 / 詳細視窗 / 確認框由派生層的 watch 自己清（契約 E）。
    */
   async function removeIssue(id: string): Promise<void> {
+    if (!useProjectStore().canEdit) return
     if (!byId(id)) return
     const comments = useCommentStore()
     const goneComments = comments.comments.filter((c) => c.targetId === id).map((c) => c.id)
