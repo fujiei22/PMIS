@@ -1,8 +1,10 @@
 # 技術棧
 
-PMIS 前端使用的技術與使用慣例。新加入的開發者先讀這份。
+PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 
-## 技術一覽
+前端已建置；後端技術已定案、尚未建置（見〈後端：技術一覽〉）。
+
+## 前端：技術一覽
 
 | 項目 | 使用 |
 |---|---|
@@ -19,7 +21,7 @@ PMIS 前端使用的技術與使用慣例。新加入的開發者先讀這份。
 
 專案以 Vue 官方範本 `npm create vue@latest` 建立，勾選 TypeScript、Vue Router、Pinia、Vitest、End-to-End Testing（Playwright）、ESLint、Prettier。
 
-## 常用指令
+## 前端：常用指令
 
 以下指令在 `frontend/` 下執行（從 repo 根目錄先 `cd frontend`）。下表對應 `frontend/package.json` 的 `scripts`。
 
@@ -37,7 +39,7 @@ PMIS 前端使用的技術與使用慣例。新加入的開發者先讀這份。
 
 注意：`npm run dev` 只轉換、不做型別檢查（Vite 只刪掉型別），型別錯誤靠編輯器提示；提交前至少跑一次 `npm run build`。
 
-## 使用慣例
+## 前端：使用慣例
 
 ### TypeScript
 - 資料模型（Task、Issue、Member、Comment 等）集中定義型別，元件與 store 一律引用，不各自重寫。
@@ -69,7 +71,7 @@ PMIS 前端使用的技術與使用慣例。新加入的開發者先讀這份。
 細節與後端契約（端點表、錯誤碼表、事件規則、adapter 職責）見 [`frontend/README.md` 的「怎麼接後端」](../../frontend/README.md#怎麼接後端)。
 
 ### 路由
-- 每個頁面一個路由；Dashboard 掛在 `/`。
+- 每個頁面一個路由；所有專案總覽掛在 `/`，單一專案的 Dashboard 掛在 `/projects/:id`。
 
 ### 元件
 - 不引入 UI 元件庫；共用的基礎元件（下拉選單、日曆、對話框等）自行實作並重複使用。
@@ -77,3 +79,70 @@ PMIS 前端使用的技術與使用慣例。新加入的開發者先讀這份。
 ### 測試
 - 純邏輯（日期計算、相依連動、篩選、排序）寫 Vitest 單元測試。
 - 使用者操作流程（點選、拖曳、對話框）寫 Playwright E2E 測試。
+
+## 後端：技術一覽
+
+已定案，尚未建置；程式會放在 `backend/`。
+
+| 項目 | 使用 |
+|---|---|
+| 語言 | Python |
+| 框架 | FastAPI |
+| 資料驗證 | Pydantic（FastAPI 內建） |
+| 資料庫 | PostgreSQL |
+| 資料庫存取 | SQLAlchemy 2 |
+| 資料表變更（migration） | Alembic |
+| 資料分析 | pandas |
+| Excel 讀寫 | openpyxl |
+| 即時推送 | SSE（`/api/events`） |
+| 測試 | pytest |
+| 型別檢查 | mypy |
+| 程式碼檢查 | ruff |
+| 套件與 Python 版本管理 | uv |
+| 登入 | 公司網域帳號（AD），後端經 LDAPS 驗證 |
+| 部署 | Docker Compose（`app`：FastAPI 連同前端打包結果；`db`：PostgreSQL） |
+
+部署：容器化。一支 FastAPI 程式同時提供前端打包結果（`frontend/dist/`）、`/api` 與 `/api/events`，同一個網域；不認得的網址回 `index.html`，交給 Vue Router。
+
+## 後端：使用慣例
+
+### 結構
+- 資料夾結構參照 FastAPI 官方範本 [full-stack-fastapi-template](https://github.com/fastapi/full-stack-fastapi-template) 的 `backend/`。
+- 結構規則寫進 `backend/README.md` 的開工導覽，並用讀原始碼的測試守住（比照前端的 `imports.spec.ts`）。
+
+### API 契約
+- 端點、錯誤碼、事件規則以 [`frontend/README.md` 的「怎麼接後端」](../../frontend/README.md#怎麼接後端)為準。
+- 前端型別由 FastAPI 產生的 OpenAPI 產生，給 `frontend/src/api/http/` 的 adapter 使用。CI 重新產生一次並與 repo 內的版本比對，不一致就失敗。
+- 請求資料一律經 Pydantic model 驗證；沒列在 model 裡的欄位一律不寫入。
+
+### 即時推送
+- SSE 端點是 `/api/events`，每則 `data` 是一個 `ProjectEvent` 的 JSON，事件規則見 [`frontend/README.md` 的「事件」](../../frontend/README.md#事件)。
+- 建立連線時驗證登入；端點不開 CORS，只給 PMIS 自己的網域用。
+- 後端定期送心跳註解（例如每 15 秒一行 `: ping`），避免閒置連線被中間設備切斷；斷線由瀏覽器的 `EventSource` 自動重連，重連後補發 `project.reloaded` 由前端 adapter 負責。
+- 前面若有反向代理（nginx、IIS 等），要關閉這個端點的回應緩衝（nginx 可由後端送 `X-Accel-Buffering: no`），並建議開 HTTP/2：HTTP/1.1 下瀏覽器對同一個網域最多 6 條連線，每個開著 Dashboard 的分頁會佔掉一條。
+
+### 金額
+- 資料庫欄位用 `NUMERIC`，程式裡用 `Decimal`，不用 `float`。
+- 加總、統計在資料庫（SQL）做。
+
+### 非同步與行程
+- 一般 API 用 `def`；只有 SSE 與 AI 串流回應用 `async def`，而且裡面不呼叫同步的資料庫套件。以讀原始碼的測試列白名單守住。
+- 正式環境只跑一個 worker。要開多個 worker 前，先讓事件經 PostgreSQL 的 `LISTEN` / `NOTIFY` 在 worker 之間傳遞。
+- 耗時的分析（例如預測）放排程的背景工作，結果寫進資料表，API 只讀結果。
+
+### 資料庫變更
+- 資料表變更一律寫成 Alembic migration。自動產生的 migration 要逐行確認，改欄位名稱可能被產生成「刪欄位＋加欄位」，舊資料會遺失。
+- 正式環境的 migration 不交給 AI 直接執行。
+- 資料庫每日自動備份。
+
+### 設定與檔案
+- 設定（資料庫位址、網域伺服器位址、外部 AI 服務的金鑰等）一律從環境變數讀，不寫死在程式裡。
+- 附件存放的資料夾由設定指定，不寫死在程式資料夾底下。
+- 程式要能在 Linux 上執行（正式環境的容器是 Linux）：路徑用 `pathlib` 組，import 與檔名的大小寫要一致。
+
+### 安全
+- 每支端點預設都要登入與授權，開放的例外要明寫。
+- 外部 AI 服務的金鑰只放後端的環境變數，不進前端程式，也不進版控。
+
+### CI
+- 每個 PR 在 Linux 上跑 pytest、mypy、ruff、OpenAPI 型別比對，以及前端既有的檢查，全綠才能 merge。
