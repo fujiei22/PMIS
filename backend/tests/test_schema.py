@@ -527,6 +527,10 @@ def test_task_baseline_is_both_or_neither(db: Session) -> None:
     assert_rejected(
         db, lambda: make_task(db, baseline_start_on=date(2026, 9, 1)), "ck_tasks_baseline_pair"
     )
+    # 反過來只有結束日也一樣不收（CHECK 是對稱的，兩個方向都要守）
+    assert_rejected(
+        db, lambda: make_task(db, baseline_end_on=date(2026, 9, 5)), "ck_tasks_baseline_pair"
+    )
 
 
 def test_task_duration_has_no_server_default(db: Session) -> None:

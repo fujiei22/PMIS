@@ -196,6 +196,8 @@ export const useTaskStore = defineStore('task', () => {
     requestedId = null
     groups.value = []
     inputs.value = []
+    // 上一個專案（上一位使用者）的推算結果不留著
+    scheduleCache = new Map()
     deps.value = []
     clearTracker(taskTracker)
     clearTracker(groupTracker)

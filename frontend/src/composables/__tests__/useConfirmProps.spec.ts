@@ -215,7 +215,7 @@ describe('useConfirmProps 基準鎖', () => {
     expect(view.value).toMatchObject({
       step: 2,
       title: '再次確認',
-      body: '重新上鎖時，原本的基準會被覆蓋，無法復原。',
+      body: '解鎖後，下一次編輯就會把基準改成目前的排程，原本的基準無法復原。',
       confirmLabel: '確認解鎖',
     })
     view.value!.onConfirm()

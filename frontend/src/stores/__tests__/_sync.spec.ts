@@ -48,6 +48,20 @@ describe('useProjectSync', () => {
     sync.stop()
   })
 
+  // security：錯投或過期的事件（換專案後才到的上一個專案的 project.updated）不能把 meta 換成別的專案
+  it('project.updated 的專案 id 不是目前這個：丟掉', () => {
+    const sync = useProjectSync()
+    const project = useProjectStore()
+    sync.start('pmis')
+    mockApi.emit({
+      type: 'project.updated',
+      payload: { ...project.meta, id: 'other', name: '別的專案', baselineLockedOn: '2026-09-18' },
+    })
+    expect(project.meta.id).toBe('pmis')
+    expect(project.meta.name).not.toBe('別的專案')
+    sync.stop()
+  })
+
   it('project.updated 更新專案本身（例：基準鎖定日），canEdit 不變', () => {
     const sync = useProjectSync()
     const project = useProjectStore()

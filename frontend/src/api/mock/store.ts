@@ -152,9 +152,13 @@ export function createMockStore(initial: ProjectData): MockStore {
     lockBaseline(projectId: string, lockedOn: ISODate, tasks: Task[]) {
       requireProject(projectId)
       for (const t of tasks) find(data.tasks, t.id, '任務')
+      // 只寫起訖與基準（白名單）：上鎖不是改任務的入口，名稱、狀態這些欄位不能順便被改（mass-assignment）
       const out = tasks.map((t) => {
         const cur = find(data.tasks, t.id, '任務')
-        Object.assign(cur, structuredClone(t))
+        cur.start = t.start
+        cur.end = t.end
+        cur.baselineStart = t.baselineStart
+        cur.baselineEnd = t.baselineEnd
         return structuredClone(cur)
       })
       data.project.baselineLockedOn = lockedOn

@@ -159,13 +159,21 @@ export interface ProjectApi {
   /** 這個專案整份的任務順序 + 每筆的 groupId；後端把它存成排序鍵。 */
   reorderTasks(projectId: string, order: { id: string; groupId: string }[]): Promise<void> // PUT    /api/projects/:pid/tasks/order
   /**
-   * 鎖定計畫基準（規則見 docs/reference/scheduling.md〈基準與基準鎖〉）：`tasks` 是整批任務
+   * 鎖定計畫基準（規則見 docs/reference/scheduling.md〈基準與基準鎖〉）：`tasks` 是 server 已有的任務
    * （基準＝當下的推算起訖），`lockedOn` 是鎖定日。後端在同一個交易裡存任務與專案的鎖定日；
    * 事件依序是每個任務一則 `task.updated`、最後一則 `project.updated`。
+   *
+   * 後端必守（security-audit；mock 的 `lockBaseline` 是參考實作）：
+   * - 只有這個專案的 PM 能鎖：不是 PM 回 403、專案不存在回 404。
+   * - `lockedOn` 以後端的當日為準：client 送來的值只拿來比對，不照存（不能倒填）。
+   * - 每筆只寫 `start`／`end`／`baselineStart`／`baselineEnd`（白名單）；其他欄位一律忽略（mass-assignment）。
+   * - 每個 id 都要屬於路徑上的專案、而且沒被刪除，否則整批 404；整批有筆數上限。
+   * - 基準被覆蓋要留稽核紀錄（誰、何時、前後的值）：基準是延遲的標尺。
    */
   lockBaseline(projectId: string, lockedOn: ISODate, tasks: Task[]): Promise<void> // PUT    /api/projects/:pid/baseline
   /**
    * 解鎖：只清鎖定日（基準由前端改成跟著排程走，下次寫回時一併寫入）；事件 `project.updated`。
+   * 後端必守：同 `lockBaseline` 的 403／404；解鎖要留稽核紀錄（之後的寫回會覆蓋原本的基準）。
    */
   unlockBaseline(projectId: string): Promise<void> //                        DELETE /api/projects/:pid/baseline
 

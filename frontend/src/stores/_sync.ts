@@ -26,7 +26,9 @@ export function useProjectSync(): { start: (projectId: string) => void; stop: ()
       return
     }
     if (e.type === 'project.updated') {
-      useProjectStore().setMeta(e.payload)
+      // 只收目前這個專案的：換專案後才到的上一個專案的事件（延遲、重送、錯投）不能把 meta 換成別的專案
+      const project = useProjectStore()
+      if (e.payload.id === project.meta.id) project.setMeta(e.payload)
       return
     }
     if (e.type.startsWith('issue.')) issueStore.applyEvent(e)

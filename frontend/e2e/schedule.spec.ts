@@ -47,7 +47,7 @@ test('基準鎖：解鎖（兩步確認）後不再標延遲；再上鎖（一�
   await expect(app.confirmDialog).toContainText('解除基準鎖？')
   await expect(app.confirmDialog).toContainText('目前 2 個任務已延遲')
   await confirmButton(app, '繼續').click()
-  await expect(app.confirmDialog).toContainText('重新上鎖時，原本的基準會被覆蓋，無法復原。')
+  await expect(app.confirmDialog).toContainText('解鎖後，下一次編輯就會把基準改成目前的排程，原本的基準無法復原。')
   await confirmButton(app, '確認解鎖').click()
   await expect(app.confirmDialog).toHaveCount(0)
   await expect(lockButton(page)).toHaveAttribute('aria-pressed', 'false')

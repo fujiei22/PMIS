@@ -475,6 +475,19 @@ describe('基準鎖', () => {
     expect(events.map((e) => e.type)).toEqual(['task.updated', 'task.updated', 'project.updated'])
   })
 
+  // security：mock 是後端的參考實作；上鎖只寫起訖與基準，不能順便改名稱、狀態這些欄位（mass-assignment）
+  it('lockBaseline：只寫起訖與基準，其他欄位照舊', async () => {
+    const data = await api.loadProject('pmis')
+    const t = data.tasks[0]!
+    await api.lockBaseline('pmis', '2026-09-18', [
+      { ...t, name: '偷改的名稱', status: 'todo', baselineStart: t.start, baselineEnd: t.end },
+    ])
+    const after = (await api.loadProject('pmis')).tasks[0]!
+    expect(after.name).toBe(t.name)
+    expect(after.status).toBe(t.status)
+    expect(after.baselineEnd).toBe(t.end)
+  })
+
   it('unlockBaseline：清鎖定日，發一則 project.updated', async () => {
     await api.lockBaseline('pmis', '2026-09-18', [])
     events = []

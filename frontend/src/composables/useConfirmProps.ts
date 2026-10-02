@@ -55,7 +55,7 @@ const DELETE_TITLE = {
 /**
  * 基準鎖的文案（規則見 docs/reference/scheduling.md〈基準與基準鎖〉）。
  * 上鎖不會丟掉任何東西（解鎖時基準本來就跟著排程走），一步就好；
- * 解鎖之後再上鎖會用當下的排程覆蓋原本的基準，所以兩步。
+ * 解鎖之後，下一次編輯寫回時存的基準就會改成推算起訖，原本的基準找不回來，所以兩步。
  */
 const BASELINE_CONFIRM = {
   lockTitle: '鎖定計畫基準？',
@@ -64,7 +64,7 @@ const BASELINE_CONFIRM = {
   unlockTitle: '解除基準鎖？',
   unlockBody: '解鎖後基準跟著排程走，不再標示延遲。',
   unlockExtra: (n: number) => `目前 ${n} 個任務已延遲`,
-  unlockBody2: '重新上鎖時，原本的基準會被覆蓋，無法復原。',
+  unlockBody2: '解鎖後，下一次編輯就會把基準改成目前的排程，原本的基準無法復原。',
   unlockLabels: ['繼續', '確認解鎖'] as const,
 }
 
