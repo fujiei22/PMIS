@@ -307,13 +307,13 @@ export interface GeoSnapshot {
   bars: Metric[]
   /** 看板卡：相對所屬欄左上角的位移 + 尺寸。 */
   cards: Metric[]
-  /** 看板四欄本身的尺寸與頁面 y（從頂欄底部量起）。 */
+  /** 看板四欄本身的尺寸與頁面 y（從摘要列底部量起）。 */
   cols: Metric[]
   /** Issue 卡：相對第一張 Issue 卡左上角的位移 + 尺寸。 */
   issues: Metric[]
   /** 每個 `[data-dd]`（下拉觸發器與面板）的尺寸。 */
   dd: Metric[]
-  /** 甘特左欄寬、畫布寬、整頁高（扣掉頂欄）。 */
+  /** 甘特左欄寬、畫布寬、整頁高（扣掉摘要列底部以上）。 */
   page: Metric[]
   /** 浮層（選單 / 對話框 / 詳細視窗）本身與其直屬子元素的尺寸。 */
   floats: Metric[]
@@ -329,22 +329,20 @@ export function geoSnapshot(page: Page, kind: PageKind): Promise<GeoSnapshot> {
     const round = (n: number): number => Math.round(n * 10) / 10
 
     /**
-     * 刻意保留的差異：頂欄的篩選器一行放不下時，新頁整排移到第二列，legacy 在中間自己換行，
-     * 兩邊頂欄高度不同（1440 時差 2px）。頁面座標（看板欄的 y、整頁高）一律從頂欄底部量起，
-     * 頂欄以下的幾何照樣 ±1px 對照。新頁是 `.top-bar`，legacy 是第一個 sticky、top:0 的列（:56）；
-     * 找不到、或找到的不含第一個下拉（成員篩選，兩頁都在頂欄）就丟錯，不默默當 0。
+     * 頁面座標（看板欄的 y、整頁高）一律從摘要列底部量起，摘要列以下的幾何照樣 ±1px 對照。上面有兩個刻意保留的差異：
+     * - 頂欄：篩選器一行放不下時，新頁整排移到第二列，legacy 在中間自己換行，兩邊頂欄高度不同（1440 時差 2px）。
+     * - 摘要列：新頁把「專案總時長」併進「整體進度」、多一張 legacy 沒有的「預算 vs. 支出」，摘要列比 legacy 高。
+     * 摘要列：新頁是 `summary-progress` 卡的父層，legacy 是「專案總時長」那張卡的父層（:298 的四欄 grid）；
+     * 找不到就丟錯，不默默當 0。
      */
-    const topBar =
+    const firstCard =
       kind === 'vue'
-        ? document.querySelector('.top-bar')
-        : [...document.querySelectorAll('body *')].find((el) => {
-            const s = getComputedStyle(el)
-            return s.position === 'sticky' && s.top === '0px'
-          })
-    if (!topBar || !topBar.contains(document.querySelector('[data-dd]'))) {
-      throw new Error(`${kind} 頁找不到頂欄（含成員篩選的 sticky 列），無法扣掉頂欄高度`)
-    }
-    const top = r(topBar).height
+        ? document.querySelector('[data-testid="summary-progress"]')
+        : [...document.querySelectorAll('body *')].find((el) => el.children.length === 0 && el.textContent?.trim() === '專案總時長')
+            ?.parentElement
+    const summaryRow = firstCard?.parentElement
+    if (!summaryRow) throw new Error(`${kind} 頁找不到摘要列，無法以它為頁面座標的原點`)
+    const top = r(summaryRow).bottom + window.scrollY
 
     const rows = all('[data-rowtask]')
     const base = rows[0] ? r(rows[0]) : new DOMRect()
