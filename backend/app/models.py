@@ -60,6 +60,9 @@ ISSUE_LEVELS = ("A", "B", "C", "D")
 ISSUE_STATUSES = ("open", "doing", "paused", "closed")
 COMMENT_TARGET_KINDS = ("task", "issue")
 DELETION_ROOT_KINDS = ("project", "group", "task", "issue", "comment")
+# 官方辦公日曆的來源：新北市資料開放平臺、行政院人事行政總處。跟 app/imports/holiday_csv.py 的
+# CalendarSource 一致（models.py 不能 import imports/，tests/imports/test_holiday_csv.py 檢查兩邊相同）。
+CALENDAR_SOURCES = ("ntpc", "dgpa")
 
 
 class Base(DeclarativeBase):
