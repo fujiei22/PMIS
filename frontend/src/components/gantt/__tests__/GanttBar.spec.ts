@@ -1,11 +1,16 @@
 import { mount } from '@vue/test-utils'
-import { createPinia, setActivePinia, type Pinia } from 'pinia'
+import { createPinia, getActivePinia, setActivePinia, type Pinia } from 'pinia'
 import { defineComponent, h, nextTick } from 'vue'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { useSampleCalendar } from '@/__tests__/loadSample'
+import { loadSample, useSampleCalendar } from '@/__tests__/loadSample'
 import { mockApi as maybeMockApi } from '@/api'
 import GanttBar from '@/components/gantt/GanttBar.vue'
-import { ROW_HEIGHT } from '@/constants/dashboard'
+import {
+  EDIT_BLOCK_TEXT,
+  END_REASON_TEXT,
+  ROW_HEIGHT,
+  START_REASON_TEXT,
+} from '@/constants/dashboard'
 import { dayIndex } from '@/lib/date'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
@@ -219,5 +224,49 @@ describe('GanttBar 的重繪範圍（契約 G、review C6）', () => {
 
     expect(counts.t6).toBeGreaterThan(0)
     expect(counts.t3).toBe(0)
+  })
+})
+
+// 排程規則（規則見 docs/reference/scheduling.md〈編輯限制〉）：不能拖的條沒有把手、title 寫原因
+describe('GanttBar 的編輯限制與說明', () => {
+  beforeEach(async () => {
+    await loadSample()
+  })
+
+  /** 用 loadSample 建的 pinia 掛一條任務條。 */
+  function mountSampleTask(id: string) {
+    return mount(GanttBar, {
+      props: { kind: 'task' as const, task: useTaskStore().taskById(id)!, rowIndex: 1 },
+      global: { plugins: [getActivePinia()!] },
+    })
+  }
+
+  it('有前置、未開始的 t5：沒有左把手、有右把手；選取後是 pinned（不能拖，游標不是抓取）', () => {
+    useSelectionStore().selectTask('t5')
+    const w = mountSampleTask('t5')
+    expect(w.find('.handle-l').exists()).toBe(false)
+    expect(w.find('.handle-r').exists()).toBe(true)
+    expect(w.find('.bar').classes()).toContain('pinned')
+  })
+
+  it('已完成的 t2：兩個把手都沒有', () => {
+    const w = mountSampleTask('t2')
+    expect(w.find('.handle-l').exists()).toBe(false)
+    expect(w.find('.handle-r').exists()).toBe(false)
+  })
+
+  it('t5 的 title：寫不能拖的原因（不是「點擊以選取」），附開始日的來由', () => {
+    const title = mountSampleTask('t5').find('.bar').attributes('title')!
+    expect(title).not.toContain('點擊以選取後才能拖曳')
+    expect(title).toContain(EDIT_BLOCK_TEXT.predecessor)
+    expect(title).toContain(START_REASON_TEXT.pred('UI 元件開發'))
+  })
+
+  it('t3 的 title：起訖用 fmtDate、工期是有效工期（工作天）、結束日寫逾期的原定日', () => {
+    const title = mountSampleTask('t3').find('.bar').attributes('title')!
+    expect(title).toContain('點擊以選取後才能拖曳')
+    expect(title).toContain('2026/09/08 → 2026/09/18')
+    expect(title).toContain('9 工作天')
+    expect(title).toContain(END_REASON_TEXT.overdue('2026/09/16'))
   })
 })
