@@ -4,7 +4,6 @@
 import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import OvDropdown from '@/components/overview/OvDropdown.vue'
-import { freezeLeave } from '@/composables/freezeLeave'
 import { useOverviewStore } from '@/stores/overview'
 
 defineProps<{
@@ -40,19 +39,36 @@ const morePms = computed(() => !hasSel.value && overview.pms.length > 3)
     @close="overview.closeDropdown()"
   >
     <template #trigger>
+      <!--
+        頭像、「…」、人數增減時原地橫向展開 / 收起（A23、動畫稽核 T6 / T14；ov-av，見 overview-motion.css）：
+        觸發鈕靠右排，寬度逐幀變、左緣連續滑動，不會當幀變窄帶著整疊頭像跳。
+        每顆外面兩層：.ov-slot（欄寬 0fr ↔ 1fr，重疊的 -7px 也寫在這層、收到 0 時一起歸零）、.ov-slot-clip（進出場時裁切）。
+      -->
       <span class="mp-avs">
-        <!-- 頭像增減時淡入淡出、其餘頭像滑過去（A23）；離場的釘在原位，所以 .mp-stack 要 relative -->
-        <TransitionGroup name="ov-av" tag="span" class="mp-stack" @before-leave="freezeLeave">
-          <Avatar v-for="m in avatars" :key="m.id" :member="m" :size="22" :ring="2" :overlap="7" />
+        <TransitionGroup name="ov-av" tag="span" class="mp-stack">
+          <span v-for="m in avatars" :key="m.id" class="ov-slot mp-slot">
+            <span class="ov-slot-clip"><Avatar :member="m" :size="22" :ring="2" /></span>
+          </span>
         </TransitionGroup>
-        <span v-if="morePms" class="mp-more" aria-hidden="true">…</span>
+        <Transition name="ov-av">
+          <span v-if="morePms" class="ov-slot mp-slot">
+            <span class="ov-slot-clip"><span class="mp-more" aria-hidden="true">…</span></span>
+          </span>
+        </Transition>
       </span>
-      <span v-if="hasSel" class="mp-count">{{ selCount }}</span>
+      <Transition name="ov-av">
+        <span v-if="hasSel" class="ov-slot mp-count-slot">
+          <span class="ov-slot-clip"><span class="mp-count">{{ selCount }}</span></span>
+        </span>
+      </Transition>
     </template>
 
     <div class="mp-head">
       <span class="mp-title">PM 成員</span>
-      <span v-if="hasSel" class="mp-sub">已選 {{ selCount }} 位</span>
+      <!-- 淡入淡出（T14）；在標題列右端，不佔高度 -->
+      <Transition name="ov-fade">
+        <span v-if="hasSel" class="mp-sub">已選 {{ selCount }} 位</span>
+      </Transition>
     </div>
     <div class="mp-list">
       <button
@@ -78,9 +94,16 @@ const morePms = computed(() => !hasSel.value && overview.pms.length > 3)
         <span class="mp-box" aria-hidden="true">✓</span>
       </button>
     </div>
-    <div v-if="hasSel" class="mp-tools">
-      <button type="button" class="mp-btn" @click="overview.clearPms()">清除勾選</button>
-    </div>
+    <!-- 「清除勾選」那列原地長出 / 收起（T14；ov-fold，見 overview-motion.css）：面板高度逐幀變，不是一幀 270 → 312px -->
+    <Transition name="ov-fold">
+      <div v-if="hasSel" class="mp-tools-fold">
+        <div class="mp-tools-clip">
+          <div class="mp-tools">
+            <button type="button" class="mp-btn" @click="overview.clearPms()">清除勾選</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </OvDropdown>
 </template>
 
@@ -105,7 +128,7 @@ const morePms = computed(() => !hasSel.value && overview.pms.length > 3)
   box-shadow: var(--shadow-popover);
 }
 
-/* 頭像疊 ＋「…」；每顆往右收 7px，最後補回 7px */
+/* 頭像疊 ＋「…」；每顆往右收 7px（.mp-slot 的 --ov-slot-mr），最後補回 7px */
 .mp-avs {
   display: flex;
   align-items: center;
@@ -113,15 +136,24 @@ const morePms = computed(() => !hasSel.value && overview.pms.length > 3)
 }
 
 .mp-stack {
-  position: relative;
   display: flex;
   align-items: center;
+}
+
+/* 疊放的重疊寫在外層：收到 0 寬時跟著歸零（ov-av-*-from / -to 用 --ov-slot-mr0，預設 0） */
+.mp-slot {
+  --ov-slot-mr: -7px;
+}
+
+/* 人數和頭像疊之間隔著觸發鈕的 flex gap：寬度 0 時用負右邊界抵掉，插入 / 移除當幀觸發鈕不先跳一個 gap */
+.mp-count-slot {
+  --ov-slot-mr0: calc(-1 * var(--sp-4));
 }
 
 .mp-more {
   width: 22px;
   height: 22px;
-  margin-right: -7px;
+  flex: 0 0 22px;
   border: 2px solid var(--surface-1);
   border-radius: 50%;
   background: var(--border-1);
@@ -277,10 +309,29 @@ const morePms = computed(() => !hasSel.value && overview.pms.length > 3)
   background: var(--danger);
 }
 
+/*
+ * 原地收合：外層 grid 0fr ↔ 1fr、內層 min-height: 0 讓列高收得到 0；上方間距放在裡面跟著一起收（理由見 overview-motion.css 的 ov-col）。
+ * 只在進出場時裁切：平常裁的話「清除勾選」的焦點光圈會被切掉。
+ * 平常全高寫在 :where() 裡讓特異度為 0，ov-fold 進出場的 0fr 才蓋得過（理由同 CardBoard 的 .lane-wrap）。
+ */
+:where(.mp-tools-fold) {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.mp-tools-clip {
+  min-height: 0;
+}
+
+.ov-fold-enter-active > .mp-tools-clip,
+.ov-fold-leave-active > .mp-tools-clip {
+  overflow: clip;
+}
+
 .mp-tools {
   display: flex;
   gap: var(--sp-3);
-  margin-top: var(--sp-5);
+  padding-top: var(--sp-5);
 }
 
 .mp-btn {

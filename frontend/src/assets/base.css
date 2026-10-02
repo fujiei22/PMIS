@@ -220,14 +220,14 @@ select {
   opacity: 0;
 }
 
-/* ---------- 浮層進出場（Vue <Transition> 的 class；批次 D 定義，頂欄浮層（批次 C）沿用） ----------
+/* ---------- 浮層進出場（Vue <Transition> 的 class；批次 D 定義，Dashboard 與總覽的頂欄浮層（批次 C）沿用） ----------
    一律用 transition 不用 keyframes：開到一半就關時往回走，keyframes 會從頭（全亮）重播；
    進場中被打斷時 Vue 會先順著進場多走 1–2 幀才往回，不會跳回全亮。
    離場中 pointer-events: none：淡出中的選單 / 遮罩不再吃點擊，舊選項也點不到。
    元件 scoped 的 transition / animation / opacity / transform（特異度 0,2,0）會蓋掉這裡（0,1,0），
    套用這些 class 的根元素與對話框本體不要再寫這四個屬性（PR #22 根因 B）。 */
 
-/* 選單、日期選擇器：時長同總覽的 ov-pop（進 --t-menu ease-out、出 --t-fast var(--ease)） */
+/* 選單、日期選擇器（總覽的下拉與排序選單也用這組）：進 --t-menu ease-out、出 --t-fast var(--ease) */
 .pop-enter-active {
   transition:
     opacity var(--t-menu) ease-out,

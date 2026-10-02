@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 總覽頂欄：標題、檢視切換、專案名稱搜尋、成員 / 狀態 / 需注意篩選、清除篩選、登入者。
 // 版面照 Dashboard TopBar 的單列與 B2；專案計數只放在面板標題列，頂欄不放（spec 目標 3）。
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import OvDropdown from '@/components/overview/OvDropdown.vue'
 import PmFilter from '@/components/overview/PmFilter.vue'
@@ -10,6 +10,7 @@ import {
   PROJECT_STATUS_LABEL,
   PROJECT_STATUS_ORDER,
 } from '@/constants/overview'
+import { parseDuration } from '@/lib/easing'
 import { useOverviewStore, type OverviewView } from '@/stores/overview'
 import { usePortfolioStore } from '@/stores/portfolio'
 import type { ProjectAlert, ProjectStatus } from '@/types/models'
@@ -69,6 +70,74 @@ function ddLabel(name: string, n: number): string {
 }
 
 const me = computed(() => portfolio.byId(portfolio.currentUserId))
+
+/**
+ * 篩選項變寬 / 變窄時，它左邊的項目滑過去（動畫稽核批次 C，同 Dashboard TopBar 的 G7 位移補間）。
+ * 篩選器靠右排（flex-end），「狀態」→「狀態 1」這類標籤變長是左緣往左長、右緣不動，它左邊的整排（搜尋框、成員觸發鈕…）
+ * 原本一幀跳 10px。篩選條件一變，DOM 更新前記下每一項看得到的右緣，更新後量新的右緣，
+ * 先用 translateX 移回舊位置，再補間回 0（Web Animations，--t-panel / --ease）。
+ * 成員觸發鈕的頭像疊自己是原地收合（寬度逐幀變，PmFilter），更新當下寬度還沒變，量到的位移是 0、不會疊兩次。
+ * 比右緣不比左緣：變寬的那一項自己不動，它開著的選單（OvDropdown 錨在右緣）也就不被帶著跑。
+ */
+const filtersEl = ref<HTMLElement | null>(null)
+const slides = new Map<HTMLElement, Animation>()
+/** DOM 更新前記下的右緣（看得到的位置，含進行中的補間）；null＝這次不做。 */
+let slideFrom: Map<HTMLElement, number> | null = null
+
+function cancelSlides(): void {
+  for (const a of slides.values()) a.cancel()
+  slides.clear()
+}
+
+/** 會改變篩選項寬度的條件：下拉標籤的勾選數、成員頭像疊（store 每次換新陣列，watch 認得到）。 */
+const slideSources = [() => overview.statuses, () => overview.alerts, () => overview.pmIds]
+
+watch(
+  slideSources,
+  () => {
+    const box = filtersEl.value
+    // jsdom 沒有 Web Animations
+    slideFrom =
+      box && typeof box.animate === 'function'
+        ? new Map(Array.from(box.children as HTMLCollectionOf<HTMLElement>, (el) => [el, el.getBoundingClientRect().right]))
+        : null
+  },
+  { flush: 'pre' },
+)
+
+watch(
+  slideSources,
+  () => {
+    const from = slideFrom
+    slideFrom = null
+    const box = filtersEl.value
+    if (!from || !box) return
+    // 進行中的補間先停掉，下面量到的才是版面位置（看得到的舊位置已經記在 from）
+    cancelSlides()
+    const moves = Array.from(box.children as HTMLCollectionOf<HTMLElement>, (el) => ({
+      el,
+      dx: (from.get(el) ?? NaN) - el.getBoundingClientRect().right,
+    }))
+    const cs = getComputedStyle(document.documentElement)
+    const timing = {
+      duration: parseDuration(cs.getPropertyValue('--t-panel')),
+      easing: cs.getPropertyValue('--ease').trim() || 'ease',
+    }
+    if (!timing.duration) return
+    for (const { el, dx } of moves) {
+      // NaN＝新出現的項目；不到半像素＝沒動
+      if (!(Math.abs(dx) >= 0.5)) continue
+      const anim = el.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], timing)
+      slides.set(el, anim)
+      anim.onfinish = () => {
+        if (slides.get(el) === anim) slides.delete(el)
+      }
+    }
+  },
+  { flush: 'post' },
+)
+
+onBeforeUnmount(cancelSlides)
 </script>
 
 <template>
@@ -93,7 +162,7 @@ const me = computed(() => portfolio.byId(portfolio.currentUserId))
 
     <!-- 右半組：篩選 + 登入者。窄螢幕放不下時整組換行、組內再換行，都靠右 -->
     <div class="top-right">
-      <div class="filters" role="group" aria-label="篩選">
+      <div ref="filtersEl" class="filters" role="group" aria-label="篩選">
         <div class="search" :class="{ on: hasQuery, disabled: notReady }">
           <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true">
             <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6" />

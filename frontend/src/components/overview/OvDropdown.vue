@@ -51,7 +51,8 @@ useDismiss(
       </slot>
       <span class="dd-arrow" aria-hidden="true">▼</span>
     </button>
-    <Transition name="ov-pop">
+    <!-- 進出場用 base.css 的 pop（transition：開到一半收合從當下往回、離場不攔點擊；動畫稽核 T12） -->
+    <Transition name="pop">
       <div v-if="open" class="dd-menu" :style="menuWidth ? { width: menuWidth } : undefined">
         <slot />
       </div>
@@ -119,10 +120,15 @@ useDismiss(
   transform: rotate(180deg);
 }
 
+/*
+ * 右緣對齊、往左展開：總覽頂欄的篩選器一律靠右排（.top-right / .filters 都是 flex-end），
+ * 觸發鈕變寬 / 變窄（勾了選項，「狀態」→「狀態 1」、頭像疊增減）是左緣在動、右緣不動；
+ * 錨在左緣的話開著勾選項選單會被帶著橫移（動畫稽核 T6：狀態 −10px、成員 +30px）。
+ */
 .dd-menu {
   position: absolute;
   top: calc(var(--ctrl-h) + var(--sp-1));
-  left: 0;
+  right: 0;
   z-index: 100;
   min-width: 150px;
   padding: var(--sp-2);

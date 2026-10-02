@@ -38,15 +38,16 @@ test.describe('總覽 動畫清單', () => {
 
   test('A4 下拉開 / 關都有過渡', async ({ page }) => {
     const ov = new OverviewPage(page); await ov.goto()
-    expect(await seesClass(page, 'ov-pop-enter-active', () => ov.openDropdown('status'))).toBe(true)
-    expect(await seesClass(page, 'ov-pop-leave-active', () => page.keyboard.press('Escape'))).toBe(true)
+    // 下拉與排序選單用 base.css 的 pop（批次 C 的 T12：原本的 ov-pop 是 keyframes）
+    expect(await seesClass(page, 'pop-enter-active', () => ov.openDropdown('status'))).toBe(true)
+    expect(await seesClass(page, 'pop-leave-active', () => page.keyboard.press('Escape'))).toBe(true)
   })
 
   test('A5 排序選單 / A16 chip 移除 / A21 chip 箭頭', async ({ page }) => {
     const ov = new OverviewPage(page); await ov.goto()
     const panel = page.locator('[data-view-panel="cards"]')
     expect(await hasMotion(panel.locator('.chip-arrow').first())).toBe(true)
-    expect(await seesClass(page, 'ov-pop-enter-active', () => panel.locator('.sort-trigger').click())).toBe(true)
+    expect(await seesClass(page, 'pop-enter-active', () => panel.locator('.sort-trigger').click())).toBe(true)
     await page.keyboard.press('Escape')
     expect(await seesClass(page, 'ov-chip-leave-active', () => panel.locator('.chip-x').first().click())).toBe(true)
   })
