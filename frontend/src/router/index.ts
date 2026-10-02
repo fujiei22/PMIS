@@ -28,9 +28,12 @@ const router = createRouter({
    * spec 7b：上一頁 / 下一頁回到原本的捲動位置，其餘切頁回頂端。
    * 換頁時要等新頁掛上才捲（見 pageSwap.ts）：切頁過渡是 out-in，太早捲會套在正在離開的舊頁上。
    * 同一頁只換 hash（總覽的 #timeline）不會換頁，不必等。
+   * 會還原到非 0 的位置時告訴 pageSwap：新頁就不能延後掛任何東西（K1，見 composables/useDeferredPanels.ts）。
    */
   scrollBehavior: async (to, from, saved) => {
-    if (from.matched.length && to.path !== from.path) await waitForPageSwap()
+    if (from.matched.length && to.path !== from.path) {
+      await waitForPageSwap(undefined, !!saved && (saved.top > 0 || saved.left > 0))
+    }
     return saved ?? { top: 0 }
   },
 })

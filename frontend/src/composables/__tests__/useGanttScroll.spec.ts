@@ -57,7 +57,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
   mockApi.reset(structuredClone(sampleProject))
   useTaskStore().load(structuredClone(sampleProject))
-  // 掛載後 60ms 的初始 jumpToday 用假計時器擋住，測試自己控制捲動位置
+  // 掛載當下會先捲到今天（資料已到）；之後的測試各自設定捲動位置，不受影響
   vi.useFakeTimers()
   frames = []
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
@@ -130,6 +130,41 @@ describe('useGanttScroll', () => {
 
     const offset = clock.todayIdx - taskStore.range.a + dayFraction(new Date(clock.now))
     expect(sc.scrollLeft).toBeCloseTo(offset * ui.dayWidth - 400, 5)
+  })
+
+  /*
+   * 第一次捲到今天的時機（動畫稽核 K1）：legacy 是掛載後 60ms 才跳，從總覽切進來時那 60ms 落在 Dashboard 淡入期間，
+   * 捲動逼出整頁版面、把淡入吃掉。改成資料已到就在掛載當下捲（第一幀之前、頁面還透明）。
+   */
+  it('資料已到：掛載當下就捲到今天，不用等計時器', () => {
+    const clock = useClockStore()
+    const ui = useUiStore()
+    const taskStore = useTaskStore()
+    const sc = scrollerEl(40_000, 800)
+    mountScroll(ref(sc), ref(rulerEl()))
+
+    const offset = clock.todayIdx - taskStore.range.a + dayFraction(new Date(clock.now))
+    expect(sc.scrollLeft).toBeGreaterThan(0)
+    expect(sc.scrollLeft).toBeCloseTo(offset * ui.dayWidth - 400, 0)
+  })
+
+  it('資料晚到：任務到齊、DOM 更新完就捲到今天；之後再載入不會再捲', async () => {
+    const taskStore = useTaskStore()
+    taskStore.load({ ...structuredClone(sampleProject), tasks: [] })
+    const sc = scrollerEl(40_000, 800)
+    mountScroll(ref(sc), ref(rulerEl()))
+    expect(sc.scrollLeft, '還沒有任務：不捲').toBe(0)
+
+    taskStore.load(structuredClone(sampleProject))
+    await nextTick()
+    const first = sc.scrollLeft
+    expect(first, '任務到齊：捲到今天').toBeGreaterThan(0)
+
+    // 使用者自己捲走之後，背景重載（任務數變了）不能再把畫面拉回今天
+    sc.scrollLeft = 10
+    taskStore.load({ ...structuredClone(sampleProject), tasks: structuredClone(sampleProject).tasks.slice(1) })
+    await nextTick()
+    expect(sc.scrollLeft).toBe(10)
   })
 
   it('onZoom 改 dayWidth，160ms 內 zooming 為真', () => {
