@@ -46,7 +46,7 @@
 | 畫面區塊 | 元件 |
 |---|---|
 | 頂部篩選列與錯誤條 | `layout/TopBar`（FilterDropdown、FilterCalendar、MemberPicker、common/ErrorBar） |
-| 四張摘要卡 | `summary/SummaryCards` |
+| 四張摘要卡（總時長與進度合一張、任務狀態、Issue 統計、預算 vs. 支出） | `summary/SummaryCards` |
 | 甘特圖 | `gantt/GanttPanel`（GanttTimeline、GanttGroupRow、GanttTaskRow、GanttBars → GanttBar、DependencyLines）；任務列「⋮」的動作選單 `gantt/RowActionMenu` |
 | 任務看板 | `kanban/KanbanPanel`（KanbanHeader、TaskCard） |
 | Issue 看板 | `issues/IssuePanel`（IssuePanelHeader、IssueCard） |
@@ -197,7 +197,7 @@ frontend/
 │   ├── router/            路由（index.ts：切頁時先載目標頁資料；pageSwap.ts：切頁過渡結束後才還原捲動位置）
 │   ├── stores/            Pinia store（三層，見下）
 │   │   ├── clock.ts                           時鐘層
-│   │   ├── task / issue / comment / member.ts   資料層（單一專案）
+│   │   ├── task / issue / comment / member / budget.ts   資料層（單一專案）
 │   │   ├── portfolio.ts                       資料層（總覽的專案摘要與成員名錄）
 │   │   ├── _optimistic.ts                     樂觀更新的共用機制（tracker / runOptimistic / error sink）
 │   │   ├── _sync.ts                           api.subscribe 的唯一訂閱點，把事件路由到各資料 store
@@ -262,6 +262,7 @@ COMPARE_DUMP=node_modules/.tmp/cmp npm run test:e2e -- e2e/compare.spec.ts
 - **錯誤條的出現與關閉**：legacy 出現時整頁一幀被推下約 40px、關閉一幀收回；新頁原地展開 / 收起並淡入淡出（`ErrorBar.vue`）。對照測試沒有讓錯誤條出現的情境，不受影響。
 - **成員拖曳指派**：legacy 可以把成員篩選面板的列拖到甘特條或任務卡上指派，新頁移除了這個功能（user 決定；平板無法可靠支援原生拖放），指派一律在詳細視窗的「＋指派」。對照測試不比這個。
 - **相依編輯器的位置**：legacy 一直垂直置中，增刪前置 / 後續任務時上下兩端一起跳；新頁打開時置中、之後上緣固定，只往下長（user 決定）。對照測試只比寬高，不受影響。
+- **摘要卡的版面**：legacy 是四張卡（專案總時長、整體進度、任務狀態、Issue 統計）；新頁把「專案總時長」併進「整體進度」同一張卡的上段（user 決定），另外多一張 legacy 沒有的「預算 vs. 支出」。卡內文字順序和 legacy 相同，所以 `e2e/helpers/compare.ts` 取摘要卡文字時只排除 `summary-budget`，其餘照比。
 - **文字之間的空白**：兩頁的文字節點切法不同（legacy 把每個 `{{ }}` 包成一層元素、元素之間留著模板縮排的空白節點），比對前會把文字裡的空白全部去掉。字級與間距的差異改由幾何量測把關。
 
 ## lib 與 store 的分工
@@ -281,7 +282,7 @@ store 分三層，依賴**只能由上往下**：
 | 層 | 檔 | 職責 | 可以 import 誰 |
 |---|---|---|---|
 | 時鐘層 | `clock.ts` | `now` / `todayIdx` / `todayIso`（60 秒 tick） | 誰都不用 |
-| 資料層 | `task.ts`、`issue.ts`、`comment.ts`、`member.ts`（＋共用的 `_optimistic.ts`、`_sync.ts`）；總覽的 `portfolio.ts` | 專案資料的唯一擁有者；所有寫入都經 `@/api` | `@/api/*`、`@/lib/*`、`@/types/*`、`@/stores/clock`、其他資料 store、`_optimistic` / `_sync` |
+| 資料層 | `task.ts`、`issue.ts`、`comment.ts`、`member.ts`、`budget.ts`（＋共用的 `_optimistic.ts`、`_sync.ts`）；總覽的 `portfolio.ts` | 專案資料的唯一擁有者；所有寫入都經 `@/api` | `@/api/*`、`@/lib/*`、`@/types/*`、`@/stores/clock`、其他資料 store、`_optimistic` / `_sync` |
 | 派生層 | `rows.ts`、`filter.ts`、`selection.ts`、`ui.ts`；總覽的 `overview.ts` | 從資料層算出畫面要的東西（可見列、篩選、選取、浮層 / 錯誤條 / 收合） | 所有層 |
 
 成員名錄有兩份：`portfolio.members`（總覽，含各專案的 PM）與 `member.members`（Dashboard，單一專案的成員）。總覽元件查成員一律用 `portfolio.byId`。
@@ -338,7 +339,7 @@ store 分三層，依賴**只能由上往下**：
 | `data-rel` | 任務卡 | `up` / `down` / `group` / 空 | ✗ |
 | `data-status` | 甘特條 / 任務卡 / Issue 卡 | 狀態 key，或 `delayed` | ✗ |
 | `data-panel` | 面板外殼 | `gantt` / `kanban` / `issues` | ✗ |
-| `data-testid` | 摘要卡 `summary-duration` / `summary-progress` / `summary-tasks` / `summary-issues`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count`；甘特左欄的展開鈕 `gantt-left-toggle`（只在 < 900px 出現） | 固定字串 | ✗ |
+| `data-testid` | 摘要卡 `summary-progress`（含專案總時長） / `summary-tasks` / `summary-issues` / `summary-budget`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count`；甘特左欄的展開鈕 `gantt-left-toggle`（只在 < 900px 出現） | 固定字串 | ✗ |
 
 總覽頁的屬性。legacy 沒有這一頁，所以下表全部都不能用在新舊對照測試：
 
@@ -393,6 +394,7 @@ store 分三層，依賴**只能由上往下**：
    | `Attachment.at` | `'YYYY-MM-DD'`（本地日） | ISO 8601 | adapter |
    | `Group` | 只有 `id` / `name` | 後端若存了收合狀態要忽略 | 收合是畫面狀態，在 `ui.collapsedGroups`，不上 wire |
    | `ProjectData.currentUserId`、`PortfolioData.currentUserId` | 必填字串 | 登入還沒做 | adapter 從 session / token 填；沒有登入就先填一個固定成員 id |
+   | `ProjectData.budget` | `{ total, actual }`（數字，只讀；剩餘與使用率由 `lib/budget.ts` 算） | 後端的預算欄位 | adapter 填進 `loadProject()` 與 `project.reloaded` 的 payload；目前沒有寫入端點 |
    | `ProjectSummary.taskPlanned` | 「照排程今天之前就該完成」的任務數 | 後端依伺服器當日算 | 後端；前端只拿它算理論 %，跨日差一天可接受 |
    | `Member.color` | 合法的 CSS 顏色值（例 `#2563eb`），經 `:style` 寫進 CSS 變數 | 後端存的顏色字串 | adapter 驗格式；前端沒有用字串拼接組 CSS，但格式錯會讓頭像與 PM 泳道沒有顏色 |
    | `ProjectSummary.upcoming` | 最多 3 筆、依到期日升冪、含已逾期 | 後端篩選排序 | 後端；前端原樣顯示 |

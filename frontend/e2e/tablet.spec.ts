@@ -52,9 +52,9 @@ test('版面：頂欄兩列內、沒有橫向捲動、摘要卡與看板改兩�
   expect((await app.topBar.boundingBox())!.height).toBeLessThan(140)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(768)
 
-  // 摘要卡 2×2：第三張（任務狀態）換到第二列、和第一張同一欄
-  const d = (await app.summary('duration').boundingBox())!
-  const t = (await app.summary('tasks').boundingBox())!
+  // 摘要卡 2×2：第三張（Issue 統計）換到第二列、和第一張同一欄
+  const d = (await app.summary('progress').boundingBox())!
+  const t = (await app.summary('issues').boundingBox())!
   expect(t.x).toBeCloseTo(d.x, 0)
   expect(t.y).toBeGreaterThan(d.y + d.height)
 
