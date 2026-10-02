@@ -4,6 +4,7 @@
 - 第一個用到資料庫的測試開始前，先跑一次 `alembic upgrade head`。
 - 每個測試包在一個交易裡，結束時 rollback：測試裡就算 `session.commit()`，
   資料也不會留下來，測試之間互不影響。
+- 不跑背景排程（BACKGROUND_JOBS_ENABLED=false），也不准連外網（autouse 的 `no_network`）。
 
 寫 API 測試照這樣用（`client` 打 API，`db` 直接查資料庫，兩者在同一個交易裡）：
 
@@ -16,6 +17,7 @@
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 from alembic import command
@@ -106,3 +108,13 @@ def client(db: Session) -> Iterator[TestClient]:
             yield test_client
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """測試不准連外網：抓辦公日曆一律在這裡擋下。要測抓檔的測試自己 monkeypatch，或注入 fetch。"""
+
+    def refuse(*args: object, **kwargs: object) -> NoReturn:
+        raise AssertionError("測試不准連外網")
+
+    monkeypatch.setattr("app.imports.holiday_fetch.urlopen", refuse)
