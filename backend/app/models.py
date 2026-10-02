@@ -41,6 +41,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from app.core.calendar_rules import (
+    CALENDAR_SOURCES,
+    MAX_YEAR,
+    MIN_YEAR,
+    OFFICIAL_NAME_MAX,
+    OVERRIDE_NAME_MAX,
+    OVERRIDE_NOTE_MAX,
+)
 from app.core.soft_delete import SoftDeleteMixin, soft_delete_table_args
 
 # 約束（主鍵、外鍵、唯一、檢查）與索引的命名規則。
@@ -61,9 +69,6 @@ ISSUE_LEVELS = ("A", "B", "C", "D")
 ISSUE_STATUSES = ("open", "doing", "paused", "closed")
 COMMENT_TARGET_KINDS = ("task", "issue")
 DELETION_ROOT_KINDS = ("project", "group", "task", "issue", "comment")
-# 官方辦公日曆的來源：新北市資料開放平臺、行政院人事行政總處。跟 app/imports/holiday_csv.py 的
-# CalendarSource 一致（models.py 不能 import imports/，tests/imports/test_holiday_csv.py 檢查兩邊相同）。
-CALENDAR_SOURCES = ("ntpc", "dgpa")
 
 
 class Base(DeclarativeBase):
@@ -461,7 +466,10 @@ class CalendarOfficialDay(CreatedAtMixin, Base):
     """
 
     __tablename__ = "calendar_official_days"
-    __table_args__ = (_one_of("source", CALENDAR_SOURCES), _max_length("name", 100))
+    __table_args__ = (
+        _one_of("source", CALENDAR_SOURCES),
+        _max_length("name", OFFICIAL_NAME_MAX),
+    )
 
     day_on: Mapped[date] = mapped_column(primary_key=True)
     is_workday: Mapped[bool]
@@ -479,7 +487,9 @@ class CalendarOfficialYear(Base):
     __tablename__ = "calendar_official_years"
     __table_args__ = (
         _one_of("source", CALENDAR_SOURCES),
-        CheckConstraint("calendar_year BETWEEN 2000 AND 2200", name="calendar_year_range"),
+        CheckConstraint(
+            f"calendar_year BETWEEN {MIN_YEAR} AND {MAX_YEAR}", name="calendar_year_range"
+        ),
     )
 
     # 年份不是流水號：SMALLINT 主鍵預設會變成 SMALLSERIAL，要明確關掉
@@ -496,8 +506,8 @@ class CalendarOverride(TimestampMixin, Base):
 
     __tablename__ = "calendar_overrides"
     __table_args__ = (
-        CheckConstraint("char_length(name) BETWEEN 1 AND 100", name="name_length"),
-        _max_length("note", 500),
+        CheckConstraint(f"char_length(name) BETWEEN 1 AND {OVERRIDE_NAME_MAX}", name="name_length"),
+        _max_length("note", OVERRIDE_NOTE_MAX),
     )
 
     day_on: Mapped[date] = mapped_column(primary_key=True)

@@ -8,27 +8,22 @@
 - 人事總處沒有備註的非預設日補「放假」或「補行上班日」。
 - 普通週末、普通平日不存（預設規則就是這樣）。
 - 格式錯一律整份拒絕，訊息帶行號；UTF-8 解不開改用 Big5（Excel 存檔的預設）。
+  csv 模組自己丟的錯（引號沒關造成欄位過長）也轉成格式錯誤，不讓 traceback 漏出去。
 - 完整性：檔案不是整年時（被截斷、管理員自製的幾列）不能匯入，否則那年其他假日會被整年替換掉。
 """
 
 from datetime import date
-from typing import get_args
 
 import pytest
 
 from app.imports.holiday_csv import (
-    SOURCE_LABELS,
-    WEEKEND_ISO_DAYS,
     CalendarFormatError,
-    CalendarSource,
     OfficialDay,
     describe_skipped,
     describe_years,
     ensure_complete,
-    is_default_workday,
     parse_calendar_csv,
 )
-from app.models import CALENDAR_SOURCES
 from tests.calendar_samples import (
     DGPA_HEADER_LINE,
     DGPA_SAMPLE,
@@ -41,19 +36,6 @@ from tests.calendar_samples import (
 
 NTPC = f"\ufeff{NTPC_HEADER_LINE}\n"
 DGPA = f"\ufeff{DGPA_HEADER_LINE}\n"
-
-
-def test_default_rule_is_weekdays_work_weekends_off() -> None:
-    assert WEEKEND_ISO_DAYS == (6, 7)
-    assert is_default_workday(date(2026, 10, 2))  # 五
-    assert not is_default_workday(date(2026, 10, 3))  # 六
-    assert not is_default_workday(date(2026, 10, 4))  # 日
-
-
-def test_source_names_match_database_check_and_labels() -> None:
-    """models.py 不能 import imports/，兩邊的列舉值各寫一份；標籤表也要涵蓋每個來源。"""
-    assert get_args(CalendarSource.__value__) == CALENDAR_SOURCES
-    assert tuple(SOURCE_LABELS) == CALENDAR_SOURCES
 
 
 def test_parses_ntpc_sample() -> None:
@@ -218,3 +200,11 @@ def test_describe_skipped() -> None:
     assert describe_skipped(parse_calendar_csv(NTPC_SAMPLE)) == [
         "略過 2026-09-03 軍人節：特定節日，說明沒有「勞工」，一般公司照常上班"
     ]
+
+
+def test_broken_quoting_is_format_error() -> None:
+    """引號沒關：後面整份被當成同一個欄位，超過 csv 的欄位長度上限（csv.Error）。"""
+    raw = (NTPC + '20260101,2026,"開國紀念日' + "x" * 200_000).encode()
+
+    with pytest.raises(CalendarFormatError, match="CSV 格式錯誤"):
+        parse_calendar_csv(raw)

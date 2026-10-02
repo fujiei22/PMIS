@@ -9,7 +9,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 
 from app.api.deps import SessionDep
-from app.imports.holiday_csv import WEEKEND_ISO_DAYS
+from app.core.calendar_rules import WEEKEND_ISO_DAYS
 from app.schemas.calendar import CalendarDay, CalendarQuery, WorkCalendar
 from app.services.calendar import get_calendar
 

@@ -41,9 +41,9 @@ class CalendarDay(CamelModel):
 class WorkCalendar(CamelModel):
     """工作日曆。
 
-    前端算工作天：週六日照 `weekend_days`（ISO 8601 星期，1 = 週一 … 7 = 週日）放假、其他上班，
-    `days` 裡有的照它；不在 `covered_years` 的年份只套週末規則，畫面要提示「假日資料未公布」。
-    `days` 依日期遞增、同一天只有一筆；`covered_years` 遞增，代表那幾年官方日曆已完整匯入。
+    前端算工作天：`weekendDays`（ISO 8601 星期，1 = 週一 … 7 = 週日）放假、其他上班，
+    `days` 裡有的照它；不在 `coveredYears` 的年份只套週末規則，畫面要提示「假日資料未公布」。
+    `days` 依日期遞增、同一天只有一筆；`coveredYears` 遞增，代表那幾年官方日曆已完整匯入。
     """
 
     weekend_days: list[int]

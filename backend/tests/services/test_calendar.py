@@ -1,6 +1,8 @@
 """工作日曆 service。
 
 測案：
+- 匯入官方日曆只有一個入口：完整的檔才寫入；不完整的整份拒絕、資料不動。
+  寫入時拿 advisory lock，兩個人同時匯入會排隊（不撞主鍵）。
 - 整年替換：檔案涵蓋的年整年換掉，其他年份不動；同一份檔匯入兩次結果相同。
 - 例外日不會被重新匯入蓋掉，查詢時同一天以例外日為準。
 - 查詢的區間頭尾都算、兩端都可以不給（前端進頁時一次載全部）；涵蓋年份回傳全部。
@@ -11,24 +13,32 @@
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from app.imports.holiday_csv import CalendarSource, OfficialDay, ParsedCalendar, parse_calendar_csv
+from app.core.calendar_rules import CalendarSource
+from app.imports.holiday_csv import (
+    CalendarFormatError,
+    OfficialDay,
+    ParsedCalendar,
+    parse_calendar_csv,
+)
 from app.models import CalendarOfficialDay, CalendarOverride
 from app.services.calendar import (
+    CALENDAR_WRITE_LOCK,
     CalendarEntry,
     covered_years,
     get_calendar,
     get_official_day,
     get_override,
+    import_official_calendar,
     list_overrides,
     remove_override,
     replace_official_years,
     set_override,
 )
 from app.services.errors import InvalidInput, NotFound
-from tests.calendar_samples import NTPC_SAMPLE
+from tests.calendar_samples import NTPC_2026_ROWS, NTPC_SAMPLE, ntpc_full_year
 
 T0 = datetime(2026, 10, 1, 1, 0, tzinfo=UTC)
 
@@ -47,6 +57,34 @@ def parsed_of(source: CalendarSource, years: set[int], *days: OfficialDay) -> Pa
 def official_days(db: Session) -> list[tuple[date, bool, str, str]]:
     rows = db.scalars(select(CalendarOfficialDay).order_by(CalendarOfficialDay.day_on))
     return [(r.day_on, r.is_workday, r.name, r.source) for r in rows]
+
+
+def test_import_official_calendar_writes_complete_file(db: Session) -> None:
+    parsed = import_official_calendar(db, ntpc_full_year(2026, NTPC_2026_ROWS), imported_at=T0)
+
+    assert parsed.years == frozenset({2026})
+    assert [(y.calendar_year, y.source) for y in covered_years(db)] == [(2026, "ntpc")]
+
+
+def test_import_official_calendar_rejects_incomplete_file(db: Session) -> None:
+    with pytest.raises(CalendarFormatError, match="資料不完整"):
+        import_official_calendar(db, NTPC_SAMPLE, imported_at=T0)
+
+    assert covered_years(db) == []
+    assert official_days(db) == []
+
+
+def test_import_takes_advisory_lock(db: Session) -> None:
+    """鎖到交易結束才放：同一個交易裡查 pg_locks 看得到這把鎖。"""
+    import_official_calendar(db, ntpc_full_year(2026, NTPC_2026_ROWS), imported_at=T0)
+
+    held = db.execute(
+        text(
+            "SELECT classid::bigint * 4294967296 + objid::bigint FROM pg_locks "
+            "WHERE locktype = 'advisory' AND pid = pg_backend_pid() AND objsubid = 1"
+        )
+    ).scalars()
+    assert CALENDAR_WRITE_LOCK in list(held)
 
 
 def test_import_stores_days_and_years(db: Session) -> None:

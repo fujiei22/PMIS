@@ -89,6 +89,7 @@ backend/
 │   ├── scripts/             指令稿（export_openapi.py 開發用；holidays.py 管理員維護假日表）
 │   ├── core/
 │   │   ├── config.py        設定（pydantic-settings，從環境變數與 .env 讀）
+│   │   ├── calendar_rules.py 工作日曆的共用規則：週末、年份範圍、名稱長度、來源清單
 │   │   ├── db.py            engine 與 session
 │   │   ├── soft_delete.py   軟刪除：SoftDeleteMixin 與「查詢自動排除已刪除」
 │   │   └── time.py          today()：用設定的 TIMEZONE 算「今天」；utc_now()
@@ -209,7 +210,7 @@ model 的寫法：
 
 ### 工作日曆（假日表）
 
-前端用工作天算工期。預設規則：週六日（ISO 星期 6、7，唯一定義在 `app/imports/holiday_csv.py` 的 `WEEKEND_ISO_DAYS`）放假、其他上班；資料表只存跟預設不同、或有名稱的日子。
+前端用工作天算工期。預設規則：週六日（ISO 星期 6、7）放假、其他上班；資料表只存跟預設不同、或有名稱的日子。週末、年份範圍（2000–2200）、名稱長度、來源清單集中定義在 `app/core/calendar_rules.py`，解析、寫入、資料表的 CHECK、API 都從那裡拿。只存「跟預設不同」的日子等於把週末定義寫進了資料：改週末定義後，官方日曆要全部重新匯入。
 
 **讀取 API**：`GET /api/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD`
 

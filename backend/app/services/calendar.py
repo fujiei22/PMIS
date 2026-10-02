@@ -1,7 +1,7 @@
 """工作日曆：官方辦公日曆（依年份整年替換）＋管理員的例外日（同一天以例外為準）。
 
-預設規則見 app/imports/holiday_csv.py 的 WEEKEND_ISO_DAYS。資料表只存跟預設不同、或有名稱的日子，
-讀取時把兩邊合併。所有函式都不 commit，交給呼叫端（API、指令稿）。
+預設規則見 app/core/calendar_rules.py。資料表只存跟預設不同、或有名稱的日子，讀取時把兩邊合併。
+所有函式都不 commit，交給呼叫端（API、指令稿）。
 """
 
 from dataclasses import dataclass
@@ -11,13 +11,13 @@ from typing import Literal
 from sqlalchemy import ColumnElement, delete, func, or_, select
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
-from app.imports.holiday_csv import MAX_YEAR, MIN_YEAR, ParsedCalendar
+from app.core.calendar_rules import MAX_YEAR, MIN_YEAR, OVERRIDE_NAME_MAX, OVERRIDE_NOTE_MAX
+from app.imports.holiday_csv import ParsedCalendar, ensure_complete, parse_calendar_csv
 from app.models import CalendarOfficialDay, CalendarOfficialYear, CalendarOverride
 from app.services.errors import InvalidInput, NotFound
 
-OVERRIDE_NAME_MAX = 100
-OVERRIDE_NOTE_MAX = 500
-# 寫官方日曆時的 advisory lock 鍵（"PMIS"）：兩個人同時匯入時排隊，不撞主鍵
+# 寫官方日曆時的 advisory lock 鍵（"PMIS" 的 ASCII）：兩個人同時匯入時排隊，不撞主鍵。
+# 目前全系統只有這一把；之後別的功能要用 advisory lock，鍵不能跟它重複。
 CALENDAR_WRITE_LOCK = 0x504D4953
 
 type EntrySource = Literal["official", "override"]
@@ -33,12 +33,27 @@ class CalendarEntry:
     source: EntrySource
 
 
+def import_official_calendar(
+    session: Session, raw: bytes, *, imported_at: datetime
+) -> ParsedCalendar:
+    """匯入官方辦公日曆 CSV：解析、確認每一年都完整，再整年替換；回傳解析結果。
+
+    格式錯或資料不完整丟 `CalendarFormatError`，資料不動。寫入官方日曆一律走這支：
+    「不完整的檔不准整年替換」只在這裡把關，呼叫端不必自己記得先檢查。
+    """
+    parsed = parse_calendar_csv(raw)
+    ensure_complete(parsed)
+    replace_official_years(session, parsed, imported_at=imported_at)
+    return parsed
+
+
 def replace_official_years(
     session: Session, parsed: ParsedCalendar, *, imported_at: datetime
 ) -> None:
     """檔案涵蓋的每一年整年換成新資料；其他年份與例外日不動。
 
-    呼叫前應該先 `ensure_complete(parsed)`：這裡不檢查完整性（測試要能放殘缺的樣本）。
+    不檢查完整性：正式寫入走 `import_official_calendar`（先檢查再呼叫這支）；
+    直接呼叫只限測試（要能放殘缺的樣本）。
     """
     years = sorted(parsed.years)
     if not years:

@@ -4,9 +4,11 @@
 - status：沒資料時提示怎麼補；有資料時逐年列來源與匯入時間、例外日筆數；缺今年資料，
   或 11 月起還缺明年資料（假日表全靠手動匯入，要有人提醒）時記 warning，--check 回 3。
 - import：兩種檔都能匯入；殘缺檔、壞檔、找不到檔回 1 且資料不動；略過的特定節日要印出來。
-- add / remove / list：一定要指定 --off 或 --workday；可以一次多個日期；輸出帶星期、官方原值、
-  新增或修改；刪不存在的、名稱空白都回 1。
-- 參數格式錯（日期不是 YYYY-MM-DD）由 argparse 擋，exit code 2，訊息是中文。
+- add / remove / list：一定要指定 --off 或 --workday；可以一次多個日期，同一天給兩次只處理一次；
+  輸出帶星期、官方原值、新增或修改；刪不存在的、名稱空白都回 1。
+  一次多天時其中一天失敗會整筆不存，所以 commit 之後才印「已新增」（不能先印再失敗）。
+- 參數格式錯（日期不是 YYYY-MM-DD、年份不是 2000–2200）由 argparse 擋，exit code 2，訊息是中文。
+- 檔案被 Excel 開著（PermissionError）回 1，提示關掉再試。
 - 資料庫連不上時回 1，不噴 traceback。
 """
 
@@ -171,6 +173,27 @@ def test_add_same_as_official_is_flagged(run: Runner, caplog: pytest.LogCaptureF
     assert "跟官方日曆相同，不會改變工期" in caplog.text
 
 
+def test_add_failure_prints_nothing_as_saved(run: Runner, caplog: pytest.LogCaptureFixture) -> None:
+    """第二天的年份超出範圍：整筆不存，第一天也不能印「已新增」。"""
+    assert run("add", "2026-09-29", "1999-01-01", "--off", "--name", "颱風假") == 1
+
+    assert "已新增" not in caplog.text
+    assert "年份要在 2000–2200" in caplog.text
+
+
+def test_same_day_twice_is_handled_once(
+    run: Runner, db: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    assert run("add", "2026-09-29", "2026-09-29", "--off", "--name", "颱風假") == 0
+    assert caplog.text.count("2026-09-29（二）") == 1
+    assert "已修改" not in caplog.text
+    caplog.clear()
+
+    assert run("remove", "2026-09-29", "2026-09-29") == 0
+    assert caplog.text.count("已刪除 2026-09-29（二） 的例外日") == 1
+    assert list_overrides(db) == []
+
+
 def test_add_requires_off_or_workday(run: Runner) -> None:
     with pytest.raises(SystemExit) as exited:
         run("add", "2026-09-29", "--name", "颱風假")
@@ -196,6 +219,25 @@ def test_bad_date_argument(run: Runner, capsys: pytest.CaptureFixture[str]) -> N
         run("add", "2026/09/29", "--off", "--name", "颱風假")
     assert exited.value.code == 2
     assert "日期要寫成 YYYY-MM-DD" in capsys.readouterr().err
+
+
+def test_year_out_of_range(run: Runner, capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exited:
+        run("list", "--year", "0000")
+    assert exited.value.code == 2
+    assert "年份要在 2000–2200" in capsys.readouterr().err
+
+
+def test_import_file_locked_by_excel(
+    run: Runner, tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def locked(self: Path) -> bytes:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "read_bytes", locked)
+
+    assert run("import", str(tmp_path / "辦公日曆表.csv")) == 1
+    assert "可能正被 Excel 開著" in caplog.text
 
 
 def test_database_down(caplog: pytest.LogCaptureFixture) -> None:

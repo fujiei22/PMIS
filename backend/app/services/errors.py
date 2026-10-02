@@ -14,4 +14,8 @@ class NotFound(ServiceError):
 
 
 class InvalidInput(ServiceError):
-    """輸入不合法（例：例外日名稱空白、年份超出範圍）→ 422。"""
+    """輸入不合法（例：例外日名稱空白、年份超出範圍）→ 422。
+
+    轉成 HTTP 時要用 FastAPI 的標準格式（`detail` 是 `[{loc, msg, type}]` 陣列），
+    不能回 `detail: "字串"`：OpenAPI 只宣告標準格式，前端產生的型別處理不了字串。
+    """

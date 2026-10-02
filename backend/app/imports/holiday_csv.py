@@ -6,8 +6,8 @@
   （週末、假日、補班日），`isholiday` 是「是」或「否」。
 - 行政院人事行政總處（`西元日期,星期,是否放假,備註`）：每天一列，`是否放假` 0 上班、2 放假。
 
-輸出只留「跟預設規則不同」或「有名稱」的日子。預設規則：ISO 星期 6、7（週六、週日）放假，
-其他上班；`WEEKEND_ISO_DAYS` 是全系統唯一的定義（API 的 weekendDays 也來自它）。
+輸出只留「跟預設規則不同」或「有名稱」的日子。預設規則（週六日放假、其他上班）與年份範圍、
+名稱長度、來源清單都定義在 `app/core/calendar_rules.py`。
 
 新北市的「特定節日」包含只限特定身分的日子：軍人節標「放假」，但說明是「軍人依國防部規定辦理」，
 一般公司照常上班（人事總處同一天是上班日）。所以特定節日只有說明含「勞工」（勞動節）才算放假，
@@ -22,23 +22,23 @@ import io
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Literal
+
+from app.core.calendar_rules import (
+    MAX_YEAR,
+    MIN_YEAR,
+    OFFICIAL_NAME_MAX,
+    CalendarSource,
+    is_default_workday,
+)
 
 NTPC_HEADER = ("date", "year", "name", "isholiday", "holidaycategory", "description")
 DGPA_HEADER = ("西元日期", "星期", "是否放假", "備註")
-NAME_MAX_LENGTH = 100
-MIN_YEAR = 2000
-MAX_YEAR = 2200
-# 預設規則的週末：ISO 8601 星期（1 = 週一 … 7 = 週日）
-WEEKEND_ISO_DAYS: tuple[int, ...] = (6, 7)
-
 WEEKEND_CATEGORY = "星期六、星期日"
 SPECIAL_CATEGORY = "特定節日"
 # 新北市沒有名稱的列用類別補名稱；這兩類例外（普通週末不給名稱、紀念日的類別名稱太長）
 CATEGORY_NAMES = {WEEKEND_CATEGORY: "", "放假之紀念日及節日": "國定假日"}
 
-# 跟 app/models.py 的 CALENDAR_SOURCES 一致（tests/imports/test_holiday_csv.py 檢查）。
-type CalendarSource = Literal["ntpc", "dgpa"]
+# 每個 CALENDAR_SOURCES 都要有標籤（tests/core/test_calendar_rules.py 檢查）。
 # key 用 str：資料庫讀出來的 source 是 str，查表時不必轉型
 SOURCE_LABELS: dict[str, str] = {"ntpc": "新北市", "dgpa": "人事總處"}
 
@@ -76,15 +76,17 @@ class ParsedCalendar:
     encoding: str  # "utf-8" 或 "cp950"
 
 
-def is_default_workday(day: date) -> bool:
-    """預設規則：ISO 星期 6、7 放假，其他上班。"""
-    return day.isoweekday() not in WEEKEND_ISO_DAYS
-
-
 def parse_calendar_csv(raw: bytes) -> ParsedCalendar:
     """解析新北市或人事總處的辦公日曆 CSV；格式不對丟 `CalendarFormatError`。"""
     text, encoding = _decode(raw)
-    rows = list(csv.reader(io.StringIO(text)))
+    reader = csv.reader(io.StringIO(text))
+    try:
+        rows = list(reader)
+    except csv.Error as exc:
+        # 例：引號沒關，後面整份被當成同一個欄位，超過 csv 的欄位長度上限
+        raise CalendarFormatError(
+            f"第 {reader.line_num} 行附近：CSV 格式錯誤（{exc}）；請用原始下載檔"
+        ) from exc
     if not rows:
         raise CalendarFormatError("檔案是空的")
     header = tuple(cell.strip() for cell in rows[0])
@@ -140,6 +142,7 @@ def describe_skipped(parsed: ParsedCalendar) -> list[str]:
 
 
 def _decode(raw: bytes) -> tuple[str, str]:
+    """先試 UTF-8（含 BOM），解不開再試 Big5；回傳（文字, 編碼名稱）。"""
     try:
         return raw.decode("utf-8-sig"), "utf-8"
     except UnicodeDecodeError:
@@ -164,18 +167,21 @@ class _Collector:
         self.seen: set[date] = set()
 
     def see(self, day: date, line: int) -> None:
+        """記下檔案裡出現的日期（算完整性用，不管要不要存）；同一天出現兩次就拒絕。"""
         if day in self.seen:
             raise CalendarFormatError(f"第 {line} 行：日期 {day.isoformat()} 重複")
         self.seen.add(day)
         self.years.add(day.year)
 
     def keep(self, day: date, *, is_workday: bool, name: str, line: int) -> None:
-        if len(name) > NAME_MAX_LENGTH:
-            raise CalendarFormatError(f"第 {line} 行：名稱超過 {NAME_MAX_LENGTH} 字")
+        """跟預設規則不同、或有名稱的日子才存；名稱太長就拒絕（資料表有同樣的上限）。"""
+        if len(name) > OFFICIAL_NAME_MAX:
+            raise CalendarFormatError(f"第 {line} 行：名稱超過 {OFFICIAL_NAME_MAX} 字")
         if is_workday != is_default_workday(day) or name:
             self.days.append(OfficialDay(day=day, is_workday=is_workday, name=name))
 
     def gaps(self, source: CalendarSource) -> tuple[YearGap, ...]:
+        """依來源的完整性規則，列出每個不完整的年份與原因（遞增）。"""
         found = []
         for year in sorted(self.years):
             reason = _ntpc_gap(year, self.seen) if source == "ntpc" else _dgpa_gap(year, self.seen)
@@ -185,6 +191,7 @@ class _Collector:
 
 
 def _days_of(year: int) -> list[date]:
+    """那一年的每一天（遞增）。"""
     first = date(year, 1, 1)
     return [first + timedelta(days=i) for i in range((date(year + 1, 1, 1) - first).days)]
 
@@ -208,6 +215,7 @@ def _dgpa_gap(year: int, seen: set[date]) -> str:
 
 
 def _read_ntpc(rows: list[list[str]], collector: _Collector) -> None:
+    """逐列讀新北市格式（表頭之後）；`isholiday` 決定上班或放假，特定節日只留勞工放假的。"""
     for line, row in enumerate(rows, start=2):
         cells = _cells(row, len(NTPC_HEADER), line)
         if cells is None:
@@ -231,6 +239,7 @@ def _read_ntpc(rows: list[list[str]], collector: _Collector) -> None:
 
 
 def _read_dgpa(rows: list[list[str]], collector: _Collector) -> None:
+    """逐列讀人事總處格式（表頭之後）；沒有備註的非預設日補上「補行上班日」或「放假」。"""
     for line, row in enumerate(rows, start=2):
         cells = _cells(row, len(DGPA_HEADER), line)
         if cells is None:
@@ -258,6 +267,7 @@ def _cells(row: list[str], expected: int, line: int) -> list[str] | None:
 
 
 def _parse_day(raw: str, line: int) -> date:
+    """`YYYYMMDD` 轉日期；格式錯、日期不存在、年份超出範圍都丟 `CalendarFormatError`。"""
     if len(raw) != 8 or not (raw.isascii() and raw.isdigit()):
         raise CalendarFormatError(f"第 {line} 行：日期 {raw!r} 不是 YYYYMMDD")
     try:

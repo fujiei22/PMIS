@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import OperationalError, ProgrammingError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.calendar_rules import MAX_YEAR, MIN_YEAR, is_default_workday
 from app.core.db import create_session
 from app.core.time import local_zone, today, utc_now
 from app.imports.holiday_csv import (
@@ -28,18 +29,15 @@ from app.imports.holiday_csv import (
     ParsedCalendar,
     describe_skipped,
     describe_years,
-    ensure_complete,
-    is_default_workday,
-    parse_calendar_csv,
 )
 from app.models import CalendarOfficialYear
 from app.services.calendar import (
     covered_years,
     get_official_day,
     get_override,
+    import_official_calendar,
     list_overrides,
     remove_override,
-    replace_official_years,
     set_override,
 )
 from app.services.errors import InvalidInput, ServiceError
@@ -70,7 +68,11 @@ def main(
     session_scope: SessionScope = create_session,
     clock: Callable[[], datetime] = utc_now,
 ) -> int:
-    """跑一個子指令，回傳 exit code（0 成功、1 失敗、3 status --check 發現問題）。"""
+    """跑一個子指令，回傳 exit code（0 成功、1 失敗、3 status --check 發現問題）。
+
+    參數格式錯（日期、年份、缺 --off／--workday）由 argparse 印用法並 `SystemExit(2)`，不經過這裡的回傳值。
+    `session_scope`、`clock` 給測試注入測試資料庫與固定時間。
+    """
     args = _parser().parse_args(argv)
     handler: Handler = args.handler
     try:
@@ -92,6 +94,7 @@ def main(
 
 
 def _parser() -> argparse.ArgumentParser:
+    """子指令與參數；每個子指令的處理函式放在 `handler`。"""
     parser = argparse.ArgumentParser(
         prog=PROG,
         description="假日表（工作日曆）管理。連的是 DATABASE_URL。",
@@ -140,6 +143,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _day(text: str) -> date:
+    """argparse 的型別：YYYY-MM-DD 轉日期（年份範圍交給 service 檢查，錯誤訊息比較完整）。"""
     try:
         return date.fromisoformat(text)
     except ValueError:
@@ -149,12 +153,17 @@ def _day(text: str) -> date:
 
 
 def _year(text: str) -> int:
+    """argparse 的型別：西元四位數、在資料接受的範圍內（0000 之類的會讓日期運算出錯）。"""
     if not (len(text) == 4 and text.isascii() and text.isdigit()):
         raise argparse.ArgumentTypeError(f"年份要是西元四位數（例：2026），收到 {text!r}")
-    return int(text)
+    year = int(text)
+    if not MIN_YEAR <= year <= MAX_YEAR:
+        raise argparse.ArgumentTypeError(f"年份要在 {MIN_YEAR}–{MAX_YEAR}，收到 {text}")
+    return year
 
 
 def _status(session: Session, args: argparse.Namespace, now: datetime) -> int:
+    """逐年列官方資料的來源與匯入時間、例外日筆數；缺今年、或 11 月起缺明年的資料記 warning。"""
     years = covered_years(session)
     problems: list[str] = []
     this_year = today(now).year
@@ -180,16 +189,21 @@ def _status(session: Session, args: argparse.Namespace, now: datetime) -> int:
 
 
 def _import(session: Session, args: argparse.Namespace, now: datetime) -> int:
-    parsed = parse_calendar_csv(_read_file(args.path))
-    ensure_complete(parsed)
-    replace_official_years(session, parsed, imported_at=now)
+    """整年匯入官方日曆 CSV；格式錯或不完整時資料不動。"""
+    parsed = import_official_calendar(session, _read_file(args.path), imported_at=now)
     session.commit()
     _log_imported(parsed)
     return 0
 
 
 def _add(session: Session, args: argparse.Namespace, now: datetime) -> int:
-    for day in args.days:
+    """新增或修改例外日；每天印出原本的值、官方日曆的值，跟官方相同時提醒「不會改變工期」。
+
+    全部寫入並 commit 之後才印：中途哪一天失敗會整筆 rollback，不能先印「已新增」。
+    """
+    lines = []
+    # 同一天給兩次只處理一次（保持給的順序）
+    for day in dict.fromkeys(args.days):
         before = get_override(session, day)
         # 先記下原本的值：set_override 會改同一個物件
         before_text = None if before is None else _state(before.is_workday, before.name)
@@ -206,21 +220,26 @@ def _add(session: Session, args: argparse.Namespace, now: datetime) -> int:
         line = f"{verb} {_describe_day(day)}：{new_text}（{'；'.join(details)}）"
         if override.is_workday == official_is_workday:
             line += "。跟官方日曆相同，不會改變工期"
-        logger.info(line)
+        lines.append(line)
     session.commit()
+    for line in lines:
+        logger.info(line)
     return 0
 
 
 def _remove(session: Session, args: argparse.Namespace, now: datetime) -> int:
-    for day in args.days:
+    """刪掉例外日；任何一天沒有例外日就整筆不刪。同一天給兩次只刪一次。"""
+    days = list(dict.fromkeys(args.days))
+    for day in days:
         remove_override(session, day)
     session.commit()
-    for day in args.days:
+    for day in days:
         logger.info("已刪除 %s 的例外日", _describe_day(day))
     return 0
 
 
 def _list(session: Session, args: argparse.Namespace, now: datetime) -> int:
+    """列出例外日（不含官方假日），可以只看某一年。"""
     overrides = list_overrides(session, year=args.year)
     if not overrides:
         logger.info("沒有例外日")
@@ -231,6 +250,7 @@ def _list(session: Session, args: argparse.Namespace, now: datetime) -> int:
 
 
 def _read_file(path: Path) -> bytes:
+    """讀整個檔案；找不到、被占用、其他讀取錯誤都轉成 `InvalidInput`（附下一步）。"""
     try:
         return path.read_bytes()
     except FileNotFoundError:
@@ -260,6 +280,7 @@ def _describe_coverage(years: list[CalendarOfficialYear]) -> str:
 
 
 def _describe_group(group: list[CalendarOfficialYear]) -> str:
+    """一組連續年份：2018–2026 新北市（2026-10-02 09:00 匯入）。"""
     first, last = group[0].calendar_year, group[-1].calendar_year
     span = str(first) if first == last else f"{first}–{last}"
     # 資料庫的 CHECK 保證 source 一定是已知來源；.get 的預設值只是保險
@@ -280,6 +301,7 @@ def _local(moment: datetime) -> str:
 
 
 def _log_imported(parsed: ParsedCalendar) -> None:
+    """匯入結果：年份、來源、特殊日數量、編碼（Big5 時才提）、略過的特定節日。"""
     logger.info(
         "已匯入 %s 年（%s），%d 個特殊日",
         describe_years(parsed.years),
