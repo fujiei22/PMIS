@@ -108,7 +108,8 @@ test('甘特：左欄 250px，日期膠囊只寫工期，點了一樣開日期�
   await app.goto()
   expect((await page.locator('.gantt-left').boundingBox())!.width).toBe(250)
   const pill = app.row('t3').locator('.date-range')
-  await expect(pill).toHaveText(/^\d+ 天$/)
+  // 工期是工作天（有效工期）
+  await expect(pill).toHaveText(/^\d+ 工作天$/)
   await expect(app.row('t3').locator('.date-days')).toHaveCount(0)
   await pill.tap()
   await expect(app.taskDatePicker).toBeVisible()
@@ -196,16 +197,18 @@ test('甘特：「⋮」選單改工期（選單不關可連點）；點外面�
   await app.goto()
   const pill = app.row('t3').locator('.date-range')
   await app.row('t3').locator('.name').tap()
-  const days = Number((await pill.innerText()).match(/\d+/)![0])
+  // t3 逾期中：有效工期 9 個工作天（09-08 → 今天 09-18）
+  await expect(pill).toHaveText('9 工作天')
 
   await app.rowMore('t3').tap()
   const menu = app.rowMenu
-  await expect(menu.locator('.rm-days')).toHaveText(`${days} 天`)
-  await menu.getByRole('button', { name: '+1天' }).tap()
-  await menu.getByRole('button', { name: '+1天' }).tap()
-  await expect(menu.locator('.rm-days')).toHaveText(`${days + 2} 天`)
-  await menu.getByRole('button', { name: '−1天' }).tap()
-  await expect(pill).toHaveText(`${days + 1} 天`)
+  await expect(menu.locator('.rm-days')).toHaveText('9 工作天')
+  // +1 從有效工期起算：10（到 09-21）、11（到 09-22）
+  await menu.getByRole('button', { name: '+1' }).tap()
+  await menu.getByRole('button', { name: '+1' }).tap()
+  await expect(menu.locator('.rm-days')).toHaveText('11 工作天')
+  await menu.getByRole('button', { name: '−1' }).tap()
+  await expect(pill).toHaveText('10 工作天')
 
   // 點選單外面：選單關掉，任務仍是標記狀態
   await page.touchscreen.tap(700, 40)

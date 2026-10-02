@@ -16,6 +16,25 @@ const DAY_W = 32
 /** 測試一律把甘特捲到這個位置，t3-t6 的條才都落在可視範圍內。 */
 const SCROLL_X = 480
 
+/**
+ * 讓某一天落在甘特可視範圍左側附近的捲動量：畫布從專案最早的開始日 08-24 往前留 3 天（08-21）起算，
+ * 再往前留 3 天的邊。今天固定 2026-09-18（helpers/clock.ts）。
+ */
+function scrollFor(iso: string): number {
+  const days = (Date.parse(iso) - Date.parse('2026-08-21')) / 86_400_000
+  return (days - 3) * DAY_W
+}
+
+/** 按住某個條（離左緣 20px）水平拖 days 天後放開。 */
+async function dragBar(page: Page, app: DashboardPage, id: string, days: number): Promise<void> {
+  const box = (await app.bar(id).boundingBox())!
+  const y = box.y + box.height / 2
+  await page.mouse.move(box.x + 20, y)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 20 + DAY_W * days, y, { steps: 6 })
+  await page.mouse.up()
+}
+
 /** 從某個甘特條的右側圓點拖到另一個任務的條上，放開即嘗試建立相依。 */
 async function dragLink(page: Page, app: DashboardPage, from: string, to: string): Promise<void> {
   // 圓點只在「已選取 + 滑鼠在條上」時才吃事件（legacy :2942-2948）
@@ -35,26 +54,35 @@ async function dragLink(page: Page, app: DashboardPage, from: string, to: string
   await page.mouse.up()
 }
 
-test('先選取再拖曳甘特條往右 3 天，下游任務跟著移', async ({ page }) => {
+/*
+ * 拖曳的對象是 t24（未開始、沒有前置的根任務）：t3 已經開始，它的下游 t4 也已開始，
+ * 開始日是實際值、不會被推（規則見 docs/reference/scheduling.md〈開始日〉），不能再拿來驗「下游跟著移」。
+ */
+test('先選取再拖曳甘特條往右 3 天，下游任務跟著排', async ({ page }) => {
   const app = new DashboardPage(page)
   await app.goto()
-  await app.row('t3').locator('.name').click()
+  await app.row('t24').locator('.name').click()
   // 選取會觸發 focus 捲動，先把捲動位置釘死再量條的位置
-  await app.freezeGanttScroll(SCROLL_X)
+  await app.freezeGanttScroll(scrollFor('2026-10-08'))
+  await dragBar(page, app, 't24', 3)
 
-  const box = (await app.bar('t3').boundingBox())!
-  const y = box.y + box.height / 2
-  await page.mouse.move(box.x + 20, y)
-  await page.mouse.down()
-  await page.mouse.move(box.x + 20 + DAY_W * 3, y, { steps: 6 })
-  await page.mouse.up()
-
-  await expect(app.row('t3')).toContainText('2026/09/11 → 2026/09/19')
-  // t4 原本 09-14 開始，被上游推 3 天（cascade）
-  await expect(app.row('t4')).toContainText('2026/09/17')
+  // 10/11 是週日，順延到 10/12；工期 6 個工作天 → 10/19
+  await expect(app.row('t24')).toContainText('2026/10/12 → 2026/10/19')
+  // t25 從 t24 結束後的下一個工作天開始
+  await expect(app.row('t25')).toContainText('2026/10/20 → 2026/10/28')
 })
 
-test('拖右側把手只改結束日，不動開始日', async ({ page }) => {
+test('有前置、還沒開始的條選取後拖不動（開始日由前置決定）', async ({ page }) => {
+  const app = new DashboardPage(page)
+  await app.goto()
+  await app.row('t5').locator('.name').click()
+  await app.freezeGanttScroll(scrollFor('2026-09-29'))
+  await expect(app.bar('t5')).toHaveClass(/pinned/)
+  await dragBar(page, app, 't5', 3)
+  await expect(app.row('t5')).toContainText('2026/09/29 → 2026/10/07')
+})
+
+test('拖右側把手改工期（工作天），不動開始日', async ({ page }) => {
   const app = new DashboardPage(page)
   await app.goto()
   await app.row('t3').locator('.name').click()
@@ -64,10 +92,11 @@ test('拖右側把手只改結束日，不動開始日', async ({ page }) => {
   const y = box.y + box.height / 2
   await page.mouse.move(box.x + box.width - 4, y)
   await page.mouse.down()
-  await page.mouse.move(box.x + box.width - 4 + DAY_W * 2, y, { steps: 6 })
+  await page.mouse.move(box.x + box.width - 4 + DAY_W * 3, y, { steps: 6 })
   await page.mouse.up()
 
-  await expect(app.row('t3')).toContainText('2026/09/08 → 2026/09/18')
+  // t3 逾期中（結束日暫定今天 09-18）；拖到 09-21（一）→ 工期 10 個工作天
+  await expect(app.row('t3')).toContainText('2026/09/08 → 2026/09/21')
 })
 
 test('未選取的條拖曳無效', async ({ page }) => {
@@ -84,7 +113,7 @@ test('未選取的條拖曳無效', async ({ page }) => {
   await page.mouse.up()
 
   // 日期沒動；按住未選取的條只是平移畫布（放開時的 click 才把它選起來，同 legacy）
-  await expect(app.row('t3')).toContainText('2026/09/08 → 2026/09/16')
+  await expect(app.row('t3')).toContainText('2026/09/08 → 2026/09/18')
 })
 
 test('從右側圓點拖到另一任務建立相依；反向循環被拒', async ({ page }) => {

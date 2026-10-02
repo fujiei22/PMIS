@@ -20,6 +20,8 @@ declare global {
       setSession(info: { memberId: string; name: string; role: string } | null): void
       /** 之後的 loadProject 回這個 canEdit（唯讀模式 F2，`e2e/readonly.spec.ts`）。 */
       setCanEdit(v: boolean): void
+      /** 換掉 getCalendar 回的工作日曆（下一次進 Dashboard 生效；`e2e/gantt-motion.spec.ts`）。 */
+      setCalendar(cal: { weekendDays: number[]; coveredYears: number[]; days: unknown[] }): void
       /** 只宣告測試會讀到的欄位。 */
       loadProject(id: string): Promise<{ tasks: { id: string; status: string }[] }>
       updateTask(id: string, patch: { status?: string; done?: string }): Promise<unknown>

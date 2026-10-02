@@ -77,6 +77,8 @@ test.describe('唯讀模式（F2）', () => {
     await expect(page.locator('[data-rowtask] .grip, [data-rowgroup] .grip')).toHaveCount(0)
     await expect(page.locator('[data-rowmore]')).toHaveCount(0)
     await expect(page.locator('[data-rowgroup] .del')).toHaveCount(0)
+    // 基準鎖照樣顯示狀態，但停用（點了不開確認框）
+    await expect(page.getByTestId('baseline-lock')).toBeDisabled()
 
     // 雙擊任務名 / 分類名不進就地編輯
     await app.row('t2').locator('.name').dblclick()
@@ -215,7 +217,8 @@ test.describe('唯讀模式（F2）', () => {
     // 篩選：只看執行中
     await app.topFilter(0).locator('.dd-trigger').click()
     await app.topFilter(0).locator('.dd-item', { hasText: '執行中' }).click()
-    await expect(app.taskCount).toHaveText('已篩選 8/30 個任務')
+    // 範例的執行中有 7 筆（t23 改成未開始、t14 改成暫停之後）
+    await expect(app.taskCount).toHaveText('已篩選 7/30 個任務')
     await app.filterClear.click()
     await expect(app.taskCount).toHaveText('共 30 個任務')
 
@@ -237,5 +240,6 @@ test.describe('唯讀模式（F2）', () => {
     await expect(page.getByTestId('readonly-tag')).toHaveCount(0)
     await expect(app.rowMore('t2')).toBeVisible()
     await expect(app.card('t3')).toHaveAttribute('draggable', 'true')
+    await expect(page.getByTestId('baseline-lock')).toBeEnabled()
   })
 })

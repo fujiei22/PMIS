@@ -38,7 +38,52 @@ export async function openDashboard(page: Page, kind: PageKind): Promise<void> {
   await setFixedTime(page)
   await page.goto(URL_OF[kind])
   await expect(page.locator('[data-rowtask]')).toHaveCount(30, { timeout: 30_000 })
+  if (kind === 'legacy') await injectSample(page)
   await settle(page)
+}
+
+/**
+ * legacy 頁的任務換成新頁的範例（起訖、狀態、完成日）：新頁照前推排程（工作天、完成到開始）推算，
+ * 範例存的就是 2026-09-18 的推算結果（`src/mocks/sampleProject.ts` 檔頭）；legacy 內嵌的是舊日期
+ * （`legacy/Dashboard.html` :1635 起）。不換的話兩頁從第一幀就對不上，比對就只剩排程規則的差異。
+ *
+ * 新範例滿足 legacy 的連動規則（後續任務的開始日不早於前置的開始日——完成到開始比它嚴），
+ * legacy 之後的操作跑 cascade 也不會再動它。
+ *
+ * 做法：範例從 Vite dev server 直接 import（同一個 server，不在測試裡重抄一份）；legacy 的元件實例從
+ * DOM 節點的 React fiber 往上找到掛著 `logic` 的宿主（dc-runtime，`legacy/support.js` :930 起），
+ * 用它的 `setState` 換掉任務。
+ */
+async function injectSample(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const url = '/src/mocks/sampleProject.ts'
+    const mod = (await import(/* @vite-ignore */ url)) as {
+      sampleProject: {
+        tasks: { id: string; start: string; end: string; status: string; done: string }[]
+      }
+    }
+    const next = new Map(mod.sampleProject.tasks.map((t) => [t.id, t]))
+
+    type Logic = {
+      state: { tasks?: Record<string, unknown>[] }
+      setState: (fn: (s: { tasks: Record<string, unknown>[] }) => object) => void
+    }
+    const el = document.querySelector('[data-rowtask]') as (Element & Record<string, unknown>) | null
+    const key = el && Object.keys(el).find((k) => k.startsWith('__reactFiber$'))
+    let fiber = key ? (el[key] as { return?: unknown; stateNode?: { logic?: Logic } }) : undefined
+    while (fiber && !Array.isArray(fiber.stateNode?.logic?.state?.tasks))
+      fiber = fiber.return as typeof fiber
+    const logic = fiber?.stateNode?.logic
+    if (!logic) throw new Error('legacy 頁找不到元件實例，無法灌入新範例')
+    logic.setState((st) => ({
+      tasks: st.tasks.map((t) => {
+        const n = next.get(t.id as string)
+        return n ? { ...t, start: n.start, end: n.end, status: n.status, done: n.done } : t
+      }),
+    }))
+  })
+  // 等 legacy 重畫：t3 的結束日換成新範例的 09-18
+  await expect(page.locator('[data-rowtask="t3"]')).toContainText('09/18')
 }
 
 /**
@@ -257,9 +302,29 @@ export function domSnapshot(page: Page): Promise<DomSnapshot> {
     const maskActs = (s: string): string =>
       s.replace(/▲▼⇄✕/g, '').replace(/⋮/g, '').replace(/\d{4}\//g, '')
 
+    /**
+     * 刻意保留的差異：排程規則（README〈刻意保留的差異〉、docs/reference/scheduling.md）。
+     * 兩頁的任務起訖相同（legacy 先灌入新範例，見 `injectSample`），只遮掉規則不同、或新頁才有的幾處：
+     * - 已延遲：legacy 看「結束日早於今天」、新頁看「推算結束晚於基準」；摘要的數字與卡片的 chip 一起拿掉。
+     * - 工期：列與卡片上的天數，legacy 是日曆天、新頁是工作天（有效工期）；legacy 屬性面板時程後的「· Nd」。
+     * - 新頁才有：甘特標題列的基準鎖（「基準已鎖定」／「規劃中」）、屬性面板的工期與計畫基準兩列。
+     * - 相依編輯器的副標：legacy 寫開始到開始的舊規則，新頁寫完成到開始。
+     * - 新建任務的結束日：legacy 預設 5 個日曆天、新頁 5 個工作天。
+     */
+    const maskSchedule = (s: string): string =>
+      s
+        .replace(/已延遲\d*/g, '')
+        .replace(/基準已鎖定|規劃中/g, '')
+        // 起訖「→MM/DD」後面緊接的數字就是工期（列、卡片、整頁文字都一樣）
+        .replace(/(→\d{2}\/\d{2})\d+/g, '$1')
+        .replace(/·\d+d/g, '')
+        .replace(/◔工期\d+工作天▼?▭計畫基準.*?(?=◷建立)/g, '')
+        .replace(/(可設定多個前置與多個後續任務)[^（]*?(?=前置任務（)/g, '$1')
+        .replace(/(新任務[^→]*→)\d{2}\/\d{2}/g, '$1')
+
     return {
-      summary: maskPlan(textOf(region)),
-      heads,
+      summary: maskSchedule(maskPlan(textOf(region))),
+      heads: heads.map(maskSchedule),
       order: all('[data-rowtask],[data-rowgroup]').map(
         (el) => el.getAttribute('data-rowtask') ?? `G:${el.getAttribute('data-rowgroup')}`,
       ),
@@ -267,22 +332,23 @@ export function domSnapshot(page: Page): Promise<DomSnapshot> {
         (el) => `${el.getAttribute('data-rowgroup')}|${textOf(el)}`,
       ),
       rows: all('[data-rowtask]').map(
-        (el) => `${el.getAttribute('data-rowtask')}|${op(el)}|${maskActs(textOf(el))}`,
+        (el) =>
+          `${el.getAttribute('data-rowtask')}|${op(el)}|${maskSchedule(maskActs(textOf(el)))}`,
       ),
       bars: all('[data-taskid]').map(
         (el) => `${el.getAttribute('data-taskid')}|${op(el)}|${textOf(el)}`,
       ),
       cards: all('[data-col]').flatMap((col) =>
         [...col.querySelectorAll('[data-card]')].map(
-          (c, i) => `${col.getAttribute('data-col')}|${i}|${op(c)}|${textOf(c)}`,
+          (c, i) => `${col.getAttribute('data-col')}|${i}|${op(c)}|${maskSchedule(textOf(c))}`,
         ),
       ),
       issues: all('[data-issuerow]').map(
         (el) => `${el.getAttribute('data-issuerow')}|${op(el)}|${textOf(el)}`,
       ),
       dd: all('[data-dd]').map((el) => textOf(el)),
-      float: all('[data-e2e-float]').map((el) => textOf(el)),
-      body: maskActs(maskPlan(textOf(document.body))),
+      float: all('[data-e2e-float]').map((el) => maskSchedule(textOf(el))),
+      body: maskSchedule(maskActs(maskPlan(textOf(document.body)))),
       fields: [...document.querySelectorAll('input,textarea,select')].map((el, i) => {
         const f = el as HTMLInputElement
         return `${i}|${f.tagName}|${f.type}|${norm(f.value)}`
@@ -493,6 +559,20 @@ export async function runScenario(page: Page, kind: PageKind, scenario: Scenario
 const GENERATED_ID =
   /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\b[gtidc]\d{3,}\b/g
 
+/**
+ * 刻意保留的差異：新建任務的工期（legacy 預設 5 個日曆天、新頁 5 個工作天），條的寬度不比。
+ * 在 `normaliseIds` 之後跑：新建的實體 id 已經換成 NEW1、NEW2…。
+ */
+function maskNewBarWidth(step: Step): Step {
+  return {
+    ...step,
+    geo: {
+      ...step.geo,
+      bars: step.geo.bars.map((m) => (m.key.startsWith('NEW') ? { ...m, v: m.v.slice(0, 2) } : m)),
+    },
+  }
+}
+
 /** 同一步的 dom + geo 共用一份對照表，兩頁各自按首次出現的順序編號。 */
 function normaliseIds(step: Step): Step {
   const seen = new Map<string, string>()
@@ -518,8 +598,8 @@ export async function compareScenario(
   scenario: Scenario,
   options: { geo?: boolean } = {},
 ): Promise<void> {
-  const legacy = (await runScenario(page, 'legacy', scenario)).map(normaliseIds)
-  const vue = (await runScenario(page, 'vue', scenario)).map(normaliseIds)
+  const legacy = (await runScenario(page, 'legacy', scenario)).map(normaliseIds).map(maskNewBarWidth)
+  const vue = (await runScenario(page, 'vue', scenario)).map(normaliseIds).map(maskNewBarWidth)
 
   const dumpDir = process.env.COMPARE_DUMP
   if (dumpDir) {
