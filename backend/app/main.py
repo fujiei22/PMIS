@@ -10,5 +10,8 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
     docs_url="/api/docs",
     redoc_url=None,
+    # 同一個 model 在請求與回應裡都用同一個 schema 名稱（不拆成 Xxx-Input / Xxx-Output），
+    # 前端由 OpenAPI 產生的型別名稱才穩定（見 app/scripts/export_openapi.py）。
+    separate_input_output_schemas=False,
 )
 app.include_router(api_router, prefix="/api")

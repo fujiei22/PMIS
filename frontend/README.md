@@ -131,6 +131,7 @@ Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<s
 | `src/mocks/__tests__/consistency.spec.ts` | 範例資料必須已是 cascade 之後的樣子 |
 | `src/assets/__tests__/tokens.spec.ts` | `tokens.css` 必須含有程式用到的每個變數與約定值，改名或刪 token 會紅 |
 | `src/mocks/__tests__/portfolio.spec.ts` | 總覽靜態專案算出的實際 / 理論 % 與需注意等於設計稿；m1–m7 與 `sampleProject` 的成員是同一份 |
+| `src/api/__tests__/openapi-schema.spec.ts` | `src/api/http/schema.ts` 是由 `openapi.json` 產生的最新版（見〈型別從後端產生（OpenAPI）〉） |
 | `e2e/overview-motion.spec.ts` | spec〈動畫清單〉每一項至少有一條守衛：宣告了 transition / animation，或過渡 class 真的出現（A19 hover / focus 另以瀏覽器逐一量測稽核）。重排時逐幀量位置，沒有動畫（直接跳到新位置）或位移算了兩次（先跳過頭再回彈），都會紅 |
 
 ### 閱讀指引
@@ -166,6 +167,7 @@ frontend/
 │   ├── api/               資料存取層；接後端時只換這一層
 │   │   ├── types.ts       ProjectApi / ProjectEvent / ApiError 契約，檔頭是給後端看的 wire 約定
 │   │   ├── mock/          記憶體實作（store.ts + index.ts）；可注入延遲與失敗；portfolio.ts 是總覽摘要的彙整
+│   │   ├── http/          由後端產生的 openapi.json 與 schema.ts（產生檔，見〈型別從後端產生（OpenAPI）〉）
 │   │   └── index.ts       挑實作的唯一出口（VITE_API 未設或 'mock' 用 mock；dev build 掛 window.__mockApi）
 │   ├── assets/            tokens.css（設計 token）、base.css（全域樣式、keyframes、Dashboard 浮層共用的 pop / dialog / fade 過渡）、overview-motion.css（總覽的過渡 class；泳道 / 群組 / 列原地收合）
 │   ├── components/        元件，依畫面區塊分子目錄（common / layout / summary / gantt / kanban / issues / detail / dialogs / overview）
@@ -497,6 +499,28 @@ dev build 會把 mock 掛在 `window.__mockApi`（`src/api/index.ts` 的 `if (im
 接上真後端之後 `window.__mockApi` 會是 `undefined`，這幾條開頭就是 `test.skip(!__mockApi)`，會自動跳過，其餘照跑：`e2e/interactions.spec.ts` 的**那兩條**（api 失敗後還原並顯示錯誤條、載入失敗後重試）、`e2e/errorbar-motion.spec.ts` 的頁頂與捲到中段兩條（`failNext('updateTask')` 讓錯誤條出現；另四條直接呼叫 `ui.pushError`，不需要 mock）、`e2e/load-motion.spec.ts` 的重進 Dashboard（`setLatency`）與載入次數守門。要在真後端上也測失敗路徑，就換成在 `page.route()` 攔 HTTP 回錯誤碼。
 
 **每次進頁只打一次 load**：`failNext` 只擋下一發，切頁先載（`router` 的 `beforeEach`）與頁面掛載的 `reload()` 共用同一發，失敗與重試的測試才有意義；`load-motion.spec` 的次數守門守這一點。
+
+### 型別從後端產生（OpenAPI）
+
+後端 wire 的型別不手寫，由後端程式產生，放在 `src/api/http/`（之後 http adapter `index.ts` 也放這裡，用這些型別對後端；`src/types/models.ts` 照舊是前端的模型，兩者的差異在 adapter 轉）：
+
+| 檔案 | 怎麼產生 |
+|---|---|
+| `src/api/http/openapi.json` | 後端 `uv run python -m app.scripts.export_openapi` 匯出 |
+| `src/api/http/schema.ts` | `npm run gen:api`（openapi-typescript）由上面那份產生 |
+
+兩個都是產生檔、都進版控、**不手改**；不經 Prettier（`.prettierignore`），`schema.ts` 也不經 ESLint（`eslint.config.ts` 的忽略清單）。`openapi-typescript` 的版本釘死（跟 `prettier` 一樣，產出要跟 CI 一字不差）；它宣告只支援 TypeScript 5，專案是 6，所以 `package.json` 的 `overrides` 讓它改用專案的 TypeScript。升級它或 TypeScript 時重跑 `npm run gen:api`，`schema.ts` 有變就一起 commit。
+
+**改了 API（後端的端點或 request / response model）要依序跑這兩個指令**，產物連同程式一起 commit：
+
+```sh
+# 在 backend/
+uv run python -m app.scripts.export_openapi
+# 在 frontend/
+npm run gen:api
+```
+
+忘了跑會紅：後端的 `tests/test_openapi_snapshot.py` 比對程式與 `openapi.json`，前端的 `src/api/__tests__/openapi-schema.spec.ts` 由 `openapi.json` 重新產生一次、比對 `schema.ts`。遇到合併衝突不要手動合併，取任一邊後重跑兩個指令。細節見 [`backend/README.md` 的〈API 契約與前端型別〉](../backend/README.md#api-契約與前端型別)。
 
 ### 還沒做的（接後端時要補）
 

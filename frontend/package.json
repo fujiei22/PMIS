@@ -12,7 +12,8 @@
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "lint": "eslint . --fix --cache",
-    "format": "prettier --write src/"
+    "format": "prettier --write src/",
+    "gen:api": "openapi-typescript src/api/http/openapi.json -o src/api/http/schema.ts"
   },
   "dependencies": {
     "pinia": "^4.0.3",
@@ -36,6 +37,7 @@
     "jiti": "^2.7.0",
     "jsdom": "^30.0.1",
     "npm-run-all2": "^9.0.3",
+    "openapi-typescript": "7.13.0",
     "prettier": "3.9.6",
     "typescript": "~6.0.0",
     "vite": "^8.2.2",
@@ -45,5 +47,10 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "overrides": {
+    "openapi-typescript": {
+      "typescript": "$typescript"
+    }
   }
 }

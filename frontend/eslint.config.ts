@@ -12,8 +12,16 @@ export default defineConfigWithVueTs(
   },
 
   // legacy/ 是唯讀的行為與設計基準，不參與 lint；
-  // .claude/ 底下是平行施工用的 git worktree，不是本專案的原始碼。
-  globalIgnores(['**/dist/**', '**/dist-ssr/**', '**/coverage/**', 'legacy/**', '**/.claude/**']),
+  // .claude/ 底下是平行施工用的 git worktree，不是本專案的原始碼；
+  // src/api/http/schema.ts 是 npm run gen:api 的產生檔，不手改。
+  globalIgnores([
+    '**/dist/**',
+    '**/dist-ssr/**',
+    '**/coverage/**',
+    'legacy/**',
+    '**/.claude/**',
+    'src/api/http/schema.ts',
+  ]),
 
   ...pluginVue.configs['flat/essential'],
   vueTsConfigs.recommended,
