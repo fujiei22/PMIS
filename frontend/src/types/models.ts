@@ -145,7 +145,7 @@ export interface ProjectMeta {
   /** 專案經理（擁有者）的成員 id */
   pmId: string
   /**
-   * 計畫基準的鎖定日；'' 表示解鎖（規劃中：每個任務的基準跟著排程走，不顯示延遲）。
+   * 計畫基準的鎖定日；'' 表示解鎖（規劃中：不顯示延遲，存的基準保留，上鎖時決定更新或沿用）。
    * 規則見 docs/reference/scheduling.md〈基準與基準鎖〉。
    */
   baselineLockedOn: ISODate | ''

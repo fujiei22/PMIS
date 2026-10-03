@@ -73,13 +73,26 @@ describe('TaskProperties 工期與計畫基準', () => {
     expect(row.find('.late-days').exists()).toBe(false)
   })
 
-  it('解鎖後（規劃中）基準列顯示「跟著排程（規劃中）」，沒有日期與鎖頭', async () => {
+  // 解鎖不動存的基準：規劃中照樣列出原基準，上鎖時才決定更新或沿用
+  it('解鎖後（規劃中）基準列照樣顯示原基準、標「規劃中」，沒有鎖頭與延遲', async () => {
+    await useTaskStore().unlockBaseline()
+    const row = rowOf(mountProps(), BASELINE_ROW_TEXT.label)
+    expect(row.text()).toContain('2026/09/08 → 2026/09/16（規劃中）')
+    expect(row.find('.pill-static').attributes('title')).toContain(BASELINE_ROW_TEXT.planningTitle)
+    expect(row.find('.lock-icon').exists()).toBe(false)
+    expect(row.find('.late-days').exists()).toBe(false)
+  })
+
+  it('解鎖中、還沒有基準的任務：寫「上鎖時用目前的排程」', async () => {
+    const data = structuredClone(sampleProject)
+    const t3 = data.tasks.find((t) => t.id === 't3')!
+    t3.baselineStart = ''
+    t3.baselineEnd = ''
+    await loadSample({ data })
     await useTaskStore().unlockBaseline()
     const row = rowOf(mountProps(), BASELINE_ROW_TEXT.label)
     expect(row.text()).toContain(BASELINE_ROW_TEXT.unlocked)
     expect(row.text()).not.toContain('2026/09/08')
-    expect(row.find('.lock-icon').exists()).toBe(false)
-    expect(row.find('.late-days').exists()).toBe(false)
   })
 
   it('沒有基準的任務（舊資料）顯示「未設定」', async () => {

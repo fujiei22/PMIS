@@ -151,21 +151,24 @@ export const BASELINE_LOCK_TEXT = {
   locked: '基準已鎖定',
   unlocked: '規劃中',
   lockedTitle: (on: string) => `基準鎖定於 ${on}；點擊解鎖`,
-  unlockedTitle: '基準跟著排程走；點擊上鎖',
+  unlockedTitle: '規劃中：暫時不標示延遲，原基準保留；點擊上鎖',
   /** 唯讀時只說明狀態，不叫人點。 */
   lockedReadonlyTitle: (on: string) => `基準鎖定於 ${on}`,
-  unlockedReadonlyTitle: '基準跟著排程走',
+  unlockedReadonlyTitle: '規劃中：暫時不標示延遲，原基準保留',
   calendarError: '假日資料載入失敗，暫時不能上鎖',
 } as const
 
 /**
  * 屬性面板「計畫基準」列的文案（規則見 docs/reference/scheduling.md〈基準與基準鎖〉）。
- * unlocked：規劃中，基準跟著排程走，不顯示日期（免得被當成固定的原計畫）；none：上鎖但這筆沒有基準（舊資料）。
+ * planning：規劃中、有原基準（保留著，上鎖時決定更新或沿用）；unlocked：規劃中、還沒有基準（解鎖期間新增的）；
+ * none：上鎖但這筆沒有基準（舊資料）。
  * late、lockedOn 的參數都已格式化（例「2 工作天」「2026/08/24」）。
  */
 export const BASELINE_ROW_TEXT = {
   label: '計畫基準',
-  unlocked: '跟著排程（規劃中）',
+  planning: (range: string) => `${range}（規劃中）`,
+  planningTitle: '規劃中：原基準保留，上鎖時決定要更新還是沿用',
+  unlocked: '上鎖時用目前的排程',
   none: '未設定',
   late: (n: string) => `晚 ${n}`,
   lockedOn: (on: string) => `基準鎖定於 ${on}`,

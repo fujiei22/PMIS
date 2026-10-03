@@ -39,6 +39,9 @@ import type { Dependency, DropTarget, Group, ISODate, ProjectData, Task } from '
  * 順序不是單筆實體的屬性，但 in-flight 計數需要一個鍵——
  * 用這兩個合成 id（不會跟真實 id 撞）記「整份順序正在送」。
  */
+/** 上鎖時基準怎麼定：`update` 換成目前的排程（覆蓋原基準）、`keep` 沿用原基準（沒有的才用目前的排程）。 */
+export type BaselineLockMode = 'update' | 'keep'
+
 const TASK_ORDER_KEY = 'tasks:order'
 const GROUP_ORDER_KEY = 'groups:order'
 
@@ -50,8 +53,9 @@ const GROUP_ORDER_KEY = 'groups:order'
  * **存與算的分工**（規則見 docs/reference/scheduling.md）：
  * - `inputs` 是存的值——使用者設定的工期、根任務的開始日、狀態與實際日期，以及最後一次寫回的起訖與基準。
  * - `tasks` 是畫面看的值——用今天與工作日曆把 `inputs` 排一次（`scheduleTasks`），再套基準模式
- *   （解鎖時基準＝推算起訖）。跨日、日曆晚到都會自動重排，但**不寫回**；下一次編輯時連同漂移的那幾筆一起送。
- * - 寫回送的是推算結果（`commitSchedule`），後端不重算（契約 A）。
+ *   （解鎖時畫面上的基準＝推算起訖）。跨日、日曆晚到都會自動重排，但**不寫回**；下一次編輯時連同漂移的那幾筆一起送。
+ * - 寫回送的是推算結果（`commitSchedule`），後端不重算（契約 A）。解鎖時存的基準不動（`writeValue`），
+ *   上鎖時才由 PM 決定更新或沿用（`lockBaseline`）。
  *
  * 每個寫入 action 都是樂觀的（契約 B）：先改本地、再打 api，
  * 失敗時把牽動到的 id 放回 `tracker.server`（最後已知的 server 狀態）。
@@ -338,13 +342,26 @@ export const useTaskStore = defineStore('task', () => {
     const calendarReady = useWorkCalendarStore().status === 'ready'
     const held = downstreamOfPending(include)
     const out: Task[] = []
-    for (const t of tasks.value) {
+    for (const scheduled of tasks.value) {
+      const t = writeValue(scheduled)
       const server = taskTracker.server.get(t.id)
       if (!server || sameTask(t, server)) continue
       if (include.has(t.id)) out.push(t)
       else if (calendarReady && !taskTracker.dirty.has(t.id) && !held.has(t.id)) out.push(t)
     }
     return out
+  }
+
+  /**
+   * 要寫回的值：解鎖（規劃中）時畫面上的基準＝推算起訖（`withBaselineMode`），存的基準卻不動——
+   * 換回存的值，等上鎖時再由 PM 決定更新或沿用（`lockBaseline`）。上鎖時原樣。
+   */
+  function writeValue(t: Task): Task {
+    if (locked.value) return t
+    const input = inputIndex.value.get(t.id)
+    if (!input || (input.baselineStart === t.baselineStart && input.baselineEnd === t.baselineEnd))
+      return t
+    return { ...t, baselineStart: input.baselineStart, baselineEnd: input.baselineEnd }
   }
 
   /** 還沒送出的編輯（dirty 而且不在這次的 include）沿相依往下走得到的任務。 */
@@ -564,7 +581,7 @@ export const useTaskStore = defineStore('task', () => {
    * 預設值（分類、負責人、開始日、工期）由呼叫端算好傳進來——那些要讀 selection /
    * filter，是派生層的事（契約 E），資料層只負責建立與送出。
    * 起訖照排程算好再存（開始日遇非工作天順延、不早於今天）；基準上鎖時基準＝推算起訖
-   * （新任務一建立就有基準，不會一出生就延遲），解鎖時留空、跟著排程走。
+   * （新任務一建立就有基準，不會一出生就延遲），解鎖時留空，上鎖時再補上當下的推算起訖。
    * 建立還在飛時又被改了（例如馬上改工期），create 回來後補送一次。
    * 建立後的選取同樣在 `useTaskActions()`。分類不存在時回 null；回傳的是存進去的那個物件（不是 proxy）。
    */
@@ -976,8 +993,30 @@ export const useTaskStore = defineStore('task', () => {
 
   // ── 基準鎖（規則見 docs/reference/scheduling.md〈基準與基準鎖〉）──────────────
 
+  /** 存的基準（解鎖時畫面上的基準跟著排程走，屬性面板要列原本的）；沒有基準回 null。 */
+  function storedBaseline(id: string): { start: ISODate; end: ISODate } | null {
+    const t = inputIndex.value.get(id)
+    return t?.baselineStart && t.baselineEnd ? { start: t.baselineStart, end: t.baselineEnd } : null
+  }
+
   /**
-   * 上鎖：把此刻的推算起訖存成每個任務的基準，記下鎖定日（今天）。之後推算結束晚於基準就是延遲。
+   * 有存的基準、而且推算起訖跟它不同的任務數。上鎖前比對用：0 就直接鎖（沿用跟更新結果一樣），
+   * 不是 0 才問 PM 要更新還是沿用（`ui.askBaselineLock`）。沒有基準的任務不算——兩種都用目前的排程。
+   */
+  const baselineDiffCount = computed(() => {
+    let n = 0
+    for (const t of tasks.value) {
+      const b = storedBaseline(t.id)
+      if (b && (b.start !== t.start || b.end !== t.end)) n++
+    }
+    return n
+  })
+
+  /**
+   * 上鎖：決定每個任務的基準、記下鎖定日（今天）。之後推算結束晚於基準就是延遲。
+   *
+   * - `update`：基準換成此刻的推算起訖，原本的基準被覆蓋。
+   * - `keep`：有存的基準就沿用（解鎖期間的調整不動基準）；還沒有基準的（解鎖期間新增的）用此刻的推算起訖。
    *
    * 前提：可編輯、工作日曆已載入（日曆失敗時排程只看週末，鎖下去的基準會是錯的）、目前是解鎖。
    * 樂觀更新：先改本地（基準與鎖定日），失敗時兩者都還原。
@@ -986,19 +1025,21 @@ export const useTaskStore = defineStore('task', () => {
    * 別處還沒送出的編輯（改名 debounce 中）不跟著送。建立中的任務不送（後端還不認得它，整個上鎖會失敗），
    * 改標 dirty：建立完成後 `addTask` 會補送一次，基準就跟著上去。
    */
-  async function lockBaseline(): Promise<void> {
+  async function lockBaseline(mode: BaselineLockMode): Promise<void> {
     const project = useProjectStore()
     if (!project.canEdit) return
     if (useWorkCalendarStore().status !== 'ready') return
     if (locked.value) return
     const lockedOn = useClockStore().todayIso
     const projectId = project.meta.id
-    // 解鎖時推算結果的基準已經等於推算起訖（withBaselineMode）
-    const base = new Map(tasks.value.map((t) => [t.id, t]))
+    const base = new Map<string, { start: ISODate; end: ISODate }>()
+    for (const t of tasks.value)
+      base.set(t.id, (mode === 'keep' && storedBaseline(t.id)) || { start: t.start, end: t.end })
     const snapshot: Task[] = []
     const creating: string[] = []
     for (const t of tasks.value) {
       const server = taskTracker.server.get(t.id)
+      const b = base.get(t.id)!
       if (!server) creating.push(t.id)
       else
         snapshot.push(
@@ -1006,14 +1047,14 @@ export const useTaskStore = defineStore('task', () => {
             ...server,
             start: t.start,
             end: t.end,
-            baselineStart: t.baselineStart,
-            baselineEnd: t.baselineEnd,
+            baselineStart: b.start,
+            baselineEnd: b.end,
           }),
         )
     }
     inputs.value = inputs.value.map((t) => {
       const b = base.get(t.id)
-      return b ? { ...t, baselineStart: b.baselineStart, baselineEnd: b.baselineEnd } : t
+      return b ? { ...t, baselineStart: b.start, baselineEnd: b.end } : t
     })
     markDirty(taskTracker, creating)
     setLockedOn(lockedOn)
@@ -1050,7 +1091,8 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   /**
-   * 解鎖：只清鎖定日。之後基準跟著排程走（不會有延遲），存的基準等下一次寫回時一併更新。
+   * 解鎖：只清鎖定日（規劃中：畫面上的基準跟著排程走、不標延遲）。存的基準不動，
+   * 寫回時也送原本的（`writeValue`），等上鎖時再決定更新或沿用。
    * 前提：可編輯、目前上鎖。失敗時鎖定日還原。
    */
   async function unlockBaseline(): Promise<void> {
@@ -1143,6 +1185,8 @@ export const useTaskStore = defineStore('task', () => {
     predecessors,
     successors,
     explain,
+    storedBaseline,
+    baselineDiffCount,
     lockBaseline,
     unlockBaseline,
   }

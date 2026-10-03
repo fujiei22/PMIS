@@ -172,8 +172,8 @@ export interface ProjectApi {
    */
   lockBaseline(projectId: string, lockedOn: ISODate, tasks: Task[]): Promise<void> // PUT    /api/projects/:pid/baseline
   /**
-   * 解鎖：只清鎖定日（基準由前端改成跟著排程走，下次寫回時一併寫入）；事件 `project.updated`。
-   * 後端必守：同 `lockBaseline` 的 403／404；解鎖要留稽核紀錄（之後的寫回會覆蓋原本的基準）。
+   * 解鎖：只清鎖定日（存的基準不動，前端寫回時也送原本的；上鎖時才由 PM 決定更新或沿用）；事件 `project.updated`。
+   * 後端必守：同 `lockBaseline` 的 403／404；解鎖要留稽核紀錄（重新上鎖可能覆蓋原本的基準）。
    */
   unlockBaseline(projectId: string): Promise<void> //                        DELETE /api/projects/:pid/baseline
 

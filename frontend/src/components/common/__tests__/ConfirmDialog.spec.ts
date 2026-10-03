@@ -43,6 +43,15 @@ describe('ConfirmDialog 純展示', () => {
     expect(w.find('.btn-danger').text()).toBe('確認刪除')
   })
 
+  it('有 altLabel 時多一顆次要動作鈕（btn-alt），點了發 alt；沒有就不畫', async () => {
+    expect(mount(ConfirmDialog, { props: base }).find('.btn-alt').exists()).toBe(false)
+    const w = mount(ConfirmDialog, { props: { ...base, altLabel: '沿用原本的基準' } })
+    expect(w.find('.btn-alt').text()).toBe('沿用原本的基準')
+    await w.find('.btn-alt').trigger('click')
+    expect(w.emitted('alt')).toHaveLength(1)
+    expect(w.emitted('next')).toBeUndefined()
+  })
+
   it('有 extra 時多畫一行', () => {
     const w = mount(ConfirmDialog, { props: { ...base, extra: '附註一句' } })
     expect(w.find('.confirm-extra').text()).toBe('附註一句')

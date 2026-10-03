@@ -263,7 +263,8 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   /**
-   * 基準鎖的確認：上鎖中開「解鎖」（兩步），規劃中開「上鎖」（一步）。
+   * 基準鎖：上鎖中開「解鎖」確認（一步，原基準保留）。規劃中要上鎖時先比對排程跟原基準：
+   * 沒有差異直接鎖（沿用跟更新結果一樣）；有差異才開確認框，讓 PM 選更新或沿用。
    * 唯讀時不開；日曆不是 ready 時上鎖也不開（鎖下去的基準會是只排除週末的錯誤排程，store 也會擋）。
    */
   function askBaselineLock(): void {
@@ -273,6 +274,12 @@ export const useUiStore = defineStore('ui', () => {
       return
     }
     if (useWorkCalendarStore().status !== 'ready') return
+    // 排程跟原基準沒有差異：沿用跟更新結果一樣，直接鎖、不問
+    const tasks = useTaskStore()
+    if (tasks.baselineDiffCount === 0) {
+      void tasks.lockBaseline('keep')
+      return
+    }
     confirm.value = { kind: 'baselineLock', step: 1 }
   }
 

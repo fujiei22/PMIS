@@ -4,7 +4,8 @@ import { OverviewPage } from './helpers/overviewPage'
 
 /**
  * 前推排程在畫面上的樣子（規則見 docs/reference/scheduling.md）：
- * 假日標示、基準鎖（上鎖一步、解鎖兩步確認）、開始日由前置決定的條沒有左把手、假日資料載入失敗時的提示。
+ * 假日標示、基準鎖（解鎖一步、原基準保留；上鎖時排程跟原基準有差異才問更新或沿用）、
+ * 開始日由前置決定的條沒有左把手、假日資料載入失敗時的提示。
  * 今天固定 2026-09-18（helpers/clock.ts）；範例在 2026-08-24 上鎖，09-18 延遲的是 t3、t13。
  */
 
@@ -34,7 +35,17 @@ test('假日標示：中秋（09-25）的尺規格與日底色都是非工作天
   await expect(page.locator(`.day-bg[data-idx="${idx}"]`)).toHaveClass(/off/)
 })
 
-test('基準鎖：解鎖（兩步確認）後不再標延遲；再上鎖（一步）以當下排程為基準，延遲歸零', async ({
+/** 解鎖：一步確認，說明原基準會保留；之後不標延遲。 */
+async function unlock(app: DashboardPage, page: Page) {
+  await lockButton(page).click()
+  await expect(app.confirmDialog).toContainText('解除基準鎖？')
+  await expect(app.confirmDialog).toContainText('原本的基準會保留')
+  await confirmButton(app, '解鎖').click()
+  await expect(app.confirmDialog).toHaveCount(0)
+  await expect(lockButton(page)).toHaveAttribute('aria-pressed', 'false')
+}
+
+test('基準鎖：解鎖（一步）後不標延遲；上鎖選「沿用原本的基準」，延遲照原計畫回來', async ({
   page,
 }) => {
   const app = new DashboardPage(page)
@@ -42,25 +53,39 @@ test('基準鎖：解鎖（兩步確認）後不再標延遲；再上鎖（一�
   await expect(lockButton(page)).toHaveAttribute('aria-pressed', 'true')
   expect(await delayedRows(page)).toEqual(['t3', 't13'])
 
-  // 解鎖：第一步說明會不再標延遲、目前延遲幾個；第二步說明重新上鎖會覆蓋原本的基準
-  await lockButton(page).click()
-  await expect(app.confirmDialog).toContainText('解除基準鎖？')
-  await expect(app.confirmDialog).toContainText('目前 2 個任務已延遲')
-  await confirmButton(app, '繼續').click()
-  await expect(app.confirmDialog).toContainText('解鎖後，下一次編輯就會把基準改成目前的排程，原本的基準無法復原。')
-  await confirmButton(app, '確認解鎖').click()
-  await expect(app.confirmDialog).toHaveCount(0)
-  await expect(lockButton(page)).toHaveAttribute('aria-pressed', 'false')
+  await unlock(app, page)
   await expect(app.row('t3')).toHaveAttribute('data-status', 'doing')
   expect(await delayedRows(page)).toEqual([])
 
-  // 上鎖：一步就執行
+  // 上鎖：排程跟原基準有 2 個任務不同（t3、t13），問要更新還是沿用
   await lockButton(page).click()
-  await expect(app.confirmDialog).toContainText('鎖定計畫基準？')
-  await confirmButton(app, '鎖定').click()
+  await expect(app.confirmDialog).toContainText('要更新計畫基準嗎？')
+  await expect(app.confirmDialog).toContainText('有 2 個任務不同')
+  await confirmButton(app, '沿用原本的基準').click()
   await expect(app.confirmDialog).toHaveCount(0)
   await expect(lockButton(page)).toHaveAttribute('aria-pressed', 'true')
   await expect(lockButton(page)).toHaveAttribute('title', /基準鎖定於 2026\/09\/18/)
+  expect(await delayedRows(page)).toEqual(['t3', 't13'])
+})
+
+test('基準鎖：上鎖選「更新基準」以當下排程為基準，延遲歸零；之後沒有差異時直接上鎖、不問', async ({
+  page,
+}) => {
+  const app = new DashboardPage(page)
+  await app.goto()
+  await unlock(app, page)
+
+  await lockButton(page).click()
+  await confirmButton(app, '更新基準').click()
+  await expect(app.confirmDialog).toHaveCount(0)
+  await expect(lockButton(page)).toHaveAttribute('aria-pressed', 'true')
+  expect(await delayedRows(page)).toEqual([])
+
+  // 排程跟剛更新的基準一樣：按下就鎖上，不開確認框
+  await unlock(app, page)
+  await lockButton(page).click()
+  await expect(lockButton(page)).toHaveAttribute('aria-pressed', 'true')
+  await expect(app.confirmDialog).toHaveCount(0)
   expect(await delayedRows(page)).toEqual([])
 })
 
@@ -85,13 +110,13 @@ test('假日資料載入失敗：標題列提示只排除週末；解鎖後不�
   await page.locator('[data-rowtask]').first().waitFor()
   const app = new DashboardPage(page)
 
-  await expect(page.getByTestId('cal-notice')).toHaveText('假日資料載入失敗，只排除週末；重新整理可重試')
+  await expect(page.getByTestId('cal-notice')).toHaveText(
+    '假日資料載入失敗，只排除週末；重新整理可重試',
+  )
 
   // 上鎖中可以解鎖（解鎖不需要日曆）；解鎖之後上鎖鈕停用，說明為什麼
   await expect(lockButton(page)).toBeEnabled()
-  await lockButton(page).click()
-  await confirmButton(app, '繼續').click()
-  await confirmButton(app, '確認解鎖').click()
+  await unlock(app, page)
   await expect(lockButton(page)).toBeDisabled()
   await expect(lockButton(page)).toHaveAttribute('title', '假日資料載入失敗，暫時不能上鎖')
 })

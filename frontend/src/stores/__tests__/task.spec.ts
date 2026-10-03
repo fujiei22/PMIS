@@ -905,7 +905,7 @@ describe('taskStore', () => {
 
   // ── 基準鎖（規則見 docs/reference/scheduling.md〈基準與基準鎖〉）──────────────
   describe('基準鎖', () => {
-    it('解鎖後不延遲、基準跟著排程；上鎖後依新基準', async () => {
+    it('解鎖後不延遲（畫面上的基準＝推算起訖）；上鎖後依新基準', async () => {
       const s = useTaskStore()
       expect(s.tasks.filter((t) => isLate(t)).map((t) => t.id)).toEqual(['t3', 't13'])
       await s.unlockBaseline()
@@ -913,7 +913,7 @@ describe('taskStore', () => {
       expect(s.tasks.filter((t) => isLate(t))).toHaveLength(0)
       expect(s.taskById('t3')!.baselineEnd).toBe('2026-09-18')
       const lock = vi.spyOn(api, 'lockBaseline')
-      await s.lockBaseline()
+      await s.lockBaseline('update')
       expect(lock).toHaveBeenCalledTimes(1)
       expect(useProjectStore().meta.baselineLockedOn).toBe('2026-09-18')
       await s.updateTask('t5', { duration: 9 })
@@ -927,7 +927,7 @@ describe('taskStore', () => {
       await s.unlockBaseline()
       useWorkCalendarStore().status = 'error'
       const lock = vi.spyOn(api, 'lockBaseline')
-      await s.lockBaseline()
+      await s.lockBaseline('update')
       expect(lock).not.toHaveBeenCalled()
       expect(useProjectStore().meta.baselineLockedOn).toBe('')
     })
@@ -936,7 +936,7 @@ describe('taskStore', () => {
       const s = useTaskStore()
       const lock = vi.spyOn(api, 'lockBaseline')
       const unlock = vi.spyOn(api, 'unlockBaseline')
-      await s.lockBaseline()
+      await s.lockBaseline('update')
       expect(lock).not.toHaveBeenCalled()
       await s.unlockBaseline()
       await s.unlockBaseline()
@@ -948,7 +948,7 @@ describe('taskStore', () => {
       await s.unlockBaseline()
       const t3 = s.inputs.find((t) => t.id === 't3')!.baselineEnd
       mockApi.failNext('lockBaseline')
-      await s.lockBaseline()
+      await s.lockBaseline('update')
       expect(useProjectStore().meta.baselineLockedOn).toBe('')
       expect(s.inputs.find((t) => t.id === 't3')!.baselineEnd).toBe(t3)
       expect(useUiStore().errors[0]!.label).toBe('鎖定基準')
@@ -976,7 +976,7 @@ describe('taskStore', () => {
       await s.unlockBaseline()
       s.applyLocalPatch('t5', { name: '打到一半' })
       const lock = vi.spyOn(api, 'lockBaseline')
-      await s.lockBaseline()
+      await s.lockBaseline('update')
       const sent = lock.mock.calls[0]![2].find((t) => t.id === 't5')!
       expect(sent.name).toBe(sampleProject.tasks.find((t) => t.id === 't5')!.name)
       expect([sent.baselineStart, sent.baselineEnd]).toEqual([sent.start, sent.end])
@@ -995,7 +995,7 @@ describe('taskStore', () => {
       )
       const lock = vi.spyOn(api, 'lockBaseline')
       const t = s.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-10-01', duration: 3 })!
-      await s.lockBaseline()
+      await s.lockBaseline('update')
       expect(useProjectStore().meta.baselineLockedOn).toBe('2026-09-18')
       expect(lock.mock.calls[0]![2].some((x) => x.id === t.id)).toBe(false)
       finishCreate()
@@ -1008,12 +1008,56 @@ describe('taskStore', () => {
       const project = useProjectStore()
       mockApi.setLatency(5)
       mockApi.failNext('lockBaseline')
-      const pending = s.lockBaseline()
+      const pending = s.lockBaseline('update')
       project.setMeta({ ...project.meta, name: '別人改的專案名' })
       await pending
       mockApi.setLatency(0)
       expect(project.meta.baselineLockedOn).toBe('')
       expect(project.meta.name).toBe('別人改的專案名')
+    })
+
+    // 解鎖（規劃中）不動存的基準：畫面不顯示延遲，但寫回時送的是原基準，上鎖時才由 PM 決定更新或沿用
+    it('解鎖後編輯：寫回送的是原基準，不是推算起訖', async () => {
+      const s = useTaskStore()
+      await s.unlockBaseline()
+      const many = vi.spyOn(api, 'updateTasks')
+      await s.updateTask('t5', { duration: 8 })
+      const sent = many.mock.calls[0]![0].find((t) => t.id === 't5')!
+      expect(sent.end).toBe('2026-10-08')
+      expect([sent.baselineStart, sent.baselineEnd]).toEqual(['2026-09-29', '2026-10-07'])
+      // 其他任務的原基準也沒被改寫
+      expect((await serverTask('t3'))!.baselineEnd).toBe('2026-09-16')
+      // 畫面上照樣是規劃中（不顯示延遲）
+      expect(s.tasks.filter((t) => isLate(t))).toHaveLength(0)
+    })
+
+    it('baselineDiffCount：有原基準、而且推算起訖跟它不同的任務數（09-18 是 t3、t13）', async () => {
+      const s = useTaskStore()
+      expect(s.baselineDiffCount).toBe(2)
+      await s.unlockBaseline()
+      expect(s.baselineDiffCount).toBe(2)
+      expect(s.storedBaseline('t3')).toEqual({ start: '2026-09-08', end: '2026-09-16' })
+    })
+
+    it('沿用原本的基準：基準不動、延遲照原計畫；解鎖期間新增的任務用目前的排程當基準', async () => {
+      const s = useTaskStore()
+      await s.unlockBaseline()
+      const t = s.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-10-01', duration: 3 })!
+      await vi.waitFor(async () => expect(await serverTask(t.id)).toBeDefined())
+      const lock = vi.spyOn(api, 'lockBaseline')
+      await s.lockBaseline('keep')
+      const sent = lock.mock.calls[0]![2]
+      expect(sent.find((x) => x.id === 't3')!.baselineEnd).toBe('2026-09-16')
+      expect(sent.find((x) => x.id === t.id)!.baselineEnd).toBe('2026-10-05')
+      expect(s.tasks.filter((x) => isLate(x)).map((x) => x.id)).toEqual(['t3', 't13'])
+    })
+
+    it('更新基準：用目前的排程覆蓋，延遲歸零', async () => {
+      const s = useTaskStore()
+      await s.unlockBaseline()
+      await s.lockBaseline('update')
+      expect((await serverTask('t3'))!.baselineEnd).toBe('2026-09-18')
+      expect(s.tasks.filter((x) => isLate(x))).toHaveLength(0)
     })
 
     it('explain：說明起訖是哪條規則決定的', () => {

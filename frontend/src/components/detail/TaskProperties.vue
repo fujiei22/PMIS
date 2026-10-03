@@ -68,25 +68,37 @@ const durationLabel = computed(() => fmtWorkdays(durationOf(props.task, calendar
 /** 基準鎖是整個專案一把：鎖定日有值＝上鎖。 */
 const locked = computed(() => !!project.meta.baselineLockedOn)
 /**
+ * 解鎖時存的基準（props 的 task 是畫面看的值，解鎖時基準已換成推算起訖，原本的要另外讀）。
+ * 上鎖時不用：畫面上的基準就是存的。
+ */
+const stored = computed(() => (locked.value ? null : taskStore.storedBaseline(props.task.id)))
+/**
  * 基準列要顯示什麼：
- * - unlocked：規劃中，基準就是推算起訖（store 的 tasks 已套好），寫日期等於重複時程列，改寫「跟著排程」。
+ * - planning：規劃中、有原基準。原基準保留，上鎖時才決定更新或沿用；不比延遲。
+ * - unlocked：規劃中、還沒有基準（解鎖期間新增的），上鎖時用當下的排程。
  * - none：上鎖了但這筆沒有基準（舊資料），不算延遲，寫「未設定」。
  * - set：基準起訖；延遲時另外標出晚幾個工作天。
  */
-const baselineState = computed<'unlocked' | 'none' | 'set'>(() => {
-  if (!locked.value) return 'unlocked'
+const baselineState = computed<'planning' | 'unlocked' | 'none' | 'set'>(() => {
+  if (!locked.value) return stored.value ? 'planning' : 'unlocked'
   return props.task.baselineStart && props.task.baselineEnd ? 'set' : 'none'
 })
 const baselineText = computed(() => {
+  if (baselineState.value === 'planning')
+    return BASELINE_ROW_TEXT.planning(
+      `${fmtDate(stored.value!.start)} → ${fmtDate(stored.value!.end)}`,
+    )
   if (baselineState.value === 'unlocked') return BASELINE_ROW_TEXT.unlocked
   if (baselineState.value === 'none') return BASELINE_ROW_TEXT.none
   return `${fmtDate(props.task.baselineStart)} → ${fmtDate(props.task.baselineEnd)}`
 })
-/** 膠囊的 title：上鎖時補上鎖定日；文字被截斷時也看得到全文。 */
+/** 膠囊的 title：上鎖時補上鎖定日、規劃中補上鎖時怎麼處理；文字被截斷時也看得到全文。 */
 const baselineTitle = computed(() =>
   baselineState.value === 'set'
     ? `${baselineText.value}｜${BASELINE_ROW_TEXT.lockedOn(fmtDate(project.meta.baselineLockedOn))}`
-    : baselineText.value,
+    : baselineState.value === 'planning'
+      ? `${baselineText.value}｜${BASELINE_ROW_TEXT.planningTitle}`
+      : baselineText.value,
 )
 /** 「晚 N 工作天」：看得見的說明（觸控看不到 title），延遲 chip 的 title 只是補充。 */
 const lateLabel = computed(() =>

@@ -1,13 +1,12 @@
 import { computed, type ComputedRef } from 'vue'
-import { isLate } from '@/lib/schedule'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore, type ConfirmKind, type ConfirmState } from '@/stores/ui'
 
 /**
  * 餵給 `ConfirmDialog` 的一整包 props + 事件處理（契約 H）。
- * `open / step / title / body / extra / confirmLabel` 對應元件的 props，
- * `onNext / onConfirm / onCancel` 是 Vue 幫 emits 產的 listener prop，
+ * `open / step / title / body / extra / confirmLabel / altLabel` 對應元件的 props，
+ * `onNext / onConfirm / onAlt / onCancel` 是 Vue 幫 emits 產的 listener prop，
  * 所以 `DashboardView` 一句 `v-bind` 就接得起來。
  */
 export interface ConfirmView {
@@ -15,11 +14,14 @@ export interface ConfirmView {
   step: 1 | 2
   title: string
   body: string
-  /** 內文之外的補充行（例：解鎖時目前延遲幾個任務）；沒有就不畫。 */
+  /** 內文之外的補充行（例：上鎖時還沒有基準的任務數）；沒有就不畫。 */
   extra?: string
   confirmLabel: string
+  /** 第一步的次要動作鈕（上鎖時「沿用原本的基準」）；沒有就不畫。 */
+  altLabel?: string
   onNext: () => void
   onConfirm: () => void
+  onAlt?: () => void
   onCancel: () => void
 }
 
@@ -38,11 +40,13 @@ interface ConfirmConfig {
   extra?: string
   /** 真的執行（確認框已經先關掉）。 */
   run: () => void
+  /** 第一步的另一種做法（次要動作鈕），按下同樣先關掉確認框再執行。 */
+  alt?: { label: string; run: () => void }
 }
 
 /** 刪除四種：第一步 / 第二步的動作鈕文字。legacy :1394 / :1404 等四處同字。 */
 const DELETE_LABELS = ['繼續刪除', '確認刪除'] as const
-/** 第二步的標題：刪除四種與解鎖共用。legacy :1400 / :1474 / :1501 / :1527 */
+/** 第二步的標題：刪除四種共用。legacy :1400 / :1474 / :1501 / :1527 */
 const STEP2_TITLE = '再次確認'
 /** 刪除的第一步標題。legacy :1517（任務）/ :1390（分類）/ :1464（相依）/ :1491（Issue） */
 const DELETE_TITLE = {
@@ -54,18 +58,19 @@ const DELETE_TITLE = {
 
 /**
  * 基準鎖的文案（規則見 docs/reference/scheduling.md〈基準與基準鎖〉）。
- * 上鎖不會丟掉任何東西（解鎖時基準本來就跟著排程走），一步就好；
- * 解鎖之後，下一次編輯寫回時存的基準就會改成推算起訖，原本的基準找不回來，所以兩步。
+ * 解鎖不動存的基準，一步就好；上鎖時排程跟原基準有差異才開這個框（沒有差異直接鎖，見 `ui.askBaselineLock`），
+ * 讓 PM 選更新（覆蓋原基準、無法復原）或沿用。
  */
 const BASELINE_CONFIRM = {
-  lockTitle: '鎖定計畫基準？',
-  lockBody: '把目前的排程鎖成基準，之後晚於基準的任務會標成已延遲。',
-  lockLabel: '鎖定',
+  lockTitle: '要更新計畫基準嗎？',
+  lockBody: (n: number) =>
+    `目前的排程跟原基準有 ${n} 個任務不同。更新後，原本的基準會被覆蓋，無法復原。`,
+  lockExtra: (n: number) => `另有 ${n} 個任務還沒有基準，兩種做法都會用目前的排程。`,
+  lockLabel: '更新基準',
+  keepLabel: '沿用原本的基準',
   unlockTitle: '解除基準鎖？',
-  unlockBody: '解鎖後基準跟著排程走，不再標示延遲。',
-  unlockExtra: (n: number) => `目前 ${n} 個任務已延遲`,
-  unlockBody2: '解鎖後，下一次編輯就會把基準改成目前的排程，原本的基準無法復原。',
-  unlockLabels: ['繼續', '確認解鎖'] as const,
+  unlockBody: '進入規劃中：暫時不標示延遲，原本的基準會保留。',
+  unlockLabel: '解鎖',
 }
 
 /**
@@ -130,29 +135,31 @@ export function useConfirmProps(): ComputedRef<ConfirmView | null> {
     }
   }
 
-  /** 基準鎖兩種的設定。 */
+  /** 基準鎖兩種的設定：都是一步（第一步的按鈕直接執行）。 */
   function baselineConfig(
     kind: Extract<ConfirmKind, 'baselineLock' | 'baselineUnlock'>,
   ): ConfirmConfig {
-    if (kind === 'baselineLock')
+    if (kind === 'baselineLock') {
+      const missing = taskStore.tasks.filter((t) => !taskStore.storedBaseline(t.id)).length
       return {
         steps: 1,
         title1: BASELINE_CONFIRM.lockTitle,
-        body1: BASELINE_CONFIRM.lockBody,
+        body1: BASELINE_CONFIRM.lockBody(taskStore.baselineDiffCount),
         title2: '',
         body2: '',
         labels: [BASELINE_CONFIRM.lockLabel, BASELINE_CONFIRM.lockLabel],
-        run: () => void taskStore.lockBaseline(),
+        extra: missing ? BASELINE_CONFIRM.lockExtra(missing) : undefined,
+        run: () => void taskStore.lockBaseline('update'),
+        alt: { label: BASELINE_CONFIRM.keepLabel, run: () => void taskStore.lockBaseline('keep') },
       }
-    const late = taskStore.tasks.filter((t) => isLate(t)).length
+    }
     return {
-      steps: 2,
+      steps: 1,
       title1: BASELINE_CONFIRM.unlockTitle,
       body1: BASELINE_CONFIRM.unlockBody,
-      title2: STEP2_TITLE,
-      body2: BASELINE_CONFIRM.unlockBody2,
-      labels: BASELINE_CONFIRM.unlockLabels,
-      extra: late ? BASELINE_CONFIRM.unlockExtra(late) : undefined,
+      title2: '',
+      body2: '',
+      labels: [BASELINE_CONFIRM.unlockLabel, BASELINE_CONFIRM.unlockLabel],
       run: () => void taskStore.unlockBaseline(),
     }
   }
@@ -168,6 +175,7 @@ export function useConfirmProps(): ComputedRef<ConfirmView | null> {
       ui.confirm = null
       cfg.run()
     }
+    const alt = cfg.alt
     return {
       open: true,
       step: c.step,
@@ -175,6 +183,7 @@ export function useConfirmProps(): ComputedRef<ConfirmView | null> {
       body: c.step === 2 ? cfg.body2 : cfg.body1,
       extra: c.step === 1 ? cfg.extra : undefined,
       confirmLabel: cfg.labels[c.step - 1]!,
+      altLabel: c.step === 1 ? alt?.label : undefined,
       /** 第一步的動作鈕：兩步的只把步驟推到 2、不動資料（legacy :4012 等）；一步的直接執行。 */
       onNext: () => {
         if (cfg.steps === 1) confirm()
@@ -182,6 +191,13 @@ export function useConfirmProps(): ComputedRef<ConfirmView | null> {
       },
       /** 第二步的動作鈕：真的執行。 */
       onConfirm: confirm,
+      /** 次要動作鈕：另一種做法，同樣先關掉對話框。 */
+      onAlt: alt
+        ? () => {
+            ui.confirm = null
+            alt.run()
+          }
+        : undefined,
       onCancel: () => {
         ui.confirm = null
       },

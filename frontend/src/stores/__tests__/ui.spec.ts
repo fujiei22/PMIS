@@ -469,7 +469,7 @@ describe('askBaselineLock', () => {
     expect(ui.confirm).toEqual({ kind: 'baselineUnlock', step: 1 })
   })
 
-  it('解鎖中：開上鎖確認', () => {
+  it('解鎖中、排程跟原基準有差異：開上鎖確認', () => {
     const ui = useUiStore()
     const project = useProjectStore()
     project.setMeta({ ...project.meta, baselineLockedOn: '' })
@@ -483,5 +483,25 @@ describe('askBaselineLock', () => {
     project.setAll(project.meta, false)
     ui.askBaselineLock()
     expect(ui.confirm).toBeNull()
+  })
+})
+
+describe('askBaselineLock：上鎖前先比對原基準', () => {
+  beforeEach(async () => {
+    await loadSample()
+  })
+
+  it('目前的排程跟原基準沒有差異：直接鎖上，不開確認框', async () => {
+    const ui = useUiStore()
+    const tasks = useTaskStore()
+    // 先用目前的排程更新基準再解鎖：這時排程跟原基準完全一樣
+    await tasks.unlockBaseline()
+    await tasks.lockBaseline('update')
+    await tasks.unlockBaseline()
+    expect(tasks.baselineDiffCount).toBe(0)
+    const lock = vi.spyOn(tasks, 'lockBaseline').mockResolvedValue()
+    ui.askBaselineLock()
+    expect(ui.confirm).toBeNull()
+    expect(lock).toHaveBeenCalledWith('keep')
   })
 })

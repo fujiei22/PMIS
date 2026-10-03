@@ -79,7 +79,7 @@ const WRITE_ACTIONS: Record<StoreKey, Record<string, WriteCall>> = {
     addDep: ({ task }) => task.addDep('t1', 't30'),
     removeDep: ({ task }) => task.removeDep('d1'),
     // 範例已上鎖；上鎖的對照組先在 PREP 解鎖（只改本地，不算這個呼叫的變動）
-    lockBaseline: ({ task }) => task.lockBaseline(),
+    lockBaseline: ({ task }) => task.lockBaseline('update'),
     unlockBaseline: ({ task }) => task.unlockBaseline(),
   },
   issue: {
@@ -109,7 +109,7 @@ const PREP: Record<string, (s: Stores) => void> = {
 }
 
 const READ_ACTIONS: Record<StoreKey, string[]> = {
-  task: ['taskById', 'groupById', 'predecessors', 'successors', 'explain'],
+  task: ['taskById', 'groupById', 'predecessors', 'successors', 'explain', 'storedBaseline'],
   issue: ['byId', 'byTask', 'openCount'],
   comment: ['forTarget', 'filesForTarget', 'commenterIds'],
   member: ['byId', 'assignable'],
