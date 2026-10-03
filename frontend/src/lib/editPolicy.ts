@@ -1,0 +1,119 @@
+import { dayIndex } from '@/lib/date'
+import { isOverdue } from '@/lib/schedule'
+import type { Workdays } from '@/lib/workdays'
+import type { Task } from '@/types/models'
+
+/**
+ * 編輯限制：一個任務此刻能怎麼改、不能的原因、可選日期的上下限（規則見 docs/reference/scheduling.md〈編輯限制〉）。
+ * 甘特條、拖曳、日期選擇器、卡片 ±1、列選單、開浮層的估高、store 的 applyTaskEdit 都讀這一份，不各自判斷
+ * （src/__tests__/edit-policy-guard.spec.ts 守）。全部是純函式，不碰 store。
+ *
+ * 管的範圍是排程類的編輯：開始日、工期、整條拖、把手。還沒歸這裡管的入口：
+ * 改狀態（OptionMenu、屬性面板）、完成日選擇器（DatePicker 的 iCal、useMenus.openIssueDatePicker）、
+ * 拉相依線與相依編輯器。三層任務（上層由下層彙總、唯讀）要擋它們時，在 EditPolicy 加欄位
+ * （例如 statusBlock、doneBlock、linkBlock）並讓那些入口改讀 policyOf；EditBlock 加 'rollup' 原因。
+ * 唯讀（canEdit）不在這裡：由 `ui.canEdit` 與各入口的開關另外擋。
+ */
+
+/**
+ * 不能編輯的原因（null＝可以）；文字在 constants 的 `EDIT_BLOCK_TEXT`。
+ * missing：任務已不存在（`LOCKED_POLICY`，各入口一致預設擋下）。
+ */
+export type EditBlock = 'predecessor' | 'done' | 'missing' | null
+
+/** 判斷編輯限制需要的情境；task store 組好（不公開），各入口經 `policyOf` 間接用。 */
+export interface EditCtx {
+  /** 有前置的任務 id：只認兩端都存在的相依（跟排程器的 predecessorMap 同一個定義）。 */
+  hasPred: ReadonlySet<string>
+  wd: Workdays
+  todayIdx: number
+}
+
+/**
+ * 說明行的原因（日期選擇器、列選單）：擋下的原因，加上三種只在說明行出現的情況。
+ * 文字在 constants 的 `EDIT_NOTE_TEXT`（`satisfies Record<EditNote, string>`，少一個就編譯不過）。
+ */
+export type EditNote =
+  NonNullable<EditBlock> | 'startAfterToday' | 'overdueShrink' | 'pastStartLate'
+
+/** 一個任務此刻的編輯限制；Block 欄位是 null、overdue 是 false、Idx 欄位是 null 表示沒有限制。 */
+export interface EditPolicy {
+  /** 整條拖、左把手（都會改開始日）：完成的不能；有前置、未開始的不能。 */
+  moveBlock: EditBlock
+  /** 日期選擇器改開始日：有前置、未開始的不能（已完成的可以更正）。 */
+  startBlock: EditBlock
+  /** 改工期（右把手、±1、工期欄、選結束日）：完成的不能（結束日就是完成日）。 */
+  durationBlock: EditBlock
+  /** 逾期未完成：結束日暫定今天，縮短工期不會讓它早於今天（−1 停用、右把手拖到今天以前不送）。 */
+  overdue: boolean
+  /** 開始日上限（日索引，含）：進行中／暫停＝今天；完成＝完成日；其他沒有。拖曳夾值、日期選擇器停用格子都看它。 */
+  startMaxIdx: number | null
+  /** 日期選擇器選結束日的下限（日索引，含）：開始日不能改時＝開始日（沒辦法對調）；逾期＝今天；其他沒有。 */
+  endMinIdx: number | null
+  /**
+   * 提醒、不是限制：未開始的根任務，開始日可以選今天以前——照設成計畫開始日，但最快今天開工，所以直接算延遲。
+   * 日期選擇器對準哪一端都顯示說明行；選結束日時工期從計畫開始日換算（PM 點的日子就是計畫）。
+   */
+  warnPastStart: boolean
+}
+
+/** 任務不存在時的 policy：什麼都不能改。`policyOf` 對不存在的 id 回它，各入口不必處理 undefined。 */
+export const LOCKED_POLICY: EditPolicy = Object.freeze<EditPolicy>({
+  moveBlock: 'missing',
+  startBlock: 'missing',
+  durationBlock: 'missing',
+  overdue: false,
+  startMaxIdx: null,
+  endMinIdx: null,
+  warnPastStart: false,
+})
+
+/**
+ * 任務 t 此刻的編輯限制。只讀 id、status、done、start、duration：
+ * 畫面入口傳推算後的任務；store 的 applyTaskEdit 傳套用編輯後的存的值。已開始的任務兩者這幾欄相同；
+ * 未開始的只用到 status 與 id（endMinIdx 用的 start 只對畫面有意義，applyTaskEdit 不讀它）。
+ * 要多讀別的欄位前，先確認兩種來源都對。
+ */
+export function editPolicy(t: Task, ctx: EditCtx): EditPolicy {
+  const done = t.status === 'done'
+  const startBlock: EditBlock = t.status === 'todo' && ctx.hasPred.has(t.id) ? 'predecessor' : null
+  const overdue = isOverdue(t, ctx.wd, ctx.todayIdx)
+  let startMaxIdx: number | null = null
+  if (t.status === 'doing' || t.status === 'paused') startMaxIdx = ctx.todayIdx
+  else if (done && t.done) startMaxIdx = dayIndex(t.done)
+  let endMinIdx: number | null = startBlock && t.start ? dayIndex(t.start) : null
+  if (overdue) endMinIdx = Math.max(endMinIdx ?? ctx.todayIdx, ctx.todayIdx)
+  return {
+    moveBlock: done ? 'done' : startBlock,
+    startBlock,
+    durationBlock: done ? 'done' : null,
+    overdue,
+    startMaxIdx,
+    endMinIdx,
+    warnPastStart: t.status === 'todo' && !startBlock,
+  }
+}
+
+/** 兩份 policy 的每個欄位都相同（store 的 identity 快取用：沒變就沿用舊物件，元件不會重繪）。 */
+export function samePolicy(a: EditPolicy, b: EditPolicy): boolean {
+  return (Object.keys(a) as (keyof EditPolicy)[]).every((k) => a[k] === b[k])
+}
+
+/**
+ * 起訖日期選擇器的說明行：對準開始日或結束日時，哪條規則讓某些格子停用、或選了有後果（null＝沒有）。
+ * 畫面（DatePicker）與開浮層時的估高（useMenus）用同一個判斷。
+ */
+export function taskPickerNote(p: EditPolicy, target: 'start' | 'end'): EditNote | null {
+  const block = p.startBlock ?? p.durationBlock
+  if (block) return block
+  if (target === 'start' && p.startMaxIdx !== null) return 'startAfterToday'
+  if (target === 'end' && p.overdue) return 'overdueShrink'
+  // 未開始的根任務：選了開始日、選擇器換到結束日時，說明也要留著
+  return p.warnPastStart ? 'pastStartLate' : null
+}
+
+/** 工期 ±1（卡片 ▲▼、列選單 +1／−1）的說明行：不能改工期的兩顆都停、逾期只停 −1（null＝沒有）。 */
+export function durationNote(p: EditPolicy): EditNote | null {
+  if (p.durationBlock) return p.durationBlock
+  return p.overdue ? 'overdueShrink' : null
+}
