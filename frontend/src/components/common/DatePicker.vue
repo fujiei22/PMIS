@@ -6,16 +6,19 @@
 import { computed, ref } from 'vue'
 import { useCloseOnScroll } from '@/composables/useCloseOnScroll'
 import { menuAnchors } from '@/composables/useMenus'
-import {
-  EDIT_BLOCK_TEXT,
-  MONTH_HOLIDAYS_TEXT,
-  OVERDUE_SHRINK_TEXT,
-  PICK_LIMIT_TEXT,
-} from '@/constants/dashboard'
+import { EDIT_NOTE_TEXT, MONTH_HOLIDAYS_TEXT, PICK_LIMIT_TEXT } from '@/constants/dashboard'
 import { monthGrid, WEEK_LABELS, type CalendarCell } from '@/lib/calendar'
 import { dayIndex, shiftMonth } from '@/lib/date'
 import { fmtDate, WORKDAY_UNIT } from '@/lib/format'
-import { DURATION_MAX, durationBlock, durationOf, isOverdue, startBlock } from '@/lib/schedule'
+import {
+  DURATION_MAX,
+  durationBlock,
+  durationOf,
+  isOverdue,
+  startBlock,
+  taskPickerNote,
+} from '@/lib/schedule'
+import { monthHolidayList } from '@/lib/workdays'
 import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'
@@ -55,11 +58,9 @@ function workdayOf(c: CalendarCell): Pick<Cell, 'off' | 'name'> {
   return { off: !wd.isWorkday(c.idx), name: wd.nameOf(c.idx) }
 }
 
-/** 底部那一行：這個月的假日（「M/D 名稱」以頓號連接）；沒有假日回 ''。 */
-function monthHolidays(cells: Cell[]): string {
-  const list = cells
-    .filter((c) => c.inMonth && c.off && c.name)
-    .map((c) => `${Number(c.iso.slice(5, 7))}/${c.label} ${c.name}`)
+/** 底部那一行：這個月的假日（「M/D 名稱」以頓號連接）；沒有假日回 ''。開浮層的估高（useMenus）用同一份清單。 */
+function monthHolidays(month: string): string {
+  const list = monthHolidayList(month, calendar.workdays)
   return list.length ? MONTH_HOLIDAYS_TEXT(list.join('、')) : ''
 }
 
@@ -107,12 +108,9 @@ const dNote = computed(() => {
   const t = dTask.value
   const cal = dCal.value
   if (!t || !cal) return ''
-  const block = dStartBlock.value ?? dDurationBlock.value
-  if (block) return EDIT_BLOCK_TEXT[block]
-  if (cal.target === 'start' && (t.status === 'doing' || t.status === 'paused'))
-    return PICK_LIMIT_TEXT.startAfterToday
-  if (cal.target === 'end' && dOverdue.value) return OVERDUE_SHRINK_TEXT
-  return ''
+  // 開浮層時的估高（useMenus）用同一個判斷，說明行有沒有、多長，兩邊才一致
+  const note = taskPickerNote(t, cal.target, taskStore.hasPred, calendar.workdays, clock.todayIdx)
+  return note ? EDIT_NOTE_TEXT[note] : ''
 })
 
 // 觸發元素被捲走就關（位置只在開啟時量一次）；焦點在工期輸入框時不關
@@ -141,7 +139,7 @@ const dCells = computed<Cell[]>(() => {
   }))
 })
 
-const dHolidays = computed(() => monthHolidays(dCells.value))
+const dHolidays = computed(() => (dCal.value ? monthHolidays(dCal.value.month) : ''))
 
 function dShift(n: number): void {
   const cal = ui.taskDatePicker
@@ -245,7 +243,7 @@ const iCells = computed<Cell[]>(() => {
   }))
 })
 
-const iHolidays = computed(() => monthHolidays(iCells.value))
+const iHolidays = computed(() => (iCal.value ? monthHolidays(iCal.value.month) : ''))
 /**
  * 已完成任務的完成日不能清掉：結束日就是完成日，清掉會變成「完成卻沒有完成日」
  * （規則見 docs/reference/scheduling.md〈不會生效的輸入不寫進資料〉；store 也會擋）。

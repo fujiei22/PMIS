@@ -292,6 +292,35 @@ export function durationBlock(t: Task): EditBlock {
   return t.status === 'done' ? 'done' : null
 }
 
+/** 日期選擇器與列選單的說明行原因（為什麼有東西停用）；文字在 constants 的 `EDIT_NOTE_TEXT`。 */
+export type EditNote = 'predecessor' | 'done' | 'startAfterToday' | 'overdueShrink'
+
+/**
+ * 起訖日期選擇器的說明行：對準開始日或結束日時，哪條規則讓某些格子停用（null＝沒有）。
+ * 畫面（DatePicker）與開浮層時的估高（useMenus）用同一個判斷。
+ */
+export function taskPickerNote(
+  t: Task,
+  target: 'start' | 'end',
+  hasPred: Set<string>,
+  wd: Workdays,
+  todayIdx: number,
+): EditNote | null {
+  const block = startBlock(t, hasPred) ?? durationBlock(t)
+  if (block) return block
+  if (target === 'start' && (t.status === 'doing' || t.status === 'paused'))
+    return 'startAfterToday'
+  if (target === 'end' && isOverdue(t, wd, todayIdx)) return 'overdueShrink'
+  return null
+}
+
+/** 工期 ±1（列選單）的說明行：完成的兩顆都停、逾期只停 −1（null＝沒有）。 */
+export function durationNote(t: Task, wd: Workdays, todayIdx: number): EditNote | null {
+  const block = durationBlock(t)
+  if (block) return block
+  return isOverdue(t, wd, todayIdx) ? 'overdueShrink' : null
+}
+
 /** 照工期該結束的那天（日索引）：從開始日起算第「工期」個工作天；逾期的「原定結束日」就是它。 */
 export function plannedEndIdx(t: Task, wd: Workdays): number {
   return wd.addWorkdays(dayIndex(t.start), clampDuration(t.duration))

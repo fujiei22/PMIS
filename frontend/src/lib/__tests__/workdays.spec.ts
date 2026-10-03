@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { dayIndex, isoFromIndex } from '@/lib/date'
-import { createWorkdays, isoWeekday, WEEKEND_ONLY } from '@/lib/workdays'
+import { createWorkdays, isoWeekday, monthHolidayList, WEEKEND_ONLY } from '@/lib/workdays'
 import type { WorkCalendar } from '@/types/models'
 
 /**
@@ -89,5 +89,13 @@ describe('WEEKEND_ONLY', () => {
     expect(WEEKEND_ONLY.isWorkday(d('2026-10-09'))).toBe(true)
     expect(WEEKEND_ONLY.isWorkday(d('2026-10-10'))).toBe(false)
     expect(WEEKEND_ONLY.coveredYears).toEqual([])
+  })
+})
+
+describe('monthHolidayList', () => {
+  it('這個月有名稱的非工作天，依日期排「M/D 名稱」；補班日與沒有名稱的週末不列', () => {
+    const wd = createWorkdays(CAL)
+    expect(monthHolidayList('2026-10', wd)).toEqual(['10/9 補假', '10/10 國慶日'])
+    expect(monthHolidayList('2026-11', wd)).toEqual([])
   })
 })

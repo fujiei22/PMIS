@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { anchorCalendar, anchorOptionMenu, anchorRowMenu, ROW_MENU_W } from '@/lib/anchor'
+import {
+  anchorCalendar,
+  anchorOptionMenu,
+  anchorRowMenu,
+  calendarExtra,
+  ROW_MENU_W,
+  rowMenuExtra,
+} from '@/lib/anchor'
 
 const VP = { width: 1440, height: 900 }
 
@@ -77,5 +84,42 @@ describe('anchorCalendar', () => {
     expect(anchorCalendar({ left: 1430, top: 10, bottom: 40 }, VP, 'issue').left).toBe(1440 - 266)
     expect(anchorCalendar({ left: 5, top: 800, bottom: 880 }, VP, 'task').top).toBe(800 - 336)
     expect(anchorCalendar({ left: 5, top: 100, bottom: 880 }, VP, 'task').top).toBe(8)
+  })
+})
+
+/**
+ * 新頁的日曆與列選單多了說明行、本月假日行（排程規則的停用原因，legacy 沒有）。
+ * 估高要把它們算進去，否則往上翻開時會蓋住觸發元素。
+ * 一行說明 15.4px（11px × 1.4）；日曆一行約 20 個全形字、列選單約 17 個。
+ */
+describe('浮層多出來的說明行', () => {
+  it('calendarExtra：每則說明 +4 的上下距、本月假日 +8 的上距；長的會折行', () => {
+    expect(calendarExtra([], '')).toBe(0)
+    // 17 個全形字：一行
+    expect(calendarExtra(['開始日由前置任務決定，只能調整工期'], '')).toBe(19)
+    // 「本月假日：9/25 中秋節、9/28 教師節」：一行
+    expect(calendarExtra([], '本月假日：9/25 中秋節、9/28 教師節')).toBe(23)
+    // 24 個全形字：兩行
+    expect(calendarExtra(['已完成：結束日就是完成日；改完成日請用「完成日」'], '')).toBe(35)
+  })
+
+  it('anchorCalendar：額外高度加進往下開的門檻與往上翻的位移', () => {
+    // 下方剛好 340 放得下原本的日曆，多了 20px 的說明就要往上翻
+    expect(
+      anchorCalendar({ left: 200, top: 520, bottom: 540 }, { width: 1440, height: 881 }, 'task')
+        .top,
+    ).toBe(546)
+    expect(
+      anchorCalendar({ left: 200, top: 520, bottom: 540 }, { width: 1440, height: 881 }, 'task', 20)
+        .top,
+    ).toBe(520 - 356)
+  })
+
+  it('rowMenuExtra：說明行連同上距；沒有說明是 0', () => {
+    expect(rowMenuExtra('')).toBe(0)
+    expect(rowMenuExtra('逾期中，結束日最早是今天')).toBe(21)
+    expect(anchorRowMenu({ left: 340, right: 364, top: 840, bottom: 860 }, VP, 21).top).toBe(
+      840 - 150 - 21 - 4,
+    )
   })
 })

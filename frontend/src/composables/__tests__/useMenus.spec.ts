@@ -2,12 +2,21 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { loadSample, useSampleCalendar } from '@/__tests__/loadSample'
 import { clearMenuAnchors, menuAnchors, useMenus } from '@/composables/useMenus'
-import { anchorCalendar, anchorOptionMenu, anchorRowMenu } from '@/lib/anchor'
+import { EDIT_NOTE_TEXT, MONTH_HOLIDAYS_TEXT } from '@/constants/dashboard'
+import {
+  anchorCalendar,
+  anchorOptionMenu,
+  anchorRowMenu,
+  calendarExtra,
+  rowMenuExtra,
+} from '@/lib/anchor'
+import { monthHolidayList } from '@/lib/workdays'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
 import { useProjectStore } from '@/stores/project'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+import { useWorkCalendarStore } from '@/stores/workCalendar'
 
 /** jsdom 的 getBoundingClientRect 一律回 0，換一顆能控的觸發元素。 */
 function triggerAt(left: number, top: number, bottom: number): MouseEvent {
@@ -189,5 +198,35 @@ describe('useMenus 的唯讀（F2）', () => {
       null,
     ])
     expect(menuAnchors).toEqual({ option: null, row: null, taskDate: null, issueDate: null })
+  })
+})
+
+// 新頁的日曆與列選單多了說明行、本月假日行：往上翻開時估高要算進去，才不會蓋到觸發元素
+describe('浮層估高算進說明行', () => {
+  beforeEach(async () => {
+    await loadSample()
+  })
+
+  it('t5 的起訖選擇器開在視窗底部：往上翻的位移含說明行與十月的本月假日', () => {
+    const ui = useUiStore()
+    const rect = { left: 300, top: VP.height - 40, bottom: VP.height - 20 }
+    useMenus().openTaskDatePicker(triggerAt(rect.left, rect.top, rect.bottom), 't5')
+    const holidays = monthHolidayList('2026-10', useWorkCalendarStore().workdays)
+    const extra = calendarExtra(
+      [EDIT_NOTE_TEXT.predecessor],
+      MONTH_HOLIDAYS_TEXT(holidays.join('、')),
+    )
+    expect(extra).toBeGreaterThan(30)
+    expect(ui.taskDatePicker!.top).toBe(anchorCalendar(rect, VP, 'task', extra).top)
+    expect(ui.taskDatePicker!.top).toBe(Math.max(8, rect.top - 336 - extra))
+  })
+
+  it('逾期的 t3 開列選單在視窗底部：往上翻的位移含「逾期中」說明行', () => {
+    const ui = useUiStore()
+    const rect = { left: 330, top: VP.height - 40, bottom: VP.height - 16, right: 370 }
+    useMenus().toggleRowMenu(triggerAt(rect.left, rect.top, rect.bottom), 't3')
+    const extra = rowMenuExtra(EDIT_NOTE_TEXT.overdueShrink)
+    expect(ui.rowMenu!.top).toBe(anchorRowMenu(rect, VP, extra).top)
+    expect(extra).toBeGreaterThan(0)
   })
 })

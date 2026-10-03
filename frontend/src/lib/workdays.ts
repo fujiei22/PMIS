@@ -1,4 +1,4 @@
-import { dayIndex } from '@/lib/date'
+import { dayIndex, isoFromIndex } from '@/lib/date'
 import type { WorkCalendar } from '@/types/models'
 
 /**
@@ -73,3 +73,19 @@ export function createWorkdays(cal: WorkCalendar | null): Workdays {
 
 /** 只看週六日的日曆：日曆還沒載入或載入失敗時用。 */
 export const WEEKEND_ONLY: Workdays = createWorkdays(null)
+
+/**
+ * 某個月（'YYYY-MM'）有名稱的非工作天，依日期排成「M/D 名稱」（日期選擇器底部的本月假日）。
+ * 補班日是工作天、沒有名稱的普通週末都不列。
+ */
+export function monthHolidayList(month: string, wd: Workdays): string[] {
+  const out: string[] = []
+  for (let idx = dayIndex(`${month}-01`); isoFromIndex(idx).startsWith(month); idx++) {
+    const name = wd.nameOf(idx)
+    if (name && !wd.isWorkday(idx)) {
+      const iso = isoFromIndex(idx)
+      out.push(`${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))} ${name}`)
+    }
+  }
+  return out
+}

@@ -6,9 +6,9 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useCloseOnScroll } from '@/composables/useCloseOnScroll'
 import { menuAnchors } from '@/composables/useMenus'
-import { EDIT_BLOCK_TEXT, OVERDUE_SHRINK_TEXT } from '@/constants/dashboard'
+import { EDIT_BLOCK_TEXT, EDIT_NOTE_TEXT, OVERDUE_SHRINK_TEXT } from '@/constants/dashboard'
 import { fmtWorkdays, WORKDAY_UNIT } from '@/lib/format'
-import { DURATION_MAX, durationBlock, durationOf, isOverdue } from '@/lib/schedule'
+import { DURATION_MAX, durationBlock, durationNote, durationOf, isOverdue } from '@/lib/schedule'
 import { useClockStore } from '@/stores/clock'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -43,8 +43,12 @@ const upDisabled = computed(() => !!blockText.value.both || days.value >= DURATI
 const downDisabled = computed(
   () => !!blockText.value.both || !!blockText.value.down || days.value <= 1,
 )
-/** 選單裡的說明行；沒有停用原因時不畫。 */
-const note = computed(() => blockText.value.both || blockText.value.down)
+/** 選單裡的說明行；沒有停用原因時不畫。開選單時的估高（useMenus）用同一個判斷（`durationNote`）。 */
+const note = computed(() => {
+  const t = task.value
+  const k = t ? durationNote(t, calendar.workdays, clock.todayIdx) : null
+  return k ? EDIT_NOTE_TEXT[k] : ''
+})
 const menuEl = ref<HTMLElement | null>(null)
 
 function close(): void {

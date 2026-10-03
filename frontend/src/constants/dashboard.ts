@@ -182,5 +182,13 @@ export const PICK_LIMIT_TEXT = {
   doneRequired: '已完成的任務一定有完成日；要清掉請先改狀態',
 } as const
 
+/** 說明行的文字（key 對到 lib/schedule.ts 的 EditNote）：日期選擇器、列選單共用。 */
+export const EDIT_NOTE_TEXT = {
+  predecessor: EDIT_BLOCK_TEXT.predecessor,
+  done: EDIT_BLOCK_TEXT.done,
+  startAfterToday: PICK_LIMIT_TEXT.startAfterToday,
+  overdueShrink: OVERDUE_SHRINK_TEXT,
+} as const
+
 /** 日期選擇器底部的本月假日；list 是已組好的「M/D 名稱」清單（以頓號連接）。 */
 export const MONTH_HOLIDAYS_TEXT = (list: string): string => `本月假日：${list}`

@@ -3,6 +3,7 @@ import { dayIndex } from '@/lib/date'
 import {
   applyTaskEdit,
   durationBlock,
+  durationNote,
   durationOf,
   explainSchedule,
   isLate,
@@ -13,6 +14,7 @@ import {
   predecessorIds,
   scheduleTasks,
   startBlock,
+  taskPickerNote,
   withBaselineMode,
 } from '@/lib/schedule'
 import { createWorkdays } from '@/lib/workdays'
@@ -367,5 +369,29 @@ describe('延遲與計畫進度（依基準）', () => {
     expect(isPlannedDone(task('a', { baselineEnd: '2026-10-07' }), NOW)).toBe(true)
     expect(isPlannedDone(task('a', { baselineEnd: '2026-10-08' }), NOW)).toBe(false)
     expect(isPlannedDone(task('a'), NOW)).toBe(false)
+  })
+})
+
+// 日期選擇器與列選單的說明行原因（文字在 constants 的 EDIT_NOTE_TEXT）；開浮層估高與畫面用同一個判斷
+describe('說明行原因', () => {
+  const hasPred = new Set(['b'])
+
+  it('taskPickerNote：有前置未開始 → predecessor；完成 → done；進行中對準開始日 → startAfterToday；逾期對準結束日 → overdueShrink', () => {
+    expect(taskPickerNote(task('b'), 'end', hasPred, wd, NOW)).toBe('predecessor')
+    const done = task('a', { status: 'done', done: '2026-10-08' })
+    expect(taskPickerNote(done, 'start', hasPred, wd, NOW)).toBe('done')
+    const doing = task('a', { status: 'doing', start: '2026-10-05', duration: 9 })
+    expect(taskPickerNote(doing, 'start', hasPred, wd, NOW)).toBe('startAfterToday')
+    const overdue = task('a', { status: 'doing', start: '2026-09-01', duration: 2 })
+    expect(taskPickerNote(overdue, 'end', hasPred, wd, NOW)).toBe('overdueShrink')
+    expect(taskPickerNote(task('a'), 'start', hasPred, wd, NOW)).toBeNull()
+  })
+
+  it('durationNote：完成 → done；逾期 → overdueShrink；其他沒有', () => {
+    expect(durationNote(task('a', { status: 'done', done: '2026-10-08' }), wd, NOW)).toBe('done')
+    expect(
+      durationNote(task('a', { status: 'doing', start: '2026-09-01', duration: 2 }), wd, NOW),
+    ).toBe('overdueShrink')
+    expect(durationNote(task('a'), wd, NOW)).toBeNull()
   })
 })
