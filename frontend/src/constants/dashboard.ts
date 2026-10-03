@@ -149,7 +149,7 @@ export const CALENDAR_NOTICE = {
 /** 基準鎖按鈕的文字與 title；on 是已格式化的鎖定日。 */
 export const BASELINE_LOCK_TEXT = {
   locked: '基準已鎖定',
-  unlocked: '規劃中',
+  unlocked: '基準未鎖定',
   lockedTitle: (on: string) => `基準鎖定於 ${on}；點擊解鎖`,
   unlockedTitle: '規劃中：暫時不標示延遲，原基準保留；點擊上鎖',
   /** 唯讀時只說明狀態，不叫人點。 */

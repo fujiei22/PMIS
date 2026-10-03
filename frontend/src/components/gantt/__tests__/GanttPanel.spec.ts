@@ -1,5 +1,6 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
 import { loadSample } from '@/__tests__/loadSample'
 import GanttPanel from '@/components/gantt/GanttPanel.vue'
 import { BASELINE_LOCK_TEXT, CALENDAR_NOTICE } from '@/constants/dashboard'
@@ -103,7 +104,7 @@ describe('GanttPanel 的日曆提示', () => {
   })
 })
 
-// 基準鎖按鈕：顯示目前狀態，點了開確認框（上鎖一步、解鎖兩步，見 useConfirmProps）
+// 基準鎖按鈕：緊貼任務數、狀態一眼看得出來（已鎖定藍、未鎖定琥珀），點了開確認框（見 ui.askBaselineLock）
 describe('GanttPanel 的基準鎖按鈕', () => {
   beforeEach(async () => {
     await loadSample()
@@ -122,7 +123,23 @@ describe('GanttPanel 的基準鎖按鈕', () => {
     expect(useUiStore().confirm).toEqual({ kind: 'baselineUnlock', step: 1 })
   })
 
-  it('規劃中（解鎖）：寫「規劃中」，aria-pressed=false', () => {
+  it('排在「共 N 個任務」正後面', () => {
+    const count = mountPanel().find('[data-testid="task-count"]')
+    expect((count.element.nextElementSibling as HTMLElement).dataset.testid).toBe('baseline-lock')
+  })
+
+  it('狀態用不同的樣式：上鎖 locked、解鎖 unlocked', async () => {
+    const btn = lockBtn(mountPanel())
+    expect(btn.classes()).toContain('locked')
+    expect(btn.classes()).not.toContain('unlocked')
+    const project = useProjectStore()
+    project.setMeta({ ...project.meta, baselineLockedOn: '' })
+    await nextTick()
+    expect(btn.classes()).toContain('unlocked')
+    expect(btn.classes()).not.toContain('locked')
+  })
+
+  it('解鎖：寫「基準未鎖定」，aria-pressed=false', () => {
     const project = useProjectStore()
     project.setMeta({ ...project.meta, baselineLockedOn: '' })
     const btn = lockBtn(mountPanel())
@@ -137,6 +154,9 @@ describe('GanttPanel 的基準鎖按鈕', () => {
     const btn = lockBtn(mountPanel())
     expect(btn.text()).toContain(BASELINE_LOCK_TEXT.locked)
     expect(btn.attributes('disabled')).toBeDefined()
+    // 唯讀照樣上狀態色（只是不能點），不轉灰
+    expect(btn.classes()).toContain('locked')
+    expect(btn.classes()).not.toContain('blocked')
   })
 
   it('日曆載入失敗而且解鎖中：停用，title 說明暫時不能上鎖', () => {
@@ -146,5 +166,7 @@ describe('GanttPanel 的基準鎖按鈕', () => {
     const btn = lockBtn(mountPanel())
     expect(btn.attributes('disabled')).toBeDefined()
     expect(btn.attributes('title')).toBe(BASELINE_LOCK_TEXT.calendarError)
+    // 能編輯卻不能上鎖：轉灰（blocked）
+    expect(btn.classes()).toContain('blocked')
   })
 })

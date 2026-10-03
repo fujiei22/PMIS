@@ -168,6 +168,8 @@ const lockText = computed(() =>
 const lockDisabled = computed(
   () => !ui.canEdit || (!baselineLocked.value && calendar.status !== 'ready'),
 )
+/** 能編輯卻暫時不能上鎖（日曆不能用）：按鈕轉灰。唯讀只是不能點，照樣上狀態色。 */
+const lockBlocked = computed(() => ui.canEdit && lockDisabled.value)
 /** 說明：狀態（含鎖定日）＋點了會做什麼；唯讀時只說狀態，日曆失敗時說為什麼不能上鎖。 */
 const lockTitle = computed(() => {
   const on = fmtDate(project.meta.baselineLockedOn)
@@ -282,28 +284,31 @@ function toggleAllGroups(): void {
       <h2 class="panel-title">專案時程</h2>
       <!-- 計數字樣在 filterStore，與看板共用一份（legacy :3532；review m4） -->
       <div class="panel-count" data-testid="task-count">{{ filter.taskCountLabel }}</div>
-      <!-- 日曆提示兼撐開的空白：沒有提示時是空的；放不下時先縮、尾端省略，全文在 title -->
-      <div class="cal-notice" data-testid="cal-notice" :title="calendarNotice || undefined">
-        {{ calendarNotice }}
-      </div>
-      <!-- 基準鎖：顯示目前狀態，點了開確認框（上鎖一步、解鎖兩步，見 useConfirmProps）；窄版只留圖示 -->
+      <!--
+        基準鎖：緊貼任務數，狀態用顏色與鎖頭形狀區分（已鎖定藍、未鎖定琥珀）；
+        點了開確認框（解鎖一步；上鎖時跟原基準有差異才問，見 ui.askBaselineLock）；窄版只留圖示
+      -->
       <button
         class="mini lock-btn"
         data-testid="baseline-lock"
-        :class="{ locked: baselineLocked }"
+        :class="{ locked: baselineLocked, unlocked: !baselineLocked, blocked: lockBlocked }"
         :aria-pressed="baselineLocked"
         :aria-label="lockText"
         :disabled="lockDisabled"
         :title="lockTitle"
         @click="ui.askBaselineLock()"
       >
-        <svg class="lock-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-          <rect x="2" y="5.5" width="8" height="5.5" rx="1.2" />
-          <path v-if="baselineLocked" d="M4 5.5V4a2 2 0 0 1 4 0v1.5" />
-          <path v-else d="M4 5.5V3.5a2 2 0 0 1 4 0" />
+        <svg class="lock-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path v-if="baselineLocked" class="lock-shackle" d="M8 11V7a4 4 0 0 1 8 0v4" />
+          <path v-else class="lock-shackle" d="M8 11V7a4 4 0 0 1 7.8-1.3" />
+          <rect class="lock-body" x="4" y="11" width="16" height="10" rx="2" />
         </svg>
         <span class="lock-text">{{ lockText }}</span>
       </button>
+      <!-- 日曆提示兼撐開的空白：沒有提示時是空的；放不下時先縮、尾端省略，全文在 title -->
+      <div class="cal-notice" data-testid="cal-notice" :title="calendarNotice || undefined">
+        {{ calendarNotice }}
+      </div>
       <div class="zoom">
         <input
           type="range"
@@ -543,27 +548,65 @@ function toggleAllGroups(): void {
   }
 }
 
-/* 基準鎖：沿用 .mini 的外框與 hover；鎖頭是線條圖示，跟著字色 */
+/*
+ * 基準鎖：沿用 .mini 的外框，狀態要一眼看得出來——
+ * 已鎖定是藍（計畫固定，延遲照基準算）；未鎖定是琥珀（規劃中，不標延遲；沿用暫停狀態那組琥珀）。
+ * 鎖頭實心，鎖環閉合／打開跟著狀態，顏色跟著字色。
+ */
 .lock-btn {
   gap: var(--sp-3);
 }
 
+.mini.lock-btn.locked {
+  color: var(--accent);
+  background: var(--accent-tint-1);
+  border-color: var(--accent-tint-3);
+}
+
+.mini.lock-btn.unlocked {
+  color: var(--ist-paused-fg);
+  background: var(--ist-paused-bg);
+  border-color: var(--ist-paused-bd);
+}
+
+@media (hover: hover) {
+  .mini.lock-btn.locked:not(:disabled):hover {
+    color: var(--accent-hover);
+    background: var(--accent-tint-2);
+  }
+
+  .mini.lock-btn.unlocked:not(:disabled):hover {
+    border-color: var(--st-paused-dot);
+  }
+}
+
 .lock-icon {
-  width: 12px;
-  height: 12px;
-  flex: 0 0 12px;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+}
+
+.lock-body {
+  fill: currentColor;
+}
+
+.lock-shackle {
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.4;
+  stroke-width: 2.4;
   stroke-linecap: round;
 }
 
-/* 停用（唯讀、日曆失敗時不能上鎖）：同其他 :disabled——字轉淡、游標不變、沒有 hover */
+/* 停用：游標不變、沒有 hover（上面的 hover 只給 :not(:disabled)）。唯讀照樣上狀態色 */
 .mini.lock-btn:disabled {
+  cursor: default;
+}
+
+/* 能編輯卻暫時不能上鎖（日曆失敗）：同其他 :disabled——字轉淡、外框回中性 */
+.mini.lock-btn.blocked {
   color: var(--text-placeholder);
   background: var(--surface-1);
   border-color: var(--border-control);
-  cursor: default;
 }
 
 /* 左欄展開鈕：和欄頭按鈕同一套外框的正方形；單一圖示旋轉表示方向（同其他收合箭頭，A24） */
