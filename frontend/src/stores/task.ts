@@ -1,18 +1,27 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { api } from '@/api'
 import type { ProjectEvent } from '@/api/types'
-import { newId } from '@/lib/id'
 import {
   applyTaskEdit,
-  explainSchedule,
+  editPolicy,
+  LOCKED_POLICY,
+  samePolicy,
+  type EditCtx,
+  type EditPolicy,
+} from '@/lib/editPolicy'
+import { newId } from '@/lib/id'
+import {
   predecessorIds,
   projectRange,
   reachable,
   sameTask,
   SCHEDULE_FIELDS,
+  scheduleProject,
   scheduleWithPlan,
+  type ScheduleMeta,
 } from '@/lib/schedule'
+import { countTasks, leafTasksOf, type TaskCounts } from '@/lib/taskCounts'
 import {
   applyServerValue,
   clearDirty,
@@ -49,7 +58,7 @@ const GROUP_ORDER_KEY = 'groups:order'
  * **存與算的分工**（規則見 docs/reference/scheduling.md）：
  * - `inputs` 是存的值——使用者設定的工期、根任務的開始日（計畫開始日存在 `baselineStart`）、狀態與實際日期，
  *   以及最後一次寫回的起訖與計畫。
- * - `tasks` 是畫面看的值——用今天與工作日曆把 `inputs` 排一次，再填上計畫起訖（`scheduleWithPlan`）。
+ * - `tasks` 是畫面看的值——用今天與工作日曆把 `inputs` 排一次，再填上計畫起訖（`scheduleProject`，同一趟也算出排程說明）。
  *   跨日、日曆晚到都會自動重排，但**不寫回**；下一次編輯時連同漂移的那幾筆一起送。
  * - 寫回送的是推算結果與計畫（`commitSchedule`），後端不重算（契約 A）。
  *
@@ -72,29 +81,27 @@ export const useTaskStore = defineStore('task', () => {
   const depTracker = createTracker<Dependency>()
 
   /**
-   * 有前置的任務 id（未開始時開始日由前置決定，`applyTaskEdit` 會丟掉它的 start）。
-   * 編輯限制（`startBlock`／`moveBlock`）的呼叫端都讀這一份，不各自重建。
-   */
-  const hasPred = computed(() => predecessorIds(deps.value))
-
-  /**
    * 推算結果的 identity 快取：id → 上一次的輸入物件與輸出物件。
-   * 跨日漂移時 `scheduleWithPlan` 每次都回新物件；輸入是同一個、起訖與基準也相同時沿用上一次的輸出，
+   * 跨日漂移時 `scheduleProject` 每次都回新物件；輸入是同一個、起訖與基準也相同時沿用上一次的輸出，
    * 改一筆任務不會讓其他漂移中的任務整列重繪（spec 目標 7）。
    */
   let scheduleCache = new Map<string, { src: Task; out: Task }>()
 
-  /** 畫面看的任務：用今天排過、填上計畫起訖（見檔頭）。順序同 `inputs`。 */
-  const tasks = computed<Task[]>(() => {
-    const src = inputs.value
-    const scheduled = scheduleWithPlan(
-      src,
+  /** 一次排出推算起訖、計畫、說明（`scheduleProject`）；`tasks`（加 identity 快取）、`scheduleMeta` 都從這裡取。 */
+  const scheduled = computed(() =>
+    scheduleProject(
+      inputs.value,
       deps.value,
       useWorkCalendarStore().workdays,
       useClockStore().todayIdx,
-    )
+    ),
+  )
+
+  /** 畫面看的任務：用今天排過、填上計畫起訖（見檔頭）。順序同 `inputs`。 */
+  const tasks = computed<Task[]>(() => {
+    const src = inputs.value
     const next = new Map<string, { src: Task; out: Task }>()
-    const out = scheduled.map((t, i) => {
+    const out = scheduled.value.tasks.map((t, i) => {
       const input = src[i]!
       const hit = scheduleCache.get(t.id)
       const kept = t !== input && hit && hit.src === input && sameDates(hit.out, t) ? hit.out : t
@@ -117,9 +124,61 @@ export const useTaskStore = defineStore('task', () => {
 
   /** id → 物件的索引；legacy 每次 render 重建一次 Map（:1901），這裡交給 computed 快取。 */
   const taskIndex = computed(() => new Map(tasks.value.map((t) => [t.id, t])))
-  /** id → 存的值（`explain` 要看原始輸入；每條甘特條都會查，不用線性搜尋）。 */
+  /** id → 存的值（pinNewRoots 要看原始輸入）。 */
   const inputIndex = computed(() => new Map(inputs.value.map((t) => [t.id, t])))
   const groupIndex = computed(() => new Map(groups.value.map((g) => [g.id, g])))
+
+  /** 每個任務的起訖是哪條規則決定的（跟起訖同一趟算出；也公開給 devtools 看）。 */
+  const scheduleMeta = computed(() => scheduled.value.meta)
+
+  /**
+   * 有前置的任務 id：排程真的用到的前置（兩端都存在、沒被環略過；`Scheduled.hasPred`）。
+   * 編輯限制的材料；畫面讀 `policyOf`，不讀這個。
+   */
+  const hasPred = computed(() => scheduled.value.hasPred)
+
+  // 相依有環是資料錯誤（addDep 會擋；接後端後兩個分頁同時加反向相依就可能發生）：排程照 topoOrder
+  // 只略過最少的相依、不中斷畫面，這裡在被略過的相依改變時警告一次（拖曳的每個 tick 不重複洗版）。
+  // 所有環境都印，比照總覽對孤兒專案的處理（stores/overview.ts）
+  watch(
+    // 用 JSON 當簽名：id 裡有什麼字元都不會讓兩份清單看起來一樣
+    () => JSON.stringify(scheduled.value.skipped),
+    (sig) => {
+      if (sig === '[]') return
+      // 只印 id：任務名稱是使用者輸入的自由文字，可能含控制字元或個資，不落 log
+      const skipped = scheduled.value.skipped
+      const list = skipped.map((d) => `${d.from} → ${d.to}`).join('、')
+      console.warn(
+        `[schedule] 專案 ${useProjectStore().meta.id} 的相依有環，排程略過 ${skipped.length} 條：${list}（規則見 docs/reference/scheduling.md〈開始日〉）`,
+      )
+    },
+  )
+
+  /** 編輯限制的情境（`lib/editPolicy.ts`）；store 內部用，不公開。 */
+  const editCtx = computed<EditCtx>(() => ({
+    hasPred: hasPred.value,
+    wd: useWorkCalendarStore().workdays,
+    todayIdx: useClockStore().todayIdx,
+  }))
+
+  /** policy 的 identity 快取：欄位全同就沿用上一次的物件，改一筆不會讓其他卡片、條、選單重算重繪。 */
+  let policyCache = new Map<string, EditPolicy>()
+  const policies = computed(() => {
+    const next = new Map<string, EditPolicy>()
+    for (const t of tasks.value) {
+      const p = editPolicy(t, editCtx.value)
+      const prev = policyCache.get(t.id)
+      next.set(t.id, prev && samePolicy(prev, p) ? prev : p)
+    }
+    policyCache = next
+    return next
+  })
+
+  /** 計數與看板的對象：最底層任務（`leafTasksOf`；目前兩層，等於全部任務）。 */
+  const leafTasks = computed(() => leafTasksOf(tasks.value))
+
+  /** 摘要卡的計數（`countTasks`，跟總覽同一個定義）。 */
+  const counts = computed<TaskCounts>(() => countTasks(tasks.value, useClockStore().todayIdx))
 
   /** 推算後的任務（畫面看的值）。 */
   function taskById(id: string): Task | undefined {
@@ -198,6 +257,7 @@ export const useTaskStore = defineStore('task', () => {
     inputs.value = []
     // 上一個專案（上一位使用者）的推算結果不留著
     scheduleCache = new Map()
+    policyCache = new Map()
     deps.value = []
     clearTracker(taskTracker)
     clearTracker(groupTracker)
@@ -615,7 +675,7 @@ export const useTaskStore = defineStore('task', () => {
 
   /** 把編輯套到存的值（`applyTaskEdit`：狀態副作用、無效輸入丟掉、夾值）；有變才標 dirty。 */
   function editInput(id: string, patch: Partial<Task>): boolean {
-    const next = applyTaskEdit(inputs.value, hasPred.value, id, patch, useClockStore().todayIso)
+    const next = applyTaskEdit(inputs.value, editCtx.value, id, patch)
     if (next === inputs.value) return false
     inputs.value = next
     // review F2：這個值只在本地（拖曳的 tick、改名的 debounce），送出前不准被 reconcile 蓋掉
@@ -796,7 +856,11 @@ export const useTaskStore = defineStore('task', () => {
    * 不記的話，根任務的開始日會退回很久以前存的值（或今天），刪一條相依整段排程與計畫就跳一次。
    */
   function pinNewRoots(candidates: string[], keep: (d: Dependency) => boolean): string[] {
-    const remaining = predecessorIds(deps.value.filter(keep))
+    // 只認兩端都存在的相依（跟排程器一樣）：懸空的相依不能讓任務「還有前置」而漏釘
+    const remaining = predecessorIds(
+      deps.value.filter(keep),
+      new Set(inputs.value.map((t) => t.id)),
+    )
     const pins = new Map<string, Pick<Task, 'start' | 'baselineStart'>>()
     for (const id of new Set(candidates)) {
       const t = taskById(id)
@@ -964,17 +1028,17 @@ export const useTaskStore = defineStore('task', () => {
       .filter((t): t is Task => !!t)
   }
 
+  /**
+   * 任務此刻的編輯限制（`lib/editPolicy.ts`）；任務不存在回 `LOCKED_POLICY`（什麼都不能改）。
+   * 甘特條、拖曳、日期選擇器、卡片、列選單都讀這裡，不自己判斷；欄位沒變時回同一個物件。
+   */
+  function policyOf(id: string): EditPolicy {
+    return policies.value.get(id) ?? LOCKED_POLICY
+  }
+
   /** 起訖是哪條規則決定的（甘特提示、屬性面板用）；任務不存在回 null。 */
-  function explain(id: string): ReturnType<typeof explainSchedule> {
-    const input = inputIndex.value.get(id)
-    if (!input) return null
-    return explainSchedule(
-      input,
-      taskIndex.value,
-      deps.value,
-      useWorkCalendarStore().workdays,
-      useClockStore().todayIdx,
-    )
+  function explain(id: string): ScheduleMeta | null {
+    return scheduleMeta.value.get(id) ?? null
   }
 
   // ── 事件（契約 B）────────────────────────────────────────────────────────
@@ -1010,7 +1074,6 @@ export const useTaskStore = defineStore('task', () => {
     inputs,
     tasks,
     deps,
-    hasPred,
     taskById,
     groupById,
     load,
@@ -1044,5 +1107,9 @@ export const useTaskStore = defineStore('task', () => {
     predecessors,
     successors,
     explain,
+    policyOf,
+    scheduleMeta,
+    leafTasks,
+    counts,
   }
 })

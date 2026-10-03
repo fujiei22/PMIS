@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { dayIndex } from '@/lib/date'
-import { isLate, isPlannedDone, planTasks, scheduleTasks, scheduleWithPlan } from '@/lib/schedule'
+import { dayIndex, isoFromIndex } from '@/lib/date'
+import {
+  isLate,
+  isPlannedDone,
+  planTasks,
+  scheduleProject,
+  scheduleTasks,
+  scheduleWithPlan,
+  type ScheduleMeta,
+} from '@/lib/schedule'
 import { createWorkdays } from '@/lib/workdays'
 import { sampleCalendar } from '@/mocks/sampleCalendar'
 import { sampleProject } from '@/mocks/sampleProject'
@@ -15,6 +23,7 @@ const TODAY = dayIndex('2026-09-18')
  * spec 目標 5：載入不寫回，資料以後端為準。畫面上的任務是用今天重排的結果（規則見
  * docs/reference/scheduling.md），所以範例存的起訖必須「已經是 2026-09-18 排過的樣子」——
  * 否則 dev 與測試一載入畫面就跟存的值不一樣。有人改了範例的日期、工期或相依而沒對齊，這裡會先紅。
+ * 也釘住範例在三個檢查點的排程說明（每個任務的開始日、結束日由哪條規則決定）。
  */
 describe('sampleProject 一致性', () => {
   it('2026-09-18 照新排程重排不會改動任何任務（存的起訖就是推算結果）', () => {
@@ -130,4 +139,66 @@ describe('sampleProject 一致性', () => {
     }
     expect(count).toBeGreaterThan(0)
   })
+})
+
+/** 說明寫成一行：「任務 開始規則[:前置] 結束規則[:原定結束 MM-DD]」。 */
+function fmtMeta(id: string, m: ScheduleMeta): string {
+  const start = m.predId ? `${m.startBy}:${m.predId}` : m.startBy
+  const end =
+    m.originalEnd !== undefined ? `${m.endBy}:${isoFromIndex(m.originalEnd).slice(5)}` : m.endBy
+  return `${id} ${start} ${end}`
+}
+
+/**
+ * 範例在三個檢查點的排程說明（開始日、結束日由哪條規則決定；規則見 docs/reference/scheduling.md〈開始日〉〈結束日〉）。
+ * 排程規則改了，這張表跟著變是預期的：先改 scheduling.md，再看測試的 diff 逐筆核對、更新這裡（格式見 fmtMeta）。
+ * 只是重構卻讓這裡紅，就是行為變了。09-19、09-22 只有 t8 不同（09-18 該結束卻還沒完成，變成逾期）；
+ * 規則一變、三天的差異多了，就拆成三張表。
+ */
+const META_0918 = [
+  't1 actual done',
+  't2 actual done',
+  't3 actual overdue:09-16',
+  't4 actual duration',
+  't5 pred:t4 duration',
+  't6 pred:t5 duration',
+  't7 actual done',
+  't8 actual duration',
+  't9 actual duration',
+  't10 pred:t9 duration',
+  't11 pred:t10 duration',
+  't12 pred:t11 duration',
+  't13 actual overdue:09-11',
+  't14 actual duration',
+  't15 pred:t14 duration',
+  't16 pred:t15 duration',
+  't17 pred:t16 duration',
+  't18 actual duration',
+  't19 pred:t18 duration',
+  't20 pred:t19 duration',
+  't21 pred:t20 duration',
+  't22 pred:t21 duration',
+  't23 pred:t22 duration',
+  't24 root duration',
+  't25 pred:t24 duration',
+  't26 pred:t25 duration',
+  't27 pred:t23 duration',
+  't28 actual done',
+  't29 actual duration',
+  't30 root duration',
+]
+const META_LATER = META_0918.map((s) => (s.startsWith('t8 ') ? 't8 actual overdue:09-18' : s))
+
+describe('排程說明（scheduleProject 的 meta）', () => {
+  for (const [day, want] of [
+    ['2026-09-18', META_0918],
+    ['2026-09-19', META_LATER],
+    ['2026-09-22', META_LATER],
+  ] as const) {
+    it(`${day}：每個任務的開始、結束規則；沒有被略過的相依`, () => {
+      const r = scheduleProject(sampleProject.tasks, sampleProject.deps, WD, dayIndex(day))
+      expect(sampleProject.tasks.map((t) => fmtMeta(t.id, r.meta.get(t.id)!))).toEqual(want)
+      expect(r.skipped).toEqual([])
+    })
+  }
 })

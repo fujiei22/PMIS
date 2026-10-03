@@ -10,21 +10,14 @@ import { EDIT_NOTE_TEXT, MONTH_HOLIDAYS_TEXT, PICK_LIMIT_TEXT } from '@/constant
 import { monthGrid, WEEK_LABELS, type CalendarCell } from '@/lib/calendar'
 import { dayIndex, shiftMonth } from '@/lib/date'
 import { fmtDate, WORKDAY_UNIT } from '@/lib/format'
-import {
-  DURATION_MAX,
-  durationBlock,
-  durationOf,
-  isOverdue,
-  startBlock,
-  taskPickerNote,
-} from '@/lib/schedule'
+import { LOCKED_POLICY, taskPickerNote, type EditPolicy } from '@/lib/editPolicy'
+import { DURATION_MAX, durationOf } from '@/lib/schedule'
 import { monthHolidayList } from '@/lib/workdays'
 import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 import { useWorkCalendarStore } from '@/stores/workCalendar'
-import type { Task } from '@/types/models'
 
 const clock = useClockStore()
 const ui = useUiStore()
@@ -75,41 +68,31 @@ const dCal = computed(() => ui.taskDatePicker)
 const dTask = computed(() => (dCal.value ? taskStore.taskById(dCal.value.id) : undefined))
 const dCalEl = ref<HTMLElement | null>(null)
 
+/** 這個任務此刻的編輯限制（`lib/editPolicy.ts`）。 */
+const dPolicy = computed(() => (dTask.value ? taskStore.policyOf(dTask.value.id) : LOCKED_POLICY))
 /** 開始日能不能改：有前置、未開始的不能（開始日由前置決定）。 */
-const dStartBlock = computed(() =>
-  dTask.value ? startBlock(dTask.value, taskStore.hasPred) : null,
-)
+const dStartBlock = computed(() => dPolicy.value.startBlock)
 /** 工期 / 結束日能不能改：已完成的不能（結束日就是完成日）。 */
-const dDurationBlock = computed(() => (dTask.value ? durationBlock(dTask.value) : null))
-/** 逾期未完成：結束日暫定今天，選今天以前當結束日不會生效。 */
-const dOverdue = computed(
-  () => !!dTask.value && isOverdue(dTask.value, calendar.workdays, clock.todayIdx),
-)
+const dDurationBlock = computed(() => dPolicy.value.durationBlock)
 /** 工期欄顯示的有效工期（工作天）。 */
 const dDays = computed(() => (dTask.value ? durationOf(dTask.value, calendar.workdays) : 0))
 
 /**
- * 這一格當成目前填的那一端，會不會被排程規則吃掉（規則見 docs/reference/scheduling.md）：
- * - 填開始日：進行中 / 暫停的不晚於今天；已完成的不晚於完成日。
- * - 填結束日：開始日不能改時，不能點在開始日之前（沒辦法對調）；逾期時結束日最早是今天。
+ * 這一格當成目前填的那一端，會不會被排程規則吃掉（規則見 docs/reference/scheduling.md〈編輯限制〉）：
+ * 填開始日看開始日上限（進行中／暫停：今天；完成：完成日），填結束日看結束日下限（開始日不能改：開始日；逾期：今天）。
+ * 未開始的根任務開始日沒有下限：今天以前照設、直接算延遲（說明行提醒）。
  */
-function dDisabled(idx: number, t: Task, target: 'start' | 'end'): boolean {
-  if (target === 'start') {
-    if (t.status === 'doing' || t.status === 'paused') return idx > clock.todayIdx
-    if (t.status === 'done' && t.done) return idx > dayIndex(t.done)
-    return false
-  }
-  if (dStartBlock.value && idx < dayIndex(t.start)) return true
-  return dOverdue.value && idx < clock.todayIdx
+function dDisabled(idx: number, p: EditPolicy, target: 'start' | 'end'): boolean {
+  if (target === 'start') return p.startMaxIdx !== null && idx > p.startMaxIdx
+  return p.endMinIdx !== null && idx < p.endMinIdx
 }
 
-/** 說明行：為什麼有東西停用（看得見的一行，觸控看不到 title）；沒有限制時是 ''。 */
+/** 說明行：為什麼有東西停用、或選了有後果（看得見的一行，觸控看不到 title）；沒有時是 ''。 */
 const dNote = computed(() => {
-  const t = dTask.value
   const cal = dCal.value
-  if (!t || !cal) return ''
+  if (!dTask.value || !cal) return ''
   // 開浮層時的估高（useMenus）用同一個判斷，說明行有沒有、多長，兩邊才一致
-  const note = taskPickerNote(t, cal.target, taskStore.hasPred, calendar.workdays, clock.todayIdx)
+  const note = taskPickerNote(dPolicy.value, cal.target)
   return note ? EDIT_NOTE_TEXT[note] : ''
 })
 
@@ -135,7 +118,7 @@ const dCells = computed<Cell[]>(() => {
     dim: !c.inMonth,
     inRange: c.idx > sIdx && c.idx < eIdx,
     picked: c.idx === sIdx || c.idx === eIdx,
-    disabled: dDisabled(c.idx, t, cal.target),
+    disabled: dDisabled(c.idx, dPolicy.value, cal.target),
   }))
 })
 
@@ -162,6 +145,7 @@ function dAim(target: 'start' | 'end'): void {
  * 選一天（規則見 docs/reference/scheduling.md）。legacy :3470-3482
  * - 填開始日：只送開始日；工期不變，結束日由工期推算（等於整段平移）。
  * - 填結束日：換算成工期（開始日到那天的工作天數）；點在開始日之前、而且開始日能改時，起訖對調。
+ *   未開始的根任務從計畫開始日算（PM 點的日子就是計畫），其他任務從畫面上的開始日算。
  * 選完換填另一端；另一端不能改時留在原處。停用的格子不動作。
  */
 function dPick(cell: Cell): void {
@@ -169,7 +153,9 @@ function dPick(cell: Cell): void {
   const t = dTask.value
   if (!cal || !t || cell.disabled) return
   const wd = calendar.workdays
-  const sIdx = dayIndex(t.start)
+  // 換算工期的起點（policy 的 endBaseIdx）：未開始的根任務被順延到今天時是計畫開始日——PM 點的日子就是計畫；
+  // 其他是畫面上的開始日（已開始的是實際開工日；有前置的開始日由前置決定）
+  const sIdx = dPolicy.value.endBaseIdx ?? dayIndex(t.start)
   const wasStart = cal.target === 'start'
   cal.month = cell.iso.slice(0, 7)
   if (wasStart) {

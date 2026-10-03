@@ -4,7 +4,7 @@ import { useDomRegistry } from '@/composables/useDomRegistry'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex, isoFromIndex } from '@/lib/date'
 import { parseDuration } from '@/lib/easing'
-import { DURATION_MAX, durationBlock, isOverdue, isStarted, moveBlock } from '@/lib/schedule'
+import { DURATION_MAX } from '@/lib/schedule'
 import { useClockStore } from '@/stores/clock'
 import { useRowsStore } from '@/stores/rows'
 import { useSelectionStore } from '@/stores/selection'
@@ -140,8 +140,9 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   /**
    * 條的移動與左右縮放：換算成整數天再寫回 store。legacy :2486-2496。
    * 規則見 docs/reference/scheduling.md〈編輯限制〉，送出的都是「存的值」，畫面由排程推算：
-   * - 移動：改開始日（工期不變）；進行中／暫停的開始日不晚於今天。
-   * - 左把手：改開始日並重算工期，結束日留在原地；未開始的不早於今天、進行中的不晚於今天。
+   * - 移動：改開始日（工期不變）；進行中／暫停的開始日不晚於今天，未開始的可以拖到今天以前。
+   * - 左把手：改開始日並重算工期，結束日留在原地；進行中／暫停的不晚於今天，未開始的可以拉到今天以前
+   *   （推算仍從今天開始，條的右端往右長、算延遲）。
    * - 右把手：換算成工期（開始日到拖到那天的工作天數）；逾期中結束日最早是今天，拖到今天以前不送。
    *
    * review C1：每個 tick **只改本地**（`applyLocalPatch`），
@@ -181,28 +182,28 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     delta: number,
   ): Partial<Task> | null {
     const wd = useWorkCalendarStore().workdays
-    const today = useClockStore().todayIdx
-    const active = t.status === 'doing' || t.status === 'paused'
+    const p = taskStore.policyOf(t.id)
     if (d.kind === 'move') {
-      const s = active ? Math.min(d.s0 + delta, today) : d.s0 + delta
-      return { start: isoFromIndex(s) }
+      // 進行中／暫停的開始日不晚於今天；未開始的可以拖到今天以前（計畫照設，推算仍從今天開始，所以算延遲）
+      const s = d.s0 + delta
+      return { start: isoFromIndex(p.startMaxIdx === null ? s : Math.min(s, p.startMaxIdx)) }
     }
     if (d.kind === 'resL') {
-      // 左把手不能越過結束日
+      // 左把手不能越過結束日；進行中／暫停不晚於今天。未開始的可以拉到今天以前：
+      // 計畫＝拉到的那天到拉之前畫面上的結束日，推算仍從今天開始，所以條的右端往右長、算延遲
       let s = Math.min(d.s0 + delta, d.e0)
-      if (!isStarted(t)) s = Math.max(s, wd.onOrAfter(today))
-      else if (active) s = Math.min(s, today)
+      if (p.startMaxIdx !== null) s = Math.min(s, p.startMaxIdx)
       // 工期照夾過的開始日算，結束日才會留在原地（開始日落在非工作天時推算會順延，數的也是之後的工作天）
       return { start: isoFromIndex(s), duration: Math.max(1, wd.countWorkdays(s, d.e0)) }
     }
-    // 右把手不能越過開始日
+    // 右把手不能越過開始日；逾期時結束日最早是今天，拖到今天以前不送
     const e = Math.max(d.e0 + delta, d.s0)
-    if (isOverdue(t, wd, today) && e < today) return null
+    if (p.overdue && e < useClockStore().todayIdx) return null
     return { duration: Math.min(DURATION_MAX, Math.max(1, wd.countWorkdays(d.s0, e))) }
   }
 
   /**
-   * 被拖的那一端真的落在拖到的那一天（資料寫完之後看）：沒落在那天表示被夾住了——開始日不能早於今天（未開始）或晚於今天（進行中）、
+   * 被拖的那一端真的落在拖到的那一天（資料寫完之後看）：沒落在那天表示被夾住了——未開始的推算開始日最早是今天、進行中的開始日不晚於今天、
    * 左把手不能越過結束日、右把手不能越過開始日、逾期中結束日最早是今天——那一端停在限制上，
    * 再補「還沒湊滿一天的差」就會在限制附近來回鋸齒（review）。
    * 落點是非工作天時，推算會順延到下一個工作天，也不算落在那天。
@@ -447,11 +448,10 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   function startBar(e: PointerEvent, id: string, kind: 'move' | 'resL' | 'resR'): void {
     // 唯讀（F2）：不開始、也不 stopPropagation，按在條上照樣落到畫布去平移
     if (!ui.canEdit || e.button !== 0) return
+    // 排程規則擋下的（開始日由前置決定、已完成、任務不存在）同樣不開始、不攔下事件（規則見 docs/reference/scheduling.md〈編輯限制〉）
+    const p = taskStore.policyOf(id)
     const t = taskStore.taskById(id)
-    if (!t) return
-    // 排程規則擋下的（開始日由前置決定、已完成）同樣不開始、不攔下事件（規則見 docs/reference/scheduling.md〈編輯限制〉）
-    const blocked = kind === 'resR' ? durationBlock(t) : moveBlock(t, taskStore.hasPred)
-    if (blocked) return
+    if (!t || (kind === 'resR' ? p.durationBlock : p.moveBlock)) return
     e.stopPropagation()
     begin(
       {

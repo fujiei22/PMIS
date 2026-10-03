@@ -7,7 +7,7 @@ import { api, mockApi as maybeMockApi } from '@/api'
 import { provideDomRegistry, registerEl, type DomRegistry } from '@/composables/useDomRegistry'
 import { usePointerDrag, type PointerDrag } from '@/composables/usePointerDrag'
 import { dayIndex, isoFromIndex } from '@/lib/date'
-import { scheduleTasks } from '@/lib/schedule'
+import { isLate, scheduleTasks } from '@/lib/schedule'
 import { createWorkdays } from '@/lib/workdays'
 import { sampleCalendar } from '@/mocks/sampleCalendar'
 import { sampleProject } from '@/mocks/sampleProject'
@@ -511,6 +511,22 @@ describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）',
    * 縮放的自動捲動補償（D6 延伸）只在被拖的那一端真的落在拖到的那一天時才補（review）：
    * 被夾住（前置任務限制開始日、或已經縮到一天）時那一端停在限制上，再補就會在限制附近來回鋸齒、或短於一天。
    */
+  it('縮放補償：進行中的 t18 左把手往右拉過今天時不補（開始日被上限夾在今天，條不平移、寬度不補）', () => {
+    const tasks = useTaskStore()
+    const { api: drag, registry, scroller, unmount } = mountWithScroller()
+    const bar = document.createElement('div')
+    registerEl(registry.bars, 't18')(bar)
+    const dw = useUiStore().dayWidth
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't18', 'resL')
+    scroller.scrollLeft = 10
+    document.dispatchEvent(pointer('pointermove', 500 + 3 * dw, 0))
+    expect(tasks.taskById('t18')!.start, '開始日夾在今天').toBe('2026-09-18')
+    expect(bar.style.transform).toBe('')
+    expect(bar.style.getPropertyValue('--res-w')).toBe('')
+    document.dispatchEvent(pointer('pointerup', 500 + 3 * dw, 0))
+    unmount()
+  })
+
   it('縮放補償：左把手被前置任務擋住時不補（條不平移、寬度不補）', () => {
     const tasks = useTaskStore()
     const { api: drag, registry, scroller, unmount } = mountWithScroller()
@@ -525,6 +541,23 @@ describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）',
     expect(bar.style.transform).toBe('')
     expect(bar.style.getPropertyValue('--res-w')).toBe('')
     document.dispatchEvent(pointer('pointerup', 1000 - 20 * 32, 0))
+    unmount()
+  })
+
+  it('縮放補償：未開始的 t24 左把手拉過今天時不補（推算開始日停在今天，條不平移、寬度不補）', () => {
+    const tasks = useTaskStore()
+    const { api: drag, registry, scroller, unmount } = mountWithScroller()
+    const bar = document.createElement('div')
+    registerEl(registry.bars, 't24')(bar)
+    const dw = useUiStore().dayWidth
+    const back = dayIndex(tasks.taskById('t24')!.start) - dayIndex('2026-09-10')
+    drag.startBar(pointer('pointerdown', 2000, 0) as unknown as PointerEvent, 't24', 'resL')
+    scroller.scrollLeft = -10
+    document.dispatchEvent(pointer('pointermove', 2000 - back * dw, 0))
+    expect(tasks.taskById('t24')!.start, '推算開始日停在今天').toBe('2026-09-18')
+    expect(bar.style.transform).toBe('')
+    expect(bar.style.getPropertyValue('--res-w')).toBe('')
+    document.dispatchEvent(pointer('pointerup', 2000 - back * dw, 0))
     unmount()
   })
 
@@ -615,7 +648,7 @@ describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）',
 })
 
 // 拖曳依排程規則（規則見 docs/reference/scheduling.md〈編輯限制〉）：開始日由前置決定的、已完成的不能拖；
-// 左右把手換算成工作天的工期；未開始的不早於今天、進行中的開始日不晚於今天
+// 左右把手換算成工作天的工期；未開始的推算開始日最早是今天、進行中的開始日不晚於今天
 describe('條的拖曳依排程規則', () => {
   beforeEach(async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -718,11 +751,15 @@ describe('條的拖曳依排程規則', () => {
     unmount()
   })
 
-  it('t24 左把手拉到 09-10：開始日夾在今天 09-18，結束日不往右跳（工期依夾後的開始日算）', () => {
+  it('t24（未開始的根任務）左把手拉到 09-10：計畫照拉的日子（09-10 起、結束日留在原地）；最快今天開工，條的右端往右長、算延遲', () => {
     const { api: drag, unmount } = mountDrag()
     const before = range('t24')
     dragBy(drag, 't24', 'resL', dayIndex('2026-09-10') - dayIndex(before[0]!))
-    expect(range('t24')).toEqual(['2026-09-18', before[1]])
+    const t = useTaskStore().taskById('t24')!
+    expect([t.baselineStart, t.baselineEnd]).toEqual(['2026-09-10', before[1]])
+    expect(t.start).toBe('2026-09-18')
+    expect(dayIndex(t.end)).toBeGreaterThan(dayIndex(before[1]!))
+    expect(isLate(t)).toBe(true)
     unmount()
   })
 })

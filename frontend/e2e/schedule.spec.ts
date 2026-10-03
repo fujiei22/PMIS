@@ -46,6 +46,23 @@ test('有前置、還沒開始的 t5：選取後沒有左把手，右把手（�
   await expect(app.bar('t5').locator('.handle-r')).toHaveCount(1)
 })
 
+// 還沒開始的根任務，開始日可以改到今天以前：計畫照 PM 點的日子，最快今天開工，所以馬上延遲（PM 說了算，2026-10-03 定案）
+test('t24 還沒開始：日期選擇器提醒，選今天以前的 09-15 就算延遲；開始顯示今天、說明行還在', async ({
+  page,
+}) => {
+  const app = new DashboardPage(page)
+  await app.goto()
+  await app.row('t24').locator('.date-range').click()
+  const picker = app.taskDatePicker
+  await expect(picker.locator('.cal-note')).toHaveText('未開始：最快今天開工，選今天以前會算延遲')
+  await picker.locator('.cal-arrow').first().click()
+  await picker.locator('[data-date="2026-09-15"]').click()
+  await expect(app.row('t24')).toHaveAttribute('data-status', 'delayed')
+  await expect(picker.locator('.cal-end').first()).toHaveText('2026/09/18')
+  await expect(picker.locator('.cal-note')).toHaveText('未開始：最快今天開工，選今天以前會算延遲')
+  await expect(app.confirmDialog).toHaveCount(0)
+})
+
 test('假日資料載入失敗：標題列提示只排除週末', async ({ page }) => {
   // 第一次進 Dashboard 就要失敗：先開總覽（mock 的 __mockApi 要等 app 載入才有），設好再點進去
   const ov = new OverviewPage(page)

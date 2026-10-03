@@ -4,9 +4,16 @@ import { beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { loadSample } from '@/__tests__/loadSample'
 import DatePicker from '@/components/common/DatePicker.vue'
 import { useMenus } from '@/composables/useMenus'
-import { EDIT_BLOCK_TEXT, OVERDUE_SHRINK_TEXT, PICK_LIMIT_TEXT } from '@/constants/dashboard'
+import {
+  EDIT_BLOCK_TEXT,
+  EDIT_NOTE_TEXT,
+  OVERDUE_SHRINK_TEXT,
+  PICK_LIMIT_TEXT,
+} from '@/constants/dashboard'
+import { dayIndex } from '@/lib/date'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+import { useWorkCalendarStore } from '@/stores/workCalendar'
 
 /**
  * 日期選擇器依排程規則編輯（規則見 docs/reference/scheduling.md）：
@@ -85,6 +92,18 @@ describe('任務起訖日期選擇器：有前置、未開始（t5）', () => {
 })
 
 describe('任務起訖日期選擇器：未開始的根任務（t24，10/08 開始）', () => {
+  it('存的開始日 10/08 晚於計畫開始日 09-15（刪相依後釘住的根任務）：選結束日從畫面上的開始日算，條停在點的那天', async () => {
+    const s = useTaskStore()
+    s.inputs = s.inputs.map((t) => (t.id === 't24' ? { ...t, baselineStart: '2026-09-15' } : t))
+    const w = await openTask('t24')
+    await w.findAll('.cal-end')[1]!.trigger('click')
+    await cell(w, '2026-10-20').trigger('click')
+    const wd = useWorkCalendarStore().workdays
+    expect(update).toHaveBeenCalledWith('t24', {
+      duration: wd.countWorkdays(dayIndex('2026-10-08'), dayIndex('2026-10-20')),
+    })
+  })
+
   it('填結束日時點在開始日之前：起訖對調，送新的開始日與換算的工期', async () => {
     const w = await openTask('t24')
     expect(useUiStore().taskDatePicker!.target).toBe('start')
@@ -99,6 +118,27 @@ describe('任務起訖日期選擇器：未開始的根任務（t24，10/08 開�
     await cell(w, '2026-10-13').trigger('click')
     expect(update).toHaveBeenCalledWith('t24', { start: '2026-10-13' })
     expect(useUiStore().taskDatePicker!.target).toBe('end')
+  })
+
+  it('今天以前的格子不停用；選了 09-15 換到結束日，說明行還在（提醒最快今天開工、會算延遲）', async () => {
+    const w = await openTask('t24')
+    expect(w.find('.task-date-picker .cal-note').text()).toBe(EDIT_NOTE_TEXT.pastStartLate)
+    // 月份換到 9 月：09-15 在今天（09-18）以前
+    await w.findAll('.task-date-picker .cal-arrow')[0]!.trigger('click')
+    expect(cell(w, '2026-09-15').classes()).not.toContain('disabled')
+    await cell(w, '2026-09-15').trigger('click')
+    expect(update).toHaveBeenCalledWith('t24', { start: '2026-09-15' })
+    expect(useUiStore().taskDatePicker!.target).toBe('end')
+    expect(w.find('.task-date-picker .cal-note').text()).toBe(EDIT_NOTE_TEXT.pastStartLate)
+  })
+
+  it('計畫開始日已在今天以前（09-15）：選 09-30 當結束日，工期從計畫開始日算＝10（PM 點的日子就是計畫）', async () => {
+    useTaskStore().applyLocalPatch('t24', { start: '2026-09-15' })
+    const w = await openTask('t24')
+    await w.findAll('.cal-end')[1]!.trigger('click')
+    // 推算開始日是今天 09-18，選擇器開在九月；09-15→09-30 的工作天：9/25 中秋、9/28 教師節不算
+    await cell(w, '2026-09-30').trigger('click')
+    expect(update).toHaveBeenCalledWith('t24', { duration: 10 })
   })
 })
 

@@ -47,7 +47,8 @@ const sortCtx = computed(() => ({
 const columns = computed(() =>
   COLUMNS.map((k) => {
     const list = applySort(
-      taskStore.tasks.filter((t) => t.status === k && filter.passTask(t)),
+      // 看板只放最底層任務（上層的狀態是彙總的，不能拖）
+      taskStore.leafTasks.filter((t) => t.status === k && filter.passTask(t)),
       filter.taskSort,
       'task',
       sortCtx.value,
