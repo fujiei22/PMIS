@@ -1,8 +1,10 @@
+import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadSample, useSampleCalendar } from '@/__tests__/loadSample'
 import { api, mockApi as maybeMockApi } from '@/api'
 import { ApiError } from '@/api/types'
 import { dayIndex, isoFromIndex } from '@/lib/date'
+import { LOCKED_POLICY } from '@/lib/editPolicy'
 import { isLate } from '@/lib/schedule'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useBudgetStore } from '@/stores/budget'
@@ -990,6 +992,65 @@ describe('taskStore', () => {
       expect(s.explain('t5')).toEqual({ startBy: 'pred', predId: 't4', endBy: 'duration' })
       expect(s.explain('t3')).toMatchObject({ startBy: 'actual', endBy: 'overdue' })
       expect(s.explain('nope')).toBeNull()
+    })
+  })
+
+  describe('編輯限制、排程說明與計數', () => {
+    it('policyOf：t5 有前置未開始、t24 未開始根任務、t2 已完成；不存在回 LOCKED_POLICY', () => {
+      const s = useTaskStore()
+      expect(s.policyOf('t5').startBlock).toBe('predecessor')
+      expect(s.policyOf('t24').warnPastStart).toBe(true)
+      expect(s.policyOf('t2').durationBlock).toBe('done')
+      expect(s.policyOf('nope')).toBe(LOCKED_POLICY)
+    })
+
+    it('改一筆：那筆的 policy 跟著變，其他任務沿用同一個 policy 物件（元件不會重繪）', async () => {
+      const s = useTaskStore()
+      const t3 = s.policyOf('t3')
+      await s.updateTask('t24', { status: 'doing' })
+      expect(s.policyOf('t24').startMaxIdx).toBe(dayIndex('2026-09-18'))
+      expect(s.policyOf('t3')).toBe(t3)
+    })
+
+    it('懸空的相依（前置不存在）不算有前置：跟排程器一致', () => {
+      const s = useTaskStore()
+      s.deps.push({ id: 'ghost', from: 'nope', to: 't24' })
+      expect(s.policyOf('t24').startBlock).toBeNull()
+      expect(s.explain('t24')!.startBy).toBe('root')
+    })
+
+    it('explain 查表：t5 由前置 t4 決定；t3 逾期、原定 09-16 結束；不存在回 null', () => {
+      const s = useTaskStore()
+      expect(s.explain('t5')).toEqual({ startBy: 'pred', predId: 't4', endBy: 'duration' })
+      expect(s.explain('t3')).toEqual({
+        startBy: 'actual',
+        endBy: 'overdue',
+        originalEnd: dayIndex('2026-09-16'),
+      })
+      expect(s.explain('nope')).toBeNull()
+    })
+
+    it('leafTasks 與 counts：目前兩層，等於全部任務；09-18 計畫應完成 5、延遲 1', () => {
+      const s = useTaskStore()
+      expect(s.leafTasks).toHaveLength(30)
+      expect(s.counts).toEqual({
+        total: 30,
+        byStatus: { todo: 18, doing: 7, paused: 1, done: 4 },
+        planned: 5,
+        late: 1,
+      })
+    })
+
+    it('相依有環：警告一次並列出被略過的相依；之後的編輯不重複警告', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const s = useTaskStore()
+      s.deps.push({ id: 'cyc', from: 't5', to: 't4' }) // t4 → t5 已存在，加反向成環
+      await nextTick()
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]![0])).toMatch(/相依有環.*\(t[45]\) → .*\(t[45]\)/)
+      s.applyLocalPatch('t24', { name: '改名' })
+      await nextTick()
+      expect(warn).toHaveBeenCalledTimes(1)
     })
   })
 

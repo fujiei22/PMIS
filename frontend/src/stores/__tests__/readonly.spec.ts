@@ -98,7 +98,7 @@ const WRITE_ACTIONS: Record<StoreKey, Record<string, WriteCall>> = {
 }
 
 const READ_ACTIONS: Record<StoreKey, string[]> = {
-  task: ['taskById', 'groupById', 'predecessors', 'successors', 'explain'],
+  task: ['taskById', 'groupById', 'predecessors', 'successors', 'explain', 'policyOf'],
   issue: ['byId', 'byTask', 'openCount'],
   comment: ['forTarget', 'filesForTarget', 'commenterIds'],
   member: ['byId', 'assignable'],

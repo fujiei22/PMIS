@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { dayIndex } from '@/lib/date'
+import { applyTaskEdit, type EditCtx } from '@/lib/editPolicy'
 import {
-  applyTaskEdit,
   durationBlock,
   durationNote,
   durationOf,
-  explainSchedule,
   isLate,
   isOverdue,
   isPlannedDone,
@@ -204,10 +203,9 @@ describe('topoOrder', () => {
 })
 
 describe('applyTaskEdit', () => {
-  const hasPred = new Set(['b'])
+  const ctx: EditCtx = { hasPred: new Set(['b']), wd, todayIdx: NOW }
   const today = '2026-10-08'
-  const edit = (t: Task, patch: Partial<Task>): Task =>
-    applyTaskEdit([t], hasPred, t.id, patch, today)[0]!
+  const edit = (t: Task, patch: Partial<Task>): Task => applyTaskEdit([t], ctx, t.id, patch)[0]!
 
   it('未開始 → 進行中／暫停：開始日記成今天', () => {
     expect(edit(task('a', { start: '2026-10-20' }), { status: 'doing' }).start).toBe(today)
@@ -240,14 +238,14 @@ describe('applyTaskEdit', () => {
 
   it('有前置的未開始任務：改開始日不會生效，回原陣列', () => {
     const list = [task('b')]
-    expect(applyTaskEdit(list, hasPred, 'b', { start: '2026-12-01' }, today)).toBe(list)
+    expect(applyTaskEdit(list, ctx, 'b', { start: '2026-12-01' })).toBe(list)
   })
 
   it('工期夾在 1–3650；NaN 不寫入', () => {
     expect(edit(task('a', { duration: 5 }), { duration: 0 }).duration).toBe(1)
     expect(edit(task('a'), { duration: 5000 }).duration).toBe(3650)
     const list = [task('a', { duration: 5 })]
-    expect(applyTaskEdit(list, hasPred, 'a', { duration: Number.NaN }, today)).toBe(list)
+    expect(applyTaskEdit(list, ctx, 'a', { duration: Number.NaN })).toBe(list)
   })
 
   it('開始日的上限：進行中不晚於今天、完成不晚於完成日', () => {
@@ -270,7 +268,7 @@ describe('applyTaskEdit', () => {
 
   it('沒有變動回原陣列', () => {
     const list = [task('a')]
-    expect(applyTaskEdit(list, hasPred, 'a', { name: 'a' }, today)).toBe(list)
+    expect(applyTaskEdit(list, ctx, 'a', { name: 'a' })).toBe(list)
   })
 
   // review：已完成的結束日就是完成日，工期與「清掉完成日」都不會生效，不寫進資料
@@ -278,8 +276,8 @@ describe('applyTaskEdit', () => {
     const list = [
       task('a', { status: 'done', start: '2026-10-01', done: '2026-10-05', duration: 3 }),
     ]
-    expect(applyTaskEdit(list, hasPred, 'a', { duration: 9 }, today)).toBe(list)
-    expect(applyTaskEdit(list, hasPred, 'a', { done: '' }, today)).toBe(list)
+    expect(applyTaskEdit(list, ctx, 'a', { duration: 9 })).toBe(list)
+    expect(applyTaskEdit(list, ctx, 'a', { done: '' })).toBe(list)
   })
 
   it('已完成而且完成日是空的舊資料：任何編輯都補上完成日（今天）', () => {
@@ -294,7 +292,7 @@ describe('applyTaskEdit', () => {
     const doing = task('a', { status: 'doing', start: '2026-10-05', baselineStart: '2026-10-01' })
     expect(edit(doing, { start: '2026-10-06' }).baselineStart).toBe('2026-10-01')
     const list = [task('b', { baselineStart: '2026-10-01' })]
-    expect(applyTaskEdit(list, hasPred, 'b', { start: '2026-12-01' }, today)).toBe(list)
+    expect(applyTaskEdit(list, ctx, 'b', { start: '2026-12-01' })).toBe(list)
   })
 
   it('未開始 → 進行中：開始日記成實際開工日，計畫開始日留著', () => {
@@ -461,48 +459,6 @@ describe('scheduleProject 的說明（meta）與被略過的相依', () => {
     const ts = [task('a', { duration: 3 }), task('b')]
     const deps = [dep('a', 'b')]
     expect(scheduleProject(ts, deps, wd, NOW).tasks).toEqual(scheduleWithPlan(ts, deps, wd, NOW))
-  })
-})
-
-describe('explainSchedule', () => {
-  /** 用 inputs 排一次，再對某個 id 解釋（根任務要看輸入的開始日，所以傳原始輸入）。 */
-  function explain(inputs: Task[], deps: Dependency[], id: string, today = NOW) {
-    const scheduled = new Map(scheduleTasks(inputs, deps, wd, today).map((x) => [x.id, x]))
-    return explainSchedule(
-      inputs.find((x) => x.id === id)!,
-      scheduled,
-      deps,
-      wd,
-      today,
-    )
-  }
-
-  it('已開始 → actual；根任務 → root；被推到今天 → today', () => {
-    const doing = task('a', { status: 'doing', start: '2026-10-05', duration: 5 })
-    expect(explain([doing], [], 'a')!.startBy).toBe('actual')
-    expect(explain([task('a', { start: '2026-10-12' })], [], 'a')!.startBy).toBe('root')
-    expect(explain([task('a', { start: '2026-10-01' })], [], 'a')!.startBy).toBe('today')
-  })
-
-  it('由前置決定 → pred，帶結束得最晚的那個前置', () => {
-    const r = explain(
-      [task('a'), task('b', { duration: 3 }), task('c')],
-      [dep('a', 'c'), dep('b', 'c')],
-      'c',
-    )!
-    expect([r.startBy, r.predId]).toEqual(['pred', 'b'])
-  })
-
-  it('結束日：done／duration／overdue', () => {
-    const done = task('a', { status: 'done', start: '2026-10-01', done: '2026-10-02' })
-    expect(explain([done], [], 'a')!.endBy).toBe('done')
-    expect(explain([task('a', { duration: 3 })], [], 'a')!.endBy).toBe('duration')
-    const overdue = task('a', { status: 'doing', start: '2026-09-28', duration: 2 })
-    expect(explain([overdue], [], 'a')!.endBy).toBe('overdue')
-  })
-
-  it('不存在的任務回 null', () => {
-    expect(explainSchedule(task('x'), new Map(), [], wd, NOW)).toBeNull()
   })
 })
 

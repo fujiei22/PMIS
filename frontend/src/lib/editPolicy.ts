@@ -1,5 +1,5 @@
-import { dayIndex } from '@/lib/date'
-import { isOverdue } from '@/lib/schedule'
+import { dayIndex, isoFromIndex } from '@/lib/date'
+import { clampDuration, isOverdue, isStarted, sameTask } from '@/lib/schedule'
 import type { Workdays } from '@/lib/workdays'
 import type { Task } from '@/types/models'
 
@@ -116,4 +116,59 @@ export function taskPickerNote(p: EditPolicy, target: 'start' | 'end'): EditNote
 export function durationNote(p: EditPolicy): EditNote | null {
   if (p.durationBlock) return p.durationBlock
   return p.overdue ? 'overdueShrink' : null
+}
+
+/**
+ * 套用使用者的編輯到原始輸入（規則見 docs/reference/scheduling.md〈狀態改變時寫入的值〉
+ * 〈不會生效的輸入不寫進資料〉）。沒有變動回原陣列；變動的那筆是新物件，其他保留原物件。
+ * 能不能改、開始日的上限都問 `editPolicy`（看套用後的狀態），跟畫面上的入口同一份規則；
+ * 只看「有沒有擋」、不比對原因碼，加新原因（例如三層任務的上層唯讀）時這裡自動擋。
+ *
+ * - 狀態改變：未開始 → 已開始時開始日記成今天（patch 同時帶 start 就用 patch 的）；
+ *   進完成補完成日（已有值不覆蓋）；離開完成清完成日。
+ * - 開始日不能改的（有前置、未開始）：start 丟掉。
+ * - 沒有前置、未開始的任務：start 同時寫進 `baselineStart`（計畫開始日，見〈計畫與延遲〉）；今天以前也照設。
+ * - 夾值：工期 1–3650（NaN 丟掉）；開始日不晚於上限（進行中／暫停：今天；完成：完成日）；完成日不早於開始日。
+ * - 工期不能改的（已完成）：工期丟掉；完成日不能清掉。
+ */
+export function applyTaskEdit(
+  tasks: Task[],
+  ctx: EditCtx,
+  id: string,
+  patch: Partial<Task>,
+): Task[] {
+  const target = tasks.find((x) => x.id === id)
+  if (!target) return tasks
+  const todayIso = isoFromIndex(ctx.todayIdx)
+  const clean: Partial<Task> = { ...patch }
+  if ('duration' in clean) {
+    if (!Number.isFinite(clean.duration)) delete clean.duration
+    else clean.duration = clampDuration(clean.duration!)
+  }
+  const next: Task = { ...target, ...clean }
+
+  if (clean.status && clean.status !== target.status) {
+    if (!isStarted(target) && isStarted(next) && !('start' in clean)) next.start = todayIso
+    if (next.status === 'done') {
+      if (!next.done) next.done = todayIso
+    } else next.done = ''
+  }
+  // 已完成：完成日不能清掉（缺的舊資料補上今天）；先補，下面的開始日上限才算得出來
+  if (next.status === 'done' && !next.done)
+    next.done = target.status === 'done' && target.done ? target.done : todayIso
+
+  const p = editPolicy(next, ctx)
+  // 開始日不能改（有前置、未開始：由前置決定），存了也不會生效
+  if ('start' in clean && p.startBlock) next.start = target.start
+  // 未開始根任務的開始日就是計畫開始日：PM 改了就是新計畫（已開始的開始日是實際值，改它不動計畫）
+  else if ('start' in clean && next.status === 'todo') next.baselineStart = next.start
+  // 工期不能改（已完成：結束日就是完成日）
+  if (p.durationBlock) next.duration = target.duration
+  // 完成的起訖：改的是完成日就把完成日夾到開始日以後；其他情況開始日不晚於上限
+  if (next.status === 'done' && 'done' in clean && next.done < next.start) next.done = next.start
+  else if (p.startMaxIdx !== null && dayIndex(next.start) > p.startMaxIdx)
+    next.start = isoFromIndex(p.startMaxIdx)
+
+  if (sameTask(next, target)) return tasks
+  return tasks.map((x) => (x.id === id ? next : x))
 }

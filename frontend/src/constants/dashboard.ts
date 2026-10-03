@@ -1,3 +1,5 @@
+import type { EditBlock, EditNote } from '@/lib/editPolicy'
+import type { EndReason, StartReason } from '@/lib/schedule'
 import type { IssueItem, IssueLevel, IssueStatus, Priority, TaskStatus } from '@/types/models'
 
 /**
@@ -112,26 +114,27 @@ export const ISSUE_SORT_KEYS = [
 
 /* ── 排程（規則見 docs/reference/scheduling.md）──────────────────────────── */
 
-/** 不能編輯的原因（甘特條的 title、日期選擇器的說明行共用）；key 對到 lib/schedule.ts 的 EditBlock。 */
+/** 不能編輯的原因（甘特條的 title、日期選擇器的說明行共用）；key 對到 lib/editPolicy.ts 的 EditBlock。 */
 export const EDIT_BLOCK_TEXT = {
   predecessor: '開始日由前置任務決定，只能調整工期',
   done: '已完成：結束日就是完成日；改完成日請用「完成日」',
-} as const
+  missing: '任務已不存在',
+} as const satisfies Record<NonNullable<EditBlock>, string>
 
-/** 開始日是怎麼來的（explainSchedule 的 startBy）。 */
+/** 開始日是怎麼來的（排程說明 ScheduleMeta 的 startBy）。 */
 export const START_REASON_TEXT = {
   actual: '實際開工日',
   root: '設定的開始日',
   pred: (name: string) => `前置「${name}」結束後開始`,
   today: '尚未開始，順延到今天',
-} as const
+} as const satisfies Record<StartReason, unknown>
 
-/** 結束日是怎麼來的（explainSchedule 的 endBy）；overdue 帶原定的結束日（已格式化）。 */
+/** 結束日是怎麼來的（排程說明 ScheduleMeta 的 endBy）；overdue 帶原定的結束日（已格式化）。 */
 export const END_REASON_TEXT = {
   done: '完成日',
   duration: '依工期推算',
   overdue: (planned: string) => `逾期未完成，結束日暫定今天（原定 ${planned}）`,
-} as const
+} as const satisfies Record<EndReason, unknown>
 
 /** 延遲 chip 的 title；兩個參數都已格式化（計畫結束日 MM/DD、晚幾個工作天）。 */
 export const LATE_TITLE = (planEnd: string, late: string): string =>
@@ -167,13 +170,18 @@ export const PICK_LIMIT_TEXT = {
   doneRequired: '已完成的任務一定有完成日；要清掉請先改狀態',
 } as const
 
-/** 說明行的文字（key 對到 lib/schedule.ts 的 EditNote）：日期選擇器、列選單共用。 */
+/** 未開始的根任務選今天以前：不是停用原因，是選了的後果（規則見 docs/reference/scheduling.md〈編輯限制〉）。 */
+export const PAST_START_LATE_TEXT = '未開始：最快今天開工，選今天以前會算延遲'
+
+/** 說明行的文字（key 對到 lib/editPolicy.ts 的 EditNote）：日期選擇器、列選單共用。 */
 export const EDIT_NOTE_TEXT = {
   predecessor: EDIT_BLOCK_TEXT.predecessor,
   done: EDIT_BLOCK_TEXT.done,
+  missing: EDIT_BLOCK_TEXT.missing,
   startAfterToday: PICK_LIMIT_TEXT.startAfterToday,
   overdueShrink: OVERDUE_SHRINK_TEXT,
-} as const
+  pastStartLate: PAST_START_LATE_TEXT,
+} as const satisfies Record<EditNote, string>
 
 /** 日期選擇器底部的本月假日；list 是已組好的「M/D 名稱」清單（以頓號連接）。 */
 export const MONTH_HOLIDAYS_TEXT = (list: string): string => `本月假日：${list}`

@@ -3,7 +3,7 @@ import type { Workdays } from '@/lib/workdays'
 import type { Dependency, ISODate, Issue, Task } from '@/types/models'
 
 /**
- * 排程運算：前推排程、循環偵測、延遲判定、編輯限制、專案時間範圍。
+ * 排程運算：前推排程、循環偵測、延遲判定、專案時間範圍（編輯限制在 lib/editPolicy.ts）。
  * 全部是純函式，不碰 store；規則見 docs/reference/scheduling.md，legacy 對照行號標在各函式上。
  */
 
@@ -107,7 +107,7 @@ export interface Scheduled {
 }
 
 /** 工期夾在 1–DURATION_MAX；0、負數、NaN 當 1。 */
-function clampDuration(n: number): number {
+export function clampDuration(n: number): number {
   return Number.isFinite(n) ? Math.min(DURATION_MAX, Math.max(1, Math.round(n))) : 1
 }
 
@@ -351,109 +351,6 @@ export function scheduleWithPlan(
   todayIdx: number,
 ): Task[] {
   return scheduleProject(tasks, deps, wd, todayIdx).tasks
-}
-
-/**
- * 說明某個任務的起訖是哪條規則決定的（甘特提示、屬性面板用）。
- *
- * @param input 那個任務的原始輸入（根任務要看設定的開始日，推算後的值看不出來是不是被推到今天）
- * @param scheduled 推算後的任務（id → 任務）
- * @returns 不在 scheduled 裡回 null
- */
-export function explainSchedule(
-  input: Task,
-  scheduled: Map<string, Task>,
-  deps: Dependency[],
-  wd: Workdays,
-  todayIdx: number,
-): { startBy: StartReason; predId?: string; endBy: EndReason } | null {
-  const t = scheduled.get(input.id)
-  if (!t) return null
-  const today = wd.onOrAfter(todayIdx)
-
-  let startBy: StartReason
-  let predId: string | undefined
-  if (isStarted(input) && input.start) startBy = 'actual'
-  else {
-    let candidate = -Infinity
-    for (const dep of deps) {
-      if (dep.to !== input.id) continue
-      const p = scheduled.get(dep.from)
-      if (!p) continue
-      const next = wd.after(dayIndex(p.end))
-      if (next > candidate) {
-        candidate = next
-        predId = p.id
-      }
-    }
-    if (predId === undefined)
-      candidate = wd.onOrAfter(input.start ? dayIndex(input.start) : todayIdx)
-    if (candidate < today) {
-      startBy = 'today'
-      predId = undefined
-    } else startBy = predId === undefined ? 'root' : 'pred'
-  }
-
-  let endBy: EndReason = 'duration'
-  if (t.status === 'done' && t.done) endBy = 'done'
-  else if (isOverdue(t, wd, todayIdx)) endBy = 'overdue'
-  return predId === undefined ? { startBy, endBy } : { startBy, predId, endBy }
-}
-
-/**
- * 套用使用者的編輯到原始輸入（規則見 docs/reference/scheduling.md〈狀態改變時寫入的值〉
- * 〈不會生效的輸入不寫進資料〉）。沒有變動回原陣列；變動的那筆是新物件，其他保留原物件。
- *
- * - 狀態改變：未開始 → 已開始時開始日記成今天（patch 同時帶 start 就用 patch 的）；
- *   進完成補完成日（已有值不覆蓋）；離開完成清完成日。
- * - 有前置、未開始的任務：start 不生效，丟掉。
- * - 沒有前置、未開始的任務：start 同時寫進 `baselineStart`（計畫開始日，見〈計畫與延遲〉）。
- * - 夾值：工期 1–3650（NaN 丟掉）；進行中／暫停的開始日不晚於今天；完成的開始日不晚於完成日；
- *   完成日不早於開始日。
- * - 已完成：工期不生效（結束日就是完成日）、完成日不能清掉。
- */
-export function applyTaskEdit(
-  tasks: Task[],
-  hasPred: Set<string>,
-  id: string,
-  patch: Partial<Task>,
-  todayIso: ISODate,
-): Task[] {
-  const target = tasks.find((x) => x.id === id)
-  if (!target) return tasks
-  const clean: Partial<Task> = { ...patch }
-  if ('duration' in clean) {
-    if (!Number.isFinite(clean.duration)) delete clean.duration
-    else clean.duration = clampDuration(clean.duration!)
-  }
-  const next: Task = { ...target, ...clean }
-
-  if (clean.status && clean.status !== target.status) {
-    if (!isStarted(target) && isStarted(next) && !('start' in clean)) next.start = todayIso
-    if (next.status === 'done') {
-      if (!next.done) next.done = todayIso
-    } else next.done = ''
-  }
-  // 有前置、未開始：開始日由前置決定，存了也不會生效
-  if ('start' in clean && next.status === 'todo' && hasPred.has(id)) next.start = target.start
-  // 未開始根任務的開始日就是計畫開始日：PM 改了就是新計畫（已開始的開始日是實際值，改它不動計畫）
-  else if ('start' in clean && next.status === 'todo') next.baselineStart = next.start
-  // 已開始的開始日上限：進行中／暫停不晚於今天；完成不晚於完成日
-  if ((next.status === 'doing' || next.status === 'paused') && next.start > todayIso)
-    next.start = todayIso
-  // 已完成：結束日就是完成日，改工期不會生效；完成日也不能清掉（缺的舊資料補上今天）
-  if (next.status === 'done') {
-    next.duration = target.duration
-    if (!next.done) next.done = target.status === 'done' && target.done ? target.done : todayIso
-  }
-  // 完成的起訖：改的是完成日就把完成日夾到開始日以後；其他情況把開始日夾到完成日以前
-  if (next.status === 'done' && next.done) {
-    if ('done' in clean && next.done < next.start) next.done = next.start
-    else if (next.start > next.done) next.start = next.done
-  }
-
-  if (sameTask(next, target)) return tasks
-  return tasks.map((x) => (x.id === id ? next : x))
 }
 
 /** 開始日能不能改（日期選擇器）：有前置、未開始的不能。 */
