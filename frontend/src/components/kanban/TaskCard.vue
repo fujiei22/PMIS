@@ -17,15 +17,7 @@ import {
   TASK_STATUS,
 } from '@/constants/dashboard'
 import { EMPTY_LABEL, fmtDate, fmtWorkdays, shortDate, stripYear, WORKDAY_UNIT } from '@/lib/format'
-import {
-  DURATION_MAX,
-  durationBlock,
-  durationOf,
-  isLate,
-  isOverdue,
-  lateDays,
-} from '@/lib/schedule'
-import { useClockStore } from '@/stores/clock'
+import { DURATION_MAX, durationOf, isLate, lateDays } from '@/lib/schedule'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useSelectionStore } from '@/stores/selection'
@@ -39,7 +31,6 @@ const props = defineProps<{ task: Task }>()
 const registry = useDomRegistry()
 
 const calendar = useWorkCalendarStore()
-const clock = useClockStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
@@ -71,9 +62,12 @@ const groupName = computed(() => taskStore.groupById(props.task.groupId)?.name ?
 /** 有效工期（工作天）：顯示與 ▲▼ 加減都以它為準（規則見 docs/reference/scheduling.md〈有效工期〉）。 */
 const days = computed(() => durationOf(props.task, calendar.workdays))
 
+/** 這張卡的編輯限制（`lib/editPolicy.ts`）；欄位沒變時是同一個物件，別的任務改了不會讓這張重算。 */
+const policy = computed(() => taskStore.policyOf(props.task.id))
+
 /** ▲ 的狀態：已完成停用（結束日就是完成日，title 寫原因）；到上限 DURATION_MAX 也停用。 */
 const up = computed(() => {
-  const block = durationBlock(props.task)
+  const block = policy.value.durationBlock
   if (block) return { disabled: true, title: EDIT_BLOCK_TEXT[block] }
   return { disabled: days.value >= DURATION_MAX, title: `加一個${WORKDAY_UNIT}` }
 })
@@ -83,10 +77,9 @@ const up = computed(() => {
  * 只剩 1 工作天也停用。
  */
 const down = computed(() => {
-  const block = durationBlock(props.task)
+  const block = policy.value.durationBlock
   if (block) return { disabled: true, title: EDIT_BLOCK_TEXT[block] }
-  if (isOverdue(props.task, calendar.workdays, clock.todayIdx))
-    return { disabled: true, title: OVERDUE_SHRINK_TEXT }
+  if (policy.value.overdue) return { disabled: true, title: OVERDUE_SHRINK_TEXT }
   return { disabled: days.value <= 1, title: `減一個${WORKDAY_UNIT}` }
 })
 const rangeShort = computed(

@@ -7,7 +7,7 @@ import {
   rowMenuExtra,
   viewport,
 } from '@/lib/anchor'
-import { durationNote, startBlock, taskPickerNote } from '@/lib/schedule'
+import { durationNote, taskPickerNote } from '@/lib/editPolicy'
 import { monthHolidayList } from '@/lib/workdays'
 import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
@@ -123,11 +123,11 @@ export function useMenus(): Menus {
     e.stopPropagation()
     const t = taskStore.taskById(taskId)
     if (!t) return
-    const target = startBlock(t, taskStore.hasPred) ? 'end' : 'start'
+    const p = taskStore.policyOf(taskId)
+    const target = p.startBlock ? 'end' : 'start'
     const month = t[target].slice(0, 7)
     // 說明行與本月假日行（新頁才有）算進估高，往上翻開時才不會蓋到觸發元素
-    const wd = useWorkCalendarStore().workdays
-    const note = taskPickerNote(t, target, taskStore.hasPred, wd, clock.todayIdx)
+    const note = taskPickerNote(p, target)
     const extra = calendarExtra(note ? [EDIT_NOTE_TEXT[note]] : [], holidaysLine(month))
     ui.taskDatePicker = {
       id: taskId,
@@ -150,8 +150,7 @@ export function useMenus(): Menus {
       ui.rowMenu = null
       return
     }
-    const t = taskStore.taskById(taskId)
-    const note = t ? durationNote(t, useWorkCalendarStore().workdays, clock.todayIdx) : null
+    const note = durationNote(taskStore.policyOf(taskId))
     const extra = rowMenuExtra(note ? EDIT_NOTE_TEXT[note] : '')
     ui.rowMenu = { id: taskId, ...anchorRowMenu(rectOf(e, 'row'), viewport(), extra) }
   }

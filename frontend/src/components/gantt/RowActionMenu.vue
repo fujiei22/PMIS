@@ -8,15 +8,14 @@ import { useCloseOnScroll } from '@/composables/useCloseOnScroll'
 import { menuAnchors } from '@/composables/useMenus'
 import { EDIT_BLOCK_TEXT, EDIT_NOTE_TEXT, OVERDUE_SHRINK_TEXT } from '@/constants/dashboard'
 import { fmtWorkdays, WORKDAY_UNIT } from '@/lib/format'
-import { DURATION_MAX, durationBlock, durationNote, durationOf, isOverdue } from '@/lib/schedule'
-import { useClockStore } from '@/stores/clock'
+import { durationNote, LOCKED_POLICY } from '@/lib/editPolicy'
+import { DURATION_MAX, durationOf } from '@/lib/schedule'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 import { useWorkCalendarStore } from '@/stores/workCalendar'
 
 const ui = useUiStore()
 const taskStore = useTaskStore()
-const clock = useClockStore()
 const calendar = useWorkCalendarStore()
 
 const menu = computed(() => ui.rowMenu)
@@ -24,20 +23,18 @@ const menu = computed(() => ui.rowMenu)
 const task = computed(() => (menu.value ? taskStore.taskById(menu.value.id) : undefined))
 /** 有效工期（工作天）：顯示與 −1 / +1 都以它為準（規則見 docs/reference/scheduling.md〈有效工期〉）。 */
 const days = computed(() => (task.value ? durationOf(task.value, calendar.workdays) : 0))
+/** 選單對象此刻的編輯限制（`lib/editPolicy.ts`）。 */
+const policy = computed(() => (task.value ? taskStore.policyOf(task.value.id) : LOCKED_POLICY))
 
 /**
  * 停用的原因（看得見的一行＋按鈕的 title）：已完成兩顆都停（結束日就是完成日）；
  * 逾期只停 −1（結束日暫定今天，減了也不會提早）。到上下限不另外說明。
  */
 const blockText = computed(() => {
-  const t = task.value
-  if (!t) return { both: '', down: '' }
-  const block = durationBlock(t)
-  if (block) return { both: EDIT_BLOCK_TEXT[block], down: '' }
-  return {
-    both: '',
-    down: isOverdue(t, calendar.workdays, clock.todayIdx) ? OVERDUE_SHRINK_TEXT : '',
-  }
+  const p = policy.value
+  if (!task.value) return { both: '', down: '' }
+  if (p.durationBlock) return { both: EDIT_BLOCK_TEXT[p.durationBlock], down: '' }
+  return { both: '', down: p.overdue ? OVERDUE_SHRINK_TEXT : '' }
 })
 const upDisabled = computed(() => !!blockText.value.both || days.value >= DURATION_MAX)
 const downDisabled = computed(
@@ -45,8 +42,7 @@ const downDisabled = computed(
 )
 /** 選單裡的說明行；沒有停用原因時不畫。開選單時的估高（useMenus）用同一個判斷（`durationNote`）。 */
 const note = computed(() => {
-  const t = task.value
-  const k = t ? durationNote(t, calendar.workdays, clock.todayIdx) : null
+  const k = task.value ? durationNote(policy.value) : null
   return k ? EDIT_NOTE_TEXT[k] : ''
 })
 const menuEl = ref<HTMLElement | null>(null)

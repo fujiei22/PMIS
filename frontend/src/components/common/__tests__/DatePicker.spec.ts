@@ -4,7 +4,12 @@ import { beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { loadSample } from '@/__tests__/loadSample'
 import DatePicker from '@/components/common/DatePicker.vue'
 import { useMenus } from '@/composables/useMenus'
-import { EDIT_BLOCK_TEXT, OVERDUE_SHRINK_TEXT, PICK_LIMIT_TEXT } from '@/constants/dashboard'
+import {
+  EDIT_BLOCK_TEXT,
+  EDIT_NOTE_TEXT,
+  OVERDUE_SHRINK_TEXT,
+  PICK_LIMIT_TEXT,
+} from '@/constants/dashboard'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 
@@ -99,6 +104,27 @@ describe('任務起訖日期選擇器：未開始的根任務（t24，10/08 開�
     await cell(w, '2026-10-13').trigger('click')
     expect(update).toHaveBeenCalledWith('t24', { start: '2026-10-13' })
     expect(useUiStore().taskDatePicker!.target).toBe('end')
+  })
+
+  it('今天以前的格子不停用；選了 09-15 換到結束日，說明行還在（提醒最快今天開工、會算延遲）', async () => {
+    const w = await openTask('t24')
+    expect(w.find('.task-date-picker .cal-note').text()).toBe(EDIT_NOTE_TEXT.pastStartLate)
+    // 月份換到 9 月：09-15 在今天（09-18）以前
+    await w.findAll('.task-date-picker .cal-arrow')[0]!.trigger('click')
+    expect(cell(w, '2026-09-15').classes()).not.toContain('disabled')
+    await cell(w, '2026-09-15').trigger('click')
+    expect(update).toHaveBeenCalledWith('t24', { start: '2026-09-15' })
+    expect(useUiStore().taskDatePicker!.target).toBe('end')
+    expect(w.find('.task-date-picker .cal-note').text()).toBe(EDIT_NOTE_TEXT.pastStartLate)
+  })
+
+  it('計畫開始日已在今天以前（09-15）：選 09-30 當結束日，工期從計畫開始日算＝10（PM 點的日子就是計畫）', async () => {
+    useTaskStore().applyLocalPatch('t24', { start: '2026-09-15' })
+    const w = await openTask('t24')
+    await w.findAll('.cal-end')[1]!.trigger('click')
+    // 推算開始日是今天 09-18，選擇器開在九月；09-15→09-30 的工作天：9/25 中秋、9/28 教師節不算
+    await cell(w, '2026-09-30').trigger('click')
+    expect(update).toHaveBeenCalledWith('t24', { duration: 10 })
   })
 })
 

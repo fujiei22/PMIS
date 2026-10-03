@@ -1,4 +1,5 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
+import { defineComponent, h, nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { loadSample } from '@/__tests__/loadSample'
 import TaskCard from '@/components/kanban/TaskCard.vue'
@@ -85,5 +86,26 @@ describe('TaskCard 的工期 ▲▼', () => {
     expect(w.find('.days-num').text()).toBe('9')
     expect(w.find('.days-num').attributes('aria-label')).toBe('9 工作天')
     expect(w.find('.range-days').attributes('title')).toBe('工期（工作天）')
+  })
+})
+
+describe('TaskCard 的重繪範圍', () => {
+  it('改別的任務不會讓這張卡重繪（policy 沒變就沿用同一個物件）', async () => {
+    const s = useTaskStore()
+    let updates = 0
+    // hook 放在 setup 裡只建一次：taskById 讀的索引每次重算都是新的 Map，Host 一定會重跑 render，
+    // 每次 render 都建新函式的話 prop 一定「變了」，量到的是 Host 的重繪而不是卡片自己的
+    const Host = defineComponent({
+      setup: () => {
+        const onVnodeUpdated = () => {
+          updates++
+        }
+        return () => h(TaskCard, { task: s.taskById('t3')!, onVnodeUpdated })
+      },
+    })
+    mount(Host)
+    s.applyLocalPatch('t24', { name: '改名' })
+    await nextTick()
+    expect(updates).toBe(0)
   })
 })

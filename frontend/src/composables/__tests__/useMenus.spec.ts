@@ -221,6 +221,18 @@ describe('浮層估高算進說明行', () => {
     expect(ui.taskDatePicker!.top).toBe(Math.max(8, rect.top - 336 - extra))
   })
 
+  it('t24 的起訖選擇器開在視窗底部：估高含「未開始」的說明行與十月的本月假日', () => {
+    const ui = useUiStore()
+    const rect = { left: 300, top: VP.height - 40, bottom: VP.height - 20 }
+    useMenus().openTaskDatePicker(triggerAt(rect.left, rect.top, rect.bottom), 't24')
+    const holidays = monthHolidayList('2026-10', useWorkCalendarStore().workdays)
+    const extra = calendarExtra(
+      [EDIT_NOTE_TEXT.pastStartLate],
+      MONTH_HOLIDAYS_TEXT(holidays.join('、')),
+    )
+    expect(ui.taskDatePicker!.top).toBe(anchorCalendar(rect, VP, 'task', extra).top)
+  })
+
   it('逾期的 t3 開列選單在視窗底部：往上翻的位移含「逾期中」說明行', () => {
     const ui = useUiStore()
     const rect = { left: 330, top: VP.height - 40, bottom: VP.height - 16, right: 370 }
