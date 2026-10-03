@@ -68,11 +68,13 @@ export const useFilterStore = defineStore('filter', () => {
 
   /**
    * 甘特與看板面板頭上的「共 N 個任務」／「已篩選 N/M 個任務」。legacy `taskCountLabel` :3532。
-   * review m4：兩個面板各抄一份、各自再跑一次 `matchTask`；這裡直接吃 `matchedIds.size`。
+   * review m4：兩個面板各抄一份、各自再跑一次 `matchTask`；這裡只數最底層任務（`leafTasks`）裡符合篩選的。
    */
   const taskCountLabel = computed(() => {
-    const total = useTaskStore().tasks.length
-    const matched = matchedIds.value.size
+    // 只數最底層任務（三層任務的上層不算數；目前兩層，等於全部任務）
+    const leaves = useTaskStore().leafTasks
+    const total = leaves.length
+    const matched = leaves.filter((t) => matchedIds.value.has(t.id)).length
     return matched === total ? `共 ${total} 個任務` : `已篩選 ${matched}/${total} 個任務`
   })
 

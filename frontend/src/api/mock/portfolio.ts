@@ -1,5 +1,6 @@
 import { dayIndex } from '@/lib/date'
-import { isLate, isPlannedDone, scheduleWithPlan } from '@/lib/schedule'
+import { scheduleWithPlan } from '@/lib/schedule'
+import { countTasks, leafTasksOf } from '@/lib/taskCounts'
 import { createWorkdays, type Workdays } from '@/lib/workdays'
 import { sampleCalendar } from '@/mocks/sampleCalendar'
 import {
@@ -43,11 +44,11 @@ export function projectStatusOf(counts: Record<TaskStatus, number>): ProjectStat
  *   下面的日期與延遲都看推算結果，跟 Dashboard 畫面上看到的一致；存的起訖可能是幾天前寫回的快照。
  * - status：`projectStatusOf(taskCounts)`。
  * - 起訖日：任務 start 的最小值 / end 的最大值；沒有任務時兩者都是今天。
- * - taskPlanned：`isPlannedDone` 為真的任務數（計畫結束日在今天之前），與 Dashboard 理論進度同一個定義。
- * - delayedTasks：`isLate` 為真的任務數（推算結束日晚於計畫），與 Dashboard「已延遲」同一個定義；
- *   和 taskCounts 重疊計數。
+ * - taskPlanned：`countTasks` 的 planned（`isPlannedDone`），與 Dashboard 摘要卡同一份。
+ * - delayedTasks：`countTasks` 的 late（`isLate`），與 Dashboard 摘要卡同一份；和 taskCounts 重疊計數。
  * - openIssues：未結 Issue 依等級計數；memberIds：至少被指派一個任務的成員，順序照 data.members。
  * - upcoming：未完成任務依 end 升冪取前 3，**含已逾期**（逾期的最該被看到）。
+ * - 近期任務（upcoming）、成員（memberIds）目前看全部任務；三層任務時再決定要不要只看最底層。
  * - 不變式：taskDone === taskCounts.done、taskTotal === 各狀態加總。
  */
 export function summarizeProject(
@@ -58,9 +59,9 @@ export function summarizeProject(
 ): ProjectSummary {
   const todayIdx = dayIndex(todayIso)
   const tasks = scheduleWithPlan(data.tasks, data.deps, workdays, todayIdx)
-
-  const taskCounts: Record<TaskStatus, number> = { done: 0, doing: 0, paused: 0, todo: 0 }
-  for (const t of tasks) taskCounts[t.status]++
+  // 計數跟 Dashboard 摘要卡同一個定義（lib/taskCounts.ts）：只數最底層任務
+  const counts = countTasks(leafTasksOf(tasks), todayIdx)
+  const taskCounts: Record<TaskStatus, number> = { ...counts.byStatus }
 
   const openIssues: Record<IssueLevel, number> = { A: 0, B: 0, C: 0, D: 0 }
   let closedIssues = 0
@@ -87,11 +88,11 @@ export function summarizeProject(
     status: projectStatusOf(taskCounts),
     startDate: starts[0] ?? todayIso,
     dueDate: ends[ends.length - 1] ?? todayIso,
-    taskTotal: tasks.length,
-    taskDone: taskCounts.done,
-    taskPlanned: tasks.filter((t) => isPlannedDone(t, todayIdx)).length,
+    taskTotal: counts.total,
+    taskDone: counts.byStatus.done,
+    taskPlanned: counts.planned,
     taskCounts,
-    delayedTasks: tasks.filter((t) => isLate(t)).length,
+    delayedTasks: counts.late,
     openIssues,
     closedIssues,
     memberIds: data.members.filter((m) => assigned.has(m.id)).map((m) => m.id),

@@ -1,8 +1,12 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
 import { loadSample } from '@/__tests__/loadSample'
 import SummaryCards from '@/components/summary/SummaryCards.vue'
 import { useClockStore } from '@/stores/clock'
+import { useTaskStore } from '@/stores/task'
 
 /**
  * 整體進度的「理論進度」：計畫結束日早於今天的任務才算該完成，今天到期的今天還沒到期。
@@ -52,5 +56,30 @@ describe('SummaryCards 的 title', () => {
   it('專案總時長註明「日曆天」', () => {
     const duration = mount(SummaryCards).find('[data-testid="summary-progress"] .duration')
     expect(duration.attributes('title')).toContain('日曆天')
+  })
+})
+
+/** 數字跟 task store 的 counts 走（跟總覽同一個 countTasks），卡片不自己數。 */
+describe('SummaryCards 的數字來源', () => {
+  beforeEach(async () => {
+    await loadSample()
+  })
+
+  it('t24 改完成：counts 與卡片的實際進度一起變成 5 / 30', async () => {
+    useClockStore().now = new Date('2026-09-18T10:00:00').getTime()
+    const card = mount(SummaryCards).find('[data-testid="summary-progress"]')
+    const s = useTaskStore()
+    await s.updateTask('t24', { status: 'done' })
+    await nextTick()
+    expect(s.counts.byStatus.done).toBe(5)
+    expect(card.findAll('.bar-frac')[0]!.text()).toBe('5 / 30')
+  })
+
+  it('原始碼不呼叫 isLate／isPlannedDone（計數只在 lib/taskCounts.ts）', () => {
+    const src = readFileSync(
+      resolve(process.cwd(), 'src/components/summary/SummaryCards.vue'),
+      'utf8',
+    )
+    expect(src, '改讀 taskStore.counts').not.toMatch(/\b(isLate|isPlannedDone)\(/)
   })
 })

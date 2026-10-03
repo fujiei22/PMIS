@@ -6,7 +6,7 @@ import { DELAYED, ISSUE_LEVEL, ISSUE_STATUS, TASK_STATUS } from '@/constants/das
 import { budgetRatio, budgetRemaining, gaugeAngle, isOverBudget } from '@/lib/budget'
 import { isoFromIndex } from '@/lib/date'
 import { fmtMoney, fmtMoneyShort } from '@/lib/format'
-import { isLate, isLateIssue, isPlannedDone } from '@/lib/schedule'
+import { isLateIssue } from '@/lib/schedule'
 import { useBudgetStore } from '@/stores/budget'
 import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
@@ -18,9 +18,10 @@ const budgetStore = useBudgetStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 
-const tasks = computed(() => taskStore.tasks)
+/** 計數（`countTasks`：最底層任務、跟總覽同一個定義）。 */
+const counts = computed(() => taskStore.counts)
 const issues = computed(() => issueStore.issues)
-const total = computed(() => tasks.value.length)
+const total = computed(() => counts.value.total)
 
 // ── 卡 1 上段：專案總時長 ───────────────────────────────────────────────────────
 /** 最早開始到最晚結束的日曆天（含週末與假日）；工期才是工作天，所以 title 寫明單位。 */
@@ -30,13 +31,13 @@ const rangeStart = computed(() => isoFromIndex(taskStore.range.min))
 const rangeEnd = computed(() => isoFromIndex(taskStore.range.max))
 
 // ── 卡 1 下段：整體進度（實際 = 已完成數；理論 = 基準結束日已過的數）legacy :3604-3620 ──
-const doneTasks = computed(() => tasks.value.filter((t) => t.status === 'done').length)
+const doneTasks = computed(() => counts.value.byStatus.done)
 /**
- * 依計畫基準此刻該完成的任務（判準見 isPlannedDone：基準結束日早於今天，到期當天不算、隔天才算，
+ * 依計畫基準此刻該完成的任務數（判準見 isPlannedDone：基準結束日早於今天，到期當天不算、隔天才算，
  * 和 legacy 的 `<=` 刻意不同；沒有基準的不算）。計畫由 PM 輸入的開始日、工期、相依排出（scheduleWithPlan）。
  * 對照測試已遮掉這幾個數字，見 README〈刻意保留的差異〉。
  */
-const planDone = computed(() => tasks.value.filter((t) => isPlannedDone(t, clock.todayIdx)).length)
+const planDone = computed(() => counts.value.planned)
 const actualPct = computed(() =>
   total.value ? Math.round((doneTasks.value / total.value) * 100) : 0,
 )
@@ -58,7 +59,7 @@ const gapTone = computed(() => {
 // ── 卡 2：任務狀態 ────────────────────────────────────────────────────────
 const statusRows = computed(() =>
   (['todo', 'doing', 'paused', 'done'] as TaskStatus[]).map((k) => {
-    const count = tasks.value.filter((t) => t.status === k).length
+    const count = counts.value.byStatus[k]
     const pct = total.value ? (count / total.value) * 100 : 0
     return {
       k,
@@ -71,7 +72,7 @@ const statusRows = computed(() =>
   }),
 )
 /** 已延遲：依計畫基準，未完成而且推算結束日晚於基準結束日（判準見 isLate）。 */
-const delayedCount = computed(() => tasks.value.filter((t) => isLate(t)).length)
+const delayedCount = computed(() => counts.value.late)
 
 // ── 卡 3：Issue 統計 ──────────────────────────────────────────────────────
 const levelRows = computed(() =>
