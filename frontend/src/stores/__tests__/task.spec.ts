@@ -1053,13 +1053,17 @@ describe('taskStore', () => {
       })
     })
 
-    it('相依有環：警告一次並列出被略過的相依；之後的編輯不重複警告', async () => {
+    it('相依有環：警告一次並列出被略過的相依（只印 id、不印任務名稱）；之後的編輯不重複警告', async () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       const s = useTaskStore()
       s.deps.push({ id: 'cyc', from: 't5', to: 't4' }) // t4 → t5 已存在，加反向成環
       await nextTick()
       expect(warn).toHaveBeenCalledTimes(1)
-      expect(String(warn.mock.calls[0]![0])).toMatch(/相依有環.*\(t[45]\) → .*\(t[45]\)/)
+      const msg = String(warn.mock.calls[0]![0])
+      expect(msg).toMatch(/相依有環.*t[45] → t[45]/)
+      // 任務名稱是使用者輸入的自由文字（可能含個資），不落 log
+      expect(msg).not.toContain(s.taskById('t4')!.name)
+      expect(msg).not.toContain(s.taskById('t5')!.name)
       s.applyLocalPatch('t24', { name: '改名' })
       await nextTick()
       expect(warn).toHaveBeenCalledTimes(1)

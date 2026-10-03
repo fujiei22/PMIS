@@ -261,9 +261,9 @@ export function topoOrder(ids: string[], preds: Map<string, string[]>): string[]
   const queue = uniq.filter((id) => indeg.get(id) === 0)
   const queued = new Set(queue)
   const done = new Set<string>()
-  /** 有環時拿掉的相依（`from>to`）。 */
-  const cut = new Set<string>()
-  const live = (from: string, to: string) => !cut.has(`${from}>${to}`)
+  /** 有環時拿掉的相依：後續 → 被拿掉的前置（巢狀集合、不拼字串：id 裡有什麼字元都不會撞）。 */
+  const cut = new Map<string, Set<string>>()
+  const live = (from: string, to: string) => !cut.get(to)?.has(from)
   /** 少了 by 條還沒排的前置；全部排完就進佇列。 */
   const release = (id: string, by: number) => {
     const n = indeg.get(id)! - by
@@ -277,18 +277,28 @@ export function topoOrder(ids: string[], preds: Map<string, string[]>): string[]
     while (i === queue.length) {
       // 卡住＝佇列裡的都排完了，剩下的都在環上或環的下游（每個都還有沒排、沒被拿掉的前置）
       const path = [uniq.find((x) => !queued.has(x))!]
+      /** 任務 → 它在 path 的位置（找走回頭用，不線性掃）。 */
+      const at = new Map([[path[0]!, 0]])
       for (;;) {
         const cur = path[path.length - 1]!
-        const p = preds.get(cur)!.find((q) => !done.has(q) && live(q, cur))!
-        const k = path.indexOf(p)
-        if (k < 0) {
+        const p = preds.get(cur)?.find((q) => !done.has(q) && live(q, cur))
+        if (p === undefined) {
+          // 照理不會發生（卡住的任務一定還有沒排的前置）；資料再怎麼壞也不丟錯、不卡住，直接放行它
+          release(cur, indeg.get(cur)!)
+          break
+        }
+        const k = at.get(p)
+        if (k === undefined) {
+          at.set(p, path.length)
           path.push(p)
           continue
         }
         // 走回 path[k]：環是 path[k..]，拿掉走進 path[k] 的那一條（自己指向自己時就是那一條）
         const to = path[k]!
         const from = path[k + 1] ?? p
-        cut.add(`${from}>${to}`)
+        const removed = cut.get(to) ?? new Set<string>()
+        removed.add(from)
+        cut.set(to, removed)
         release(to, preds.get(to)!.filter((q) => q === from).length)
         break
       }

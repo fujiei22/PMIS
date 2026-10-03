@@ -165,7 +165,8 @@ export function applyTaskEdit(
     if (!Number.isFinite(clean.duration)) delete clean.duration
     else clean.duration = clampDuration(clean.duration!)
   }
-  const next: Task = { ...target, ...clean }
+  // id 不跟著 patch 改：編輯限制要用任務本身的 id 查前置
+  const next: Task = { ...target, ...clean, id: target.id }
 
   if (clean.status && clean.status !== target.status) {
     if (!isStarted(target) && isStarted(next) && !('start' in clean)) next.start = todayIso

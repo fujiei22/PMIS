@@ -124,7 +124,7 @@ export const useTaskStore = defineStore('task', () => {
 
   /** id → 物件的索引；legacy 每次 render 重建一次 Map（:1901），這裡交給 computed 快取。 */
   const taskIndex = computed(() => new Map(tasks.value.map((t) => [t.id, t])))
-  /** id → 存的值（pinNewRoots、環的警告要看原始輸入）。 */
+  /** id → 存的值（pinNewRoots 要看原始輸入）。 */
   const inputIndex = computed(() => new Map(inputs.value.map((t) => [t.id, t])))
   const groupIndex = computed(() => new Map(groups.value.map((g) => [g.id, g])))
 
@@ -144,9 +144,9 @@ export const useTaskStore = defineStore('task', () => {
     () => scheduled.value.skipped.map((d) => `${d.from}>${d.to}`).join(','),
     (sig) => {
       if (!sig) return
-      const label = (id: string) => `${inputIndex.value.get(id)?.name ?? ''}(${id})`
+      // 只印 id：任務名稱是使用者輸入的自由文字，可能含控制字元或個資，不落 log
       const skipped = scheduled.value.skipped
-      const list = skipped.map((d) => `${label(d.from)} → ${label(d.to)}`).join('、')
+      const list = skipped.map((d) => `${d.from} → ${d.to}`).join('、')
       console.warn(
         `[schedule] 專案 ${useProjectStore().meta.id} 的相依有環，排程略過 ${skipped.length} 條：${list}（規則見 docs/reference/scheduling.md〈開始日〉）`,
       )

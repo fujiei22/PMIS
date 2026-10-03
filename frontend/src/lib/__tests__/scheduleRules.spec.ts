@@ -181,6 +181,17 @@ describe('topoOrder', () => {
     expect(topoOrder(['c', 'b', 'a', 'd'], preds)).toEqual(['a', 'd', 'b', 'c'])
   })
 
+  it('id 含任何字元都不會讓「拿掉的相依」互相撞名（有環時也不丟錯）', () => {
+    // 環 a>b ⇄ c 拿掉的是 a>b → c；另一條合法相依 a → b>c 不能被誤當成拿掉
+    const preds = new Map([
+      ['c', ['a>b']],
+      ['a>b', ['c']],
+      ['a', ['c']],
+      ['b>c', ['a']],
+    ])
+    expect(topoOrder(['c', 'a>b', 'a', 'b>c'], preds)).toEqual(['c', 'a>b', 'a', 'b>c'])
+  })
+
   it('ids 重複只排一次', () => {
     expect(topoOrder(['a', 'a', 'b'], new Map([['b', ['a']]]))).toEqual(['a', 'b'])
   })
