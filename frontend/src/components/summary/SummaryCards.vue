@@ -33,7 +33,7 @@ const rangeEnd = computed(() => isoFromIndex(taskStore.range.max))
 const doneTasks = computed(() => tasks.value.filter((t) => t.status === 'done').length)
 /**
  * 依計畫基準此刻該完成的任務（判準見 isPlannedDone：基準結束日早於今天，到期當天不算、隔天才算，
- * 和 legacy 的 `<=` 刻意不同；沒有基準的不算）。規劃中（基準未上鎖）時基準＝推算起訖。
+ * 和 legacy 的 `<=` 刻意不同；沒有基準的不算）。計畫由 PM 輸入的開始日、工期、相依排出（scheduleWithPlan）。
  * 對照測試已遮掉這幾個數字，見 README〈刻意保留的差異〉。
  */
 const planDone = computed(() => tasks.value.filter((t) => isPlannedDone(t, clock.todayIdx)).length)
@@ -70,7 +70,7 @@ const statusRows = computed(() =>
     }
   }),
 )
-/** 已延遲：依計畫基準，未完成而且推算結束日晚於基準結束日（判準見 isLate；規劃中一律 0）。 */
+/** 已延遲：依計畫基準，未完成而且推算結束日晚於基準結束日（判準見 isLate）。 */
 const delayedCount = computed(() => tasks.value.filter((t) => isLate(t)).length)
 
 // ── 卡 3：Issue 統計 ──────────────────────────────────────────────────────
@@ -168,7 +168,7 @@ const needleAngle = computed(() => gaugeAngle(ratio.value))
         </div>
         <div
           class="legend-row late"
-          title="依計畫基準：未完成、推算結束日晚於基準結束日的任務；基準未上鎖（規劃中）時不算延遲"
+          title="依計畫基準：未完成、推算結束日晚於計畫結束日的任務；計畫依開始日、工期、相依排出，PM 改了就是新計畫"
         >
           <span class="dot dot-late"></span>
           <span class="legend-label">{{ DELAYED.label }}</span>

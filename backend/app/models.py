@@ -236,7 +236,8 @@ class Task(SoftDeleteMixin, TimestampMixin, Base):
     done_on: Mapped[date | None]
     # 工期（工作天，1–TASK_DURATION_MAX）。結束日由工期推算，不是輸入值。
     duration_days: Mapped[int]
-    # 計畫基準：判斷延遲用的原計畫起訖；專案上鎖時寫入
+    # 計畫起訖：判斷延遲用。根任務的 baseline_start_on 是 PM 設的計畫開始日（輸入值），
+    # 其他是前端依計畫開始日、工期、相依推算後寫回的快照（規則見 docs/reference/scheduling.md〈計畫與延遲〉）
     baseline_start_on: Mapped[date | None]
     baseline_end_on: Mapped[date | None]
     status: Mapped[str]

@@ -716,7 +716,7 @@ describe('taskStore', () => {
       expect(useTaskStore().taskById('t5')!.start).toBe('2026-09-18')
     })
 
-    it('新增任務（開始日遇週末順延）：上鎖中，基準＝推算起訖', () => {
+    it('新增任務（開始日遇週末順延）：計畫＝建立時的推算起訖', () => {
       const s = useTaskStore()
       const t = s.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-09-19', duration: 5 })!
       const got = s.taskById(t.id)!

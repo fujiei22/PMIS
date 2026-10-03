@@ -21,7 +21,7 @@ export const useWorkCalendarStore = defineStore('workCalendar', () => {
   /** 排程用的查詢；還沒載入或失敗時只看週六日。 */
   const workdays = computed(() => createWorkdays(data.value))
 
-  /** 直接給資料（單元測試的共用前置 `test-utils/loadSample.ts` 用）。 */
+  /** 直接給資料（單元測試的共用前置 `src/__tests__/loadSample.ts` 用）。 */
   function setAll(cal: WorkCalendar): void {
     data.value = cal
     status.value = 'ready'
