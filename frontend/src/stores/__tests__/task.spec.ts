@@ -837,6 +837,31 @@ describe('taskStore', () => {
       expect((await serverTask('t24'))!.start).toBe('2026-11-11')
     })
 
+    // user 決定：日曆載入失敗時排程只扣週末，算出來的日期是錯的；推算漂移不寫回，只送這次改的任務
+    it('日曆不是 ready：寫回只送這次改的任務，被推動的下游與跨日漂移等日曆恢復再送', async () => {
+      const s = useTaskStore()
+      const cal = useWorkCalendarStore()
+      cal.data = null
+      cal.status = 'error'
+      useClockStore().now = OCT_1
+      const many = vi.spyOn(api, 'updateTasks')
+      const one = vi.spyOn(api, 'updateTask')
+      // 改名：只送單筆 patch，不帶漂移
+      await s.updateTask('t5', { name: '改名' })
+      expect(one).toHaveBeenCalledTimes(1)
+      expect(many).not.toHaveBeenCalled()
+      // 改工期：只送 t24，不送被推動的 t25 與其他漂移的任務
+      await s.updateTask('t24', { duration: 7 })
+      expect(many.mock.calls.map((c) => c[0].map((t) => t.id))).toEqual([['t24']])
+
+      // 日曆恢復：下一次寫回把漂移一起送
+      useSampleCalendar()
+      many.mockClear()
+      await s.updateTask('t24', { duration: 6 })
+      const sent = many.mock.calls.flatMap((c) => c[0].map((t) => t.id))
+      expect(sent).toEqual(expect.arrayContaining(['t24', 't4', 't5']))
+    })
+
     it('建立還在飛時改了工期：create 回來後補送一次', async () => {
       const s = useTaskStore()
       mockApi.setLatency(50)

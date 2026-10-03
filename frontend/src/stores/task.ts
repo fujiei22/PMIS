@@ -328,17 +328,21 @@ export const useTaskStore = defineStore('task', () => {
    *
    * - `include` 裡的（這次編輯的對象）：不同就送；server 還沒有（建立中）就先不送，dirty 留著，
    *   等 create 回來由 `addTask` 補送。
-   * - 其他：不同、而且不在 dirty 才送——dirty 的是別處還沒送出的編輯（拖曳中、改名 debounce 中），
+   * - 其他：工作日曆 ready、不同、而且不在 dirty 才送——dirty 的是別處還沒送出的編輯（拖曳中、改名 debounce 中），
    *   由它自己的 commit 送。dirty 的下游也先不送：它們的推算位置來自那筆還沒送出的編輯（例如拖曳中途），
    *   等那筆送出時一起送。漂移（跨日重排、被這次編輯推動的下游）都走這條。
    */
   function scheduleWriteSet(include: Set<string>): Task[] {
+    // 工作日曆不是 ready（載入失敗、還沒載完）時排程只扣週末，算出來的推算日期是錯的：
+    // 只送這次改的任務，漂移與被推動的下游等日曆恢復後的下一次寫回再送（它們隨時能重算，不會丟）
+    const calendarReady = useWorkCalendarStore().status === 'ready'
     const held = downstreamOfPending(include)
     const out: Task[] = []
     for (const t of tasks.value) {
       const server = taskTracker.server.get(t.id)
       if (!server || sameTask(t, server)) continue
-      if (include.has(t.id) || (!taskTracker.dirty.has(t.id) && !held.has(t.id))) out.push(t)
+      if (include.has(t.id)) out.push(t)
+      else if (calendarReady && !taskTracker.dirty.has(t.id) && !held.has(t.id)) out.push(t)
     }
     return out
   }
