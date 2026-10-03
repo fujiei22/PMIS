@@ -10,8 +10,10 @@ import {
   OVERDUE_SHRINK_TEXT,
   PICK_LIMIT_TEXT,
 } from '@/constants/dashboard'
+import { dayIndex } from '@/lib/date'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+import { useWorkCalendarStore } from '@/stores/workCalendar'
 
 /**
  * 日期選擇器依排程規則編輯（規則見 docs/reference/scheduling.md）：
@@ -90,6 +92,18 @@ describe('任務起訖日期選擇器：有前置、未開始（t5）', () => {
 })
 
 describe('任務起訖日期選擇器：未開始的根任務（t24，10/08 開始）', () => {
+  it('存的開始日 10/08 晚於計畫開始日 09-15（刪相依後釘住的根任務）：選結束日從畫面上的開始日算，條停在點的那天', async () => {
+    const s = useTaskStore()
+    s.inputs = s.inputs.map((t) => (t.id === 't24' ? { ...t, baselineStart: '2026-09-15' } : t))
+    const w = await openTask('t24')
+    await w.findAll('.cal-end')[1]!.trigger('click')
+    await cell(w, '2026-10-20').trigger('click')
+    const wd = useWorkCalendarStore().workdays
+    expect(update).toHaveBeenCalledWith('t24', {
+      duration: wd.countWorkdays(dayIndex('2026-10-08'), dayIndex('2026-10-20')),
+    })
+  })
+
   it('填結束日時點在開始日之前：起訖對調，送新的開始日與換算的工期', async () => {
     const w = await openTask('t24')
     expect(useUiStore().taskDatePicker!.target).toBe('start')

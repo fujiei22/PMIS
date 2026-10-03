@@ -7,7 +7,8 @@ import { describe, expect, it } from 'vitest'
  * 畫面讀 task store 的 `policyOf`，不自己拿狀態、前置、逾期組判斷——各自組會漏
  * （整理前左把手擋今天、整條拖不擋，就是這樣來的）。
  * 守衛的範圍：`isOverdue` 只准出現在 lib/schedule.ts（定義）與 lib/editPolicy.ts（使用）；
- * `hasPred` 只准出現在 lib/editPolicy.ts 與 stores/task.ts（store 不公開它）。測試目錄不掃。
+ * `hasPred` 只准出現在 lib/schedule.ts（排程算出，唯一定義）、lib/editPolicy.ts 與 stores/task.ts
+ * （store 不公開它）。測試目錄不掃。
  */
 const SRC = resolve(process.cwd(), 'src')
 
@@ -36,9 +37,9 @@ describe('編輯限制只在 lib/editPolicy.ts 判斷', () => {
     ).toEqual([])
   })
 
-  it('hasPred 只在 lib/editPolicy.ts、stores/task.ts', () => {
+  it('hasPred 只在 lib/schedule.ts、lib/editPolicy.ts、stores/task.ts', () => {
     expect(
-      offenders(/\bhasPred\b/, ['lib/editPolicy.ts', 'stores/task.ts']),
+      offenders(/\bhasPred\b/, ['lib/schedule.ts', 'lib/editPolicy.ts', 'stores/task.ts']),
       '改讀 taskStore.policyOf(id)',
     ).toEqual([])
   })

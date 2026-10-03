@@ -95,13 +95,18 @@ export interface ScheduleMeta {
 }
 
 /**
- * 排程結果：推算後的任務（順序同輸入）、每個任務的說明，以及有環時被略過的相依
- * （資料錯誤；沒有環時是空陣列。lib 不印 log，由 task store 警告）。
+ * 排程結果：推算後的任務（順序同輸入）、每個任務的說明、有環時被略過的相依
+ * （資料錯誤；沒有環時是空陣列。lib 不印 log，由 task store 警告），以及有前置的任務。
  */
 export interface Scheduled {
   tasks: Task[]
   meta: Map<string, ScheduleMeta>
   skipped: { from: string; to: string }[]
+  /**
+   * 有前置的任務 id：只算排程真的用到的前置（兩端都存在、沒被環略過）。
+   * 「有前置」的唯一定義：編輯限制（未開始時開始日由前置決定）讀這一份，跟排程說明不會互相矛盾。
+   */
+  hasPred: Set<string>
 }
 
 /** 工期夾在 1–DURATION_MAX；0、負數、NaN 當 1。 */
@@ -114,9 +119,14 @@ export function isStarted(t: Pick<Task, 'status'>): boolean {
   return t.status !== 'todo'
 }
 
-/** 有前置的任務 id（相依的 to）。 */
-export function predecessorIds(deps: Dependency[]): Set<string> {
-  return new Set(deps.map((dep) => dep.to))
+/**
+ * 有前置的任務 id（相依的 to）。給了 ids 就只認兩端都在裡面的相依（跟排程器一樣，懸空的相依不算）。
+ * 排程中的「有前置」看 `Scheduled.hasPred`；這支給還沒排程的情境用（例：刪相依前先算誰會變成根任務）。
+ */
+export function predecessorIds(deps: Dependency[], ids?: ReadonlySet<string>): Set<string> {
+  return new Set(
+    deps.filter((dep) => !ids || (ids.has(dep.from) && ids.has(dep.to))).map((dep) => dep.to),
+  )
 }
 
 /**
@@ -143,6 +153,7 @@ function runSchedule(tasks: Task[], deps: Dependency[], wd: Workdays, todayIdx: 
   const placed = new Map<string, { s: number; e: number }>()
   const meta = new Map<string, ScheduleMeta>()
   const skipped: Scheduled['skipped'] = []
+  const hasPred = new Set<string>()
 
   for (const id of topoOrder(
     tasks.map((t) => t.id),
@@ -150,8 +161,11 @@ function runSchedule(tasks: Task[], deps: Dependency[], wd: Workdays, todayIdx: 
   )) {
     const t = by.get(id)!
     const before = preds.get(id) ?? []
-    // 有環時被強制放行的任務，還沒排到的前置當作不存在（見 topoOrder），記下來給 store 警告
-    for (const p of before) if (!placed.has(p)) skipped.push({ from: p, to: id })
+    // 有環時被拿掉的相依：排到時前置還沒排，當作不存在（見 topoOrder），記下來給 store 警告
+    for (const p of before) {
+      if (placed.has(p)) hasPred.add(id)
+      else skipped.push({ from: p, to: id })
+    }
     const m: ScheduleMeta = { startBy: 'actual', endBy: 'duration' }
 
     let s: number
@@ -207,6 +221,7 @@ function runSchedule(tasks: Task[], deps: Dependency[], wd: Workdays, todayIdx: 
     }),
     meta,
     skipped,
+    hasPred,
   }
 }
 
@@ -226,9 +241,10 @@ function predecessorMap(by: Map<string, Task>, deps: Dependency[]): Map<string, 
  * 計算順序（Kahn 拓樸排序）：前置一定排在後續之前。起始那批照 ids 的順序，之後照就緒的先後；
  * 沒有環時順序不影響排程結果。preds 只能含 ids 裡的任務（predecessorMap 保證）。
  *
- * 有環（資料錯誤，addDep 會擋）時卡住：從 ids 裡第一個還沒排的任務，沿「還沒排的前置」往回走，
- * 第一個走回頭的任務一定在環上——只強制放行它（它還沒排到的前置當作不存在），再繼續排。
- * 每個環只略過一條相依；環的下游照常等前置。不遞迴，長鏈也不吃呼叫堆疊。
+ * 有環（資料錯誤，addDep 會擋）時卡住：從 ids 裡第一個還沒排的任務，沿「還沒排、沒被拿掉的前置」往回走，
+ * 走回頭時就找到一個環——只拿掉走進重複任務的那一條相依，再看有沒有任務因此可以排；還是卡住就再找下一個環。
+ * 每個環只略過閉合的那一條，不在環上的相依照用。實際被略過的是哪幾條，由呼叫端看「排到時前置還沒排」得知
+ * （`runSchedule` 的 skipped）。不遞迴，長鏈也不吃呼叫堆疊。
  */
 export function topoOrder(ids: string[], preds: Map<string, string[]>): string[] {
   const uniq = [...new Set(ids)]
@@ -245,28 +261,41 @@ export function topoOrder(ids: string[], preds: Map<string, string[]>): string[]
   const queue = uniq.filter((id) => indeg.get(id) === 0)
   const queued = new Set(queue)
   const done = new Set<string>()
-  for (let i = 0; done.size < uniq.length; i++) {
-    if (i === queue.length) {
-      // 卡住＝佇列裡的都排完了，剩下的都在環上或環的下游（每個都還有沒排的前置）
-      let id = uniq.find((x) => !queued.has(x))!
-      const seen = new Set<string>()
-      while (!seen.has(id)) {
-        seen.add(id)
-        id = preds.get(id)!.find((p) => !done.has(p))!
-      }
+  /** 有環時拿掉的相依（`from>to`）。 */
+  const cut = new Set<string>()
+  const live = (from: string, to: string) => !cut.has(`${from}>${to}`)
+  /** 少了 by 條還沒排的前置；全部排完就進佇列。 */
+  const release = (id: string, by: number) => {
+    const n = indeg.get(id)! - by
+    indeg.set(id, n)
+    if (n <= 0 && !queued.has(id)) {
       queue.push(id)
       queued.add(id)
     }
-    const id = queue[i]!
-    done.add(id)
-    for (const to of succ.get(id) ?? []) {
-      const n = indeg.get(to)! - 1
-      indeg.set(to, n)
-      if (n <= 0 && !queued.has(to)) {
-        queue.push(to)
-        queued.add(to)
+  }
+  for (let i = 0; done.size < uniq.length; i++) {
+    while (i === queue.length) {
+      // 卡住＝佇列裡的都排完了，剩下的都在環上或環的下游（每個都還有沒排、沒被拿掉的前置）
+      const path = [uniq.find((x) => !queued.has(x))!]
+      for (;;) {
+        const cur = path[path.length - 1]!
+        const p = preds.get(cur)!.find((q) => !done.has(q) && live(q, cur))!
+        const k = path.indexOf(p)
+        if (k < 0) {
+          path.push(p)
+          continue
+        }
+        // 走回 path[k]：環是 path[k..]，拿掉走進 path[k] 的那一條（自己指向自己時就是那一條）
+        const to = path[k]!
+        const from = path[k + 1] ?? p
+        cut.add(`${from}>${to}`)
+        release(to, preds.get(to)!.filter((q) => q === from).length)
+        break
       }
     }
+    const id = queue[i]!
+    done.add(id)
+    for (const to of succ.get(id) ?? []) if (live(id, to)) release(to, 1)
   }
   return queue
 }
@@ -325,7 +354,7 @@ export function scheduleProject(
   todayIdx: number,
 ): Scheduled {
   const plan = planTasks(tasks, deps, wd, todayIdx)
-  const { tasks: out, meta, skipped } = runSchedule(tasks, deps, wd, todayIdx)
+  const { tasks: out, meta, skipped, hasPred } = runSchedule(tasks, deps, wd, todayIdx)
   return {
     tasks: out.map((t) => {
       const p = plan.get(t.id)!
@@ -335,6 +364,7 @@ export function scheduleProject(
     }),
     meta,
     skipped,
+    hasPred,
   }
 }
 

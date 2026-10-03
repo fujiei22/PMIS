@@ -81,15 +81,6 @@ export const useTaskStore = defineStore('task', () => {
   const depTracker = createTracker<Dependency>()
 
   /**
-   * 有前置的任務 id，只認兩端都存在的相依（跟排程器的 predecessorMap 同一個定義）。
-   * 編輯限制的材料；畫面讀 `policyOf`，不讀這個。
-   */
-  const hasPred = computed(() => {
-    const ids = new Set(inputs.value.map((t) => t.id))
-    return predecessorIds(deps.value.filter((d) => ids.has(d.from) && ids.has(d.to)))
-  })
-
-  /**
    * 推算結果的 identity 快取：id → 上一次的輸入物件與輸出物件。
    * 跨日漂移時 `scheduleProject` 每次都回新物件；輸入是同一個、起訖與基準也相同時沿用上一次的輸出，
    * 改一筆任務不會讓其他漂移中的任務整列重繪（spec 目標 7）。
@@ -140,6 +131,12 @@ export const useTaskStore = defineStore('task', () => {
   /** 每個任務的起訖是哪條規則決定的（跟起訖同一趟算出；也公開給 devtools 看）。 */
   const scheduleMeta = computed(() => scheduled.value.meta)
 
+  /**
+   * 有前置的任務 id：排程真的用到的前置（兩端都存在、沒被環略過；`Scheduled.hasPred`）。
+   * 編輯限制的材料；畫面讀 `policyOf`，不讀這個。
+   */
+  const hasPred = computed(() => scheduled.value.hasPred)
+
   // 相依有環是資料錯誤（addDep 會擋；接後端後兩個分頁同時加反向相依就可能發生）：排程照 topoOrder
   // 只略過最少的相依、不中斷畫面，這裡在被略過的相依改變時警告一次（拖曳的每個 tick 不重複洗版）。
   // 所有環境都印，比照總覽對孤兒專案的處理（stores/overview.ts）
@@ -180,7 +177,7 @@ export const useTaskStore = defineStore('task', () => {
   const leafTasks = computed(() => leafTasksOf(tasks.value))
 
   /** 摘要卡的計數（`countTasks`，跟總覽同一個定義）。 */
-  const counts = computed<TaskCounts>(() => countTasks(leafTasks.value, useClockStore().todayIdx))
+  const counts = computed<TaskCounts>(() => countTasks(tasks.value, useClockStore().todayIdx))
 
   /** 推算後的任務（畫面看的值）。 */
   function taskById(id: string): Task | undefined {
@@ -259,6 +256,7 @@ export const useTaskStore = defineStore('task', () => {
     inputs.value = []
     // 上一個專案（上一位使用者）的推算結果不留著
     scheduleCache = new Map()
+    policyCache = new Map()
     deps.value = []
     clearTracker(taskTracker)
     clearTracker(groupTracker)
@@ -857,7 +855,11 @@ export const useTaskStore = defineStore('task', () => {
    * 不記的話，根任務的開始日會退回很久以前存的值（或今天），刪一條相依整段排程與計畫就跳一次。
    */
   function pinNewRoots(candidates: string[], keep: (d: Dependency) => boolean): string[] {
-    const remaining = predecessorIds(deps.value.filter(keep))
+    // 只認兩端都存在的相依（跟排程器一樣）：懸空的相依不能讓任務「還有前置」而漏釘
+    const remaining = predecessorIds(
+      deps.value.filter(keep),
+      new Set(inputs.value.map((t) => t.id)),
+    )
     const pins = new Map<string, Pick<Task, 'start' | 'baselineStart'>>()
     for (const id of new Set(candidates)) {
       const t = taskById(id)

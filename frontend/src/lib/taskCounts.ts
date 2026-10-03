@@ -23,15 +23,19 @@ export function leafTasksOf(tasks: Task[]): Task[] {
   return tasks
 }
 
-/** 數任務。傳進來的必須是推算後（`scheduleWithPlan` 排過）、而且已經用 `leafTasksOf` 挑過的任務。 */
-export function countTasks(tasks: readonly Task[], todayIdx: number): TaskCounts {
+/**
+ * 數任務。傳進來的必須是推算後的任務（`scheduleWithPlan` 排過）；只數最底層的由這裡自己挑（`leafTasksOf`），
+ * 呼叫端傳全部任務即可，三層任務時也只改 `leafTasksOf` 一處。
+ */
+export function countTasks(tasks: Task[], todayIdx: number): TaskCounts {
   const byStatus: Record<TaskStatus, number> = { todo: 0, doing: 0, paused: 0, done: 0 }
   let planned = 0
   let late = 0
-  for (const t of tasks) {
+  const leaves = leafTasksOf(tasks)
+  for (const t of leaves) {
     byStatus[t.status]++
     if (isPlannedDone(t, todayIdx)) planned++
     if (isLate(t)) late++
   }
-  return { total: tasks.length, byStatus, planned, late }
+  return { total: leaves.length, byStatus, planned, late }
 }

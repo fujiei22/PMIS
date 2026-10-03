@@ -511,6 +511,22 @@ describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）',
    * 縮放的自動捲動補償（D6 延伸）只在被拖的那一端真的落在拖到的那一天時才補（review）：
    * 被夾住（前置任務限制開始日、或已經縮到一天）時那一端停在限制上，再補就會在限制附近來回鋸齒、或短於一天。
    */
+  it('縮放補償：進行中的 t18 左把手往右拉過今天時不補（開始日被上限夾在今天，條不平移、寬度不補）', () => {
+    const tasks = useTaskStore()
+    const { api: drag, registry, scroller, unmount } = mountWithScroller()
+    const bar = document.createElement('div')
+    registerEl(registry.bars, 't18')(bar)
+    const dw = useUiStore().dayWidth
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't18', 'resL')
+    scroller.scrollLeft = 10
+    document.dispatchEvent(pointer('pointermove', 500 + 3 * dw, 0))
+    expect(tasks.taskById('t18')!.start, '開始日夾在今天').toBe('2026-09-18')
+    expect(bar.style.transform).toBe('')
+    expect(bar.style.getPropertyValue('--res-w')).toBe('')
+    document.dispatchEvent(pointer('pointerup', 500 + 3 * dw, 0))
+    unmount()
+  })
+
   it('縮放補償：左把手被前置任務擋住時不補（條不平移、寬度不補）', () => {
     const tasks = useTaskStore()
     const { api: drag, registry, scroller, unmount } = mountWithScroller()

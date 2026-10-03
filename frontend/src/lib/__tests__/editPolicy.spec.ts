@@ -64,7 +64,19 @@ describe('editPolicy', () => {
       startMaxIdx: null,
       endMinIdx: null,
       warnPastStart: true,
+      endBaseIdx: NOW,
     })
+  })
+
+  it('選結束日換算工期的起點：未開始根任務被順延到今天時是計畫開始日，其他是畫面上的開始日', () => {
+    // 計畫 10/01 開始、還沒開工：推算開始日順延到今天 10/08 → 從計畫開始日算（PM 點的日子就是計畫）
+    expect(at({ baselineStart: '2026-10-01' }).endBaseIdx).toBe(dayIndex('2026-10-01'))
+    // 存的開始日 10/12 晚於計畫開始日 10/01（刪相依後釘住的根任務），沒有被順延到今天 → 畫面上的開始日
+    expect(at({ start: '2026-10-12', baselineStart: '2026-10-01' }).endBaseIdx).toBe(
+      dayIndex('2026-10-12'),
+    )
+    expect(at(DOING).endBaseIdx).toBe(dayIndex('2026-10-05'))
+    expect(LOCKED_POLICY.endBaseIdx).toBeNull()
   })
 
   it('有前置、未開始：不能改開始日、不能拖；工期可以改；選結束日不能早於開始日', () => {

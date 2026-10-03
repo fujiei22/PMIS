@@ -450,8 +450,8 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     if (!ui.canEdit || e.button !== 0) return
     // 排程規則擋下的（開始日由前置決定、已完成、任務不存在）同樣不開始、不攔下事件（規則見 docs/reference/scheduling.md〈編輯限制〉）
     const p = taskStore.policyOf(id)
-    if (kind === 'resR' ? p.durationBlock : p.moveBlock) return
-    const t = taskStore.taskById(id)!
+    const t = taskStore.taskById(id)
+    if (!t || (kind === 'resR' ? p.durationBlock : p.moveBlock)) return
     e.stopPropagation()
     begin(
       {

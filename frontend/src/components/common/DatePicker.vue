@@ -153,10 +153,9 @@ function dPick(cell: Cell): void {
   const t = dTask.value
   if (!cal || !t || cell.disabled) return
   const wd = calendar.workdays
-  // 換算工期的起點：未開始的根任務用計畫開始日——PM 點的日子就是計畫（推算的條最快今天開工）；
-  // 其他任務用畫面上的開始日（已開始的是實際開工日；有前置的開始日由前置決定）
-  const sIdx =
-    dPolicy.value.warnPastStart && t.baselineStart ? dayIndex(t.baselineStart) : dayIndex(t.start)
+  // 換算工期的起點（policy 的 endBaseIdx）：未開始的根任務被順延到今天時是計畫開始日——PM 點的日子就是計畫；
+  // 其他是畫面上的開始日（已開始的是實際開工日；有前置的開始日由前置決定）
+  const sIdx = dPolicy.value.endBaseIdx ?? dayIndex(t.start)
   const wasStart = cal.target === 'start'
   cal.month = cell.iso.slice(0, 7)
   if (wasStart) {

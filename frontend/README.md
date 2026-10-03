@@ -85,8 +85,8 @@
 |---|---|
 | 加或改資料欄位 | `types/models.ts` → `api/types.ts`（檔頭 wire 約定）→ `api/mock/store.ts` → 對應資料層 store 的 action → 元件 → 各自旁邊的 `__tests__/` → 本檔〈端點對照表〉；`Task` 的欄位另外補〈Task 欄位對照表〉與 `backend/app/models.py`（`readme.spec.ts` 會比對表與 `interface Task`） |
 | 改排程規則（工作天、工期、相依、基準） | 先改 `docs/reference/scheduling.md` → `lib/workdays.ts` / `lib/schedule.ts` / `lib/editPolicy.ts` ＋ `lib/__tests__/scheduleRules.spec.ts` → 範例資料要仍是 2026-09-18 的推算結果（`mocks/__tests__/consistency.spec.ts`，也釘住三個檢查點的排程說明表）→ 文件的檢查點表（`readme.spec.ts` 用程式推算比對） |
-| 改編輯限制（例：三層任務的上層唯讀） | `docs/reference/scheduling.md`〈編輯限制〉→ `lib/editPolicy.ts` ＋ `lib/__tests__/editPolicy.spec.ts` → `constants/dashboard.ts` 的 `EDIT_BLOCK_TEXT` / `EDIT_NOTE_TEXT`（`satisfies` 會提醒補文字）→ 各入口讀 `taskStore.policyOf`，不用改 |
-| 改計數範圍（哪些任務算數） | `lib/taskCounts.ts` 的 `leafTasksOf` ＋ `lib/__tests__/taskCounts.spec.ts`；task store 的 `leafTasks`、總覽的 `summarizeProject` 都走它 |
+| 改編輯限制（例：三層任務的上層唯讀） | `docs/reference/scheduling.md`〈編輯限制〉→ `lib/editPolicy.ts` ＋ `lib/__tests__/editPolicy.spec.ts` → `constants/dashboard.ts` 的 `EDIT_BLOCK_TEXT` / `EDIT_NOTE_TEXT`（`satisfies` 會提醒補文字）→ 排程類入口（拖曳、把手、起訖選擇器、±1）讀 `taskStore.policyOf`，不用改；改狀態、完成日、相依、搬列還沒歸 policy 管，要個別改（清單見 scheduling.md〈編輯限制〉） |
+| 改計數範圍（哪些任務算數） | `lib/taskCounts.ts` 的 `leafTasksOf` ＋ `lib/__tests__/taskCounts.spec.ts`；`countTasks` 自己套它，task store 的 `leafTasks`（篩選列的任務數、看板）也走它 |
 | 加一支 api 方法 | `api/types.ts` 的 `ProjectApi` → `api/mock/index.ts` → store action → 本檔〈端點對照表〉（`readme.spec.ts` 會比對兩邊） |
 | 加會改資料的操作（按鈕、選單、拖曳、就地編輯） | 資料層 action 第一行擋 `canEdit`，並在 `stores/__tests__/readonly.spec.ts` 分類 → 元件用 `ui.canEdit` 藏掉入口（開浮層走 `useMenus` / `ui.askDelete` 這類唯讀時自己不開的 action）→ `e2e/readonly.spec.ts` 加一條（見〈store 的三層〉的唯讀那段） |
 | 加畫面狀態（開關、選取、篩選） | 派生層 store 加欄位，元件直接寫：Dashboard 是 `ui` / `filter` / `selection`，總覽是 `overview` |

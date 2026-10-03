@@ -1,6 +1,6 @@
 import { dayIndex } from '@/lib/date'
 import { scheduleWithPlan } from '@/lib/schedule'
-import { countTasks, leafTasksOf } from '@/lib/taskCounts'
+import { countTasks } from '@/lib/taskCounts'
 import { createWorkdays, type Workdays } from '@/lib/workdays'
 import { sampleCalendar } from '@/mocks/sampleCalendar'
 import {
@@ -60,7 +60,7 @@ export function summarizeProject(
   const todayIdx = dayIndex(todayIso)
   const tasks = scheduleWithPlan(data.tasks, data.deps, workdays, todayIdx)
   // 計數跟 Dashboard 摘要卡同一個定義（lib/taskCounts.ts）：只數最底層任務
-  const counts = countTasks(leafTasksOf(tasks), todayIdx)
+  const counts = countTasks(tasks, todayIdx)
   const taskCounts: Record<TaskStatus, number> = { ...counts.byStatus }
 
   const openIssues: Record<IssueLevel, number> = { A: 0, B: 0, C: 0, D: 0 }

@@ -742,6 +742,15 @@ describe('taskStore', () => {
       expect(s.taskById('t5')!.name).toBe('別人改的')
     })
 
+    it('刪相依：另外還有懸空的相依（前置已不存在）也算變成根任務，照樣保留刪除當下推算的開始日', async () => {
+      const s = useTaskStore()
+      useClockStore().now = OCT_1
+      s.deps.push({ id: 'ghost', from: 'nope', to: 't5' })
+      const dep = s.deps.find((d) => d.from === 't4' && d.to === 't5')!
+      await s.removeDep(dep.id)
+      expect(s.taskById('t5')!.start).toBe('2026-10-02')
+    })
+
     it('刪相依失敗：記下的開始日放棄，存的值對齊回 server、不再 dirty', async () => {
       const s = useTaskStore()
       useClockStore().now = OCT_1
@@ -802,6 +811,9 @@ describe('taskStore', () => {
       const s = useTaskStore()
       s.applyLocalPatch('t24', { start: '2026-09-10' })
       expect(s.taskById('t24')!.start).toBe('2026-09-18')
+      // 計畫照拖的日子；最快今天開工，所以算延遲
+      expect(s.taskById('t24')!.baselineStart).toBe('2026-09-10')
+      expect(isLate(s.taskById('t24')!)).toBe(true)
       await s.commitSchedule(['t24'])
       expect((await serverTask('t24'))!.start).toBe('2026-09-18')
       s.applyEvent({

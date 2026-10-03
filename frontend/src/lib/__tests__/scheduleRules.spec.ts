@@ -450,18 +450,51 @@ describe('scheduleProject 的說明（meta）與被略過的相依', () => {
     expect(scheduleProject([task('a'), task('b')], [dep('a', 'b')], wd, NOW).skipped).toEqual([])
   })
 
-  it('tasks 跟 scheduleWithPlan 一樣', () => {
+  it('tasks 的計畫欄位就是 planTasks 的結果', () => {
     const ts = [task('a', { duration: 3 }), task('b')]
     const deps = [dep('a', 'b')]
-    expect(scheduleProject(ts, deps, wd, NOW).tasks).toEqual(scheduleWithPlan(ts, deps, wd, NOW))
+    const plan = planTasks(ts, deps, wd, NOW)
+    expect(
+      scheduleProject(ts, deps, wd, NOW).tasks.map((t) => [t.baselineStart, t.baselineEnd]),
+    ).toEqual(ts.map((t) => [plan.get(t.id)!.start, plan.get(t.id)!.end]))
+  })
+
+  it('兩個環互相牽連：每個環只略過閉合的那一條，不在環上的相依照用', () => {
+    // a ⇄ b、d ⇄ e，另有 c → b、e → c（不在環上）；顯示順序 b, a, c, d, e
+    const ts = ['b', 'a', 'c', 'd', 'e'].map((id) => task(id))
+    const deps = [
+      dep('a', 'b'),
+      dep('b', 'a'),
+      dep('c', 'b'),
+      dep('e', 'c'),
+      dep('d', 'e'),
+      dep('e', 'd'),
+    ]
+    const r = scheduleProject(ts, deps, wd, NOW)
+    expect(r.skipped).toEqual([
+      { from: 'd', to: 'e' },
+      { from: 'a', to: 'b' },
+    ])
+    // c → b 照用：b 接在 c 後面
+    expect(r.meta.get('b')).toMatchObject({ startBy: 'pred', predId: 'c' })
+  })
+
+  it('hasPred：只算排程真的用到的前置（懸空的、被環略過的都不算）', () => {
+    const one = scheduleProject([task('a'), task('b')], [dep('a', 'b')], wd, NOW)
+    expect([...one.hasPred]).toEqual(['b'])
+    expect(scheduleProject([task('b')], [dep('zzz', 'b')], wd, NOW).hasPred.size).toBe(0)
+    const cyc = scheduleProject([task('a'), task('b')], [dep('a', 'b'), dep('b', 'a')], wd, NOW)
+    expect([...cyc.hasPred]).toEqual(['b'])
   })
 })
 
 describe('前置、逾期與有效工期（編輯限制見 editPolicy.spec）', () => {
   const hasPred = predecessorIds([dep('a', 'b')])
 
-  it('predecessorIds：有前置的任務 id', () => {
+  it('predecessorIds：有前置的任務 id；給了 ids 就只認兩端都在裡面的相依', () => {
     expect([...hasPred]).toEqual(['b'])
+    const ids = new Set(['a', 'b', 'c'])
+    expect([...predecessorIds([dep('zzz', 'b'), dep('a', 'c')], ids)]).toEqual(['c'])
   })
 
   it('逾期與有效工期：進行中、09-28 開工、工期 2，在 10-08 時橫跨 9 個工作天', () => {
@@ -501,5 +534,3 @@ describe('延遲與計畫進度（依基準）', () => {
     expect(isPlannedDone(task('a'), NOW)).toBe(false)
   })
 })
-
-// 日期選擇器與列選單的說明行原因（文字在 constants 的 EDIT_NOTE_TEXT）；開浮層估高與畫面用同一個判斷

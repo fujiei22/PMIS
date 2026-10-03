@@ -8,10 +8,13 @@ import type { Task } from '@/types/models'
  * 甘特條、拖曳、日期選擇器、卡片 ±1、列選單、開浮層的估高、store 的 applyTaskEdit 都讀這一份，不各自判斷
  * （src/__tests__/edit-policy-guard.spec.ts 守）。全部是純函式，不碰 store。
  *
- * 管的範圍是排程類的編輯：開始日、工期、整條拖、把手。還沒歸這裡管的入口：
- * 改狀態（OptionMenu、屬性面板）、完成日選擇器（DatePicker 的 iCal、useMenus.openIssueDatePicker）、
- * 拉相依線與相依編輯器。三層任務（上層由下層彙總、唯讀）要擋它們時，在 EditPolicy 加欄位
- * （例如 statusBlock、doneBlock、linkBlock）並讓那些入口改讀 policyOf；EditBlock 加 'rollup' 原因。
+ * 管的範圍是排程類的編輯：開始日、工期、整條拖、把手、起訖選擇器、±1。還沒歸這裡管的入口：
+ * - 改狀態：OptionMenu、屬性面板；store 的 applyTaskEdit 不擋狀態
+ * - 完成日：DatePicker 的完成日選擇器、useMenus.openIssueDatePicker、store 的 setTaskDoneDirect
+ * - 相依：usePointerDrag 的拉線、DependencyEditor（候選清單用全部任務）、store 的 addDep（只擋環）
+ * - 搬列或卡片：moveTaskTo（三層時等於換上層）
+ * 三層任務（上層由下層彙總、唯讀）要擋它們時，在 EditPolicy 加欄位（例如 statusBlock、doneBlock、linkBlock）、
+ * EditCtx 帶「有子任務」的集合、EditBlock 加 'rollup' 原因，並讓那些入口與 store 端改讀它。
  * 唯讀（canEdit）不在這裡：由 `ui.canEdit` 與各入口的開關另外擋。
  */
 
@@ -52,9 +55,15 @@ export interface EditPolicy {
   endMinIdx: number | null
   /**
    * 提醒、不是限制：未開始的根任務，開始日可以選今天以前——照設成計畫開始日，但最快今天開工，所以直接算延遲。
-   * 日期選擇器對準哪一端都顯示說明行；選結束日時工期從計畫開始日換算（PM 點的日子就是計畫）。
+   * 日期選擇器對準哪一端都顯示說明行。
    */
   warnPastStart: boolean
+  /**
+   * 日期選擇器選結束日時，換算工期的起點（日索引；沒有開始日是 null）。未開始的根任務、推算開始日被順延到今天
+   * （計畫開始日已過）時是計畫開始日——PM 點的日子就是計畫；其他是畫面上的開始日。
+   * 甘特右把手不讀它：拖曳時條的右端跟著滑鼠，從畫面上的開始日算（2026-10-03 定案）。
+   */
+  endBaseIdx: number | null
 }
 
 /** 任務不存在時的 policy：什麼都不能改。`policyOf` 對不存在的 id 回它，各入口不必處理 undefined。 */
@@ -66,6 +75,7 @@ export const LOCKED_POLICY: EditPolicy = Object.freeze<EditPolicy>({
   startMaxIdx: null,
   endMinIdx: null,
   warnPastStart: false,
+  endBaseIdx: null,
 })
 
 /**
@@ -83,6 +93,14 @@ export function editPolicy(t: Task, ctx: EditCtx): EditPolicy {
   else if (done && t.done) startMaxIdx = dayIndex(t.done)
   let endMinIdx: number | null = startBlock && t.start ? dayIndex(t.start) : null
   if (overdue) endMinIdx = Math.max(endMinIdx ?? ctx.todayIdx, ctx.todayIdx)
+  const warnPastStart = t.status === 'todo' && !startBlock
+  const startIdx = t.start ? dayIndex(t.start) : null
+  // 被順延到今天：未開始的根任務，推算開始日就是今天（或今天之後第一個工作天）、而計畫開始日在它之前
+  const pushed =
+    warnPastStart &&
+    !!t.baselineStart &&
+    startIdx === ctx.wd.onOrAfter(ctx.todayIdx) &&
+    dayIndex(t.baselineStart) < startIdx
   return {
     moveBlock: done ? 'done' : startBlock,
     startBlock,
@@ -90,7 +108,8 @@ export function editPolicy(t: Task, ctx: EditCtx): EditPolicy {
     overdue,
     startMaxIdx,
     endMinIdx,
-    warnPastStart: t.status === 'todo' && !startBlock,
+    warnPastStart,
+    endBaseIdx: pushed ? dayIndex(t.baselineStart) : startIdx,
   }
 }
 
@@ -122,7 +141,8 @@ export function durationNote(p: EditPolicy): EditNote | null {
  * 套用使用者的編輯到原始輸入（規則見 docs/reference/scheduling.md〈狀態改變時寫入的值〉
  * 〈不會生效的輸入不寫進資料〉）。沒有變動回原陣列；變動的那筆是新物件，其他保留原物件。
  * 能不能改、開始日的上限都問 `editPolicy`（看套用後的狀態），跟畫面上的入口同一份規則；
- * 只看「有沒有擋」、不比對原因碼，加新原因（例如三層任務的上層唯讀）時這裡自動擋。
+ * 只看「有沒有擋」、不比對原因碼：EditBlock 加新原因時，開始日與工期這兩欄會自動跟著擋。
+ * 狀態、完成日還不歸 policy 管（見檔頭），三層任務要擋上層時另外處理。
  *
  * - 狀態改變：未開始 → 已開始時開始日記成今天（patch 同時帶 start 就用 patch 的）；
  *   進完成補完成日（已有值不覆蓋）；離開完成清完成日。
