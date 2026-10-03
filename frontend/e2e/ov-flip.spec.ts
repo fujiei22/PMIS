@@ -108,15 +108,16 @@ test('逐字打 app（每字 80ms）再逐字刪：卡片不瞬移、移動途�
 test('清除篩選後 100ms 再篩：淡入中又被重排的卡，透明度不直接跳到 1（T5）', async ({ page }) => {
   await gotoOverview(page)
   const search = page.getByTestId('overview-search')
-  await search.fill('p')
+  await search.fill('金')
   await idle(page)
   const tr = await trace(page, TARGETS, async () => {
-    // 清除後 payment 在 m5 泳道第二格淡入；100ms 後篩「金」：pmis 被篩掉，淡入中的 payment 移到第一格
+    // 成員5 的泳道在 09-18 是 payment、pmis（同落後，依到期日）。
+    // 清除後 pmis 在 m5 泳道第二格淡入；100ms 後篩「pmis」：payment 被篩掉，淡入中的 pmis 移到第一格
     await page.getByTestId('overview-clear').click()
     await pause(page, 100)
-    await search.fill('金')
+    await search.fill('pmis')
   })
-  const pay = relative(tr, 'payment')
-  expect(Math.max(...pay.map((p) => p.v)) - Math.min(...pay.map((p) => p.v)), 'payment 有被重排').toBeGreaterThan(100)
+  const pmis = relative(tr, 'pmis')
+  expect(Math.max(...pmis.map((p) => p.v)) - Math.min(...pmis.map((p) => p.v)), 'pmis 有被重排').toBeGreaterThan(100)
   for (const id of IDS) expect(opacityJumps(relative(tr, id)), id).toBe(false)
 })

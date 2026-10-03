@@ -8,8 +8,9 @@ import { describe, expect, it } from 'vitest'
  * 三層，只能由上往下依賴：
  *
  * 1. **時鐘層** `clock` —— 所有層都可以讀。
- * 2. **資料層** `member / budget / project / task / issue / comment / portfolio / session`（加上它們共用的
- *    `_optimistic` 與事件入口 `_sync`）—— 專案資料的唯一擁有者。
+ * 2. **資料層** `member / budget / project / task / issue / comment / portfolio / session / workCalendar`
+ *    （加上它們共用的 `_optimistic` 與事件入口 `_sync`）—— 專案資料的唯一擁有者。
+ *    `workCalendar`（工作日曆）是全系統共用的資料，task 排程要讀它，所以放在資料層。
  * 3. **派生層** `rows / filter / selection / ui / overview` —— 讀資料層算出畫面要的東西。
  *
  * 資料層**不知道派生層存在**：
@@ -35,6 +36,7 @@ const DATA_LAYER = [
   'comment.ts',
   'portfolio.ts',
   'session.ts',
+  'workCalendar.ts',
   '_optimistic.ts',
   '_sync.ts',
 ] as const
@@ -45,7 +47,7 @@ const ALLOWED = [
   /^@\/lib\/.*$/,
   /^@\/types\/.*$/,
   /^@\/stores\/clock$/,
-  /^@\/stores\/(member|budget|project|task|issue|comment|portfolio|session)$/,
+  /^@\/stores\/(member|budget|project|task|issue|comment|portfolio|session|workCalendar)$/,
   /^@\/stores\/_optimistic$/,
   /^@\/stores\/_sync$/,
 ]

@@ -38,20 +38,26 @@ describe('samplePortfolio', () => {
   it('m1–m7 就是 sampleProject 的成員（同一份，不會走樣）', () => {
     expect(PORTFOLIO_MEMBERS.slice(0, 7)).toEqual(sampleProject.members)
   })
-  it('PMIS 在 09-22 是 late（延遲 3），09-18 是 watch（A 級 Issue）', () => {
-    const at = (today: string) =>
-      deriveProject(buildPortfolio(sampleProject, today).projects[0]!, today)
+  // 延遲與理論進度依計畫算（規則見 docs/reference/scheduling.md〈計畫與延遲〉）：09-18 延遲 1 筆、09-22 延遲 2 筆，
+  // 都沒到 late 的門檻（落後 15 或延遲 3），有 A 級未結 Issue → watch
+  it('PMIS 在 09-18、09-22 都是 watch：延遲 1→2 筆、理論進度 17→20%', () => {
+    const at = (today: string) => {
+      const summary = buildPortfolio(sampleProject, today).projects[0]!
+      return { ...deriveProject(summary, today), delayedTasks: summary.delayedTasks }
+    }
     expect(at('2026-09-22')).toMatchObject({
-      actualPct: 13,
-      plannedPct: 23,
-      gap: 10,
-      alert: 'late',
-    })
-    expect(at('2026-09-18')).toMatchObject({
       actualPct: 13,
       plannedPct: 20,
       gap: 7,
       alert: 'watch',
+      delayedTasks: 2,
+    })
+    expect(at('2026-09-18')).toMatchObject({
+      actualPct: 13,
+      plannedPct: 17,
+      gap: 4,
+      alert: 'watch',
+      delayedTasks: 1,
     })
   })
 })

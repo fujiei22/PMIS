@@ -16,14 +16,16 @@ import { usePointerDrag } from '@/composables/usePointerDrag'
 import { useRowMotion } from '@/composables/useRowMotion'
 import { useStickyOffsetsContext } from '@/composables/useStickyOffsets'
 import { useTaskActions } from '@/composables/useTaskActions'
-import { ROW_HEIGHT } from '@/constants/dashboard'
+import { CALENDAR_NOTICE, ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex } from '@/lib/date'
+import { fmtYears } from '@/lib/format'
 import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
 import { useRowsStore } from '@/stores/rows'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+import { useWorkCalendarStore } from '@/stores/workCalendar'
 import type { Group, Task } from '@/types/models'
 
 /** 一天的毫秒數；把日索引換回 Date 用。 */
@@ -39,6 +41,7 @@ const rowsStore = useRowsStore()
 const taskStore = useTaskStore()
 const filter = useFilterStore()
 const selection = useSelectionStore()
+const calendar = useWorkCalendarStore()
 const sticky = useStickyOffsetsContext()
 const registry = useDomRegistry()
 
@@ -126,24 +129,38 @@ const totalDays = computed(() => taskStore.range.b - taskStore.range.a)
 const chartWidth = computed(() => totalDays.value * ui.dayWidth)
 const chartHeight = computed(() => Math.max(rows.value.length * ROW_HEIGHT, MIN_CHART_H))
 
-/** 尺規與 chart 背景共用的每日資料。legacy :2718-2733 */
+/**
+ * 尺規與 chart 背景共用的每日資料。legacy :2718-2733。
+ * 非工作天看工作日曆（週末＋放假日，補班日算上班）；日曆沒載入時只看週末。
+ */
 const days = computed<RulerDay[]>(() => {
   const out: RulerDay[] = []
+  const work = calendar.workdays
   for (let i = 0; i < totalDays.value; i++) {
     const idx = taskStore.range.a + i
     const d = new Date(idx * DAY_MS)
-    const wd = d.getUTCDay()
     out.push({
       idx,
       left: i * ui.dayWidth,
       w: ui.dayWidth,
       dd: String(d.getUTCDate()).padStart(2, '0'),
-      wd: WEEKDAY[wd]!,
-      weekend: wd === 0 || wd === 6,
+      wd: WEEKDAY[d.getUTCDay()]!,
+      off: !work.isWorkday(idx),
+      name: work.nameOf(idx),
       today: idx === clock.todayIdx,
     })
   }
   return out
+})
+
+/**
+ * 標題列的日曆提示（規則見 docs/reference/scheduling.md〈工作天〉）：日曆載入失敗、或任務期間碰到
+ * 官方還沒公布假日的年份時，排程只排除週末，要讓人知道。還沒載入（idle／loading）不提示。
+ */
+const calendarNotice = computed(() => {
+  if (calendar.status === 'error') return CALENDAR_NOTICE.error
+  const years = calendar.uncoveredYears(taskStore.range.min, taskStore.range.max)
+  return years.length ? CALENDAR_NOTICE.uncovered(fmtYears(years)) : ''
 })
 
 /** 把連續同月的日子併成一格；太窄就只留月份或不顯示。legacy :2728-2732 */
@@ -238,7 +255,10 @@ function toggleAllGroups(): void {
       <h2 class="panel-title">專案時程</h2>
       <!-- 計數字樣在 filterStore，與看板共用一份（legacy :3532；review m4） -->
       <div class="panel-count" data-testid="task-count">{{ filter.taskCountLabel }}</div>
-      <div class="spacer"></div>
+      <!-- 日曆提示兼撐開的空白：沒有提示時是空的；放不下時先縮、尾端省略，全文在 title -->
+      <div class="cal-notice" data-testid="cal-notice" :title="calendarNotice || undefined">
+        {{ calendarNotice }}
+      </div>
       <div class="zoom">
         <input
           type="range"
@@ -332,7 +352,8 @@ function toggleAllGroups(): void {
               v-for="d in days"
               :key="d.idx"
               class="day-bg"
-              :class="{ weekend: d.weekend, today: d.today }"
+              :class="{ off: d.off, today: d.today }"
+              :data-idx="d.idx"
               :style="{ left: `${d.left}px`, width: `${d.w}px` }"
             ></div>
             <div
@@ -367,6 +388,17 @@ function toggleAllGroups(): void {
 
 .spacer {
   flex: 1;
+}
+
+/* 標題列的日曆提示：同時是撐開的空白（取代 .spacer），768px 時先縮它，標題列不折行 */
+.cal-notice {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
 }
 
 .zoom {
@@ -573,7 +605,8 @@ function toggleAllGroups(): void {
   border-right: 1px solid var(--border-hair);
 }
 
-.day-bg.weekend {
+/* 非工作天（週末與放假日）；token 名沿用 --bg-weekend */
+.day-bg.off {
   background: var(--bg-weekend);
 }
 

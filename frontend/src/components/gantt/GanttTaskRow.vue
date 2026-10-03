@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 甘特左欄的任務列：把手、狀態點、任務名、起訖日期 + 工期、列尾的「⋮」（動作選單 RowActionMenu）。
+// 甘特左欄的任務列：把手、狀態點、任務名、起訖日期 + 工期（有效工期，工作天）、列尾的「⋮」（動作選單 RowActionMenu）。
 // 唯讀時（F2）沒有把手與「⋮」、不能改名，日期膠囊只是顯示（點了不開日期選擇器）。
 // legacy 對照：模板 :442-466，groupRows[].tasks :2814-2877。
 import { computed, nextTick, ref, watch } from 'vue'
@@ -9,28 +9,27 @@ import { NARROW_QUERY, useMediaQuery } from '@/composables/useMediaQuery'
 import { useMenus } from '@/composables/useMenus'
 import { usePointerDragContext } from '@/composables/usePointerDrag'
 import { DELAYED, TASK_STATUS } from '@/constants/dashboard'
-import { lengthOf } from '@/lib/date'
 import { parseDuration } from '@/lib/easing'
-import { fmtDate, stripYear } from '@/lib/format'
+import { fmtDate, fmtWorkdays, stripYear, WORKDAY_UNIT } from '@/lib/format'
 import { isImeComposing } from '@/lib/keyboard'
-import { isLate } from '@/lib/schedule'
-import { useClockStore } from '@/stores/clock'
+import { durationOf, isLate } from '@/lib/schedule'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+import { useWorkCalendarStore } from '@/stores/workCalendar'
 import type { Task } from '@/types/models'
 
 const props = defineProps<{ task: Task }>()
 
-const clock = useClockStore()
 const ui = useUiStore()
 const selection = useSelectionStore()
 const taskStore = useTaskStore()
+const calendar = useWorkCalendarStore()
 const { openTaskDatePicker, toggleRowMenu } = useMenus()
 const drag = usePointerDragContext()
 const registry = useDomRegistry()
 
-const late = computed(() => isLate(props.task, clock.todayIdx))
+const late = computed(() => isLate(props.task))
 /** 延遲蓋掉原本的狀態，供 CSS 變數與測試使用（契約 E）。 */
 const status = computed(() => (late.value ? 'delayed' : props.task.status))
 const statusDot = computed(() => (late.value ? DELAYED.bar : TASK_STATUS[props.task.status].bar))
@@ -49,7 +48,7 @@ const othersLifted = computed(() => ui.drag?.kind === 'reorder' && ui.drag.id !=
 const dropOver = computed(() => ui.drag?.kind === 'reorder' && ui.drag.over?.id === props.task.id)
 
 /**
- * 動作（工期 ±1 天、相依、刪除）收在列尾「⋮」開的選單；點列本身只標記（選取）。
+ * 動作（工期 ±1 工作天、相依、刪除）收在列尾「⋮」開的選單；點列本身只標記（選取）。
  * legacy 是 hover 撐開快捷鈕、平板是選取就撐開，只想標記任務時很干擾（user 選的 L 稿提案 A）。
  * 開選單不選取任務：選取會捲動時間軸、淡化其他列，開個選單不該有這些副作用。
  */
@@ -60,10 +59,16 @@ const narrow = useMediaQuery(NARROW_QUERY)
  * 後面的工期格就不重複顯示。左欄展開、寬度撐開之後（ui.ganttLeftDates）才照一般寫法。
  */
 const slim = computed(() => narrow.value && !ui.ganttLeftDates)
-const days = computed(() => lengthOf(props.task))
+/**
+ * 工期：有效工期（工作天；完成＝實際工作天、逾期含延長，規則見 docs/reference/scheduling.md〈有效工期〉）。
+ * 跟卡片、選單、屬性面板同一個 durationOf；起訖之間的日曆天不再當工期顯示。
+ */
+const days = computed(() => durationOf(props.task, calendar.workdays))
+/** 工期格的 title：單位寫清楚，避免跟分類列的日曆天混淆。 */
+const daysTitle = `工期（${WORKDAY_UNIT}）`
 /** 窄版展開後的左欄（平板直向）省掉年份。legacy `rangeRow` :2825 */
 const rangeText = computed(() => {
-  if (slim.value) return `${days.value} 天`
+  if (slim.value) return fmtWorkdays(days.value)
   const a = fmtDate(props.task.start)
   const b = fmtDate(props.task.end)
   return narrow.value ? `${stripYear(a)} → ${stripYear(b)}` : `${a} → ${b}`
@@ -242,7 +247,7 @@ function onDrop(e: DragEvent): void {
       </div>
       <template v-if="!slim">
         <span class="date-sep"></span>
-        <div class="date-days" title="工期（天）" @click="stopIfEditable">
+        <div class="date-days" :title="daysTitle" @click="stopIfEditable">
           <span class="days-num">{{ days }}</span>
         </div>
       </template>
@@ -467,7 +472,7 @@ function onDrop(e: DragEvent): void {
 }
 
 /*
- * 列尾「⋮」：動作（工期 ±1 天、相依、刪除）都收在它開的選單（RowActionMenu）。
+ * 列尾「⋮」：動作（工期 ±1 工作天、相依、刪除）都收在它開的選單（RowActionMenu）。
  * 一直顯示，直的只佔 16px：比 hover 才出現的橫「⋯」省空間，也不會在列尾空一格（user 要求）。
  */
 .more {

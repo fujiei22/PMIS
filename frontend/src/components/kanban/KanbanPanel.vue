@@ -18,6 +18,7 @@ import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+import { useWorkCalendarStore } from '@/stores/workCalendar'
 import type { TaskStatus } from '@/types/models'
 
 /** 看板欄的順序，逐字取自 legacy :2989。 */
@@ -28,6 +29,7 @@ const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
 const memberStore = useMemberStore()
+const calendar = useWorkCalendarStore()
 const filter = useFilterStore()
 const clock = useClockStore()
 const registry = useDomRegistry()
@@ -38,6 +40,8 @@ const sortCtx = computed(() => ({
   openIssueCount: issueStore.openCount,
   // created 沒填時的後備值；lib 不自己讀時鐘（review m5）
   todayIdx: clock.todayIdx,
+  // 工期排序扣週末與假日；lib 不自己讀 store
+  workdays: calendar.workdays,
 }))
 
 const columns = computed(() =>

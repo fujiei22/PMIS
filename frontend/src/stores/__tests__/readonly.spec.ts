@@ -65,11 +65,12 @@ const WRITE_ACTIONS: Record<StoreKey, Record<string, WriteCall>> = {
     moveGroup: ({ task }) => task.moveGroup('g3', -1),
     commitGroupOrder: ({ task }) => task.commitGroupOrder(),
     addTask: ({ task }) =>
-      task.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-09-18', end: '2026-09-22' }),
+      task.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-09-18', duration: 5 }),
     applyLocalPatch: ({ task }) => task.applyLocalPatch('t1', { name: '唯讀改名' }),
     updateTask: ({ task }) => task.updateTask('t1', { name: '唯讀改名' }),
     commitTaskPatch: ({ task }) => task.commitTaskPatch('t1', { name: '唯讀改名' }),
-    commitTasks: ({ task }) => task.commitTasks([{ ...task.taskById('t1')!, name: '唯讀改名' }]),
+    // t1 在 loadEditable 被搬到 g2（本地、還沒送），寫回時一定有東西要送
+    commitSchedule: ({ task }) => task.commitSchedule(['t1']),
     commitTaskOrder: ({ task }) => task.commitTaskOrder(),
     setTaskDoneDirect: ({ task }) => task.setTaskDoneDirect('t1', '2020-01-01'),
     removeTask: ({ task }) => task.removeTask('t5'),
@@ -97,7 +98,7 @@ const WRITE_ACTIONS: Record<StoreKey, Record<string, WriteCall>> = {
 }
 
 const READ_ACTIONS: Record<StoreKey, string[]> = {
-  task: ['taskById', 'groupById', 'collectDirtyTasks', 'predecessors', 'successors'],
+  task: ['taskById', 'groupById', 'predecessors', 'successors', 'explain'],
   issue: ['byId', 'byTask', 'openCount'],
   comment: ['forTarget', 'filesForTarget', 'commenterIds'],
   member: ['byId', 'assignable'],

@@ -4,11 +4,14 @@ import { useDomRegistry } from '@/composables/useDomRegistry'
 import { ROW_HEIGHT } from '@/constants/dashboard'
 import { dayIndex, isoFromIndex } from '@/lib/date'
 import { parseDuration } from '@/lib/easing'
+import { DURATION_MAX, durationBlock, isOverdue, isStarted, moveBlock } from '@/lib/schedule'
+import { useClockStore } from '@/stores/clock'
 import { useRowsStore } from '@/stores/rows'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore, type DragState } from '@/stores/ui'
-import type { DropTarget } from '@/types/models'
+import { useWorkCalendarStore } from '@/stores/workCalendar'
+import type { DropTarget, Task } from '@/types/models'
 
 /**
  * 甘特圖上的七種指標拖曳：條的移動 / 左右縮放、拉線建相依、列與分類重排、畫布平移。
@@ -105,8 +108,9 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   let downAt = { x: 0, y: 0 }
   let hoverTimer: ReturnType<typeof setTimeout> | undefined
   /**
-   * 這一段拖曳改到的任務 id（含被 cascade 推動的下游）。
-   * review F2：中止時只放棄**自己**標的那幾筆，別處還在 debounce 的改名不能一起被抹掉。
+   * 這一段拖曳改到的任務 id——只有被拖的那一筆：下游是跟著重排的推算結果，存的值沒變、不是 dirty。
+   * review F2：中止時只放棄**自己**標的那幾筆，別處還在 debounce 的改名（包括被推動的下游）不能一起被抹掉；
+   * 放開時這些 id 就是 `commitSchedule` 的 include，被推動的下游由寫回集合帶上。
    */
   const dragged = new Set<string>()
 
@@ -135,9 +139,13 @@ export function usePointerDrag(els: DragElements): PointerDrag {
 
   /**
    * 條的移動與左右縮放：換算成整數天再寫回 store。legacy :2486-2496。
+   * 規則見 docs/reference/scheduling.md〈編輯限制〉，送出的都是「存的值」，畫面由排程推算：
+   * - 移動：改開始日（工期不變）；進行中／暫停的開始日不晚於今天。
+   * - 左把手：改開始日並重算工期，結束日留在原地；未開始的不早於今天、進行中的不晚於今天。
+   * - 右把手：換算成工期（開始日到拖到那天的工作天數）；逾期中結束日最早是今天，拖到今天以前不送。
    *
    * review C1：每個 tick **只改本地**（`applyLocalPatch`），
-   * 放開（`onUp`）才把整段結果送一次 `updateTasks`——
+   * 放開（`onUp`）才把整段推算結果送一次（`commitSchedule`）——
    * 否則一次拖曳會打出幾十個請求，中途失敗的還原順序也無解。
    */
   function tickBar(
@@ -151,20 +159,11 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     const delta = Math.round((moved + scrolled) / dw)
     if (delta !== d.last) {
       d.last = delta
-      if (d.kind === 'move') {
-        track(
-          taskStore.applyLocalPatch(d.id, {
-            start: isoFromIndex(d.s0 + delta),
-            end: isoFromIndex(d.e0 + delta),
-          }),
-        )
-      } else if (d.kind === 'resL') {
-        // 左把手不能越過結束日
-        track(
-          taskStore.applyLocalPatch(d.id, { start: isoFromIndex(Math.min(d.s0 + delta, d.e0)) }),
-        )
-      } else {
-        track(taskStore.applyLocalPatch(d.id, { end: isoFromIndex(Math.max(d.e0 + delta, d.s0)) }))
+      const t = taskStore.taskById(d.id)
+      const patch = t ? barPatch(d, t, delta) : null
+      if (patch) {
+        taskStore.applyLocalPatch(d.id, patch)
+        track(d.id)
       }
     }
     // 動畫稽核 D6：自動捲動時 scrollLeft 連續在變、條卻以整天吸附，條在游標下鋸齒抖動。
@@ -173,8 +172,40 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   }
 
   /**
-   * 被拖的那一端真的落在拖到的那一天（資料寫完之後看）：沒落在那天表示被夾住了——開始日不能早於前置任務的開始、
-   * 左把手不能越過結束日、右把手不能越過開始日——那一端停在限制上，再補「還沒湊滿一天的差」就會在限制附近來回鋸齒（review）。
+   * 拖了 delta 天要寫進存的值的 patch（規則見 tickBar 的說明）；不該送時回 null。
+   * `t` 是推算後的任務（拖曳開始後可能已經被前幾個 tick 改過）。
+   */
+  function barPatch(
+    d: Extract<DragState, { kind: BarDragKind }>,
+    t: Task,
+    delta: number,
+  ): Partial<Task> | null {
+    const wd = useWorkCalendarStore().workdays
+    const today = useClockStore().todayIdx
+    const active = t.status === 'doing' || t.status === 'paused'
+    if (d.kind === 'move') {
+      const s = active ? Math.min(d.s0 + delta, today) : d.s0 + delta
+      return { start: isoFromIndex(s) }
+    }
+    if (d.kind === 'resL') {
+      // 左把手不能越過結束日
+      let s = Math.min(d.s0 + delta, d.e0)
+      if (!isStarted(t)) s = Math.max(s, wd.onOrAfter(today))
+      else if (active) s = Math.min(s, today)
+      // 工期照夾過的開始日算，結束日才會留在原地（開始日落在非工作天時推算會順延，數的也是之後的工作天）
+      return { start: isoFromIndex(s), duration: Math.max(1, wd.countWorkdays(s, d.e0)) }
+    }
+    // 右把手不能越過開始日
+    const e = Math.max(d.e0 + delta, d.s0)
+    if (isOverdue(t, wd, today) && e < today) return null
+    return { duration: Math.min(DURATION_MAX, Math.max(1, wd.countWorkdays(d.s0, e))) }
+  }
+
+  /**
+   * 被拖的那一端真的落在拖到的那一天（資料寫完之後看）：沒落在那天表示被夾住了——開始日不能早於今天（未開始）或晚於今天（進行中）、
+   * 左把手不能越過結束日、右把手不能越過開始日、逾期中結束日最早是今天——那一端停在限制上，
+   * 再補「還沒湊滿一天的差」就會在限制附近來回鋸齒（review）。
+   * 落點是非工作天時，推算會順延到下一個工作天，也不算落在那天。
    */
   function landed(d: Extract<DragState, { kind: BarDragKind }>, delta: number): boolean {
     const t = taskStore.taskById(d.id)
@@ -275,9 +306,12 @@ export function usePointerDrag(els: DragElements): PointerDrag {
     )
   }
 
-  /** 記下這一段拖曳改到的任務（review F2）。 */
-  function track(changed: { id: string }[]): void {
-    for (const t of changed) dragged.add(t.id)
+  /**
+   * 記下這一段拖曳改到的任務（review F2）。存的值改了、推算結果卻可能沒變
+   * （例：未開始的任務拖到今天以前，被夾回今天），所以不看 applyLocalPatch 的回傳，一律記。
+   */
+  function track(id: string): void {
+    dragged.add(id)
   }
 
   /** 相依預覽線 + 目前壓在哪一列。legacy :2497-2505 */
@@ -413,9 +447,12 @@ export function usePointerDrag(els: DragElements): PointerDrag {
   function startBar(e: PointerEvent, id: string, kind: 'move' | 'resL' | 'resR'): void {
     // 唯讀（F2）：不開始、也不 stopPropagation，按在條上照樣落到畫布去平移
     if (!ui.canEdit || e.button !== 0) return
-    e.stopPropagation()
     const t = taskStore.taskById(id)
     if (!t) return
+    // 排程規則擋下的（開始日由前置決定、已完成）同樣不開始、不攔下事件（規則見 docs/reference/scheduling.md〈編輯限制〉）
+    const blocked = kind === 'resR' ? durationBlock(t) : moveBlock(t, taskStore.hasPred)
+    if (blocked) return
+    e.stopPropagation()
     begin(
       {
         kind,
@@ -518,12 +555,12 @@ export function usePointerDrag(els: DragElements): PointerDrag {
 
   /**
    * 放開之後把整段拖曳的結果送一次（review C1）。
-   * 條的移動 / 縮放送 `updateTasks(changed)`（含被 cascade 推動的下游），
+   * 條的移動 / 縮放寫回推算結果（`commitSchedule`，含跟著重排的下游），
    * 列與分類重排送各自的 order 端點；沒有變動時 store 自己會早退。
    */
   function commit(d: DragState): void {
     if (d.kind === 'move' || d.kind === 'resL' || d.kind === 'resR') {
-      void taskStore.commitTasks(taskStore.collectDirtyTasks())
+      void taskStore.commitSchedule(dragged)
     } else if (d.kind === 'reorder') {
       void taskStore.commitTaskOrder()
     } else if (d.kind === 'greorder') {

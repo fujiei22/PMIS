@@ -31,6 +31,13 @@ export interface Member {
   active: boolean
 }
 
+/**
+ * 任務。起訖由排程推算（規則見 docs/reference/scheduling.md），store 對外的 `tasks` 是推算後的結果。
+ *
+ * 存的 `start` 的語意：已開始（進行中／暫停／完成）＝實際開始日；未開始的根任務＝設定的開始日
+ * （過了還沒開工會被順延到今天寫回，原本的計畫開始日在 `baselineStart`）；
+ * 未開始、有前置的任務＝上次推算並寫回的快照。`end` 一律是上次推算並寫回的快照。
+ */
 export interface Task {
   id: string
   groupId: string
@@ -39,10 +46,19 @@ export interface Task {
   start: ISODate
   end: ISODate
   status: TaskStatus
-  /** 完成日；status 不是 done 時為 '' */
+  /** 完成日（實際結束日）；status 不是 done 時為 '' */
   done: ISODate | ''
   priority: Priority
   assigneeIds: string[]
+  /** 工期（工作天，1–3650）。這是輸入值；結束日由排程推算。 */
+  duration: number
+  /**
+   * 計畫開始日（規則見 docs/reference/scheduling.md〈計畫與延遲〉）。沒有前置的任務這是 PM 設的計畫開始日（輸入值，
+   * 開工後 `start` 改記實際開工日，這裡不變）；有前置的是上次推算並寫回的計畫快照。'' 表示沒有計畫（舊資料）。
+   */
+  baselineStart: ISODate | ''
+  /** 計畫結束日：上次推算並寫回的計畫快照（由計畫開始日、工期、相依推出）；'' 表示沒有計畫。 */
+  baselineEnd: ISODate | ''
 }
 
 /** 相依：from 先完成、to 後開始 */
@@ -50,6 +66,23 @@ export interface Dependency {
   id: string
   from: string
   to: string
+}
+
+/** 工作日曆的一天（`GET /api/calendar`）：跟預設週末不同、或有名稱的日子。 */
+export interface CalendarDay {
+  date: ISODate
+  isWorkday: boolean
+  /** 只供顯示（中秋節、補假、颱風假…），不可拿來判斷邏輯 */
+  name: string
+  /** official：官方辦公日曆；override：管理員的例外日 */
+  source: 'official' | 'override'
+}
+
+/** 工作日曆：預設週末（ISO 星期，1 = 週一）、官方資料完整的年份、特殊日（依日期遞增）。 */
+export interface WorkCalendar {
+  weekendDays: number[]
+  coveredYears: number[]
+  days: CalendarDay[]
 }
 
 export interface Issue {

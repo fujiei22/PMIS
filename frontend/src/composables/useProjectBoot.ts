@@ -5,6 +5,7 @@ import { useFilterStore } from '@/stores/filter'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+import { useWorkCalendarStore } from '@/stores/workCalendar'
 
 export interface ProjectBoot {
   /** 開始收這個專案的後端事件（`DashboardView` onMounted）。 */
@@ -104,7 +105,8 @@ async function load(id: string, mounted: boolean): Promise<void> {
   if (ui.loadState === 'ready' && sameProject) {
     if (mounted) await afterNextPaint()
     try {
-      await taskStore.load(id)
+      // 工作日曆跟專案資料一起重抓（全系統共用、約 200 筆）；它不 reject，失敗只會退回只看週末
+      await Promise.all([taskStore.load(id), useWorkCalendarStore().load()])
     } catch (error) {
       console.error('[api]', '載入專案（背景）', error)
       // 換了專案、有更新的一發，或登出重置過了：這一發的失敗不影響畫面
@@ -118,7 +120,9 @@ async function load(id: string, mounted: boolean): Promise<void> {
   ui.loadState = 'loading'
   ui.loadError = null
   try {
-    await taskStore.load(id)
+    // 專案資料與工作日曆並行抓、兩個都好才顯示：先用週末規則排、日曆到了再重排，條會跳一下。
+    // 日曆失敗不擋畫面（calendar store 不 reject），排程退回只看週末並提示
+    await Promise.all([taskStore.load(id), useWorkCalendarStore().load()])
     // 等的時候換到別的專案了：task store 已經把這份資料丟掉，畫面狀態歸新專案那一發管
     if (id !== loadedId) return
     // 不等還在飛的後一發：它之後若失敗，這份資料照樣可用

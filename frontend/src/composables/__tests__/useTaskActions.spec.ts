@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { useSampleCalendar } from '@/__tests__/loadSample'
 import { useTaskActions } from '@/composables/useTaskActions'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
@@ -23,11 +24,12 @@ describe('useTaskActions', () => {
     setActivePinia(createPinia())
     useClockStore().now = NOW
     useSelectionStore()
-    useTaskStore().load(structuredClone(sampleProject))
+    useSampleCalendar()
+    void useTaskStore().load(structuredClone(sampleProject))
   })
 
   describe('addTaskWithDefaults', () => {
-    it('分類取選取的分類，日期今天起五天，並選取新任務', () => {
+    it('分類取選取的分類，今天開始、工期 5 個工作天，並選取新任務', () => {
       const sel = useSelectionStore()
       sel.groupId = 'g3'
       const t = useTaskActions().addTaskWithDefaults()!
@@ -36,7 +38,9 @@ describe('useTaskActions', () => {
       expect(t.name).toBe('新任務')
       expect(t.created).toBe('2026-09-18')
       expect(t.start).toBe('2026-09-18')
-      expect(t.end).toBe('2026-09-22')
+      // 09-18（五）、21、22、23、24
+      expect(t.end).toBe('2026-09-24')
+      expect(t.duration).toBe(5)
       expect(t.status).toBe('todo')
       expect(t.priority).toBe('mid')
       expect(sel.taskId).toBe(t.id)
@@ -66,8 +70,8 @@ describe('useTaskActions', () => {
 
     it('一個分類都沒有時改成新增分類並回 null', () => {
       const tasks = useTaskStore()
-      tasks.groups = []
-      tasks.tasks = []
+      // tasks 是推算結果（computed），清空要走 load
+      void tasks.load({ ...structuredClone(sampleProject), groups: [], tasks: [], deps: [] })
       expect(useTaskActions().addTaskWithDefaults()).toBeNull()
       expect(tasks.groups).toHaveLength(1)
       expect(tasks.tasks).toHaveLength(0)
@@ -88,7 +92,8 @@ describe('useTaskActions', () => {
     })
 
     it('任務沒有負責人時建立者用 currentUserId', () => {
-      useTaskStore().taskById('t3')!.assigneeIds = []
+      // 推算結果是唯讀的畫面值，改資料走 store action
+      useTaskStore().applyLocalPatch('t3', { assigneeIds: [] })
       const i = useTaskActions().addIssueForTask('t3')!
       expect(i.creatorId).toBe(useMemberStore().currentUserId)
       expect(i.ownerIds).toEqual([])

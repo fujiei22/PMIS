@@ -2,15 +2,21 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { loadSample, SAMPLE_NOW, useSampleCalendar } from '@/__tests__/loadSample'
 import { api, mockApi as maybeMockApi } from '@/api'
 import { provideDomRegistry, registerEl, type DomRegistry } from '@/composables/useDomRegistry'
 import { usePointerDrag, type PointerDrag } from '@/composables/usePointerDrag'
 import { dayIndex, isoFromIndex } from '@/lib/date'
+import { scheduleTasks } from '@/lib/schedule'
+import { createWorkdays } from '@/lib/workdays'
+import { sampleCalendar } from '@/mocks/sampleCalendar'
 import { sampleProject } from '@/mocks/sampleProject'
+import { useClockStore } from '@/stores/clock'
 import { useProjectStore } from '@/stores/project'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+import type { ProjectData } from '@/types/models'
 
 /** 測試一定走 mock 實作（review F11：mockApi 在型別上是 optional）。 */
 const mockApi = maybeMockApi!
@@ -48,6 +54,28 @@ function mountDrag(): { api: PointerDrag; registry: DomRegistry; unmount: () => 
   return { api, registry, unmount: () => wrapper.unmount() }
 }
 
+/**
+ * 拖曳用的範例：t24（未開始的根任務、工期 6）挪到 10/13（二），前後幾天都是工作天，拖幾天就落在幾天。
+ * 原本的 10/08 往後一天就碰到 10/09–10/12 的連假，落點會順延（規則見 docs/reference/scheduling.md）；
+ * 已完成的任務（以前拖的 t1、t28）開始日是實際值，不該拿來當「可以拖的條」。
+ */
+function loadDragSample(): void {
+  setActivePinia(createPinia())
+  const data: ProjectData = structuredClone(sampleProject)
+  data.tasks.find((t) => t.id === 't24')!.start = '2026-10-13'
+  // 存的起訖也照新的開始日排好（t24 與下游），載入時沒有漂移、放開時不會順便寫回別筆
+  data.tasks = scheduleTasks(
+    data.tasks,
+    data.deps,
+    createWorkdays(sampleCalendar),
+    dayIndex('2026-09-18'),
+  )
+  mockApi.reset(structuredClone(data))
+  useClockStore().now = SAMPLE_NOW
+  useSampleCalendar()
+  void useTaskStore().load(data)
+}
+
 /** 造一顆只有矩形的假元素；一律不進 document，確保命中只能來自登錄表。 */
 function elAt(rect: { top: number; bottom: number; left?: number; right?: number }): HTMLElement {
   const el = document.createElement('div')
@@ -63,9 +91,7 @@ function elAt(rect: { top: number; bottom: number; left?: number; right?: number
 
 describe('usePointerDrag 的中止事件（review M3）', () => {
   beforeEach(() => {
-    setActivePinia(createPinia())
-    mockApi.reset(structuredClone(sampleProject))
-    useTaskStore().load(structuredClone(sampleProject))
+    loadDragSample()
     // jsdom 沒有實作 elementFromPoint；onUp 會退回 ui.nearTaskId
     if (!document.elementFromPoint) {
       ;(document as Document & { elementFromPoint: () => Element | null }).elementFromPoint = () =>
@@ -157,23 +183,22 @@ describe('usePointerDrag 的中止事件（review M3）', () => {
   })
 
   // review C1：拖曳的每個 tick 只改本地，放開才送一次
-  it('條的移動：tick 只改本地，pointerup 才送一次 updateTasks', () => {
+  it('條的移動：tick 只改本地，pointerup 才寫回一次 updateTasks', () => {
     const tasks = useTaskStore()
     const one = vi.spyOn(api, 'updateTask')
     const many = vi.spyOn(api, 'updateTasks')
     const { api: drag, unmount } = mountDrag()
-    const t1 = tasks.taskById('t1')!
-    const s0 = dayIndex(t1.start)
+    const s0 = dayIndex(tasks.taskById('t24')!.start)
 
-    drag.startBar(pointer('pointerdown', 0, 0) as unknown as PointerEvent, 't1', 'move')
+    drag.startBar(pointer('pointerdown', 0, 0) as unknown as PointerEvent, 't24', 'move')
     for (const x of [32, 64, 96]) document.dispatchEvent(pointer('pointermove', x, 0))
-    expect(tasks.taskById('t1')!.start).toBe(isoFromIndex(s0 + 3))
+    expect(tasks.taskById('t24')!.start).toBe(isoFromIndex(s0 + 3))
     expect(one).not.toHaveBeenCalled()
     expect(many).not.toHaveBeenCalled()
 
     document.dispatchEvent(pointer('pointerup', 96, 0))
     expect(many).toHaveBeenCalledTimes(1)
-    expect(many.mock.calls[0]![0].some((t) => t.id === 't1')).toBe(true)
+    expect(many.mock.calls[0]![0].some((t) => t.id === 't24')).toBe(true)
     one.mockRestore()
     many.mockRestore()
     unmount()
@@ -183,14 +208,14 @@ describe('usePointerDrag 的中止事件（review M3）', () => {
     const tasks = useTaskStore()
     const many = vi.spyOn(api, 'updateTasks')
     const { api: drag, unmount } = mountDrag()
-    const before = tasks.taskById('t1')!.start
+    const before = tasks.taskById('t24')!.start
 
-    drag.startBar(pointer('pointerdown', 0, 0) as unknown as PointerEvent, 't1', 'move')
+    drag.startBar(pointer('pointerdown', 0, 0) as unknown as PointerEvent, 't24', 'move')
     document.dispatchEvent(pointer('pointermove', 96, 0))
-    expect(tasks.taskById('t1')!.start).not.toBe(before)
+    expect(tasks.taskById('t24')!.start).not.toBe(before)
 
     document.dispatchEvent(pointer('pointercancel', 96, 0))
-    expect(tasks.taskById('t1')!.start).toBe(before)
+    expect(tasks.taskById('t24')!.start).toBe(before)
     expect(many).not.toHaveBeenCalled()
     many.mockRestore()
     unmount()
@@ -313,23 +338,21 @@ describe('usePointerDrag 的中止事件（review M3）', () => {
     const ui = useUiStore()
     const tasks = useTaskStore()
     const { api, unmount } = mountDrag()
-    const start0 = tasks.taskById('t1')!.start
+    const start0 = tasks.taskById('t24')!.start
 
-    api.startBar(pointer('pointerdown', 0, 0) as unknown as PointerEvent, 't1', 'move')
+    api.startBar(pointer('pointerdown', 0, 0) as unknown as PointerEvent, 't24', 'move')
     document.dispatchEvent(pointer('pointercancel', 0, 0))
     document.dispatchEvent(pointer('pointermove', 500, 0))
 
     expect(ui.drag).toBeNull()
-    expect(tasks.taskById('t1')!.start).toBe(start0)
+    expect(tasks.taskById('t24')!.start).toBe(start0)
     unmount()
   })
 })
 // 動畫稽核 D16：排序放手時游標不在把手上，click 會派給把手與放手處的共同祖先（整列），被當成點選
 describe('排序拖曳放手後的 click（D16）', () => {
   beforeEach(() => {
-    setActivePinia(createPinia())
-    mockApi.reset(structuredClone(sampleProject))
-    useTaskStore().load(structuredClone(sampleProject))
+    loadDragSample()
   })
 
   afterEach(() => {
@@ -391,7 +414,7 @@ describe('排序拖曳放手後的 click（D16）', () => {
     const { api: drag, unmount } = mountDrag()
     const row = clickTarget()
 
-    drag.startBar(pointer('pointerdown', 0, 0) as unknown as PointerEvent, 't1', 'move')
+    drag.startBar(pointer('pointerdown', 0, 0) as unknown as PointerEvent, 't24', 'move')
     document.dispatchEvent(pointer('pointermove', 96, 0))
     document.dispatchEvent(pointer('pointerup', 96, 0))
     row.el.dispatchEvent(pointer('click', 96, 0))
@@ -404,9 +427,7 @@ describe('排序拖曳放手後的 click（D16）', () => {
 // 專案起點外移時所有座標換基準，捲動位置補回之後，拖曳的基準也要跟著補，否則多算好幾天
 describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）', () => {
   beforeEach(() => {
-    setActivePinia(createPinia())
-    mockApi.reset(structuredClone(sampleProject))
-    useTaskStore().load(structuredClone(sampleProject))
+    loadDragSample()
   })
 
   afterEach(() => {
@@ -449,20 +470,20 @@ describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）',
     const tasks = useTaskStore()
     const { api: drag, registry, scroller, unmount } = mountWithScroller()
     const bar = document.createElement('div')
-    registerEl(registry.bars, 't1')(bar)
-    const s0 = dayIndex(tasks.taskById('t1')!.start)
+    registerEl(registry.bars, 't24')(bar)
+    const s0 = dayIndex(tasks.taskById('t24')!.start)
 
-    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't1', 'move')
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't24', 'move')
     scroller.scrollLeft = 10
     document.dispatchEvent(pointer('pointermove', 500, 0))
     // 捲了 10px、日期還沒動：條往右補 10px，畫面上還在游標下
     expect(bar.style.transform).toBe('translateX(10px)')
-    expect(dayIndex(tasks.taskById('t1')!.start)).toBe(s0)
+    expect(dayIndex(tasks.taskById('t24')!.start)).toBe(s0)
 
     scroller.scrollLeft = 20
     document.dispatchEvent(pointer('pointermove', 500, 0))
     // 捲了 20px：四捨五入成 1 天，條往左補回 12px
-    expect(dayIndex(tasks.taskById('t1')!.start)).toBe(s0 + 1)
+    expect(dayIndex(tasks.taskById('t24')!.start)).toBe(s0 + 1)
     expect(bar.style.transform).toBe('translateX(-12px)')
 
     // 放開：補償拿掉，條落在整天的位置
@@ -475,12 +496,12 @@ describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）',
     const tasks = useTaskStore()
     const { api: drag, registry, unmount } = mountWithScroller()
     const bar = document.createElement('div')
-    registerEl(registry.bars, 't1')(bar)
-    const s0 = dayIndex(tasks.taskById('t1')!.start)
+    registerEl(registry.bars, 't24')(bar)
+    const s0 = dayIndex(tasks.taskById('t24')!.start)
 
-    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't1', 'move')
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't24', 'move')
     document.dispatchEvent(pointer('pointermove', 540, 0))
-    expect(dayIndex(tasks.taskById('t1')!.start)).toBe(s0 + 1)
+    expect(dayIndex(tasks.taskById('t24')!.start)).toBe(s0 + 1)
     expect(bar.style.transform).toBe('')
     document.dispatchEvent(pointer('pointerup', 540, 0))
     unmount()
@@ -494,13 +515,13 @@ describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）',
     const tasks = useTaskStore()
     const { api: drag, registry, scroller, unmount } = mountWithScroller()
     const bar = document.createElement('div')
-    registerEl(registry.bars, 't2')(bar)
-    const s0 = dayIndex(tasks.taskById('t2')!.start)
-    // t2 的前置是 t1：往左拖 20 天，開始日被夾在 t1 的開始日；再往左捲 10px（還沒湊滿一天的差）
-    drag.startBar(pointer('pointerdown', 1000, 0) as unknown as PointerEvent, 't2', 'resL')
+    registerEl(registry.bars, 't25')(bar)
+    const s0 = dayIndex(tasks.taskById('t25')!.start)
+    // t25 的前置是 t24、還沒開始：開始日由前置決定，左把手拖不動（不開始拖曳）；再往左捲 10px 也不補
+    drag.startBar(pointer('pointerdown', 1000, 0) as unknown as PointerEvent, 't25', 'resL')
     scroller.scrollLeft = -10
     document.dispatchEvent(pointer('pointermove', 1000 - 20 * 32, 0))
-    expect(dayIndex(tasks.taskById('t2')!.start), '開始日被前置擋住').toBeGreaterThan(s0 - 20)
+    expect(dayIndex(tasks.taskById('t25')!.start), '開始日被前置擋住').toBe(s0)
     expect(bar.style.transform).toBe('')
     expect(bar.style.getPropertyValue('--res-w')).toBe('')
     document.dispatchEvent(pointer('pointerup', 1000 - 20 * 32, 0))
@@ -511,14 +532,14 @@ describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）',
     const tasks = useTaskStore()
     const { api: drag, registry, scroller, unmount } = mountWithScroller()
     const bar = document.createElement('div')
-    registerEl(registry.bars, 't1')(bar)
-    const t = tasks.taskById('t1')!
+    registerEl(registry.bars, 't24')(bar)
+    const t = tasks.taskById('t24')!
     const days = dayIndex(t.end) - dayIndex(t.start)
-    // 往左拖剛好讓結束日等於開始日（一天），再往左捲 10px
-    drag.startBar(pointer('pointerdown', 1000, 0) as unknown as PointerEvent, 't1', 'resR')
+    // 往左拖剛好讓結束日等於開始日（右把手換算成工期 1），再往左捲 10px
+    drag.startBar(pointer('pointerdown', 1000, 0) as unknown as PointerEvent, 't24', 'resR')
     scroller.scrollLeft = -10
     document.dispatchEvent(pointer('pointermove', 1000 - days * 32, 0))
-    expect(dayIndex(tasks.taskById('t1')!.end), '縮到一天').toBe(dayIndex(t.start))
+    expect(dayIndex(tasks.taskById('t24')!.end), '縮到一天').toBe(dayIndex(t.start))
     expect(bar.style.getPropertyValue('--res-w'), '寬度不往內補').toBe('')
     document.dispatchEvent(pointer('pointerup', 1000 - days * 32, 0))
     unmount()
@@ -535,10 +556,14 @@ describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）',
         }) as unknown as CSSStyleDeclaration,
     )
     const { api: drag, registry, scroller, unmount } = mountWithScroller()
-    registerEl(registry.bars, 't1')(document.createElement('div'))
+    // 游標（x=500）放在捲動容器中間：不然推進計時器時自動捲動會一直把條往後帶，
+    // 落到週末或假日就被順延、不算「落在那天」，補償歸零。這裡測的是回彈計時，不是落點
+    scroller.getBoundingClientRect = () =>
+      ({ left: 0, right: 1000, top: -500, bottom: 500, width: 1000, height: 1000 }) as DOMRect
+    registerEl(registry.bars, 't24')(document.createElement('div'))
     expect(drag.nudging.value).toBe(false)
 
-    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't1', 'move')
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't24', 'move')
     document.dispatchEvent(pointer('pointermove', 500, 0))
     // 還沒捲動：沒有補償
     expect(drag.nudging.value).toBe(false)
@@ -553,7 +578,7 @@ describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）',
     expect(drag.nudging.value).toBe(true)
 
     // 回彈途中又拖一次、又有補償：舊回彈的計時器到了也不能清掉
-    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't1', 'move')
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't24', 'move')
     scroller.scrollLeft = 20
     document.dispatchEvent(pointer('pointermove', 500, 0))
     vi.advanceTimersByTime(100)
@@ -572,28 +597,139 @@ describe('條的拖曳：自動捲動的補償與座標換基準（D6 / D13）',
   it('rebase：捲動位置補回 N px 時，拖曳的基準跟著補，日期不會多算', () => {
     const tasks = useTaskStore()
     const { api: drag, scroller, unmount } = mountWithScroller()
-    // t28 沒有前置，可以往前拖（t1 有前置 t28，不能早於它）
-    const s0 = dayIndex(tasks.taskById('t28')!.start)
+    // t24 沒有前置、還沒開始，可以往前拖（10/13 → 10/12 仍是工作天、晚於今天）
+    const s0 = dayIndex(tasks.taskById('t24')!.start)
 
-    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't28', 'move')
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't24', 'move')
     document.dispatchEvent(pointer('pointermove', 468, 0))
-    expect(dayIndex(tasks.taskById('t28')!.start)).toBe(s0 - 1)
+    expect(dayIndex(tasks.taskById('t24')!.start)).toBe(s0 - 1)
 
     // 專案起點外移 2 天：所有座標右移 64px，GanttPanel 把 scrollLeft 補 +64
     scroller.scrollLeft += 64
     drag.rebase(64)
     document.dispatchEvent(pointer('pointermove', 468, 0))
-    expect(dayIndex(tasks.taskById('t28')!.start)).toBe(s0 - 1)
+    expect(dayIndex(tasks.taskById('t24')!.start)).toBe(s0 - 1)
     document.dispatchEvent(pointer('pointerup', 468, 0))
+    unmount()
+  })
+})
+
+// 拖曳依排程規則（規則見 docs/reference/scheduling.md〈編輯限制〉）：開始日由前置決定的、已完成的不能拖；
+// 左右把手換算成工作天的工期；未開始的不早於今天、進行中的開始日不晚於今天
+describe('條的拖曳依排程規則', () => {
+  beforeEach(async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    await loadSample()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+  })
+
+  /** 按住條（或把手）、水平移動 days 天、放開。 */
+  function dragBy(drag: PointerDrag, id: string, kind: 'move' | 'resL' | 'resR', days: number) {
+    const dw = useUiStore().dayWidth
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, id, kind)
+    document.dispatchEvent(pointer('pointermove', 500 + days * dw, 0))
+    document.dispatchEvent(pointer('pointerup', 500 + days * dw, 0))
+  }
+
+  const range = (id: string) => {
+    const t = useTaskStore().taskById(id)!
+    return [t.start, t.end]
+  }
+
+  it('有前置、未開始的 t5：按住拖曳不開始，也不攔下事件（落到畫布去平移）', () => {
+    const { api: drag, unmount } = mountDrag()
+    useSelectionStore().selectTask('t5')
+    const before = range('t5')
+    const e = pointer('pointerdown', 500, 0) as unknown as PointerEvent
+    const stop = vi.spyOn(e, 'stopPropagation')
+    drag.startBar(e, 't5', 'move')
+    expect(useUiStore().drag).toBeNull()
+    expect(stop).not.toHaveBeenCalled()
+    document.dispatchEvent(pointer('pointermove', 600, 0))
+    expect(range('t5')).toEqual(before)
+    unmount()
+  })
+
+  it('t24（未開始的根任務）往後 3 天：10/11 週日順延到 10/12，下游 t25 跟著排', () => {
+    const { api: drag, unmount } = mountDrag()
+    dragBy(drag, 't24', 'move', 3)
+    expect(range('t24')).toEqual(['2026-10-12', '2026-10-19'])
+    expect(range('t25')).toEqual(['2026-10-20', '2026-10-28'])
+    unmount()
+  })
+
+  // review：被推動的下游不是這段拖曳改的（它的存的值沒變），取消時不能清掉它還沒送出的改名
+  it('拖曳中止：被推動的下游任務，改名草稿照留', () => {
+    const tasks = useTaskStore()
+    const { api: drag, unmount } = mountDrag()
+    tasks.applyLocalPatch('t25', { name: '打到一半' })
+    const dw = useUiStore().dayWidth
+    drag.startBar(pointer('pointerdown', 500, 0) as unknown as PointerEvent, 't24', 'move')
+    document.dispatchEvent(pointer('pointermove', 500 + 3 * dw, 0))
+    expect(tasks.taskById('t25')!.start).toBe('2026-10-20')
+    document.dispatchEvent(pointer('pointercancel', 500 + 3 * dw, 0))
+    expect(tasks.taskById('t24')!.start).toBe('2026-10-08')
+    expect(tasks.taskById('t25')!.name).toBe('打到一半')
+    unmount()
+  })
+
+  it('t3（進行中、逾期）右把手往後 3 天：工期 10，結束日 09-21', () => {
+    const { api: drag, unmount } = mountDrag()
+    dragBy(drag, 't3', 'resR', 3)
+    expect(useTaskStore().taskById('t3')!.duration).toBe(10)
+    expect(range('t3')).toEqual(['2026-09-08', '2026-09-21'])
+    unmount()
+  })
+
+  it('t3 右把手往前 1 天：逾期中結束日最早是今天，工期不變', () => {
+    const { api: drag, unmount } = mountDrag()
+    dragBy(drag, 't3', 'resR', -1)
+    expect(useTaskStore().taskById('t3')!.duration).toBe(7)
+    expect(range('t3')).toEqual(['2026-09-08', '2026-09-18'])
+    unmount()
+  })
+
+  it('已完成的 t2：右把手不動作、不攔下事件', () => {
+    const { api: drag, unmount } = mountDrag()
+    const e = pointer('pointerdown', 500, 0) as unknown as PointerEvent
+    const stop = vi.spyOn(e, 'stopPropagation')
+    drag.startBar(e, 't2', 'resR')
+    expect(useUiStore().drag).toBeNull()
+    expect(stop).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it('t18（進行中的根任務）往前 5 天：開始 09-13（實際開工日照記），結束 09-18', () => {
+    const { api: drag, unmount } = mountDrag()
+    dragBy(drag, 't18', 'move', -5)
+    expect(range('t18')).toEqual(['2026-09-13', '2026-09-18'])
+    unmount()
+  })
+
+  it('t18 往後拖到今天以後：開始日夾在今天 09-18', () => {
+    const { api: drag, unmount } = mountDrag()
+    dragBy(drag, 't18', 'move', 3)
+    expect(range('t18')[0]).toBe('2026-09-18')
+    unmount()
+  })
+
+  it('t24 左把手拉到 09-10：開始日夾在今天 09-18，結束日不往右跳（工期依夾後的開始日算）', () => {
+    const { api: drag, unmount } = mountDrag()
+    const before = range('t24')
+    dragBy(drag, 't24', 'resL', dayIndex('2026-09-10') - dayIndex(before[0]!))
+    expect(range('t24')).toEqual(['2026-09-18', before[1]])
     unmount()
   })
 })
 
 describe('usePointerDrag 的唯讀（F2）', () => {
   beforeEach(() => {
-    setActivePinia(createPinia())
-    mockApi.reset(structuredClone(sampleProject))
-    useTaskStore().load(structuredClone(sampleProject))
+    loadDragSample()
     const project = useProjectStore()
     project.setAll(project.meta, false)
   })
@@ -607,7 +743,7 @@ describe('usePointerDrag 的唯讀（F2）', () => {
     const ui = useUiStore()
     const { api: drag, unmount } = mountDrag()
     const starts: [string, (e: PointerEvent) => void][] = [
-      ['startBar', (e) => drag.startBar(e, 't1', 'move')],
+      ['startBar', (e) => drag.startBar(e, 't24', 'move')],
       ['startLink', (e) => drag.startLink(e, 't1', 'R')],
       ['startReorder', (e) => drag.startReorder(e, 't4')],
       ['startGroupReorder', (e) => drag.startGroupReorder(e, 'g1')],

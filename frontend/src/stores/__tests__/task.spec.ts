@@ -1,9 +1,9 @@
-import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { loadSample, useSampleCalendar } from '@/__tests__/loadSample'
 import { api, mockApi as maybeMockApi } from '@/api'
 import { ApiError } from '@/api/types'
-import { useProjectBoot } from '@/composables/useProjectBoot'
 import { dayIndex, isoFromIndex } from '@/lib/date'
+import { isLate } from '@/lib/schedule'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useBudgetStore } from '@/stores/budget'
 import { useClockStore } from '@/stores/clock'
@@ -14,6 +14,7 @@ import { useProjectStore } from '@/stores/project'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+import { useWorkCalendarStore } from '@/stores/workCalendar'
 
 /** 測試一定走 mock 實作（review F11：mockApi 在型別上是 optional）。 */
 const mockApi = maybeMockApi!
@@ -21,39 +22,33 @@ const mockApi = maybeMockApi!
 /** 新實體的 id 是 UUID v4（spec 目標 4），只能斷言格式。 */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
-/** 固定時鐘：2026-09-18，與 e2e 的 clock helper 同一天。 */
-const NOW = Date.parse('2026-09-18T10:00:00Z')
+/** 2026-10-01 10:00（台北）：進行中的 t4 已逾期，未開始的下游跟著順延（跨日漂移）。 */
+const OCT_1 = Date.parse('2026-10-01T10:00:00+08:00')
+
+/** mock 目前存的那一筆（server 狀態）。 */
+async function serverTask(id: string) {
+  return (await api.loadProject('pmis')).tasks.find((t) => t.id === id)
+}
 
 describe('taskStore', () => {
   beforeEach(async () => {
-    setActivePinia(createPinia())
-    mockApi.reset(structuredClone(sampleProject))
-    useClockStore().now = NOW
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    // boot 負責 loadState 與 error sink，也把派生層的清理 watch 掛好（契約 E）
-    await useProjectBoot('pmis').reload()
+    // 固定在 2026-09-18；boot 負責 loadState 與 error sink、把派生層的清理 watch 掛好（契約 E），
+    // 工作日曆跟專案一起載入
+    await loadSample()
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('load 直接採用 api 的資料、不跑 cascade（spec 目標 5）', () => {
+  it('載入後畫面是推算結果：2026-09-18 的推算等於範例存的值（spec 目標 5）', () => {
     const s = useTaskStore()
     expect(s.tasks).toHaveLength(30)
     expect(s.groups).toHaveLength(6)
     expect(useUiStore().loadState).toBe('ready')
-    // 日期逐筆等於 mocks 原值——載入不該改動任何一天
-    for (const t of sampleProject.tasks) {
-      const got = s.taskById(t.id)!
-      expect([got.start, got.end]).toEqual([t.start, t.end])
-    }
-    // mocks 自身已滿足相依（consistency.spec 守衛）
-    for (const d of s.deps) {
-      const from = s.taskById(d.from)!
-      const to = s.taskById(d.to)!
-      expect(dayIndex(to.start)).toBeGreaterThanOrEqual(dayIndex(from.start))
-    }
+    for (const t of sampleProject.tasks)
+      expect([s.taskById(t.id)!.start, s.taskById(t.id)!.end]).toEqual([t.start, t.end])
   })
 
   // 載入失敗 / 重試的狀態機在啟動層（契約 E），見 useProjectBoot.spec
@@ -188,7 +183,7 @@ describe('taskStore', () => {
     vi.spyOn(api, 'createGroup').mockImplementationOnce(
       () => new Promise((_, reject) => (failGroup = reject)),
     )
-    const t = s.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-09-18', end: '2026-09-22' })!
+    const t = s.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-09-18', duration: 5 })!
     s.addGroup()
     s.reset()
 
@@ -214,16 +209,16 @@ describe('taskStore', () => {
     expect(s.range.b - s.range.a).toBeGreaterThan(0)
   })
 
-  it('addDep 拒絕循環回 false、成功回 true 並 cascade', async () => {
+  it('addDep 拒絕循環與重複回 false；成功回 true，畫面立刻照新相依重排', async () => {
     const s = useTaskStore()
     expect(s.addDep('t2', 't1')).toBe(false)
     expect(s.addDep('t1', 't2')).toBe(false)
     const before = s.deps.length
-    expect(s.addDep('t1', 't5')).toBe(true)
+    // t30（11/10 結束）→ t26：t26 從 11/11 開始，t27 跟著推
+    expect(s.addDep('t30', 't26')).toBe(true)
     expect(s.deps).toHaveLength(before + 1)
-    expect(dayIndex(s.taskById('t5')!.start)).toBeGreaterThanOrEqual(
-      dayIndex(s.taskById('t1')!.start),
-    )
+    expect(s.taskById('t26')!.start).toBe('2026-11-11')
+    expect(dayIndex(s.taskById('t27')!.start)).toBeGreaterThan(dayIndex(s.taskById('t26')!.end))
     await Promise.resolve()
   })
 
@@ -328,20 +323,22 @@ describe('taskStore', () => {
   })
 
   // 預設值與建立後的選取在 useTaskActions（契約 E），見 useTaskActions.spec
-  it('addTask 照參數建立，不自己算預設值也不動選取', () => {
+  it('addTask 照參數建立（起訖依工期推算），不自己算預設值也不動選取', () => {
     const s = useTaskStore()
     const sel = useSelectionStore()
     const t = s.addTask({
       groupId: 'g3',
       assigneeIds: ['m2'],
       start: '2026-10-01',
-      end: '2026-10-05',
+      duration: 3,
     })!
     expect(t.id).toMatch(UUID)
     expect(t.groupId).toBe('g3')
     expect(t.assigneeIds).toEqual(['m2'])
+    // 3 個工作天：10/01（四）、10/02（五）、10/05（一）
     expect(t.start).toBe('2026-10-01')
     expect(t.end).toBe('2026-10-05')
+    expect(t.duration).toBe(3)
     expect(t.created).toBe('2026-09-18')
     expect(t.status).toBe('todo')
     expect(t.priority).toBe('mid')
@@ -353,36 +350,23 @@ describe('taskStore', () => {
     const s = useTaskStore()
     const before = s.tasks.length
     expect(
-      s.addTask({ groupId: 'nope', assigneeIds: [], start: '2026-10-01', end: '2026-10-05' }),
+      s.addTask({ groupId: 'nope', assigneeIds: [], start: '2026-10-01', duration: 3 }),
     ).toBeNull()
     expect(s.tasks).toHaveLength(before)
   })
 
-  it('updateTask 走 applyTaskPatch：改狀態填 done、移動連動下游', async () => {
+  it('updateTask：改狀態填 done；移動根任務推動下游', async () => {
     const s = useTaskStore()
     await s.updateTask('t1', { status: 'doing' })
     expect(s.taskById('t1')!.done).toBe('')
     await s.updateTask('t1', { status: 'done' })
     expect(s.taskById('t1')!.done).toBe('2026-09-18')
 
-    // t3 往後推 3 天，靠 d3（t3→t4）連動到 t4
-    const t4Start = dayIndex(s.taskById('t4')!.start)
-    const t3 = s.taskById('t3')!
-    await s.updateTask('t3', {
-      start: isoFromIndex(dayIndex(t3.start) + 3),
-      end: isoFromIndex(dayIndex(t3.end) + 3),
-    })
-    expect(dayIndex(s.taskById('t4')!.start)).toBe(t4Start + 3)
-  })
-
-  it('setTaskDoneDirect 只改 done、不走 cascade', async () => {
-    const s = useTaskStore()
-    const t2 = s.taskById('t2')!.start
-    await s.setTaskDoneDirect('t1', '2026-09-30')
-    expect(s.taskById('t1')!.done).toBe('2026-09-30')
-    expect(s.taskById('t2')!.start).toBe(t2)
-    await s.setTaskDoneDirect('t1', '')
-    expect(s.taskById('t1')!.done).toBe('')
+    // t24（未開始的根任務，10/08 起、工期 6）往後 3 天 → 10/11 週日順延到 10/12、結束 10/19；
+    // 靠 d20（t24→t25）連動到 t25
+    await s.updateTask('t24', { start: '2026-10-11' })
+    expect([s.taskById('t24')!.start, s.taskById('t24')!.end]).toEqual(['2026-10-12', '2026-10-19'])
+    expect(s.taskById('t25')!.start).toBe('2026-10-20')
   })
 
   it('removeTask 清 ui.detail 與 selection.taskId', async () => {
@@ -413,72 +397,69 @@ describe('taskStore', () => {
       expect(s.taskById('t3')!.name).toBe('改過的名字')
     })
 
-    it('有 cascade 時改送 api.updateTasks(changed)', async () => {
-      const s = useTaskStore()
-      const many = vi.spyOn(api, 'updateTasks')
-      const t3 = s.taskById('t3')!
-      await s.updateTask('t3', {
-        start: isoFromIndex(dayIndex(t3.start) + 3),
-        end: isoFromIndex(dayIndex(t3.end) + 3),
-      })
-      expect(many).toHaveBeenCalledTimes(1)
-      const sent = many.mock.calls[0]![0].map((t) => t.id)
-      expect(sent).toContain('t3')
-      expect(sent).toContain('t4')
-    })
-
-    it('拖曳：tick 只改本地，放開才送一次 updateTasks 並含下游', async () => {
+    it('牽動排程的欄位改送整批 api.updateTasks（含被推動的下游）', async () => {
       const s = useTaskStore()
       const one = vi.spyOn(api, 'updateTask')
       const many = vi.spyOn(api, 'updateTasks')
-      const t3 = s.taskById('t3')!
-      const s0 = dayIndex(t3.start)
-      const e0 = dayIndex(t3.end)
+      await s.updateTask('t24', { start: '2026-10-11' })
+      expect(one).not.toHaveBeenCalled()
+      expect(many).toHaveBeenCalledTimes(1)
+      const sent = many.mock.calls[0]![0].map((t) => t.id)
+      expect(sent).toContain('t24')
+      expect(sent).toContain('t25')
+    })
+
+    it('拖曳：tick 只改本地，放開才用 commitSchedule 送一次並含下游', async () => {
+      const s = useTaskStore()
+      const one = vi.spyOn(api, 'updateTask')
+      const many = vi.spyOn(api, 'updateTasks')
+      const s0 = dayIndex(s.taskById('t24')!.start)
+      const touched = new Set(['t24'])
       for (let k = 1; k <= 3; k++) {
-        s.applyLocalPatch('t3', { start: isoFromIndex(s0 + k), end: isoFromIndex(e0 + k) })
+        for (const t of s.applyLocalPatch('t24', { start: isoFromIndex(s0 + k) })) touched.add(t.id)
       }
       expect(one).not.toHaveBeenCalled()
       expect(many).not.toHaveBeenCalled()
+      expect(touched.has('t25')).toBe(true)
 
-      const dirty = s.collectDirtyTasks()
-      expect(dirty.map((t) => t.id)).toContain('t4')
-      await s.commitTasks(dirty)
+      await s.commitSchedule(touched)
       expect(many).toHaveBeenCalledTimes(1)
-      expect(s.taskById('t3')!.start).toBe(isoFromIndex(s0 + 3))
-      expect(s.collectDirtyTasks()).toEqual([])
+      expect(s.taskById('t24')!.start).toBe('2026-10-12')
+      // 送出之後不再 dirty：別人推來的改名直接套上
+      s.applyEvent({
+        type: 'task.updated',
+        payload: { ...(await serverTask('t24'))!, name: '別人改的' },
+      })
+      expect(s.taskById('t24')!.name).toBe('別人改的')
     })
 
     it('拖曳送出失敗 → 整段還原並推一筆錯誤', async () => {
       const s = useTaskStore()
       const ui = useUiStore()
-      const t3 = s.taskById('t3')!
-      const before = { start: t3.start, end: t3.end }
-      const t4Before = s.taskById('t4')!.start
+      const before = { start: s.taskById('t24')!.start, end: s.taskById('t24')!.end }
+      const t25Before = s.taskById('t25')!.start
       mockApi.failNext('updateTasks')
-      s.applyLocalPatch('t3', {
-        start: isoFromIndex(dayIndex(t3.start) + 3),
-        end: isoFromIndex(dayIndex(t3.end) + 3),
-      })
-      await s.commitTasks(s.collectDirtyTasks())
+      s.applyLocalPatch('t24', { start: '2026-10-11' })
+      await s.commitSchedule(['t24'])
 
-      expect(s.taskById('t3')!.start).toBe(before.start)
-      expect(s.taskById('t3')!.end).toBe(before.end)
-      expect(s.taskById('t4')!.start).toBe(t4Before)
+      expect(s.taskById('t24')!.start).toBe(before.start)
+      expect(s.taskById('t24')!.end).toBe(before.end)
+      expect(s.taskById('t25')!.start).toBe(t25Before)
       expect(ui.errors[0]!.label).toBe('更新任務')
     })
 
     it('拖曳取消 → reconcile 回 server 狀態（含順序）', () => {
       const s = useTaskStore()
       const order = s.tasks.map((t) => t.id)
-      const t3 = s.taskById('t3')!.start
-      const touched = s.applyLocalPatch('t3', { start: isoFromIndex(dayIndex(t3) + 5) })
+      const t24 = s.taskById('t24')!.start
+      const touched = s.applyLocalPatch('t24', { start: isoFromIndex(dayIndex(t24) + 5) })
       s.moveTaskToLocal('t1', { kind: 'g', id: 'g2', dir: 'up' })
       s.moveGroupLocal('g1', 1)
 
-      s.discardTaskDrag([...touched.map((t) => t.id), 't1'])
+      s.discardTaskDrag(['t24', ...touched.map((t) => t.id), 't1'])
       s.discardGroupDrag()
       expect(s.tasks.map((t) => t.id)).toEqual(order)
-      expect(s.taskById('t3')!.start).toBe(t3)
+      expect(s.taskById('t24')!.start).toBe(t24)
       expect(s.taskById('t1')!.groupId).toBe('g1')
       expect(s.groups.map((g) => g.id).slice(0, 2)).toEqual(['g1', 'g2'])
     })
@@ -486,31 +467,28 @@ describe('taskStore', () => {
     // review F2：dirty 集合守住「本地改了但還沒送出」的欄位
     it('改名還在飛時開始拖曳 → 回應到達不蓋掉拖曳中的日期', async () => {
       const s = useTaskStore()
-      const t3 = s.taskById('t3')!
-      const s0 = dayIndex(t3.start)
-      const e0 = dayIndex(t3.end)
       mockApi.setLatency(5)
       // 改名 debounce 到期，送出；response 帶的是「舊日期 + 新名字」
-      s.applyLocalPatch('t3', { name: '改名中' })
-      const pending = s.commitTaskPatch('t3', { name: '改名中' })
+      s.applyLocalPatch('t24', { name: '改名中' })
+      const pending = s.commitTaskPatch('t24', { name: '改名中' })
       // 還在飛的時候開始拖曳：本地日期又動了，這一段還沒送
-      s.applyLocalPatch('t3', { start: isoFromIndex(s0 + 4), end: isoFromIndex(e0 + 4) })
+      s.applyLocalPatch('t24', { start: '2026-10-12' })
       await pending
       mockApi.setLatency(0)
 
-      expect(s.taskById('t3')!.start).toBe(isoFromIndex(s0 + 4))
-      expect(s.taskById('t3')!.end).toBe(isoFromIndex(e0 + 4))
-      expect(s.taskById('t3')!.name).toBe('改名中')
+      expect(s.taskById('t24')!.start).toBe('2026-10-12')
+      expect(s.taskById('t24')!.end).toBe('2026-10-19')
+      expect(s.taskById('t24')!.name).toBe('改名中')
     })
 
     it('拖曳取消不會清掉別筆還在 debounce 的改名', () => {
       const s = useTaskStore()
       s.applyLocalPatch('t5', { name: '打到一半' })
-      const t3 = s.taskById('t3')!.start
-      const touched = s.applyLocalPatch('t3', { start: isoFromIndex(dayIndex(t3) + 5) })
+      const t24 = s.taskById('t24')!.start
+      const touched = s.applyLocalPatch('t24', { start: isoFromIndex(dayIndex(t24) + 5) })
 
-      s.discardTaskDrag(touched.map((t) => t.id))
-      expect(s.taskById('t3')!.start).toBe(t3)
+      s.discardTaskDrag(['t24', ...touched.map((t) => t.id)])
+      expect(s.taskById('t24')!.start).toBe(t24)
       expect(s.taskById('t5')!.name).toBe('打到一半')
     })
 
@@ -556,7 +534,7 @@ describe('taskStore', () => {
         groupId: 'g1',
         assigneeIds: [],
         start: '2026-09-18',
-        end: '2026-09-22',
+        duration: 5,
       })!
       await new Promise((r) => setTimeout(r, 0))
       finishReorder()
@@ -601,7 +579,7 @@ describe('taskStore', () => {
         groupId: 'g1',
         assigneeIds: [],
         start: '2026-09-18',
-        end: '2026-09-22',
+        duration: 5,
       })!
       await vi.waitFor(() => expect(s.taskById(t.id)).toBeUndefined())
       expect(useUiStore().errors[0]!.label).toBe('新增任務')
@@ -675,38 +653,343 @@ describe('taskStore', () => {
       await vi.waitFor(() => expect(s.deps).toHaveLength(before))
     })
 
-    // review F5：cascade 的 updateTasks 不能跟 createDep 各走各的
-    it('addDep 等 createDep 成功才送 cascade 的 updateTasks', async () => {
+    // review F5：寫回推動結果的 updateTasks 不能跟 createDep 各走各的
+    it('addDep 等 createDep 成功才寫回被推動的下游', async () => {
       const s = useTaskStore()
       let finish: () => void = () => {}
       vi.spyOn(api, 'createDep').mockImplementation(
         (d) => new Promise((resolve) => (finish = () => resolve(d))),
       )
       const many = vi.spyOn(api, 'updateTasks')
-      // t24（10-08 起）推 t3（9-08 起）→ 一定有下游要送
-      expect(s.addDep('t24', 't3')).toBe(true)
+      // t30（11/10 結束）推 t26（10/28 起）→ t26、t27 都要寫回
+      expect(s.addDep('t30', 't26')).toBe(true)
       await new Promise((r) => setTimeout(r, 0))
       expect(many).not.toHaveBeenCalled()
 
       finish()
       await vi.waitFor(() => expect(many).toHaveBeenCalledTimes(1))
-      expect(many.mock.calls[0]![0].map((t) => t.id)).toContain('t3')
+      expect(many.mock.calls[0]![0].map((t) => t.id)).toEqual(
+        expect.arrayContaining(['t26', 't27']),
+      )
     })
 
-    it('createDep 失敗 → 相依與被它推動的下游一起還原，也不送 updateTasks', async () => {
+    it('createDep 失敗 → 相依被收回、畫面照原本的相依排回去，也不送 updateTasks', async () => {
       const s = useTaskStore()
       const many = vi.spyOn(api, 'updateTasks')
-      const before = { start: s.taskById('t3')!.start, end: s.taskById('t3')!.end }
+      const before = { start: s.taskById('t26')!.start, end: s.taskById('t26')!.end }
       mockApi.failNext('createDep')
-      expect(s.addDep('t24', 't3')).toBe(true)
-      expect(s.taskById('t3')!.start).not.toBe(before.start)
+      expect(s.addDep('t30', 't26')).toBe(true)
+      expect(s.taskById('t26')!.start).not.toBe(before.start)
 
       await vi.waitFor(() =>
-        expect(s.deps.some((d) => d.from === 't24' && d.to === 't3')).toBe(false),
+        expect(s.deps.some((d) => d.from === 't30' && d.to === 't26')).toBe(false),
       )
-      expect(s.taskById('t3')!.start).toBe(before.start)
-      expect(s.taskById('t3')!.end).toBe(before.end)
+      expect(s.taskById('t26')!.start).toBe(before.start)
+      expect(s.taskById('t26')!.end).toBe(before.end)
       expect(many).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── 前推排程（規則見 docs/reference/scheduling.md）────────────────────────
+  describe('前推排程', () => {
+    it('跨日：未開始的任務自動順延，不寫回', () => {
+      const s = useTaskStore()
+      const many = vi.spyOn(api, 'updateTasks')
+      useClockStore().now = OCT_1
+      // t4（進行中，基準結束 09-24）到 10/01 已逾期 → 結束日推到 10/01 → t5 從下一個工作天 10/02 開始
+      expect(s.taskById('t4')!.end).toBe('2026-10-01')
+      expect(s.taskById('t5')!.start).toBe('2026-10-02')
+      expect(many).not.toHaveBeenCalled()
+    })
+
+    it('改工期：結束日照工作天推算，下游跟著排，一次寫回', async () => {
+      const s = useTaskStore()
+      const many = vi.spyOn(api, 'updateTasks')
+      await s.updateTask('t5', { duration: 8 })
+      expect(s.taskById('t5')!.end).toBe('2026-10-08')
+      expect(s.taskById('t6')!.start).toBe('2026-10-12') // 10/09、10/10、10/11 放假
+      expect(many.mock.calls[0]![0].map((t) => t.id)).toEqual(expect.arrayContaining(['t5', 't6']))
+    })
+
+    it('改成進行中：開始日記成今天', async () => {
+      await useTaskStore().updateTask('t5', { status: 'doing' })
+      expect(useTaskStore().taskById('t5')!.start).toBe('2026-09-18')
+    })
+
+    it('新增任務（開始日遇週末順延）：計畫＝建立時的推算起訖', () => {
+      const s = useTaskStore()
+      const t = s.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-09-19', duration: 5 })!
+      const got = s.taskById(t.id)!
+      // 9/19 是週六 → 從 9/21 開始；5 個工作天＝9/21、22、23、24、29（9/25 中秋、9/26-27 週末、9/28 教師節）
+      expect([got.start, got.end]).toEqual(['2026-09-21', '2026-09-29'])
+      expect([got.baselineStart, got.baselineEnd]).toEqual([got.start, got.end])
+    })
+
+    it('刪相依：後續任務變成根任務，保留刪除當下推算的開始日', async () => {
+      const s = useTaskStore()
+      useClockStore().now = OCT_1
+      const dep = s.deps.find((d) => d.from === 't4' && d.to === 't5')!
+      await s.removeDep(dep.id)
+      // 沒有記下來的話會變成 10/01（根任務、不早於今天）；記下來的是刪除前的 10/02
+      expect(s.taskById('t5')!.start).toBe('2026-10-02')
+      // 寫回之後不再 dirty：別人推來的改名直接套上
+      s.applyEvent({
+        type: 'task.updated',
+        payload: { ...(await serverTask('t5'))!, name: '別人改的' },
+      })
+      expect(s.taskById('t5')!.name).toBe('別人改的')
+    })
+
+    it('刪相依失敗：記下的開始日放棄，存的值對齊回 server、不再 dirty', async () => {
+      const s = useTaskStore()
+      useClockStore().now = OCT_1
+      const dep = s.deps.find((d) => d.from === 't4' && d.to === 't5')!
+      mockApi.failNext('deleteDep')
+      await s.removeDep(dep.id)
+      expect(s.deps.some((d) => d.id === dep.id)).toBe(true)
+      expect(s.inputs.find((t) => t.id === 't5')).toEqual(await serverTask('t5'))
+      s.applyEvent({
+        type: 'task.updated',
+        payload: { ...(await serverTask('t5'))!, name: '別人改的' },
+      })
+      expect(s.taskById('t5')!.name).toBe('別人改的')
+    })
+
+    it('刪任務失敗：後續任務對齊回 server、不再 dirty', async () => {
+      const s = useTaskStore()
+      mockApi.failNext('deleteTask')
+      await s.removeTask('t24')
+      expect(s.taskById('t24')).toBeDefined()
+      expect(s.inputs.find((t) => t.id === 't25')).toEqual(await serverTask('t25'))
+      s.applyEvent({
+        type: 'task.updated',
+        payload: { ...(await serverTask('t25'))!, name: '別人改的' },
+      })
+      expect(s.taskById('t25')!.name).toBe('別人改的')
+    })
+
+    it('刪任務成功：後續任務保留開始日並寫回', async () => {
+      const s = useTaskStore()
+      await s.removeTask('t24')
+      expect(s.taskById('t25')!.start).toBe('2026-10-19')
+      expect((await serverTask('t25'))!.start).toBe('2026-10-19')
+    })
+
+    it('setTaskDoneDirect：改完成日會推動未開始的下游', async () => {
+      const s = useTaskStore()
+      await s.updateTask('t4', { status: 'done' }) // t4 完成於 09-18 → t5 從 09-21 開始
+      expect(s.taskById('t5')!.start).toBe('2026-09-21')
+      await s.setTaskDoneDirect('t4', '2026-09-22')
+      expect(s.taskById('t5')!.start).toBe('2026-09-23')
+    })
+
+    it('有前置的未開始任務改開始日不生效、不留 dirty；之後的事件照樣套上', async () => {
+      const s = useTaskStore()
+      const many = vi.spyOn(api, 'updateTasks')
+      await s.updateTask('t5', { start: '2026-12-01' })
+      expect(many).not.toHaveBeenCalled()
+      expect(s.inputs.find((t) => t.id === 't5')).toEqual(await serverTask('t5'))
+      s.applyEvent({
+        type: 'task.updated',
+        payload: { ...(await serverTask('t5'))!, name: '改名' },
+      })
+      expect(s.taskById('t5')!.name).toBe('改名')
+    })
+
+    it('根任務拖到今天以前被夾住：放開後寫回今天、不留 dirty', async () => {
+      const s = useTaskStore()
+      s.applyLocalPatch('t24', { start: '2026-09-10' })
+      expect(s.taskById('t24')!.start).toBe('2026-09-18')
+      await s.commitSchedule(['t24'])
+      expect((await serverTask('t24'))!.start).toBe('2026-09-18')
+      s.applyEvent({
+        type: 'task.updated',
+        payload: { ...(await serverTask('t24'))!, name: '改名' },
+      })
+      expect(s.taskById('t24')!.name).toBe('改名')
+    })
+
+    // review：拖曳中（被拖的那一筆還是 dirty）別處觸發的寫回，不送被它推動的下游的暫時位置
+    it('拖曳中別處觸發寫回：被拖條的下游不跟著送', async () => {
+      const s = useTaskStore()
+      const many = vi.spyOn(api, 'updateTasks')
+      s.applyLocalPatch('t24', { start: '2026-10-12' })
+      expect(s.taskById('t25')!.start).toBe('2026-10-20')
+      await s.commitSchedule([])
+      const sent = many.mock.calls.flatMap((c) => c[0].map((t) => t.id))
+      expect(sent).not.toContain('t24')
+      expect(sent).not.toContain('t25')
+    })
+
+    it('刪分類：分類外失去所有前置的後續任務，保留刪除當下推算的開始日', async () => {
+      const s = useTaskStore()
+      // t30（g6，11/10 結束）→ t24（g5 的根任務）：t24 改從 11/11 開始
+      expect(s.addDep('t30', 't24')).toBe(true)
+      await vi.waitFor(async () => expect((await serverTask('t24'))!.start).toBe('2026-11-11'))
+      // 刪 g6：t24 失去唯一的前置，變成根任務；沒記下來的話會退回存的 10/08
+      await s.removeGroup('g6')
+      expect(s.taskById('t24')!.start).toBe('2026-11-11')
+      expect((await serverTask('t24'))!.start).toBe('2026-11-11')
+    })
+
+    // user 決定：日曆載入失敗時排程只扣週末，算出來的日期是錯的；推算漂移不寫回，只送這次改的任務
+    it('日曆不是 ready：寫回只送這次改的任務，被推動的下游與跨日漂移等日曆恢復再送', async () => {
+      const s = useTaskStore()
+      const cal = useWorkCalendarStore()
+      cal.data = null
+      cal.status = 'error'
+      useClockStore().now = OCT_1
+      const many = vi.spyOn(api, 'updateTasks')
+      const one = vi.spyOn(api, 'updateTask')
+      // 改名：只送單筆 patch，不帶漂移
+      await s.updateTask('t5', { name: '改名' })
+      expect(one).toHaveBeenCalledTimes(1)
+      expect(many).not.toHaveBeenCalled()
+      // 改工期：只送 t24，不送被推動的 t25 與其他漂移的任務
+      await s.updateTask('t24', { duration: 7 })
+      expect(many.mock.calls.map((c) => c[0].map((t) => t.id))).toEqual([['t24']])
+
+      // 日曆恢復：下一次寫回把漂移一起送
+      useSampleCalendar()
+      many.mockClear()
+      await s.updateTask('t24', { duration: 6 })
+      const sent = many.mock.calls.flatMap((c) => c[0].map((t) => t.id))
+      expect(sent).toEqual(expect.arrayContaining(['t24', 't4', 't5']))
+    })
+
+    it('建立還在飛時改了工期：create 回來後補送一次', async () => {
+      const s = useTaskStore()
+      mockApi.setLatency(50)
+      const t = s.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-10-01', duration: 5 })!
+      await s.updateTask(t.id, { duration: 3 })
+      expect(s.taskById(t.id)!.end).toBe('2026-10-05')
+      await vi.waitFor(async () => expect((await serverTask(t.id))?.duration).toBe(3), {
+        timeout: 1000,
+      })
+      mockApi.setLatency(0)
+    })
+
+    it('identity：跨日漂移中的任務，改別筆時保持同一個物件', async () => {
+      const s = useTaskStore()
+      useClockStore().now = OCT_1
+      const before = s.taskById('t20')!
+      expect(before.start).not.toBe(sampleProject.tasks.find((t) => t.id === 't20')!.start)
+      s.applyLocalPatch('t3', { name: '改名' })
+      expect(s.taskById('t20')).toBe(before)
+    })
+
+    it('事件重排：推來的 task.updated 改了工期，下游跟著排', () => {
+      const s = useTaskStore()
+      const t5 = s.taskById('t5')!.start
+      s.applyEvent({
+        type: 'task.updated',
+        payload: { ...s.inputs.find((t) => t.id === 't4')!, duration: 12 },
+      })
+      expect(dayIndex(s.taskById('t5')!.start)).toBeGreaterThan(dayIndex(t5))
+    })
+
+    it('日曆晚到：先載資料、後設日曆，畫面跟著重排', () => {
+      const s = useTaskStore()
+      useWorkCalendarStore().data = null
+      // 沒有日曆時只看週末：t5 的工期把 9/25 中秋、9/28 教師節算成工作天，結束日提早
+      expect(s.taskById('t5')!.end).not.toBe('2026-10-07')
+      useSampleCalendar()
+      expect(s.taskById('t5')!.end).toBe('2026-10-07')
+    })
+  })
+
+  // ── 計畫（規則見 docs/reference/scheduling.md〈計畫與延遲〉）──────────────────
+  // 計畫只看 PM 輸入的東西（根任務的計畫開始日、工期、相依）：PM 改了就是新計畫，現實造成的落後才算延遲
+  describe('計畫', () => {
+    it('09-18 延遲的是 t13；t3 逾期但比計畫早開工，推算結束日沒晚於計畫，不算延遲', () => {
+      const s = useTaskStore()
+      expect(s.tasks.filter((t) => isLate(t)).map((t) => t.id)).toEqual(['t13'])
+      const t3 = s.taskById('t3')!
+      expect([t3.end, t3.baselineEnd]).toEqual(['2026-09-18', '2026-09-29'])
+    })
+
+    it('時間到了沒做完就延遲：09-19 起 t8 也延遲', () => {
+      useClockStore().now = Date.parse('2026-09-19T10:00:00+08:00')
+      const late = useTaskStore().tasks.filter((t) => isLate(t))
+      expect(late.map((t) => t.id)).toEqual(['t8', 't13'])
+    })
+
+    it('PM 改工期：自己與被推動的下游計畫一起改、不算延遲；計畫跟著推算結果寫回', async () => {
+      const s = useTaskStore()
+      const before = s.taskById('t5')!.baselineEnd
+      const many = vi.spyOn(api, 'updateTasks')
+      await s.updateTask('t4', { duration: 12 })
+      const t5 = s.taskById('t5')!
+      expect(t5.baselineEnd > before).toBe(true)
+      expect(s.tasks.filter((t) => isLate(t)).map((t) => t.id)).toEqual(['t13'])
+      const sent = many.mock.calls[0]![0].find((t) => t.id === 't5')!
+      expect([sent.baselineStart, sent.baselineEnd]).toEqual([t5.baselineStart, t5.baselineEnd])
+    })
+
+    it('PM 把延遲任務的工期拉長：計畫跟著延長，延遲消失（PM 說了算）', async () => {
+      const s = useTaskStore()
+      await s.updateTask('t13', { duration: 9 })
+      expect(s.tasks.filter((t) => isLate(t))).toHaveLength(0)
+      expect((await serverTask('t13'))!.baselineEnd).toBe('2026-09-18')
+    })
+
+    it('未開始根任務改開始日：計畫開始日跟著改，不算延遲', async () => {
+      const s = useTaskStore()
+      await s.updateTask('t24', { start: '2026-10-12' })
+      expect(s.inputs.find((t) => t.id === 't24')!.baselineStart).toBe('2026-10-12')
+      expect(s.taskById('t24')!.baselineStart).toBe('2026-10-12')
+      expect(isLate(s.taskById('t24')!)).toBe(false)
+    })
+
+    it('根任務晚開工算延遲：開工後開始日記成實際開工日，計畫開始日不變', async () => {
+      const s = useTaskStore()
+      // t24 計畫 10/08 開工，10/14 還沒開始：推算開始日推到今天，晚於計畫
+      useClockStore().now = Date.parse('2026-10-14T10:00:00+08:00')
+      expect(isLate(s.taskById('t24')!)).toBe(true)
+      await s.updateTask('t24', { status: 'doing' })
+      const t24 = s.inputs.find((t) => t.id === 't24')!
+      expect([t24.start, t24.baselineStart]).toEqual(['2026-10-14', '2026-10-08'])
+      expect(isLate(s.taskById('t24')!)).toBe(true)
+    })
+
+    it('刪相依讓未開始的任務變成根任務：計畫開始日釘在刪除當下的計畫，計畫不跳', async () => {
+      const s = useTaskStore()
+      const before = s.taskById('t5')!
+      const dep = s.deps.find((d) => d.from === 't4' && d.to === 't5')!
+      await s.removeDep(dep.id)
+      const after = s.taskById('t5')!
+      expect([after.baselineStart, after.baselineEnd]).toEqual([
+        before.baselineStart,
+        before.baselineEnd,
+      ])
+      expect((await serverTask('t5'))!.baselineStart).toBe(before.baselineStart)
+    })
+
+    it('已開始的任務變成根任務：實際開工日不動，計畫開始日照樣釘住', async () => {
+      const s = useTaskStore()
+      const before = s.taskById('t4')!
+      const dep = s.deps.find((d) => d.from === 't3' && d.to === 't4')!
+      await s.removeDep(dep.id)
+      const after = s.taskById('t4')!
+      expect([after.start, after.baselineStart, after.baselineEnd]).toEqual([
+        before.start,
+        before.baselineStart,
+        before.baselineEnd,
+      ])
+    })
+
+    it('新增任務：計畫開始日＝設定的開始日，一建立就有計畫、不延遲', () => {
+      const s = useTaskStore()
+      const t = s.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-10-01', duration: 3 })!
+      expect([t.baselineStart, t.baselineEnd]).toEqual(['2026-10-01', '2026-10-05'])
+      expect(isLate(s.taskById(t.id)!)).toBe(false)
+    })
+
+    it('explain：說明起訖是哪條規則決定的', () => {
+      const s = useTaskStore()
+      expect(s.explain('t5')).toEqual({ startBy: 'pred', predId: 't4', endBy: 'duration' })
+      expect(s.explain('t3')).toMatchObject({ startBy: 'actual', endBy: 'overdue' })
+      expect(s.explain('nope')).toBeNull()
     })
   })
 

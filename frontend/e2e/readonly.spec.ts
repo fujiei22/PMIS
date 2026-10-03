@@ -215,7 +215,8 @@ test.describe('唯讀模式（F2）', () => {
     // 篩選：只看執行中
     await app.topFilter(0).locator('.dd-trigger').click()
     await app.topFilter(0).locator('.dd-item', { hasText: '執行中' }).click()
-    await expect(app.taskCount).toHaveText('已篩選 8/30 個任務')
+    // 範例的執行中有 7 筆（t23 改成未開始、t14 改成暫停之後）
+    await expect(app.taskCount).toHaveText('已篩選 7/30 個任務')
     await app.filterClear.click()
     await expect(app.taskCount).toHaveText('共 30 個任務')
 

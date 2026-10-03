@@ -1,4 +1,3 @@
-import { isoFromIndex } from '@/lib/date'
 import { useClockStore } from '@/stores/clock'
 import { useFilterStore } from '@/stores/filter'
 import { useIssueStore } from '@/stores/issue'
@@ -7,8 +6,8 @@ import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import type { Issue, Task } from '@/types/models'
 
-/** 新任務預設的工期（今天起算共 5 天）。legacy `addTask` :4128 */
-const DEFAULT_SPAN = 4
+/** 新任務預設的工期（工作天）。legacy `addTask` :4128 是今天起算 5 個日曆天。 */
+const DEFAULT_DURATION = 5
 
 export interface TaskActions {
   /** ＋任務：算好預設值建立並選取；一個分類都沒有時改成新增分類並回 null。 */
@@ -34,7 +33,6 @@ export function useTaskActions(): TaskActions {
       return null
     }
     const selection = useSelectionStore()
-    const base = useClockStore().todayIdx
     const groupId =
       selection.groupId ??
       (selection.taskId ? taskStore.taskById(selection.taskId)?.groupId : null) ??
@@ -43,8 +41,8 @@ export function useTaskActions(): TaskActions {
     const task = taskStore.addTask({
       groupId,
       assigneeIds: useFilterStore().memberIds.slice(),
-      start: isoFromIndex(base),
-      end: isoFromIndex(base + DEFAULT_SPAN),
+      start: useClockStore().todayIso,
+      duration: DEFAULT_DURATION,
     })
     if (task) selection.selectTask(task.id)
     return task

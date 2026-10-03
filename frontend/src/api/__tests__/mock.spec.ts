@@ -24,6 +24,9 @@ const task = (id: string, over: Partial<Task> = {}): Task => ({
   done: '',
   priority: 'mid',
   assigneeIds: [],
+  duration: 1,
+  baselineStart: '',
+  baselineEnd: '',
   ...over,
 })
 
@@ -116,7 +119,7 @@ describe('mock api', () => {
     expect((err as ApiError).status).toBe(404)
   })
 
-  it('updateTasks 整批覆蓋（cascade 結果由 client 算好），每筆各 emit 一次', async () => {
+  it('updateTasks 整批覆寫（推算結果由 client 算好），每筆各 emit 一次', async () => {
     const [a, b] = sampleProject.tasks
     const out = await api.updateTasks([
       { ...a!, start: '2026-08-01', end: '2026-08-05' },
@@ -435,6 +438,27 @@ describe('api 進入點', () => {
     vi.stubEnv('VITE_API', 'http')
     vi.resetModules()
     await expect(import('@/api')).rejects.toThrow(/VITE_API/)
+  })
+})
+
+describe('getCalendar', () => {
+  /** 工作日曆：mock 回 2026–2027 的官方日曆（45 個放假日），每次都是複本；setCalendar 換掉、reset 還原。 */
+  it('回 45 筆、涵蓋 2026–2027、週末 [6, 7]，而且是複本', async () => {
+    const api = createMockApi(sampleProject)
+    const cal = await api.getCalendar()
+    expect(cal.days).toHaveLength(45)
+    expect(cal.coveredYears).toEqual([2026, 2027])
+    expect(cal.weekendDays).toEqual([6, 7])
+    cal.days.length = 0
+    expect((await api.getCalendar()).days).toHaveLength(45)
+  })
+
+  it('setCalendar 換掉之後，reset 還原成範例日曆', async () => {
+    const api = createMockApi(sampleProject)
+    api.setCalendar({ weekendDays: [6, 7], coveredYears: [2026], days: [] })
+    expect((await api.getCalendar()).coveredYears).toEqual([2026])
+    api.reset()
+    expect((await api.getCalendar()).coveredYears).toEqual([2026, 2027])
   })
 })
 

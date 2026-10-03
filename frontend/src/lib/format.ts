@@ -52,6 +52,30 @@ function pad2(v: string | undefined): string {
   return s.length < 2 ? '0' + s : s
 }
 
+/** 工期的單位：一律寫「工作天」（工期是工作天，不是日曆天；規則見 docs/reference/scheduling.md）。 */
+export const WORKDAY_UNIT = '工作天'
+
+/** 工期的顯示：「N 工作天」。 */
+export function fmtWorkdays(n: number): string {
+  return `${n} ${WORKDAY_UNIT}`
+}
+
+/**
+ * 一串遞增的年份：連續的併成「A–B」，不連續的用頓號隔開（例 [2027, 2028, 2030] → '2027–2028、2030'）。
+ * 甘特標題列「假日未公布」的提示用。
+ */
+export function fmtYears(years: readonly number[]): string {
+  const runs: string[] = []
+  let i = 0
+  while (i < years.length) {
+    let j = i
+    while (j + 1 < years.length && years[j + 1] === years[j]! + 1) j++
+    runs.push(i === j ? String(years[i]) : `${years[i]}–${years[j]}`)
+    i = j + 1
+  }
+  return runs.join('、')
+}
+
 /** 金額：'$50,000'；負數把負號放在 $ 前面（'-$500'）。 */
 export function fmtMoney(n: number): string {
   return (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US')

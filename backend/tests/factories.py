@@ -65,7 +65,12 @@ def make_member(
     return member
 
 
-def make_project(db: Session, *, pm: Member | None = None, name: str | None = None) -> Project:
+def make_project(
+    db: Session,
+    *,
+    pm: Member | None = None,
+    name: str | None = None,
+) -> Project:
     pm = pm or make_member(db, can_login=True)
     if name is None:
         name = f"專案 {next(_serial)}"
@@ -106,6 +111,9 @@ def make_task(
     start_on: date | None = None,
     end_on: date | None = None,
     done_on: date | None = None,
+    duration_days: int = 1,
+    baseline_start_on: date | None = None,
+    baseline_end_on: date | None = None,
     assignees: Sequence[Member] = (),
 ) -> Task:
     group = group or make_group(db)
@@ -119,6 +127,9 @@ def make_task(
         start_on=start_on,
         end_on=end_on,
         done_on=done_on,
+        duration_days=duration_days,
+        baseline_start_on=baseline_start_on,
+        baseline_end_on=baseline_end_on,
         status=status,
         priority=priority,
         position=serial if position is None else position,

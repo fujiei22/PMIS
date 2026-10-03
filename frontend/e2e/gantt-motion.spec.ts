@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { DashboardPage, html5Drag } from './helpers/dashboardPage'
+import { OverviewPage } from './helpers/overviewPage'
 import { speedJumps } from './helpers/ovMotion'
 
 /**
@@ -287,6 +288,31 @@ async function openGantt(page: Page): Promise<DashboardPage> {
   await idle(page)
   await tagStripes(page)
   return app
+}
+
+/** 每天都上班的工作日曆（沒有週末、沒有假日）。 */
+const ALL_WORKDAYS = { weekendDays: [], coveredYears: [2026, 2027], days: [] }
+
+/**
+ * 同 `openGantt`（不固定時鐘），但工作日曆換成每天都上班；`today` 可換掉 mock 的今天（dev 的 `?today=`）。
+ *
+ * D6 / D13 量的是指標、捲動與補償，不是工作日曆：有週末與假日時，落在非工作天的那幾幀推算會順延，
+ * 照設計不補償、條跟著畫布走（規則見 docs/reference/scheduling.md），跟這裡要量的鋸齒混在一起。
+ * mock 的日曆只能在進 Dashboard 前換（`__mockApi` 要等 app 載入才有），所以先開總覽、換好再點進去。
+ */
+async function openGanttAllWorkdays(page: Page, today?: string): Promise<DashboardPage> {
+  await page.goto(today ? `/?today=${today}` : '/')
+  const ov = new OverviewPage(page)
+  await ov.card('pmis').waitFor()
+  // eslint-disable-next-line playwright/no-skipped-test -- 接上真後端時沒有 __mockApi（同 readonly.spec）
+  test.skip(!(await page.evaluate(() => !!window.__mockApi)))
+  await page.evaluate((cal) => window.__mockApi!.setCalendar(cal), ALL_WORKDAYS)
+  await ov.card('pmis').getByRole('link', { name: /進入/ }).click()
+  await page.waitForURL('**/projects/pmis')
+  await page.locator('[data-rowtask]').first().waitFor()
+  await idle(page)
+  await tagStripes(page)
+  return new DashboardPage(page)
 }
 
 test.describe('左欄列增減：離場列立即讓位、左右同步（D1 / D5 / D9）', () => {
@@ -589,6 +615,7 @@ function depGap(tr: Trace, from: string, to: string, since: number): number {
 test.describe('相依線、今天線、選取淡化跟著條走（D4）', () => {
   const PAIRS: [string, string][] = [
     ['t8', 't9'],
+    ['t9', 't10'],
     ['t9', 't20'],
   ]
   const depTargets = (): Record<string, string> => {
@@ -610,16 +637,18 @@ test.describe('相依線、今天線、選取淡化跟著條走（D4）', () => 
     for (const [a, b] of PAIRS) expect(depGap(tr, a, b, at), `${a} → ${b}`).toBeLessThanOrEqual(4)
   })
 
-  test('列選單 +1 天：相依線跟著變寬的條與被推動的下游一起走', async ({ page }) => {
+  // t9（進行中，09-24 結束）工期 +1 → 09-29 結束（中間是中秋、週末、教師節），未開始的下游 t10 從 09-29 推到 09-30。
+  // 已開始的任務不會被推（規則見 docs/reference/scheduling.md〈開始日〉），所以改用 t9 → t10 這一段
+  test('列選單 +1：相依線跟著變寬的條與被推動的下游一起走', async ({ page }) => {
     const app = await openGantt(page)
     await tagDeps(page, PAIRS)
-    await app.rowMore('t8').click()
+    await app.rowMore('t9').click()
     const tr = await trace(page, depTargets(), () =>
-      app.rowMenu.locator('.rm-step', { hasText: '+1天' }).click(),
+      app.rowMenu.locator('.rm-step', { hasText: '+1' }).click(),
     )
     const at = tr.marks[0]!
-    const pushed = seriesOf(tr, 'bar:t9', at)
-    expect(pushed.at(-1)!.x - pushed[0]!.x, 't9 被推一天').toBeGreaterThan(20)
+    const pushed = seriesOf(tr, 'bar:t10', at)
+    expect(pushed.at(-1)!.x - pushed[0]!.x, 't10 被推一天').toBeGreaterThan(20)
     for (const [a, b] of PAIRS) expect(depGap(tr, a, b, at), `${a} → ${b}`).toBeLessThanOrEqual(4)
   })
 
@@ -665,15 +694,15 @@ test.describe('平板：選取中常駐的連線圓點跟著條走（D4）', () 
     return +max.toFixed(1)
   }
 
-  test('+1 天：右側圓點跟著條的右緣走；收合上方分類：圓點跟著條上移', async ({ page }) => {
+  test('+1：右側圓點跟著條的右緣走；收合上方分類：圓點跟著條上移', async ({ page }) => {
     const app = await openGantt(page)
     await app.row('t8').locator('.name').tap()
     await pause(page, 1300)
     await expect(page.locator(dots.dotR)).toHaveClass(/shown/)
 
     await app.rowMore('t8').tap()
-    let tr = await trace(page, dots, () => app.rowMenu.locator('.rm-step', { hasText: '+1天' }).tap())
-    expect(dotGap(tr, tr.marks[0]!), '+1 天時圓點與條右緣').toBeLessThanOrEqual(4)
+    let tr = await trace(page, dots, () => app.rowMenu.locator('.rm-step', { hasText: '+1' }).tap())
+    expect(dotGap(tr, tr.marks[0]!), '+1 時圓點與條右緣').toBeLessThanOrEqual(4)
 
     await page.locator('.rm-mask').tap()
     await idle(page)
@@ -800,13 +829,17 @@ test.describe('甘特面板收合 / 展開（D3 / D12）', () => {
 })
 
 test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => {
+  // t24：未開始、沒有前置的根任務，往後拖不受限制（已開始的任務開始日不晚於今天，拖不到右緣）
   test('拖條到右緣自動捲動：條一直在游標下、不鋸齒抖動；放開才吸附到整天', async ({ page }) => {
-    const app = await openGantt(page)
-    await app.row('t3').locator('.name').click()
+    const app = await openGanttAllWorkdays(page)
+    await app.row('t24').locator('.name').click()
     await pause(page, 1300)
-    await app.freezeGanttScroll(0)
+    const barLeft = await app.bar('t24').evaluate((el) => (el as HTMLElement).offsetLeft)
+    // 每天都上班時專案比較短、畫布比較窄：捲動量夾在最大可捲動量內
+    const maxScroll = await app.ganttScroller.evaluate((el) => el.scrollWidth - el.clientWidth)
+    await app.freezeGanttScroll(Math.max(0, Math.min(barLeft - 300, maxScroll)))
     const sc = (await app.ganttScroller.boundingBox())!
-    const b = (await app.bar('t3').boundingBox())!
+    const b = (await app.bar('t24').boundingBox())!
     const y = b.y + b.height / 2
     const grabX = b.x + 24
     const edgeX = sc.x + sc.width - 20
@@ -818,7 +851,7 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
     }
     const sl0 = await app.scrollLeftOf(app.ganttScroller)
     // 游標停在右緣：自動捲動一直跑
-    const tr = await trace(page, { bar: bar('t3') }, () => pause(page, 1), { ms: 700 })
+    const tr = await trace(page, { bar: bar('t24') }, () => pause(page, 1), { ms: 700 })
     const sl1 = await app.scrollLeftOf(app.ganttScroller)
     await page.mouse.up()
     expect(sl1 - sl0, '自動捲動有在跑').toBeGreaterThan(100)
@@ -826,21 +859,24 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
     const back = xs.map((x, i) => (i ? xs[i - 1]! - x : 0))
     expect(Math.max(...back), `條的左緣逐幀：${xs.map((x) => x.toFixed(0)).join(',')}`).toBeLessThanOrEqual(1.5)
     // 放開：補償的位移歸零，條落在整天的位置
-    await expect(app.bar('t3')).toHaveCSS('transform', 'none')
+    await expect(app.bar('t24')).toHaveCSS('transform', 'none')
   })
 
   /**
    * D6 延伸：縮放把手拖到邊緣自動捲動。被拖的那一端要一直在游標下（捲動造成、還沒湊滿一天的差補在那一端），
    * 另一端是固定的日期、跟著畫布捲動連續移動；放開才吸附到整天。
    * 修正前被拖的那一端以整天吸附：隨捲動往遠離游標的方向滑、湊滿一天再一幀跳回（鋸齒，實測每幀 13px）。
-   * 右把手用 t3（專案前段，捲動位置 0 時看得到），拖到右緣；左把手用 t24（專案後段、沒有前置任務——有前置的開始日
-   * 不能早於前一個結束，左緣會被擋住），先捲到 t24 左邊留 700px，拖到左緣。
+   * 右把手用 t3（專案前段，捲動位置 0 時看得到；逾期中，拖到今天以後才會改工期），拖到右緣；
+   * 左把手用 t24（專案後段、沒有前置任務——有前置、未開始的開始日由前置決定，沒有左把手），先捲到 t24 左邊留 700px，拖到左緣。
+   * 未開始的開始日不早於今天，左把手那則把今天換到 2026-08-20（`?today=`），整段拖曳都碰不到限制。
+   * 兩則都用每天都上班的日曆（見 `openGanttAllWorkdays`）。
    * end：被拖的那一端在畫面上的 x；away：這一幀往遠離游標的方向滑了多少（鋸齒的那一段）。
    */
   const RESIZE = [
     {
       name: '右把手拖到右緣',
       id: 't3',
+      today: undefined as string | undefined,
       scrollTo: () => 0,
       grab: (b: { x: number; width: number }) => b.x + b.width - 3,
       edge: (sc: { x: number; width: number }) => sc.x + sc.width - 20,
@@ -850,6 +886,7 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
     {
       name: '左把手拖到左緣',
       id: 't24',
+      today: '2026-08-20' as string | undefined,
       scrollTo: (barLeft: number) => Math.max(0, barLeft - 700),
       grab: (b: { x: number; width: number }) => b.x + 3,
       edge: (sc: { x: number; width: number }) => sc.x + 20,
@@ -859,7 +896,7 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
   ]
   for (const r of RESIZE) {
     test(`縮放：${r.name}自動捲動，被拖的那一端一直在游標下、不鋸齒；放開才吸附`, async ({ page }) => {
-      const app = await openGantt(page)
+      const app = await openGanttAllWorkdays(page, r.today)
       await app.row(r.id).locator('.name').click()
       await pause(page, 1300)
       const barLeft = await app.bar(r.id).evaluate((el) => (el as HTMLElement).offsetLeft)
@@ -890,17 +927,18 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
   }
 
   /*
-   * review：被拖的那一端被擋住時不補。t6 的前置是 t5，開始日不能早於 t5 的開始：左把手拖到左緣、自動捲動捲過那一天之後，
+   * review：被拖的那一端被擋住時不補。t24 還沒開始，開始日不能早於今天（09-18）：左把手拖到左緣、自動捲動捲過那一天之後，
    * 左緣停在限制上、跟著畫布等速往右走。修正前補償照加：補償把它拉回游標下不動，每湊滿一天又一幀往右跳一天（32px）。
+   * （原本用 t6 被前置擋住；有前置、未開始的任務現在沒有左把手。）
    */
-  test('縮放：左把手被前置任務擋住後，左緣跟著畫布等速移動、不一天一跳', async ({ page }) => {
+  test('縮放：左把手被限制擋住後，左緣跟著畫布等速移動、不一天一跳', async ({ page }) => {
     const app = await openGantt(page)
-    await app.row('t6').locator('.name').click()
+    await app.row('t24').locator('.name').click()
     await pause(page, 1300)
-    const barLeft = await app.bar('t6').evaluate((el) => (el as HTMLElement).offsetLeft)
+    const barLeft = await app.bar('t24').evaluate((el) => (el as HTMLElement).offsetLeft)
     await app.freezeGanttScroll(Math.max(0, barLeft - 700))
     const sc = (await app.ganttScroller.boundingBox())!
-    const b = (await app.bar('t6').boundingBox())!
+    const b = (await app.bar('t24').boundingBox())!
     const y = b.y + b.height / 2
     const grabX = b.x + 3
     const edgeX = sc.x + 20
@@ -910,7 +948,7 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
       await page.mouse.move(grabX + ((edgeX - grabX) * i) / 8, y)
       await pause(page, 16)
     }
-    const tr = await trace(page, { bar: bar('t6') }, () => pause(page, 1), { ms: 700 })
+    const tr = await trace(page, { bar: bar('t24') }, () => pause(page, 1), { ms: 700 })
     await page.mouse.up()
     const pts = tr.frames.filter((f) => f.boxes.bar).map((f) => ({ t: f.t, v: f.boxes.bar!.x }))
     const detail = `左緣逐幀：${pts.map((p) => p.v.toFixed(0)).join(',')}`
@@ -965,8 +1003,9 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
 
   test('拖條超出專案起點（日期格往左長）：同一天的日期格與別的條每一幀都對齊', async ({ page }) => {
     const app = await openGantt(page)
-    // t28 是最早開始、沒有前置的任務；往左拖會讓專案起點外移
-    await app.row('t28').locator('.name').click()
+    // t29（進行中、沒有前置，09-01 開始）往左拖 10 天到 08-22：早於專案最早的開始日 08-24，起點外移。
+    // 已完成的任務（原本用 t28）開始日是實際值、不能拖；進行中的開始日可以往前改（不晚於今天就好）
+    await app.row('t29').locator('.name').click()
     await pause(page, 1300)
     await app.freezeGanttScroll(0)
     // 標出 t7 開始那一天的日期格（日期格以日索引為 key，外移後同一個元素還在）
@@ -975,17 +1014,17 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
       const cell = [...document.querySelectorAll<HTMLElement>('.gantt-chart > .day-bg')].find((d) => d.style.left === left)
       cell?.setAttribute('data-probe-day', 't7')
     })
-    const b = (await app.bar('t28').boundingBox())!
+    const b = (await app.bar('t29').boundingBox())!
     const y = b.y + b.height / 2
-    // 抓條的右段（避開右把手）往左 5 天：游標一直在畫布裡、離左緣夠遠，不會觸發自動捲動
-    const grabX = b.x + b.width - 30
+    // t29 的條很長（40 個工作天），抓左段往右 200px 處（避開左把手）往左 10 天：游標一直在畫布裡、離左緣夠遠，不會觸發自動捲動
+    const grabX = b.x + 200
     await page.mouse.move(grabX, y)
     await page.mouse.down()
     const tr = await trace(
       page,
-      { day: '[data-probe-day="t7"]', other: bar('t7'), dragged: bar('t28') },
+      { day: '[data-probe-day="t7"]', other: bar('t7'), dragged: bar('t29') },
       async () => {
-        for (let i = 1; i <= 5; i++) {
+        for (let i = 1; i <= 10; i++) {
           await page.mouse.move(grabX - 32 * i, y)
           await pause(page, 50)
         }
@@ -993,7 +1032,7 @@ test.describe('拖條：自動捲動與專案起點外移（D6 / D13）', () => 
       { markOn: 'pointermove', ms: 500 },
     )
     await page.mouse.up()
-    await expect(app.row('t28').locator('.date-text')).toHaveText(/^2026\/08\/19 → /)
+    await expect(app.row('t29').locator('.date-text')).toHaveText(/^2026\/08\/22 → /)
     expect(maxSkewX(tr, 'day', 'other'), 't7 的條與它開始那一天的日期格').toBeLessThanOrEqual(4)
     // 被拖的條一直在游標下（畫面沒有因為專案起點外移而整片跳走）
     const xs = tr.frames.filter((f) => f.t >= tr.marks[0]! && f.boxes.dragged).map((f) => f.boxes.dragged!.x)

@@ -7,6 +7,7 @@ import type {
   ProjectData,
   SessionInfo,
   Task,
+  WorkCalendar,
 } from '@/types/models'
 
 /** ===== wire 約定（後端 / adapter 必讀）=====
@@ -18,25 +19,36 @@ import type {
  * - 哪些方法帶 projectId：建立分類（沒有上層實體可以反查專案）、整份重排任務 / 分類、訂閱事件，
  *   第一個參數是 projectId。其他建立 / 修改 / 刪除由後端從實體反查專案（任務看 groupId、Issue 看 taskId、
  *   留言看 targetId），不另外帶。
- * - ProjectSummary 由後端彙整，規則：
+ * - ProjectSummary 由後端彙整。日期與延遲一律看「推算起訖」：存的 start / end 是上次寫回的快照，跨日後會落後，
+ *   所以要先照 docs/reference/scheduling.md 用伺服器當日把任務排一次（連同計畫起訖）。規則：
  *   - status 不存欄位，依任務算：有任務且全部 done → 'done'；有任何 doing 或 done → 'doing'；
  *     其他（含沒有任務、只有暫停）→ 'todo'。參考實作：api/mock/portfolio.ts 的 projectStatusOf()。
- *   - startDate / dueDate = 任務 start 最小值 / end 最大值；taskPlanned = end 早於伺服器當日的任務數。
+ *   - startDate / dueDate = 推算 start 最小值 / 推算 end 最大值。
+ *   - taskPlanned = 計畫結束日（baselineEnd）早於伺服器當日的任務數；沒有計畫的不算。
  *     前端的已過 / 剩餘天數用前端 clock 算，跨日時可能差一天，可接受。
- *   - delayedTasks = 未完成且 end 已過的任務數（與 Dashboard「已延遲」同定義，和 taskCounts 重疊計數）。
- *   - upcoming = 未完成任務依 end 升冪取前 3（含已逾期），memberId = 第一位負責人，沒有就 ''。
+ *   - delayedTasks = 未完成、而且推算 end 晚於計畫結束日的任務數（與 Dashboard「已延遲」同定義，
+ *     和 taskCounts 重疊計數）。
+ *   - upcoming = 未完成任務依推算 end 升冪取前 3（含已逾期），memberId = 第一位負責人，沒有就 ''。
  *   - 不變式：taskDone === taskCounts.done、taskTotal === taskCounts 各項加總；adapter 負責驗。
  *   - 實際 / 理論 %、落後百分點、需注意（alert）**不由後端給**：門檻只存在前端 lib/portfolio.ts。
- *   - 參考實作：api/mock/portfolio.ts 的 summarizeProject()。
+ *   - 參考實作：api/mock/portfolio.ts 的 summarizeProject()（直接呼叫前端的排程函式）。
+ * - Task 的排程欄位（欄位對照見 frontend/README.md〈Task 欄位對照表〉）：
+ *   - duration = 工期，工作天整數，1–3650；是輸入值，end 由它推算。
+ *   - start / end 是推算後寫回的值：已開始的 start 是實際開始日、未開始根任務的 start 是設定的開始日，其他是快照。
+ *   - baselineStart / baselineEnd = 計畫起訖，'' ↔ null，兩個一起有值或一起是空。根任務的 baselineStart 是 PM 設的
+ *     計畫開始日（輸入值）；其餘是前端推算的計畫快照，跟推算起訖一起寫回（updateTasks）。
+ * - 工作日曆 getCalendar() 全系統共用、不帶專案 id；失敗時前端只扣週末，不擋畫面。
  * - Member.color 必須是合法的 CSS 顏色值（例 '#2563eb'），adapter 建議驗證格式。前端目前只經 Vue 的
  *   `:style` 物件綁定寫進 CSS 變數，無法跳脫成其他規則；但日後若有地方改用字串拼接組 CSS，就沒有這層保護。
  * - Member.active = 沒停用。指派類的下拉只列 active 的人，原本就指派給停用者的照樣顯示、可以移除。
  * - id 一律由 client 產（UUID v4）；create 帶 id，重複回 409 conflict。
  * - patch = JSON merge patch（只送有變的欄位）；'' 是有效值（空日期），不是「未設」。adapter 負責 null ↔ ''。
  *   後端收到 patch 要用 schema 白名單逐欄位驗，不可整包 merge（mass-assignment / __proto__）。
- * - updateTasks 是例外：語意是**整批 PUT**，body 是整筆 Task[]（不是 patch），內容已含 cascade 後的下游。
+ * - updateTasks 是例外：語意是**整批 PUT**，body 是整筆 Task[]（不是 patch），內容是前端排好的推算結果（含被推動的下游）。
  * - 日期：Task/Issue 的 ISODate 'YYYY-MM-DD'；Comment.at / Attachment.at 前端用本地 'YYYY-MM-DDTHH:mm' / 'YYYY-MM-DD'，後端存 ISO 8601 含 offset，adapter 轉。
- * - 後端不跑 cascade：updateTasks 已含下游、done 已由前端填；後端只存，response 回最終狀態（可糾正）。
+ * - 後端不重算排程（規則見 docs/reference/scheduling.md）：updateTasks 已含下游、done 已由前端填；後端只存，response 回最終狀態（可糾正）。
+ *   例外是上面的 ProjectSummary：它需要用伺服器當日推算。後端做任務 API 時要移植同一套排程，
+ *   並跑 scheduling.md〈檢查點（測試向量）〉的三組數字；或改成摘要由前端算。
  * - 事件依專案訂閱（subscribe(projectId)，只收那個專案的事件；Task 等實體裡沒有專案 id，分專案靠訂閱）。
  *   廣播含發起者；client 對同 id 同值事件 no-op。事件可能早於或晚於對應 response 到達，兩種順序 client 都正確——
  *   這是 client 的責任，後端不必為此排順序。事件的 payload 同樣要走 adapter 轉換（null ↔ ''、日期、Attachment.id）。
@@ -120,13 +132,20 @@ export interface ProjectApi {
 
   /** 整包專案資料（含 `project` 與 `canEdit`）；陣列順序就是顯示順序。 */
   loadProject(id: string): Promise<ProjectData> //                           GET    /api/projects/:id
-  /** 所有專案的摘要清單與成員名錄；總覽頁用。 */
+  /**
+   * 所有專案的摘要清單與成員名錄；總覽頁用。摘要的日期與延遲依伺服器當日推算（見檔頭 ProjectSummary 的規則）。
+   */
   listProjects(): Promise<PortfolioData> //                                  GET    /api/projects
+  /**
+   * 工作日曆（週末規則＋假日與補班）；全系統共用，不帶專案 id、不帶 from/to，一次回全部（10 年約 200 筆）。
+   * 排程規則見 docs/reference/scheduling.md。401 照其他端點的規矩（先 notifyUnauthorized 再拋）。
+   */
+  getCalendar(): Promise<WorkCalendar> //                                    GET    /api/calendar
 
   createTask(task: Task): Promise<Task> //                                   POST   /api/tasks
   updateTask(id: string, patch: Partial<Task>): Promise<Task> //             PATCH  /api/tasks/:id
   /**
-   * 語意是**整批 PUT**：body 是整筆 `Task[]`（cascade 結果），不是 patch。
+   * 語意是**整批 PUT**：body 是整筆 `Task[]`（前端排好的推算結果），不是 patch。
    * response 是 server 最終狀態，client 直接套回。
    */
   updateTasks(tasks: Task[]): Promise<Task[]> //                             PATCH  /api/tasks
@@ -178,7 +197,8 @@ export interface MockApi extends ProjectApi {
   /** 每個呼叫的 response 延遲（ms）；事件仍然同步發出，不等延遲。 */
   setLatency(ms: number): void
   /**
-   * 回到初始資料（或換一份），並清掉注入的延遲與失敗、`setCanEdit` 的覆寫；登入狀態回到預設的已登入。
+   * 回到初始資料（或換一份），並清掉注入的延遲與失敗、`setCanEdit` 的覆寫、`setCalendar` 換的日曆；
+   * 登入狀態回到預設的已登入。
    * 訂閱不受影響。
    */
   reset(data?: ProjectData): void
@@ -192,4 +212,9 @@ export interface MockApi extends ProjectApi {
    * 寫入一律照做，擋寫入靠前端的資料層（真後端會回 403）。
    */
   setCanEdit(v: boolean): void
+  /**
+   * 之後的 `getCalendar` 改回這份日曆（e2e 測「假日未公布」、補班日用）。`reset()` 會還原成範例日曆。
+   * 要測載入失敗用 `failNext('getCalendar')`；要在第一次進 Dashboard 前設好才看得到效果。
+   */
+  setCalendar(cal: WorkCalendar): void
 }

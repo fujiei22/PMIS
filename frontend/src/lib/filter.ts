@@ -18,7 +18,6 @@ export interface TaskFilter {
 export interface MatchCtx {
   /** 該任務未結案的 Issue 數 */
   openIssueCount: (taskId: string) => number
-  todayIdx: number
 }
 
 /**
@@ -40,11 +39,14 @@ function matchMember(t: Task, f: TaskFilter): boolean {
   return t.assigneeIds.some((w) => f.memberIds.includes(w))
 }
 
-/** 狀態：'delayed' 不是真狀態，要另外用 isLate 判。legacy `matchStatus` :2230 */
-function matchStatus(t: Task, f: TaskFilter, ctx: MatchCtx): boolean {
+/**
+ * 狀態：'delayed' 不是真狀態，要另外用 isLate 判（依基準，t 是推算後的任務，不必再看今天）。
+ * legacy `matchStatus` :2230
+ */
+function matchStatus(t: Task, f: TaskFilter): boolean {
   if (!f.statuses.length) return true
   if (f.statuses.includes(t.status)) return true
-  return f.statuses.includes('delayed') && isLate(t, ctx.todayIdx)
+  return f.statuses.includes('delayed') && isLate(t)
 }
 
 /** 優先度。legacy `matchPrio` :2235 */
@@ -86,7 +88,7 @@ export function matchTask(t: Task, f: TaskFilter, ctx: MatchCtx): boolean {
   return (
     matchDate(t, f) &&
     matchMember(t, f) &&
-    matchStatus(t, f, ctx) &&
+    matchStatus(t, f) &&
     matchPrio(t, f) &&
     matchIssue(t, f, ctx) &&
     matchGroup(t, f)

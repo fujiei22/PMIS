@@ -98,29 +98,17 @@ const sorting: Scenario = async (page, capture) => {
   await capture('Issue 依等級分組')
 }
 
-/** 4. 甘特條拖曳移動 / 縮放、拖曳建立相依、cascade 連動、防循環。 */
+/**
+ * 4. 甘特拖曳建立相依、防循環。
+ * 拖條移動與縮放不比：排程規則不同（legacy 開始到開始、日曆天；新頁完成到開始、工作天、以實際進度推下游），
+ * 結果本來就不一樣。改由 `dragdrop.spec`（t24 往後 3 天推動 t25、t3 右把手改工期）與 `schedule.spec` 驗。
+ */
 const ganttDrag: Scenario = async (page, capture) => {
   const bar = page.locator('[data-taskid="t3"]')
   await freezeGantt(page, 0)
   await bar.click()
   await settle(page)
   await freezeGantt(page, 0)
-
-  const box = await bar.boundingBox()
-  if (!box) throw new Error('找不到 t3 的甘特條')
-  const y = box.y + box.height / 2
-  await stepDrag(page, { x: box.x + 20, y }, [{ x: box.x + 20 + 32 * 3, y }])
-  await settle(page)
-  await freezeGantt(page, 0)
-  await capture('拖曳 t3 往右 3 天（下游連動）')
-
-  const box2 = await bar.boundingBox()
-  if (!box2) throw new Error('找不到 t3 的甘特條')
-  const right = box2.x + box2.width - 4
-  await stepDrag(page, { x: right, y }, [{ x: right + 32 * 2, y }])
-  await settle(page)
-  await freezeGantt(page, 0)
-  await capture('拉右邊界 +2 天')
 
   // 連線圓點只在「已選取且指標在條上」時出現（legacy :1876-1883）。
   await bar.hover()
@@ -192,7 +180,13 @@ const structure: Scenario = async (page, capture) => {
   await capture('新增 Issue')
 }
 
-/** 6. 改名、改狀態、改工期、改完成日期。 */
+/**
+ * 6. 改名、改狀態、改完成日期。
+ * 改狀態挑執行中的第二張卡（t13，09-05 起、推算結束日就是今天 09-18）：改成完成時新頁把結束日換成完成日（今天），
+ * 剛好跟 legacy 一樣。未開始的卡改完成，新頁會把開始日記成今天（規則見 docs/reference/scheduling.md
+ * 〈狀態改變時寫入的值〉），起訖就對不上了。
+ * 卡片工期 +1 不比：legacy 加一個日曆天、新頁加一個工作天，改由 `TaskCard.spec` 與 `tablet.spec` 驗。
+ */
 const editing: Scenario = async (page, capture) => {
   const row = page.locator('[data-rowtask="t2"]')
   await row.dblclick({ position: ROW_NAME_POS })
@@ -201,16 +195,12 @@ const editing: Scenario = async (page, capture) => {
   await settle(page)
   await capture('列雙擊改名')
 
-  const card = page.locator('[data-col="todo"] [data-card]').first()
-  await card.getByText('待辦', { exact: true }).click()
+  const card = page.locator('[data-col="doing"] [data-card]').nth(1)
+  await card.getByText('執行中', { exact: true }).click()
   await clickFloat(page, '已完成')
   await capture('卡片狀態改為已完成')
 
   const card2 = page.locator('[data-col="doing"] [data-card]').first()
-  await card2.getByText('▲', { exact: true }).click()
-  await settle(page)
-  await capture('卡片工期 +1 天')
-
   await card2.getByText('完成日期', { exact: true }).click()
   await clickFloat(page, '18')
   await capture('日期選擇器填完成日期')

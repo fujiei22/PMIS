@@ -1,5 +1,7 @@
 import { dayIndex } from '@/lib/date'
-import { isLate, isPlannedDone } from '@/lib/schedule'
+import { isLate, isPlannedDone, scheduleWithPlan } from '@/lib/schedule'
+import { createWorkdays, type Workdays } from '@/lib/workdays'
+import { sampleCalendar } from '@/mocks/sampleCalendar'
 import {
   PMIS_META,
   PORTFOLIO_CURRENT_USER,
@@ -14,6 +16,7 @@ import type {
   ProjectStatus,
   ProjectSummary,
   TaskStatus,
+  WorkCalendar,
 } from '@/types/models'
 
 /** 近期到期任務最多列幾筆。 */
@@ -36,10 +39,13 @@ export function projectStatusOf(counts: Record<TaskStatus, number>): ProjectStat
  * 把一份完整專案資料彙整成總覽用的摘要。mock 在這裡扮演後端的彙整邏輯，
  * 規則同 `api/types.ts` 檔頭的 wire 約定：
  *
+ * - 先用今天把任務排一次、填上計畫（`scheduleWithPlan`，規則見 docs/reference/scheduling.md），
+ *   下面的日期與延遲都看推算結果，跟 Dashboard 畫面上看到的一致；存的起訖可能是幾天前寫回的快照。
  * - status：`projectStatusOf(taskCounts)`。
  * - 起訖日：任務 start 的最小值 / end 的最大值；沒有任務時兩者都是今天。
- * - taskPlanned：`isPlannedDone` 為真的任務數（end 在今天之前），與 Dashboard 理論進度同一個定義。
- * - delayedTasks：`isLate` 為真的任務數，與 Dashboard「已延遲」同一個定義；和 taskCounts 重疊計數。
+ * - taskPlanned：`isPlannedDone` 為真的任務數（計畫結束日在今天之前），與 Dashboard 理論進度同一個定義。
+ * - delayedTasks：`isLate` 為真的任務數（推算結束日晚於計畫），與 Dashboard「已延遲」同一個定義；
+ *   和 taskCounts 重疊計數。
  * - openIssues：未結 Issue 依等級計數；memberIds：至少被指派一個任務的成員，順序照 data.members。
  * - upcoming：未完成任務依 end 升冪取前 3，**含已逾期**（逾期的最該被看到）。
  * - 不變式：taskDone === taskCounts.done、taskTotal === 各狀態加總。
@@ -48,9 +54,10 @@ export function summarizeProject(
   data: ProjectData,
   meta: { id: string; name: string; pmId: string },
   todayIso: ISODate,
+  workdays: Workdays,
 ): ProjectSummary {
   const todayIdx = dayIndex(todayIso)
-  const tasks = data.tasks
+  const tasks = scheduleWithPlan(data.tasks, data.deps, workdays, todayIdx)
 
   const taskCounts: Record<TaskStatus, number> = { done: 0, doing: 0, paused: 0, todo: 0 }
   for (const t of tasks) taskCounts[t.status]++
@@ -84,7 +91,7 @@ export function summarizeProject(
     taskDone: taskCounts.done,
     taskPlanned: tasks.filter((t) => isPlannedDone(t, todayIdx)).length,
     taskCounts,
-    delayedTasks: tasks.filter((t) => isLate(t, todayIdx)).length,
+    delayedTasks: tasks.filter((t) => isLate(t)).length,
     openIssues,
     closedIssues,
     memberIds: data.members.filter((m) => assigned.has(m.id)).map((m) => m.id),
@@ -99,10 +106,20 @@ export function summarizeProject(
 /**
  * 組出 `listProjects()` 的回傳：PMIS 由 `data` 即時彙整，其餘是靜態摘要。
  * 全部是複本，呼叫端改了也不會影響下一次。
+ *
+ * @param calendar 排程用的工作日曆；mock api 傳它目前的日曆（`setCalendar` 可換），測試省略時用範例日曆
  */
-export function buildPortfolio(data: ProjectData, todayIso: ISODate): PortfolioData {
+export function buildPortfolio(
+  data: ProjectData,
+  todayIso: ISODate,
+  calendar: WorkCalendar = sampleCalendar,
+): PortfolioData {
+  const workdays = createWorkdays(calendar)
   return {
-    projects: [summarizeProject(data, PMIS_META, todayIso), ...structuredClone(STATIC_PROJECTS)],
+    projects: [
+      summarizeProject(data, PMIS_META, todayIso, workdays),
+      ...structuredClone(STATIC_PROJECTS),
+    ],
     members: structuredClone(PORTFOLIO_MEMBERS),
     currentUserId: PORTFOLIO_CURRENT_USER,
   }

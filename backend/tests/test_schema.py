@@ -23,6 +23,7 @@ from app.core.calendar_rules import (
 )
 from app.core.time import today
 from app.models import (
+    TASK_DURATION_MAX,
     Attachment,
     CalendarOfficialDay,
     CalendarOfficialYear,
@@ -78,6 +79,7 @@ def test_task_cannot_use_group_of_another_project(db: Session) -> None:
                 status="todo",
                 priority="mid",
                 position=0,
+                duration_days=1,
             )
         )
 
@@ -498,3 +500,46 @@ def test_override_note_length(db: Session) -> None:
         lambda: db.add(override(note="長" * (OVERRIDE_NOTE_MAX + 1))),
         "ck_calendar_overrides_note_length",
     )
+
+
+# ---------- 任務的工期與計畫 ----------
+# 規則見 docs/reference/scheduling.md：工期是工作天（1–3650）、計畫起訖（基準欄位）成對。
+
+
+@pytest.mark.parametrize("days", [1, TASK_DURATION_MAX])
+def test_task_duration_accepts_both_ends(db: Session, days: int) -> None:
+    """工期的兩端（1 與上限）都收：CHECK 是 BETWEEN，邊界值不能被誤擋。"""
+    assert_accepted(db, lambda: make_task(db, duration_days=days))
+
+
+@pytest.mark.parametrize("days", [0, TASK_DURATION_MAX + 1])
+def test_task_duration_must_be_in_range(db: Session, days: int) -> None:
+    """工期超出 1–上限就拒絕：0 天或超過上限的工期排不出結束日（前端會夾值，這裡是最後一道）。"""
+    assert_rejected(db, lambda: make_task(db, duration_days=days), "ck_tasks_duration_days_range")
+
+
+def test_task_baseline_is_both_or_neither(db: Session) -> None:
+    """計畫起訖要一起有值或一起是 NULL：只有一端的計畫算不出延遲。"""
+    assert_accepted(
+        db,
+        lambda: make_task(db, baseline_start_on=date(2026, 9, 1), baseline_end_on=date(2026, 9, 5)),
+    )
+    assert_rejected(
+        db, lambda: make_task(db, baseline_start_on=date(2026, 9, 1)), "ck_tasks_baseline_pair"
+    )
+    # 反過來只有結束日也一樣不收（CHECK 是對稱的，兩個方向都要守）
+    assert_rejected(
+        db, lambda: make_task(db, baseline_end_on=date(2026, 9, 5)), "ck_tasks_baseline_pair"
+    )
+
+
+def test_task_duration_has_no_server_default(db: Session) -> None:
+    """migration 先用 server_default 加欄、再拿掉；alembic check 不比對預設值，這裡守。"""
+    default = db.scalar(
+        text(
+            "SELECT column_default FROM information_schema.columns "
+            "WHERE table_schema = current_schema() "
+            "AND table_name = 'tasks' AND column_name = 'duration_days'"
+        )
+    )
+    assert default is None

@@ -7,18 +7,26 @@
 // 樣式全部拆成回傳 primitive 的小 computed——一條 hover 不會讓別條重畫。
 //
 // 唯讀時（F2）沒有左右把手與連線圓點，選取中的條也不能拖（按下去照樣平移畫布，見 usePointerDrag.startBar）。
+// 排程規則（docs/reference/scheduling.md〈編輯限制〉）：開始日由前置決定的條沒有左把手、不能整條拖；
+// 已完成的兩個把手都沒有。不能拖的原因寫在 title。
 import { computed } from 'vue'
 import { registerEl, registerPair, useDomRegistry } from '@/composables/useDomRegistry'
 import { TOUCH_UI_QUERY, useMediaQuery } from '@/composables/useMediaQuery'
 import { usePointerDragContext } from '@/composables/usePointerDrag'
-import { ROW_HEIGHT } from '@/constants/dashboard'
-import { dayIndex, lengthOf } from '@/lib/date'
-import { isLate } from '@/lib/schedule'
-import { useClockStore } from '@/stores/clock'
+import {
+  EDIT_BLOCK_TEXT,
+  END_REASON_TEXT,
+  ROW_HEIGHT,
+  START_REASON_TEXT,
+} from '@/constants/dashboard'
+import { dayIndex, isoFromIndex, lengthOf } from '@/lib/date'
+import { fmtDate, fmtWorkdays } from '@/lib/format'
+import { durationBlock, durationOf, isLate, moveBlock, plannedEndIdx } from '@/lib/schedule'
 import { useIssueStore } from '@/stores/issue'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+import { useWorkCalendarStore } from '@/stores/workCalendar'
 import type { Group, Task } from '@/types/models'
 
 // 兩個分支各自把對方的欄位標成 `?: never`：一來型別上擋掉混搭，
@@ -32,9 +40,9 @@ const props = defineProps<
 // fragment root 不能自動套外層屬性，關掉才不會有 Vue 警告
 defineOptions({ inheritAttrs: false })
 
-const clock = useClockStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
+const calendar = useWorkCalendarStore()
 const issueStore = useIssueStore()
 const selection = useSelectionStore()
 const drag = usePointerDragContext()
@@ -49,7 +57,7 @@ const left = computed(() => {
   return (a - taskStore.range.a) * ui.dayWidth
 })
 
-/** 寬度：工期天數 × 一天的寬。legacy :2898 / :2906 */
+/** 寬度：起訖的日曆跨度（含中間的週末假日）× 一天的寬；工期是工作天，兩者不一定相等。legacy :2898 / :2906 */
 const w = computed(() =>
   props.kind === 'task'
     ? lengthOf(props.task) * ui.dayWidth
@@ -59,17 +67,24 @@ const w = computed(() =>
 /** 上緣：列高的倍數，摘要條比較矮所以往下多 6px。legacy :2897 / :2907 */
 const top = computed(() => props.rowIndex * ROW_HEIGHT + (props.kind === 'task' ? 6 : 12))
 
-/** 條色的來源；逾期蓋掉原本的狀態，摘要條沒有狀態。legacy :2909 */
+/** 條色的來源；延遲（推算結束晚於基準）蓋掉原本的狀態，摘要條沒有狀態。legacy :2909 */
 const status = computed(() =>
-  props.kind === 'task'
-    ? isLate(props.task, clock.todayIdx)
-      ? 'delayed'
-      : props.task.status
-    : undefined,
+  props.kind === 'task' ? (isLate(props.task) ? 'delayed' : props.task.status) : undefined,
 )
 
 /** 選取中的那一條。legacy `on` :2908 */
 const selected = computed(() => props.kind === 'task' && selection.taskId === props.task.id)
+
+/** 不能整條拖、拉左把手的原因（開始日由前置決定／已完成）；null＝可以。摘要條沒有。 */
+const blockMove = computed(() =>
+  props.kind === 'task' ? moveBlock(props.task, taskStore.hasPred) : null,
+)
+
+/** 不能拉右把手（改工期）的原因；null＝可以。 */
+const blockDuration = computed(() => (props.kind === 'task' ? durationBlock(props.task) : null))
+
+/** 選取了但不能拖：游標不顯示抓取、觸控照常捲動（CSS `.pinned`）。 */
+const pinned = computed(() => selected.value && !!blockMove.value)
 
 /** 光暈種類：前置 / 後續，沒有相依但同屬選取分類（或 soft 篩選命中）時算 group。legacy :2908 */
 const ringKind = computed<'up' | 'down' | 'group' | null>(() => {
@@ -132,17 +147,46 @@ const label = computed(() => (props.kind === 'task' ? props.task.name : ''))
 /** 未結案 Issue 數，>0 才畫紅色徽章。legacy `hasIssue` :2916 */
 const issueOpen = computed(() => (props.kind === 'task' ? issueStore.openCount(props.task.id) : 0))
 
-/** hover 提示；未選取時前面加一句「要先選取」。legacy `title` :2921-2924 */
+/**
+ * hover 提示。legacy `title` :2921-2924。
+ * 第一行：前綴（不能拖的原因；可以拖但沒選取時是「要先選取」；唯讀沒有）＋名稱、起訖、有效工期（工作天）、相依關係；
+ * 第二行：起訖是哪條規則決定的（`explain`）。
+ */
 const title = computed(() => {
   if (props.kind !== 'task') return `${props.group.name}（收合）`
   const t = props.task
   const rel = ringKind.value
-  return (
-    (selected.value || !ui.canEdit ? '' : '點擊以選取後才能拖曳｜') +
-    `${t.name}｜${t.start} → ${t.end}｜${lengthOf(t)} 天` +
+  const block = blockMove.value
+  const prefix = !ui.canEdit
+    ? ''
+    : block
+      ? `${EDIT_BLOCK_TEXT[block]}｜`
+      : selected.value
+        ? ''
+        : '點擊以選取後才能拖曳｜'
+  const head =
+    prefix +
+    `${t.name}｜${fmtDate(t.start)} → ${fmtDate(t.end)}｜${fmtWorkdays(durationOf(t, calendar.workdays))}` +
     (rel ? `（${rel === 'up' ? '前置任務' : rel === 'down' ? '後續任務' : '同分類'}）` : '')
-  )
+  const why = reasonLine(t)
+  return why ? `${head}\n${why}` : head
 })
+
+/** title 的第二行：開始日與結束日的來由（`START_REASON_TEXT`／`END_REASON_TEXT`）。 */
+function reasonLine(t: Task): string {
+  const r = taskStore.explain(t.id)
+  if (!r) return ''
+  const start =
+    r.startBy === 'pred'
+      ? START_REASON_TEXT.pred(taskStore.taskById(r.predId!)?.name ?? '')
+      : START_REASON_TEXT[r.startBy]
+  // 逾期：原定結束日＝照工期推算的那天
+  const end =
+    r.endBy === 'overdue'
+      ? END_REASON_TEXT.overdue(fmtDate(isoFromIndex(plannedEndIdx(t, calendar.workdays))))
+      : END_REASON_TEXT[r.endBy]
+  return `開始：${start}｜結束：${end}`
+}
 
 /** 圓點熱區的位置：貼在條的左右外側。legacy `zoneL / zoneR / zoneY` :2929-2931 */
 const zoneL = computed(() => left.value - 33)
@@ -179,6 +223,7 @@ function onDown(e: PointerEvent): void {
     :class="{
       summary: kind === 'summary',
       selected,
+      pinned,
       [`rel-${ringKind}`]: !!ringKind,
       dimmed,
       still,
@@ -196,7 +241,7 @@ function onDown(e: PointerEvent): void {
   >
     <template v-if="kind === 'task'">
       <div
-        v-if="ui.canEdit"
+        v-if="ui.canEdit && !blockMove"
         class="handle handle-l"
         :class="{ live: selected }"
         @pointerdown="drag.startBar($event, id, 'resL')"
@@ -206,7 +251,7 @@ function onDown(e: PointerEvent): void {
       </div>
       <div class="bar-label" :class="{ 'has-badge': issueOpen }">{{ label }}</div>
       <div
-        v-if="ui.canEdit"
+        v-if="ui.canEdit && !blockDuration"
         class="handle handle-r"
         :class="{ live: selected }"
         @pointerdown="drag.startBar($event, id, 'resR')"
@@ -331,6 +376,12 @@ function onDown(e: PointerEvent): void {
   touch-action: auto;
 }
 
+/* 選取了但排程規則不讓拖（開始日由前置決定／已完成）：跟唯讀一樣不顯示抓取、觸控照常捲動；右把手自己的 touch-action 不變 */
+.bar.selected.pinned {
+  cursor: pointer;
+  touch-action: auto;
+}
+
 .bar.rel-up:not(.selected) {
   box-shadow:
     0 0 5px 1px color-mix(in srgb, var(--bar) 42%, transparent),
@@ -418,7 +469,7 @@ function onDown(e: PointerEvent): void {
   opacity: 0;
   pointer-events: none;
   /*
-   * 左右跟條的 left / width 同一組時長與曲線：條變寬、被 cascade 推動時圓點貼著條緣走（動畫稽核 D4）。
+   * 左右跟條的 left / width 同一組時長與曲線：條變寬、被前置推動時圓點貼著條緣走（動畫稽核 D4）。
    * 上下位移由 GanttPanel 的 useRowMotion 寫 translate，跟條同一個時鐘。
    */
   transition:

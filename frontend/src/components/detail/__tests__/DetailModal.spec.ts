@@ -2,6 +2,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useSampleCalendar } from '@/__tests__/loadSample'
 import DetailHeader from '@/components/detail/DetailHeader.vue'
 import DetailModal from '@/components/detail/DetailModal.vue'
 import { sampleProject } from '@/mocks/sampleProject'
@@ -19,6 +20,7 @@ let w: VueWrapper | null = null
 beforeEach(() => {
   vi.useFakeTimers()
   setActivePinia(createPinia())
+  useSampleCalendar()
   useTaskStore().load(structuredClone(sampleProject))
   // 詳情開著會鎖捲動（useScrollLock 先停平滑捲動），jsdom 沒有 scrollTo
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})

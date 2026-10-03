@@ -37,12 +37,13 @@ test('卡片：標題列一行、計數短寫；排序選單開在畫面內，�
 test('卡片：PM 標頭在卡片上方、卡片一列兩張；展開的速覽和整列一樣寬、排在整列下方', async ({ page }) => {
   const ov = new OverviewPage(page)
   await ov.goto()
+  // 成員5 的泳道：payment 與 pmis 同落後（4），依到期日 payment 在左、pmis 在右
   const head = (await page.locator('[data-pm-col="m5"] .lane-head').boundingBox())!
-  const pmis = (await ov.card('pmis').boundingBox())!
   const pay = (await ov.card('payment').boundingBox())!
-  expect(head.y + head.height).toBeLessThanOrEqual(pmis.y)
-  expect(pay.y).toBeCloseTo(pmis.y, 0)
-  expect(pay.x).toBeGreaterThan(pmis.x + pmis.width)
+  const pmis = (await ov.card('pmis').boundingBox())!
+  expect(head.y + head.height).toBeLessThanOrEqual(pay.y)
+  expect(pmis.y).toBeCloseTo(pay.y, 0)
+  expect(pmis.x).toBeGreaterThan(pay.x + pay.width)
 
   await ov.card('pmis').locator('.card-name').tap()
   await expect.poll(async () => (await ov.drawer('pmis').boundingBox())?.height ?? 0).toBeGreaterThan(200)
@@ -51,8 +52,8 @@ test('卡片：PM 標頭在卡片上方、卡片一列兩張；展開的速覽�
     const rect = (sel: string) => document.querySelector(sel)!.getBoundingClientRect().toJSON() as DOMRect
     return [rect('[data-view-panel="cards"] [data-project="payment"]'), rect('[data-view-panel="cards"] [data-drawer="pmis"]')]
   })
-  expect(d.x).toBeCloseTo(pmis.x, 0)
-  expect(d.width).toBeCloseTo(pay.x + pay.width - pmis.x, 0)
+  expect(d.x).toBeCloseTo(pay.x, 0)
+  expect(d.width).toBeCloseTo(pmis.x + pmis.width - pay.x, 0)
   expect(d.y).toBeGreaterThanOrEqual(card.y + card.height)
 })
 

@@ -18,7 +18,8 @@ test.describe('總覽 頂欄', () => {
     await expect(ov.count()).toHaveText('7 個專案 · 3 個需要注意 · 4 位 PM')
     await ov.pickPm('m5', 'm8')
     await expect(ov.count()).toHaveText('4 個專案 · 2 個需要注意 · 2 位 PM')
-    await expect.poll(() => ov.cardIds()).toEqual(['portal', 'app', 'pmis', 'payment'])
+    // 成員5 的 pmis 與 payment 在 09-18 同落後（4），依到期日 payment（10-31）在前
+    await expect.poll(() => ov.cardIds()).toEqual(['portal', 'app', 'payment', 'pmis'])
     await page.getByTestId('overview-clear').click()
     await expect(ov.count()).toHaveText('7 個專案 · 3 個需要注意 · 4 位 PM')
   })
@@ -60,7 +61,7 @@ test.describe('總覽 卡片檢視', () => {
   test('預設泳道順序與泳道內卡片順序依排序', async ({ page }) => {
     const ov = new OverviewPage(page); await ov.goto()
     await expect.poll(() => ov.columnIds()).toEqual(['m10', 'm8', 'm5', 'm9'])
-    await expect.poll(() => ov.cardIds()).toEqual(['wiki', 'portal', 'app', 'pmis', 'payment', 'dw', 'vendor'])
+    await expect.poll(() => ov.cardIds()).toEqual(['wiki', 'portal', 'app', 'payment', 'pmis', 'dw', 'vendor'])
   })
 
   test('移掉「落後」排序、只剩到期日 → 泳道順序跟著變', async ({ page }) => {
@@ -200,8 +201,8 @@ test.describe('總覽 時間軸', () => {
     await expect(ov.row('pmis').locator('.qv-head')).toContainText('PMIS 專案管理系統')
     await expect(ov.row('pmis').locator('.qv-head')).toContainText('成員5')
     await expect(ov.row('portal').locator('.qv-head')).toBeVisible()
-    await expect(ov.row('pmis').locator('.c-pct')).toHaveText('13% / 20%')
-    await expect(ov.row('pmis').locator('.c-gap')).toHaveText('7%')
+    await expect(ov.row('pmis').locator('.c-pct')).toHaveText('13% / 17%')
+    await expect(ov.row('pmis').locator('.c-gap')).toHaveText('4%')
     await ov.row('portal').locator('.qv-head').getByRole('link', { name: /進入/ }).click()
     await expect(page).toHaveURL(/\/projects\/portal$/)
   })

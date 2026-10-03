@@ -109,3 +109,71 @@ export const ISSUE_SORT_KEYS = [
   { k: 'status', label: '處理狀態' },
   { k: 'created', label: '建立日期' },
 ] as const satisfies readonly { k: string; label: string }[]
+
+/* ── 排程（規則見 docs/reference/scheduling.md）──────────────────────────── */
+
+/** 不能編輯的原因（甘特條的 title、日期選擇器的說明行共用）；key 對到 lib/schedule.ts 的 EditBlock。 */
+export const EDIT_BLOCK_TEXT = {
+  predecessor: '開始日由前置任務決定，只能調整工期',
+  done: '已完成：結束日就是完成日；改完成日請用「完成日」',
+} as const
+
+/** 開始日是怎麼來的（explainSchedule 的 startBy）。 */
+export const START_REASON_TEXT = {
+  actual: '實際開工日',
+  root: '設定的開始日',
+  pred: (name: string) => `前置「${name}」結束後開始`,
+  today: '尚未開始，順延到今天',
+} as const
+
+/** 結束日是怎麼來的（explainSchedule 的 endBy）；overdue 帶原定的結束日（已格式化）。 */
+export const END_REASON_TEXT = {
+  done: '完成日',
+  duration: '依工期推算',
+  overdue: (planned: string) => `逾期未完成，結束日暫定今天（原定 ${planned}）`,
+} as const
+
+/** 延遲 chip 的 title；兩個參數都已格式化（計畫結束日 MM/DD、晚幾個工作天）。 */
+export const LATE_TITLE = (planEnd: string, late: string): string =>
+  `計畫結束 ${planEnd}，晚 ${late}`
+
+/** 逾期時 −1 停用的說明。 */
+export const OVERDUE_SHRINK_TEXT = '逾期中，結束日最早是今天'
+
+/** 甘特標題列的日曆提示；years 是已合併的年份字串（例 2027–2028）。 */
+export const CALENDAR_NOTICE = {
+  uncovered: (years: string) => `${years} 年假日未公布，只排除週末`,
+  error: '假日資料載入失敗，只排除週末；重新整理可重試',
+} as const
+
+/**
+ * 屬性面板「計畫」列的文案（規則見 docs/reference/scheduling.md〈計畫與延遲〉）。
+ * rule：膠囊的 title，說明計畫怎麼來；late 的參數已格式化（例「2 工作天」）。
+ */
+export const BASELINE_ROW_TEXT = {
+  label: '計畫',
+  rule: '依開始日、工期、相依排出；PM 改了就是新計畫，實際進度晚於計畫才算延遲',
+  late: (n: string) => `晚 ${n}`,
+} as const
+
+/**
+ * 日期選擇器裡停用格子的說明（EDIT_BLOCK_TEXT、OVERDUE_SHRINK_TEXT 以外的情況）；
+ * 顯示成看得見的一行 caption，觸控看不到 title。
+ */
+export const PICK_LIMIT_TEXT = {
+  startAfterToday: '已開始：開始日最晚是今天',
+  doneBeforeStart: '完成日不能早於開始日',
+  /** 已完成任務的完成日選擇器：「清除」停用的原因。 */
+  doneRequired: '已完成的任務一定有完成日；要清掉請先改狀態',
+} as const
+
+/** 說明行的文字（key 對到 lib/schedule.ts 的 EditNote）：日期選擇器、列選單共用。 */
+export const EDIT_NOTE_TEXT = {
+  predecessor: EDIT_BLOCK_TEXT.predecessor,
+  done: EDIT_BLOCK_TEXT.done,
+  startAfterToday: PICK_LIMIT_TEXT.startAfterToday,
+  overdueShrink: OVERDUE_SHRINK_TEXT,
+} as const
+
+/** 日期選擇器底部的本月假日；list 是已組好的「M/D 名稱」清單（以頓號連接）。 */
+export const MONTH_HOLIDAYS_TEXT = (list: string): string => `本月假日：${list}`

@@ -10,6 +10,13 @@ import { useUiStore } from '@/stores/ui'
 const ui = useUiStore()
 const taskStore = useTaskStore()
 
+/**
+ * 副標裡任務名稱後面那段：說明排程規則（docs/reference/scheduling.md〈開始日〉）。
+ * 完成到開始；有前置、還沒開始的任務，開始日改由前置決定。legacy 寫的「下游開始日不會早於上游結束日」已不適用。
+ */
+const SUBTITLE =
+  '可設定多個前置與多個後續任務。後續任務在前置完成後的下一個工作天開始；加上前置後，開始日改由前置決定'
+
 const targetId = computed(() => ui.depEditFor)
 const target = computed(() => (targetId.value ? taskStore.taskById(targetId.value) : undefined))
 
@@ -129,9 +136,7 @@ watch(
     >
       <div ref="editorEl" class="dep-editor" role="dialog" aria-modal="true" @click.stop>
         <div class="dep-title">相依關係</div>
-        <div class="dep-sub">
-          {{ target.name }}｜可設定多個前置與多個後續任務，下游開始日不會早於上游結束日
-        </div>
+        <div class="dep-sub">{{ target.name }}｜{{ SUBTITLE }}</div>
 
         <div class="dep-section">前置任務（必須先完成）</div>
         <div class="dep-list">

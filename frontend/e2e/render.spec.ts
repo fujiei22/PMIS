@@ -10,9 +10,9 @@ test('首頁渲染四張卡與三個面板', async ({ page }) => {
   const app = new DashboardPage(page)
   await app.goto()
 
-  // legacy 的專案區間是 2026-08-24 ~ 2026-11-10，共 79 天
-  await expect(app.summary('progress')).toContainText('79 天')
-  await expect(app.summary('progress')).toContainText('2026-08-24 ~ 2026-11-10')
+  // 範例在 2026-09-18 的推算：專案區間 2026-08-24 ~ 2026-11-18，共 87 天（日曆天）
+  await expect(app.summary('progress')).toContainText('87 天')
+  await expect(app.summary('progress')).toContainText('2026-08-24 ~ 2026-11-18')
   await expect(app.summary('progress')).toBeVisible()
   await expect(app.summary('tasks')).toBeVisible()
   await expect(app.summary('issues')).toBeVisible()
@@ -30,10 +30,10 @@ test('首頁渲染四張卡與三個面板', async ({ page }) => {
   await expect(page.locator('[data-card]')).toHaveCount(30)
   await expect(page.locator('[data-issuerow]')).toHaveCount(12)
 
-  // 固定時鐘 2026-09-18；t3 的 end 是 2026-09-16 且未完成 → 延遲
-  await expect(app.row('t3')).toHaveAttribute('data-status', 'delayed')
-  await expect(app.bar('t3')).toHaveAttribute('data-status', 'delayed')
-  await expect(app.card('t3')).toHaveAttribute('data-status', 'delayed')
+  // 固定時鐘 2026-09-18；t13 逾期未完成，推算結束日 09-18 晚於計畫 09-14 → 延遲
+  await expect(app.row('t13')).toHaveAttribute('data-status', 'delayed')
+  await expect(app.bar('t13')).toHaveAttribute('data-status', 'delayed')
+  await expect(app.card('t13')).toHaveAttribute('data-status', 'delayed')
 
   // 未選取時三面板的 data-selected 都是 false
   await expect(app.card('t3')).toHaveAttribute('data-selected', 'false')

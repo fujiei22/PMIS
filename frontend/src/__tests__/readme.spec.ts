@@ -1,6 +1,11 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { dayIndex } from '@/lib/date'
+import { DURATION_MAX, isLate, isPlannedDone, lateDays, scheduleWithPlan } from '@/lib/schedule'
+import { createWorkdays } from '@/lib/workdays'
+import { sampleCalendar } from '@/mocks/sampleCalendar'
+import { sampleProject } from '@/mocks/sampleProject'
 
 /**
  * README 的「怎麼接後端」是後端工程師唯一的入口文件（spec §目標 12）。
@@ -15,6 +20,15 @@ const ROOT = process.cwd()
 
 const readme = readFileSync(resolve(ROOT, 'README.md'), 'utf8')
 const apiTypes = readFileSync(resolve(ROOT, 'src/api/types.ts'), 'utf8')
+const models = readFileSync(resolve(ROOT, 'src/types/models.ts'), 'utf8')
+/** 排程規則文件（repo 根目錄的 docs/）；還沒建立時是 ''，由「檔案存在」那則測試報紅，不讓整支檔案載入失敗。 */
+const SCHEDULING_PATH = resolve(ROOT, '../docs/reference/scheduling.md')
+const scheduling = existsSync(SCHEDULING_PATH) ? readFileSync(SCHEDULING_PATH, 'utf8') : ''
+
+/** README 裡 Task 欄位對照表的標題。 */
+const TASK_FIELDS_HEADING = '### Task 欄位對照表（前端 ↔ wire ↔ DB）'
+/** scheduling.md 裡檢查點表的標題。 */
+const CHECKPOINT_HEADING = '## 檢查點（測試向量）'
 
 /** `export interface ProjectApi { ... }` 的內容（到第一個行首 `}` 為止）。 */
 function projectApiBody(): string {
@@ -30,11 +44,14 @@ function apiMethodNames(): string[] {
   return [...projectApiBody().matchAll(/^ {2}(\w+)\s*\(/gm)].map((m) => m[1]!).sort()
 }
 
-/** README 裡某個標題底下、緊接著的第一張表格的第一欄（去掉表頭與分隔列）。 */
-function firstColumnUnder(heading: string): string[] {
-  const lines = readme.split('\n')
+/**
+ * 某份文件裡某個標題底下、緊接著的第一張表格：每一列切成儲存格（去掉表頭與分隔列、頭尾空白）。
+ * 儲存格內容不能有 `|`（文件裡的表都沒有）。
+ */
+function tableUnder(doc: string, heading: string, name = 'README'): string[][] {
+  const lines = doc.split('\n')
   const at = lines.findIndex((l) => l.trim() === heading)
-  expect(at, `README 找不到標題：${heading}`).toBeGreaterThan(-1)
+  expect(at, `${name} 找不到標題：${heading}`).toBeGreaterThan(-1)
   const rows: string[] = []
   let seen = false
   for (const line of lines.slice(at + 1)) {
@@ -47,7 +64,26 @@ function firstColumnUnder(heading: string): string[] {
   }
   return rows
     .slice(2) // 表頭 + 分隔列
-    .map((r) => r.split('|')[1]!.trim())
+    .map((r) =>
+      r
+        .trim()
+        .replace(/^\||\|$/g, '')
+        .split('|')
+        .map((cell) => cell.trim()),
+    )
+}
+
+/** README 裡某個標題底下、緊接著的第一張表格的第一欄（去掉表頭與分隔列）。 */
+function firstColumnUnder(heading: string): string[] {
+  return tableUnder(readme, heading).map((cells) => cells[0]!)
+}
+
+/** `export interface Task { ... }` 宣告的欄位名（註解行縮排後是 `*`，不會被命中）。 */
+function taskFieldNames(): string[] {
+  const start = models.indexOf('export interface Task {')
+  expect(start, '找不到 export interface Task').toBeGreaterThan(-1)
+  const end = models.indexOf('\n}', start)
+  return [...models.slice(start, end).matchAll(/^ {2}(\w+)\??:/gm)].map((m) => m[1]!).sort()
 }
 
 /** 某個標題到下一個同級（或更高級）標題之間的內容。 */
@@ -102,6 +138,17 @@ describe('README 的「怎麼接後端」', () => {
     expect(documented).toEqual(apiMethodNames())
   })
 
+  /**
+   * 後端做任務 API 時照這張表對欄位（前端名 ↔ wire ↔ tasks 表的欄）。
+   * `interface Task` 加減欄位而表沒跟上就紅；表裡多出不存在的欄位也紅（比的是整個集合）。
+   */
+  it('Task 欄位對照表的第一欄 = interface Task 的每個欄位', () => {
+    const documented = firstColumnUnder(TASK_FIELDS_HEADING)
+      .map((cell) => cell.replace(/`/g, '').trim())
+      .sort()
+    expect(documented).toEqual(taskFieldNames())
+  })
+
   it('錯誤碼表涵蓋所有 ApiErrorCode', () => {
     // 宣告到第一個空行為止：成員一多，Prettier 會把 union 拆成一行一個
     const decl = apiTypes.match(/export type ApiErrorCode =([\s\S]*?)\n\s*\n/)
@@ -126,5 +173,59 @@ describe('README 的目錄結構', () => {
       .map((f) => f.replace(/\.ts$/, ''))
     expect(files.length, '沒讀到 composables').toBeGreaterThan(10)
     expect(files.filter((name) => !tree.includes(name))).toEqual([])
+  })
+})
+
+/**
+ * `docs/reference/scheduling.md` 是排程規則的唯一出處，檢查點表是後端移植排程時要跑的測試向量。
+ * 表上的數字跟「範例資料在那天照程式推算」的結果綁在一起：改了規則、範例或日曆而沒更新文件就紅。
+ * 數字從程式算、不寫死在這裡——寫死的那一份在 `mocks/__tests__/consistency.spec.ts`。
+ */
+describe('docs/reference/scheduling.md 的檢查點', () => {
+  const WD = createWorkdays(sampleCalendar)
+
+  it('檔案存在', () => {
+    expect(existsSync(SCHEDULING_PATH), `找不到 ${SCHEDULING_PATH}`).toBe(true)
+  })
+
+  it('檢查點表依序是 2026-09-18、09-19、09-22（每列以日期開頭）', () => {
+    const dates = tableUnder(scheduling, CHECKPOINT_HEADING, 'scheduling.md').map(
+      (cells) => cells[0]!.match(/^\d{4}-\d{2}-\d{2}/)?.[0],
+    )
+    expect(dates).toEqual(['2026-09-18', '2026-09-19', '2026-09-22'])
+  })
+
+  it('每一列的延遲任務、晚幾個工作天、計畫應完成數、專案結束日 = 範例在那天的推算結果', () => {
+    const rows = tableUnder(scheduling, CHECKPOINT_HEADING, 'scheduling.md')
+    expect(rows.length, '檢查點表是空的').toBeGreaterThan(0)
+    for (const [dateCell, lateCell, lateByCell, plannedCell, endCell] of rows) {
+      const today = dateCell!.slice(0, 10)
+      const idx = dayIndex(today)
+      const tasks = scheduleWithPlan(sampleProject.tasks, sampleProject.deps, WD, idx)
+      const late = tasks.filter((t) => isLate(t))
+      const ends = tasks.map((t) => t.end).sort()
+      expect(lateCell!.match(/t\d+/g) ?? [], `${today} 的延遲任務`).toEqual(late.map((t) => t.id))
+      expect(
+        [...lateByCell!.matchAll(/(t\d+)：(\d+)/g)].map((m) => `${m[1]}:${m[2]}`),
+        `${today} 的晚幾個工作天（寫成「t3：2、t13：5」）`,
+      ).toEqual(late.map((t) => `${t.id}:${lateDays(t, WD)}`))
+      expect(Number(plannedCell), `${today} 的計畫應完成數`).toBe(
+        tasks.filter((t) => isPlannedDone(t, idx)).length,
+      )
+      expect(endCell, `${today} 的專案結束日`).toBe(ends[ends.length - 1])
+    }
+  })
+})
+
+/**
+ * 工期上限前後端各寫一份：前端 `DURATION_MAX`（夾值、日期選擇器），後端 `TASK_DURATION_MAX`（tasks.duration_days 的 CHECK）。
+ * 改一邊忘了另一邊時，超出的工期會在寫回時被後端拒絕。
+ */
+describe('工期上限前後端一致', () => {
+  it('backend/app/models.py 的 TASK_DURATION_MAX 等於前端的 DURATION_MAX', () => {
+    const models = readFileSync(resolve(ROOT, '../backend/app/models.py'), 'utf8')
+    const m = /^TASK_DURATION_MAX = (\d+)$/m.exec(models)
+    expect(m, 'models.py 找不到 TASK_DURATION_MAX').not.toBeNull()
+    expect(Number(m![1])).toBe(DURATION_MAX)
   })
 })

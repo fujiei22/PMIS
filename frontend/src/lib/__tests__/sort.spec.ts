@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { dayIndex } from '@/lib/date'
+import { createWorkdays, WEEKEND_ONLY } from '@/lib/workdays'
+import { sampleCalendar } from '@/mocks/sampleCalendar'
 import {
   applySort,
   bumpSort,
@@ -21,6 +23,9 @@ const task = (over: Partial<Task> & { id: string }): Task => ({
   done: '',
   priority: 'mid',
   assigneeIds: [],
+  duration: 1,
+  baselineStart: '',
+  baselineEnd: '',
   ...over,
 })
 const issue = (over: Partial<Issue> & { id: string }): Issue => ({
@@ -54,11 +59,18 @@ const ctx: SortCtx = {
   memberById: (id) => members.find((m) => m.id === id),
   openIssueCount: (id) => (id === 't1' ? 3 : 0),
   todayIdx: TODAY_IDX,
+  workdays: createWorkdays(sampleCalendar),
 }
 
 describe('sortValue', () => {
   it('任務各鍵取到對的值', () => {
-    const t = task({ id: 't1', start: '2026-09-10', end: '2026-09-12', priority: 'high' })
+    const t = task({
+      id: 't1',
+      start: '2026-09-10',
+      end: '2026-09-14',
+      duration: 3,
+      priority: 'high',
+    })
     expect(sortValue('task', 'start', t, ctx)).toBe(dayIndex('2026-09-10'))
     expect(sortValue('task', 'days', t, ctx)).toBe(3)
     expect(sortValue('task', 'priority', t, ctx)).toBe(3)
@@ -83,6 +95,64 @@ describe('sortValue', () => {
     expect(sortValue('issue', 'task', issue({ id: 'i3', taskId: 'zz' }), ctx)).toBe(0)
     expect(sortValue('issue', 'creator', i, ctx)).toBe('乙')
     expect(sortValue('issue', 'created', i, ctx)).toBe(dayIndex('2026-09-01'))
+  })
+})
+
+// 工期排序依有效工期（工作天；規則見 docs/reference/scheduling.md〈有效工期〉），不是起訖的日曆天。
+describe('days 鍵：有效工期', () => {
+  it('未開始：輸入的工期，不看起訖', () => {
+    const t = task({ id: 'x', start: '2026-09-21', end: '2026-09-30', duration: 4 })
+    expect(sortValue('task', 'days', t, ctx)).toBe(4)
+  })
+
+  it('進行中逾期：起訖之間的工作天比輸入工期長時取前者', () => {
+    // 09-08（二）～09-18（五）有 9 個工作天，輸入工期 7
+    const t = task({
+      id: 'x',
+      status: 'doing',
+      start: '2026-09-08',
+      end: '2026-09-18',
+      duration: 7,
+    })
+    expect(sortValue('task', 'days', t, ctx)).toBe(9)
+  })
+
+  it('已完成：實際的工作天（扣週末）', () => {
+    // 09-02（三）～09-08（二）：日曆天 7，工作天 5
+    const t = task({
+      id: 'x',
+      status: 'done',
+      start: '2026-09-02',
+      end: '2026-09-08',
+      done: '2026-09-08',
+    })
+    expect(sortValue('task', 'days', t, ctx)).toBe(5)
+  })
+
+  it('用 ctx.workdays 扣假日：沒載假日表時只扣週末', () => {
+    // 09-21～09-29：09-25 中秋、09-28 教師節放假 → 5 個工作天；只看週末是 7
+    const t = task({
+      id: 'x',
+      status: 'done',
+      start: '2026-09-21',
+      end: '2026-09-29',
+      done: '2026-09-29',
+    })
+    expect(sortValue('task', 'days', t, ctx)).toBe(5)
+    expect(sortValue('task', 'days', t, { ...ctx, workdays: WEEKEND_ONLY })).toBe(7)
+  })
+
+  it('依工期由長到短排', () => {
+    const list = [
+      task({ id: 'a', duration: 2 }),
+      task({ id: 'b', status: 'doing', start: '2026-09-08', end: '2026-09-18', duration: 7 }),
+      task({ id: 'c', duration: 8 }),
+    ]
+    expect(applySort(list, [{ k: 'days', dir: 'desc' }], 'task', ctx).map((t) => t.id)).toEqual([
+      'b',
+      'c',
+      'a',
+    ])
   })
 })
 

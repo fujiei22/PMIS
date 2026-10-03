@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { buildPortfolio, projectStatusOf, summarizeProject } from '@/api/mock/portfolio'
+import { createWorkdays } from '@/lib/workdays'
+import { sampleCalendar } from '@/mocks/sampleCalendar'
 import { sampleProject } from '@/mocks/sampleProject'
 import { PMIS_META } from '@/mocks/samplePortfolio'
 import type { ProjectData } from '@/types/models'
+
+/** 範例日曆（2026–2027 假日表）的工作天運算。 */
+const WD = createWorkdays(sampleCalendar)
 
 /**
  * mock 扮演後端的彙整邏輯（spec 7b）：PMIS 摘要由完整專案資料即時算出，
@@ -32,24 +37,36 @@ describe('projectStatusOf', () => {
 
 describe('summarizeProject', () => {
   it('sampleProject 在 2026-09-22：30 任務、完成 4、應完成 7、延遲 3', () => {
-    const p = summarizeProject(sampleProject, PMIS_META, '2026-09-22')
+    const p = summarizeProject(sampleProject, PMIS_META, '2026-09-22', WD)
     expect(p).toMatchObject({
       id: 'pmis',
       pmId: 'm5',
       taskTotal: 30,
       taskDone: 4,
-      taskPlanned: 7,
-      delayedTasks: 3,
+      taskPlanned: 6,
+      delayedTasks: 2,
       startDate: '2026-08-24',
-      dueDate: '2026-11-10',
+      dueDate: '2026-11-18',
       status: 'doing',
     })
-    expect(p.taskCounts).toEqual({ done: 4, doing: 8, paused: 1, todo: 17 })
+    expect(p.taskCounts).toEqual({ done: 4, doing: 7, paused: 1, todo: 18 })
     expect(p.openIssues).toEqual({ A: 2, B: 3, C: 4, D: 1 })
     expect(p.upcoming).toHaveLength(3)
   })
+  it('看的是今天推算的結果：存的起訖過時也照今天排，延遲依計畫算', () => {
+    // 存的值是 09-18 的推算；到 10/01 時進行中的 t4 已逾期 → 結束日推到 10/01，下游跟著延後
+    const later = summarizeProject(sampleProject, PMIS_META, '2026-10-01', WD)
+    const now = summarizeProject(sampleProject, PMIS_META, '2026-09-18', WD)
+    expect(later.delayedTasks).toBeGreaterThan(now.delayedTasks)
+    // PM 把延遲的 t13 工期拉長到跟推算一樣：計畫跟著改，延遲少一筆
+    const replanned: ProjectData = structuredClone(sampleProject)
+    replanned.tasks.find((t) => t.id === 't13')!.duration = 10
+    expect(summarizeProject(replanned, PMIS_META, '2026-09-18', WD).delayedTasks).toBe(
+      now.delayedTasks - 1,
+    )
+  })
   it('upcoming 含逾期、依到期日升冪、不含已完成', () => {
-    const p = summarizeProject(sampleProject, PMIS_META, '2026-09-22')
+    const p = summarizeProject(sampleProject, PMIS_META, '2026-09-22', WD)
     const dues = p.upcoming.map((u) => u.due)
     expect([...dues].sort()).toEqual(dues)
     const doneNames = sampleProject.tasks.filter((t) => t.status === 'done').map((t) => t.name)
@@ -59,18 +76,18 @@ describe('summarizeProject', () => {
     const data: ProjectData = structuredClone(sampleProject)
     const t = data.tasks.find((x) => x.status !== 'done')!
     t.status = 'done'
-    expect(summarizeProject(data, PMIS_META, '2026-09-22').taskDone).toBe(5)
+    expect(summarizeProject(data, PMIS_META, '2026-09-22', WD).taskDone).toBe(5)
   })
   it('status 跟著任務狀態變：全部完成 → done、全部清掉 → todo', () => {
     const data: ProjectData = structuredClone(sampleProject)
     for (const t of data.tasks) t.status = 'done'
-    expect(summarizeProject(data, PMIS_META, '2026-09-22').status).toBe('done')
+    expect(summarizeProject(data, PMIS_META, '2026-09-22', WD).status).toBe('done')
     data.tasks = []
-    expect(summarizeProject(data, PMIS_META, '2026-09-22').status).toBe('todo')
+    expect(summarizeProject(data, PMIS_META, '2026-09-22', WD).status).toBe('todo')
   })
   it('沒有任務時起訖日都是今天、各數字為 0', () => {
     const data: ProjectData = { ...structuredClone(sampleProject), tasks: [], issues: [] }
-    expect(summarizeProject(data, PMIS_META, '2026-09-22')).toMatchObject({
+    expect(summarizeProject(data, PMIS_META, '2026-09-22', WD)).toMatchObject({
       startDate: '2026-09-22',
       dueDate: '2026-09-22',
       taskTotal: 0,
@@ -97,7 +114,7 @@ describe('summarizeProject', () => {
     const data: ProjectData = structuredClone(sampleProject)
     data.tasks[0]!.start = ''
     data.tasks[1]!.end = ''
-    const p = summarizeProject(data, PMIS_META, '2026-09-22')
+    const p = summarizeProject(data, PMIS_META, '2026-09-22', WD)
     expect(p.startDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(p.dueDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(p.upcoming.every((u) => u.due !== '')).toBe(true)

@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { SAMPLE_NOW } from '@/__tests__/loadSample'
 import { mockApi as maybeMockApi } from '@/api'
 import { onUnauthorized } from '@/api/authEvents'
 import { ApiError } from '@/api/types'
@@ -7,6 +8,7 @@ import { preloadProject, resetProjectBoot, useProjectBoot } from '@/composables/
 import { API_ERROR_TEXT } from '@/constants/api'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useBudgetStore } from '@/stores/budget'
+import { useClockStore } from '@/stores/clock'
 import { useCommentStore } from '@/stores/comment'
 import { useFilterStore } from '@/stores/filter'
 import { useIssueStore } from '@/stores/issue'
@@ -28,6 +30,8 @@ describe('useProjectBoot', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     mockApi.reset(structuredClone(sampleProject))
+    // 範例存的起訖是這一天的推算結果；別天載入會有漂移，改名也會連同漂移整批寫回
+    useClockStore().now = SAMPLE_NOW
     vi.spyOn(console, 'error').mockImplementation(() => {})
   })
 
@@ -402,7 +406,8 @@ describe('useProjectBoot：背景重載失敗的分類', () => {
     mockApi.setSession(null)
     await useProjectBoot('pmis').reload()
 
-    expect(heard).toHaveBeenCalledTimes(1)
+    // 專案資料與工作日曆並行載入，兩支都回 401、各通知一次；導回登入頁（expireSession）是冪等的
+    expect(heard).toHaveBeenCalledTimes(2)
     expect(ui.loadState).toBe('ready')
     expect(ui.loadError).toBeNull()
     expect(useTaskStore().tasks).toHaveLength(30)

@@ -1,12 +1,22 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { loadSample, useSampleCalendar } from '@/__tests__/loadSample'
 import { clearMenuAnchors, menuAnchors, useMenus } from '@/composables/useMenus'
-import { anchorCalendar, anchorOptionMenu, anchorRowMenu } from '@/lib/anchor'
+import { EDIT_NOTE_TEXT, MONTH_HOLIDAYS_TEXT } from '@/constants/dashboard'
+import {
+  anchorCalendar,
+  anchorOptionMenu,
+  anchorRowMenu,
+  calendarExtra,
+  rowMenuExtra,
+} from '@/lib/anchor'
+import { monthHolidayList } from '@/lib/workdays'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useClockStore } from '@/stores/clock'
 import { useProjectStore } from '@/stores/project'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+import { useWorkCalendarStore } from '@/stores/workCalendar'
 
 /** jsdom 的 getBoundingClientRect 一律回 0，換一顆能控的觸發元素。 */
 function triggerAt(left: number, top: number, bottom: number): MouseEvent {
@@ -22,6 +32,7 @@ const VP = { width: window.innerWidth, height: window.innerHeight }
 
 beforeEach(() => {
   setActivePinia(createPinia())
+  useSampleCalendar()
   useTaskStore().load(structuredClone(sampleProject))
 })
 
@@ -147,6 +158,26 @@ describe('useMenus', () => {
   })
 })
 
+/**
+ * 起訖日期選擇器預設對準哪一端（規則見 docs/reference/scheduling.md）：
+ * 有前置、還沒開始的任務，開始日由前置決定、不能改，所以直接對準結束日；其他從開始日填起。
+ */
+describe('useMenus 的起訖日期選擇器對準哪一端', () => {
+  beforeEach(async () => {
+    await loadSample()
+  })
+
+  it('有前置、未開始的 t5：對準結束日，月份跟著結束日（10/07）', () => {
+    useMenus().openTaskDatePicker(triggerAt(0, 0, 0), 't5')
+    expect(useUiStore().taskDatePicker).toMatchObject({ target: 'end', month: '2026-10' })
+  })
+
+  it('未開始的根任務 t24：對準開始日', () => {
+    useMenus().openTaskDatePicker(triggerAt(0, 0, 0), 't24')
+    expect(useUiStore().taskDatePicker?.target).toBe('start')
+  })
+})
+
 describe('useMenus 的唯讀（F2）', () => {
   it('唯讀時四種浮層都不開，也不記觸發元素', () => {
     const project = useProjectStore()
@@ -167,5 +198,35 @@ describe('useMenus 的唯讀（F2）', () => {
       null,
     ])
     expect(menuAnchors).toEqual({ option: null, row: null, taskDate: null, issueDate: null })
+  })
+})
+
+// 新頁的日曆與列選單多了說明行、本月假日行：往上翻開時估高要算進去，才不會蓋到觸發元素
+describe('浮層估高算進說明行', () => {
+  beforeEach(async () => {
+    await loadSample()
+  })
+
+  it('t5 的起訖選擇器開在視窗底部：往上翻的位移含說明行與十月的本月假日', () => {
+    const ui = useUiStore()
+    const rect = { left: 300, top: VP.height - 40, bottom: VP.height - 20 }
+    useMenus().openTaskDatePicker(triggerAt(rect.left, rect.top, rect.bottom), 't5')
+    const holidays = monthHolidayList('2026-10', useWorkCalendarStore().workdays)
+    const extra = calendarExtra(
+      [EDIT_NOTE_TEXT.predecessor],
+      MONTH_HOLIDAYS_TEXT(holidays.join('、')),
+    )
+    expect(extra).toBeGreaterThan(30)
+    expect(ui.taskDatePicker!.top).toBe(anchorCalendar(rect, VP, 'task', extra).top)
+    expect(ui.taskDatePicker!.top).toBe(Math.max(8, rect.top - 336 - extra))
+  })
+
+  it('逾期的 t3 開列選單在視窗底部：往上翻的位移含「逾期中」說明行', () => {
+    const ui = useUiStore()
+    const rect = { left: 330, top: VP.height - 40, bottom: VP.height - 16, right: 370 }
+    useMenus().toggleRowMenu(triggerAt(rect.left, rect.top, rect.bottom), 't3')
+    const extra = rowMenuExtra(EDIT_NOTE_TEXT.overdueShrink)
+    expect(ui.rowMenu!.top).toBe(anchorRowMenu(rect, VP, extra).top)
+    expect(extra).toBeGreaterThan(0)
   })
 })

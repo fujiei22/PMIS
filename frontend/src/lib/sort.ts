@@ -1,4 +1,6 @@
-import { dayIndex, lengthOf } from '@/lib/date'
+import { dayIndex } from '@/lib/date'
+import { durationOf } from '@/lib/schedule'
+import type { Workdays } from '@/lib/workdays'
 import type { Issue, Member, Task } from '@/types/models'
 
 /** 一個排序鍵；多鍵排序就是一組 SortKey，依序比到分出高下為止。 */
@@ -18,6 +20,11 @@ export interface SortCtx {
    * 是 lib 純函式唯一會讀系統時鐘的地方；改由呼叫端從 `ui.todayIdx` 傳進來。
    */
   todayIdx: number
+  /**
+   * 工作日曆，任務的 `days`（工期）排序用：工期是有效工期（工作天），要扣週末與假日。
+   * 呼叫端從 `useWorkCalendarStore().workdays` 傳進來；Issue 排序用不到，但型別一起帶齊。
+   */
+  workdays: Workdays
 }
 
 /** 優先度 / 等級 / 分類的比較權重，值大的排前面（desc 時）。legacy `sortVal` 內的 PO / CO / IO :2060 */
@@ -46,7 +53,8 @@ export function sortValue(
   if (kind === 'task') {
     const t = o as Task
     if (key === 'start') return dayIndex(t.start)
-    if (key === 'days') return lengthOf(t)
+    // 工期＝有效工期（工作天，規則見 docs/reference/scheduling.md〈有效工期〉），跟畫面顯示的數字一致
+    if (key === 'days') return durationOf(t, ctx.workdays)
     if (key === 'priority') return PRIORITY_ORDER[t.priority] ?? 0
     if (key === 'issue') return ctx.openIssueCount(t.id)
     if (key === 'created') return createdIndex(t, ctx.todayIdx)

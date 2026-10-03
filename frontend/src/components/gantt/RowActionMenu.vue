@@ -1,21 +1,54 @@
 <script setup lang="ts">
-// 甘特任務列「⋮」開的動作選單（全域只會有一個）：工期 −1天 / +1天、相依設定、刪除任務。
+// 甘特任務列「⋮」開的動作選單（全域只會有一個）：工期 −1 / +1（工作天）、相依設定、刪除任務。
+// 工期以有效工期加減，依排程規則停用並寫出原因（規則見 docs/reference/scheduling.md）；跟看板卡片的 ▲▼ 同一套。
 // 點任務列只標記（選取），動作一律從這裡來；hover / 選取不再撐開快捷鈕（user 選的 L 稿提案 A）。
 // 位置由 ui.rowMenu 帶進來（useMenus.toggleRowMenu → lib/anchor 的 anchorRowMenu）。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useCloseOnScroll } from '@/composables/useCloseOnScroll'
 import { menuAnchors } from '@/composables/useMenus'
-import { dayIndex, isoFromIndex, lengthOf } from '@/lib/date'
+import { EDIT_BLOCK_TEXT, EDIT_NOTE_TEXT, OVERDUE_SHRINK_TEXT } from '@/constants/dashboard'
+import { fmtWorkdays, WORKDAY_UNIT } from '@/lib/format'
+import { DURATION_MAX, durationBlock, durationNote, durationOf, isOverdue } from '@/lib/schedule'
+import { useClockStore } from '@/stores/clock'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
+import { useWorkCalendarStore } from '@/stores/workCalendar'
 
 const ui = useUiStore()
 const taskStore = useTaskStore()
+const clock = useClockStore()
+const calendar = useWorkCalendarStore()
 
 const menu = computed(() => ui.rowMenu)
 /** 任務在選單開著時被刪掉或篩掉，就不畫。 */
 const task = computed(() => (menu.value ? taskStore.taskById(menu.value.id) : undefined))
-const days = computed(() => (task.value ? lengthOf(task.value) : 0))
+/** 有效工期（工作天）：顯示與 −1 / +1 都以它為準（規則見 docs/reference/scheduling.md〈有效工期〉）。 */
+const days = computed(() => (task.value ? durationOf(task.value, calendar.workdays) : 0))
+
+/**
+ * 停用的原因（看得見的一行＋按鈕的 title）：已完成兩顆都停（結束日就是完成日）；
+ * 逾期只停 −1（結束日暫定今天，減了也不會提早）。到上下限不另外說明。
+ */
+const blockText = computed(() => {
+  const t = task.value
+  if (!t) return { both: '', down: '' }
+  const block = durationBlock(t)
+  if (block) return { both: EDIT_BLOCK_TEXT[block], down: '' }
+  return {
+    both: '',
+    down: isOverdue(t, calendar.workdays, clock.todayIdx) ? OVERDUE_SHRINK_TEXT : '',
+  }
+})
+const upDisabled = computed(() => !!blockText.value.both || days.value >= DURATION_MAX)
+const downDisabled = computed(
+  () => !!blockText.value.both || !!blockText.value.down || days.value <= 1,
+)
+/** 選單裡的說明行；沒有停用原因時不畫。開選單時的估高（useMenus）用同一個判斷（`durationNote`）。 */
+const note = computed(() => {
+  const t = task.value
+  const k = t ? durationNote(t, calendar.workdays, clock.todayIdx) : null
+  return k ? EDIT_NOTE_TEXT[k] : ''
+})
 const menuEl = ref<HTMLElement | null>(null)
 
 function close(): void {
@@ -25,18 +58,21 @@ function close(): void {
 // 觸發的「⋮」被捲走就關（位置只在開啟時量一次）
 useCloseOnScroll({ state: menu, popover: menuEl, anchor: () => menuAnchors.row, close })
 
-/** 工期加一天；選單不關，可以連點。legacy `onDaysUp` :2846 */
+/**
+ * 工期加一個工作天：以有效工期為準送 `{ duration }`，結束日與下游由排程推算；選單不關，可以連點。
+ * legacy `onDaysUp` :2846（legacy 是結束日加一個日曆天）
+ */
 function daysUp(): void {
   const t = task.value
-  if (!t) return
-  taskStore.updateTask(t.id, { end: isoFromIndex(dayIndex(t.end) + 1) })
+  if (!t || upDisabled.value) return
+  taskStore.updateTask(t.id, { duration: days.value + 1 })
 }
 
-/** 工期減一天；至少留一天。legacy `onDaysDown` :2847 */
+/** 工期減一個工作天；停用時（已完成、逾期、只剩 1 工作天）不動作。legacy `onDaysDown` :2847 */
 function daysDown(): void {
   const t = task.value
-  if (!t || dayIndex(t.end) <= dayIndex(t.start)) return
-  taskStore.updateTask(t.id, { end: isoFromIndex(dayIndex(t.end) - 1) })
+  if (!t || downDisabled.value) return
+  taskStore.updateTask(t.id, { duration: days.value - 1 })
 }
 
 /** 開相依編輯器（本體在 DependencyEditor）。legacy `onOpenDeps` :2873 */
@@ -74,14 +110,30 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
       :style="{ left: `${menu.left}px`, top: `${menu.top}px` }"
     >
       <div class="rm-title" :title="task.name">{{ task.name }}</div>
-      <!-- 天數夾在 −1天 / +1天 中間，按了看得到結果；▲ ▼ 看不出是在調什麼 -->
-      <div class="rm-stepper">
+      <!-- 工作天數夾在 −1 / +1 中間，按了看得到結果；▲ ▼ 看不出是在調什麼。
+           停用原因換行寫在下面（觸控看不到 title） -->
+      <div class="rm-stepper" :title="`工期（${WORKDAY_UNIT}）`">
         <span class="rm-label">工期</span>
-        <button type="button" class="rm-step" :disabled="days <= 1" @click="daysDown()">
-          −1天
+        <button
+          type="button"
+          class="rm-step"
+          :disabled="downDisabled"
+          :title="blockText.both || blockText.down || undefined"
+          @click="daysDown()"
+        >
+          −1
         </button>
-        <span class="rm-days">{{ days }} 天</span>
-        <button type="button" class="rm-step" @click="daysUp()">+1天</button>
+        <span class="rm-days">{{ fmtWorkdays(days) }}</span>
+        <button
+          type="button"
+          class="rm-step"
+          :disabled="upDisabled"
+          :title="blockText.both || undefined"
+          @click="daysUp()"
+        >
+          +1
+        </button>
+        <div v-if="note" class="rm-note">{{ note }}</div>
       </div>
       <button type="button" class="rm-item" role="menuitem" @click="openDeps()">
         <span class="rm-icon" aria-hidden="true">⇄</span>相依設定…
@@ -124,6 +176,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 
 .rm-stepper {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-1) var(--sp-4) var(--sp-4);
@@ -167,6 +220,14 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 .rm-step:disabled {
   color: var(--glyph-disabled);
   cursor: default;
+}
+
+/* 停用原因：獨佔一行、換到 −1 / +1 下面（看得見的說明，觸控看不到 title） */
+.rm-note {
+  flex: 1 0 100%;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-body);
+  color: var(--text-muted);
 }
 
 .rm-item {

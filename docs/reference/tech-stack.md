@@ -56,10 +56,10 @@ PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 - 多個元件共用的資料放 Pinia store；只有單一元件用到的狀態（下拉的 hover 列、卡片 hover）留在元件內部。
 - store 裡的欄位分兩類，寫法不同（review M8）：
   - **UI 狀態欄位**（`ui` / `filter` / `comment` 的浮層開關、選取中的分頁、篩選條件、草稿文字…）：元件可以直接寫，例如 `ui.editing = { kind: 't', id }`、`filter.issueMode = 'has'`。這類欄位只描述畫面狀態，沒有連動規則。
-  - **資料欄位**（`tasks` / `issues` / `deps` / `groups` / `comments`）：一律透過 action 改，例如 `taskStore.updateTask()`、`commentStore.send()`。它們背後有 cascade、api 呼叫與失敗還原、懸空 id 清理等連動，繞過 action 就會漏做。
+  - **資料欄位**（`tasks` / `issues` / `deps` / `groups` / `comments`）：一律透過 action 改，例如 `taskStore.updateTask()`、`commentStore.send()`。它們背後有排程推算與寫回（規則見 [`scheduling.md`](scheduling.md)）、api 呼叫與失敗還原、懸空 id 清理等連動，繞過 action 就會漏做。
 
 #### store 分三層
-依賴只能由上往下：**時鐘層** `clock`（`now` / `todayIdx` / `todayIso`，誰都能讀）→ **資料層** `task` / `issue` / `comment` / `member` / `budget` / `project`（專案資料的唯一擁有者）→ **派生層** `rows` / `filter` / `selection` / `ui`（算畫面要的東西，可讀所有層）。
+依賴只能由上往下：**時鐘層** `clock`（`now` / `todayIdx` / `todayIso`，誰都能讀）→ **資料層** `task` / `issue` / `comment` / `member` / `budget` / `project`（專案資料的唯一擁有者），以及全系統共用的 `workCalendar`（工作日曆）→ **派生層** `rows` / `filter` / `selection` / `ui`（算畫面要的東西，可讀所有層）。
 
 資料層不知道派生層存在：新增的預設值由 `composables/useTaskActions.ts` 算好傳進去，懸空 id 由 `selection` / `ui` 各自的 `watch(flush: 'sync')` 清，錯誤條靠 `_optimistic.setErrorSink()` 注入。白名單由 `src/stores/__tests__/imports.spec.ts` 讀原始碼守著。
 
@@ -78,7 +78,7 @@ PMIS 使用的技術與使用慣例。新加入的開發者先讀這份。
 - 不引入 UI 元件庫；共用的基礎元件（下拉選單、日曆、對話框等）自行實作並重複使用。
 
 ### 測試
-- 純邏輯（日期計算、相依連動、篩選、排序）寫 Vitest 單元測試。
+- 純邏輯（日期計算、工作天與排程、篩選、排序）寫 Vitest 單元測試。排程規則的測試向量在 [`scheduling.md`](scheduling.md)〈檢查點（測試向量）〉。
 - 使用者操作流程（點選、拖曳、對話框）寫 Playwright E2E 測試。
 
 ## 後端：技術一覽
