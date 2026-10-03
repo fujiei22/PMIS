@@ -17,6 +17,7 @@ import {
   scheduleWithPlan,
   startBlock,
   taskPickerNote,
+  topoOrder,
 } from '@/lib/schedule'
 import { createWorkdays } from '@/lib/workdays'
 import type { Dependency, Task, WorkCalendar } from '@/types/models'
@@ -158,9 +159,46 @@ describe('scheduleTasks', () => {
     expect(scheduleTasks([a], [], wd, NOW)).toEqual(out)
   })
 
-  it('資料裡萬一有環也不會無窮遞迴', () => {
-    const deps = [dep('a', 'b'), dep('b', 'a')]
-    expect(() => scheduleTasks([task('a'), task('b')], deps, wd, NOW)).not.toThrow()
+  it('資料有環：只略過環上一條相依，其餘照規則排', () => {
+    const deps = [dep('a', 'b'), dep('b', 'a'), dep('b', 'c')]
+    // 強制放行 a（b 還沒排到，當作沒有前置）→ 10/08；b 接在 a 後面，跳過 10/09 補假、10/10–11 週末 → 10/12；c 接在 b 後面
+    expect(run([task('a'), task('b'), task('c')], deps)).toEqual({
+      a: ['2026-10-08', '2026-10-08'],
+      b: ['2026-10-12', '2026-10-12'],
+      c: ['2026-10-13', '2026-10-13'],
+    })
+  })
+
+  it('長鏈（20000 筆、陣列倒著放）不遞迴、不爆呼叫堆疊', () => {
+    const ts = Array.from({ length: 20000 }, (_, i) => task(`n${i}`)).reverse()
+    const deps = Array.from({ length: 19999 }, (_, i) => dep(`n${i}`, `n${i + 1}`))
+    const by = new Map(scheduleTasks(ts, deps, wd, NOW).map((x) => [x.id, x]))
+    expect(by.get('n19999')!.start > by.get('n0')!.start).toBe(true)
+  })
+})
+
+describe('topoOrder', () => {
+  it('前置排在後續之前；起始那批照 ids 的順序', () => {
+    const preds = new Map([
+      ['c', ['a', 'b']],
+      ['b', ['a']],
+    ])
+    expect(topoOrder(['c', 'b', 'a', 'd'], preds)).toEqual(['a', 'd', 'b', 'c'])
+  })
+
+  it('ids 重複只排一次', () => {
+    expect(topoOrder(['a', 'a', 'b'], new Map([['b', ['a']]]))).toEqual(['a', 'b'])
+  })
+
+  it('有環：只強制放行環上的一個任務；環的下游就算排在陣列最前面，也照常等前置', () => {
+    // a ⇄ b、b → c
+    const preds = new Map([
+      ['a', ['b']],
+      ['b', ['a']],
+      ['c', ['b']],
+    ])
+    expect(topoOrder(['c', 'a', 'b'], preds)).toEqual(['b', 'a', 'c'])
+    expect(topoOrder(['a', 'b', 'c'], preds)).toEqual(['a', 'b', 'c'])
   })
 })
 
@@ -314,6 +352,13 @@ describe('planTasks', () => {
     expect(plan([task('a', { start: '2026-10-09' })])).toEqual({
       a: ['2026-10-12', '2026-10-12'],
     })
+  })
+
+  it('長鏈（20000 筆、陣列倒著放）不遞迴、不爆呼叫堆疊', () => {
+    const ts = Array.from({ length: 20000 }, (_, i) => task(`n${i}`)).reverse()
+    const deps = Array.from({ length: 19999 }, (_, i) => dep(`n${i}`, `n${i + 1}`))
+    const plan = planTasks(ts, deps, wd, NOW)
+    expect(plan.get('n19999')!.start > plan.get('n0')!.start).toBe(true)
   })
 })
 

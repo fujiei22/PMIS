@@ -105,7 +105,7 @@ export function predecessorIds(deps: Dependency[]): Set<string> {
  * 排出每個任務的起訖（規則見 docs/reference/scheduling.md〈開始日〉〈結束日〉）。
  *
  * 回傳新陣列、順序同 tasks；起訖沒變的回原物件（元件靠參照跳過重算）。
- * 依相依遞迴排；相依保證無環（addDep 用 reachable 擋），萬一資料有環，環上那條前置當作不存在。
+ * 依 `topoOrder` 的順序排；相依保證無環（addDep 用 reachable 擋），萬一資料有環見 `topoOrder`。
  * 只認兩端都存在的相依。
  */
 export function scheduleTasks(
@@ -118,15 +118,14 @@ export function scheduleTasks(
   const preds = predecessorMap(by, deps)
   const today = wd.onOrAfter(todayIdx)
   const placed = new Map<string, { s: number; e: number }>()
-  const visiting = new Set<string>()
 
-  function place(id: string): { s: number; e: number } {
-    const hit = placed.get(id)
-    if (hit) return hit
+  for (const id of topoOrder(
+    tasks.map((t) => t.id),
+    preds,
+  )) {
     const t = by.get(id)!
-    visiting.add(id)
-    const before = (preds.get(id) ?? []).filter((p) => !visiting.has(p)).map(place)
-    visiting.delete(id)
+    // 有環時被強制放行的任務，還沒排到的前置當作不存在（見 topoOrder）
+    const before = (preds.get(id) ?? []).flatMap((p) => placed.get(p) ?? [])
 
     let s: number
     if (isStarted(t) && t.start) s = dayIndex(t.start)
@@ -145,13 +144,11 @@ export function scheduleTasks(
       // 進行中或暫停、照工期該結束卻還沒完成：結束日推到今天（每天往後推，後續任務跟著推）
       if ((t.status === 'doing' || t.status === 'paused') && e < todayIdx) e = today
     }
-    const r = { s, e }
-    placed.set(id, r)
-    return r
+    placed.set(id, { s, e })
   }
 
   return tasks.map((t) => {
-    const { s, e } = place(t.id)
+    const { s, e } = placed.get(t.id)!
     const start = isoFromIndex(s)
     const end = isoFromIndex(e)
     return start === t.start && end === t.end ? t : { ...t, start, end }
@@ -171,11 +168,60 @@ function predecessorMap(by: Map<string, Task>, deps: Dependency[]): Map<string, 
 }
 
 /**
+ * 計算順序（Kahn 拓樸排序）：前置一定排在後續之前。起始那批照 ids 的順序，之後照就緒的先後；
+ * 沒有環時順序不影響排程結果。preds 只能含 ids 裡的任務（predecessorMap 保證）。
+ *
+ * 有環（資料錯誤，addDep 會擋）時卡住：從 ids 裡第一個還沒排的任務，沿「還沒排的前置」往回走，
+ * 第一個走回頭的任務一定在環上——只強制放行它（它還沒排到的前置當作不存在），再繼續排。
+ * 每個環只略過一條相依；環的下游照常等前置。不遞迴，長鏈也不吃呼叫堆疊。
+ */
+export function topoOrder(ids: string[], preds: Map<string, string[]>): string[] {
+  const uniq = [...new Set(ids)]
+  const indeg = new Map(uniq.map((id) => [id, 0]))
+  const succ = new Map<string, string[]>()
+  for (const [to, list] of preds) {
+    for (const from of list) {
+      indeg.set(to, (indeg.get(to) ?? 0) + 1)
+      const s = succ.get(from) ?? []
+      s.push(to)
+      succ.set(from, s)
+    }
+  }
+  const queue = uniq.filter((id) => indeg.get(id) === 0)
+  const queued = new Set(queue)
+  const done = new Set<string>()
+  for (let i = 0; done.size < uniq.length; i++) {
+    if (i === queue.length) {
+      // 卡住＝佇列裡的都排完了，剩下的都在環上或環的下游（每個都還有沒排的前置）
+      let id = uniq.find((x) => !queued.has(x))!
+      const seen = new Set<string>()
+      while (!seen.has(id)) {
+        seen.add(id)
+        id = preds.get(id)!.find((p) => !done.has(p))!
+      }
+      queue.push(id)
+      queued.add(id)
+    }
+    const id = queue[i]!
+    done.add(id)
+    for (const to of succ.get(id) ?? []) {
+      const n = indeg.get(to)! - 1
+      indeg.set(to, n)
+      if (n <= 0 && !queued.has(to)) {
+        queue.push(to)
+        queued.add(to)
+      }
+    }
+  }
+  return queue
+}
+
+/**
  * 排出每個任務的計畫起訖（規則見 docs/reference/scheduling.md〈計畫與延遲〉）。
  *
  * 只看 PM 輸入的東西：根任務的計畫開始日（`baselineStart`；舊資料沒有時用 `start`，遇非工作天順延）、
  * 工期、相依（完成到開始）。今天、實際開始日、完成日、逾期都不影響——PM 一改輸入計畫就跟著變，
- * 現實造成的落後（`scheduleTasks` 的推算晚於計畫）才是延遲。環的處理同 `scheduleTasks`。
+ * 現實造成的落後（`scheduleTasks` 的推算晚於計畫）才是延遲。依 `topoOrder` 的順序排，環的處理見 `topoOrder`。
  *
  * @param todayIdx 只給「根任務兩個開始日都是空的」壞資料當起點，其他情況用不到
  */
@@ -188,27 +234,24 @@ export function planTasks(
   const by = new Map(tasks.map((t) => [t.id, t]))
   const preds = predecessorMap(by, deps)
   const placed = new Map<string, { s: number; e: number }>()
-  const visiting = new Set<string>()
 
-  function place(id: string): { s: number; e: number } {
-    const hit = placed.get(id)
-    if (hit) return hit
+  for (const id of topoOrder(
+    tasks.map((t) => t.id),
+    preds,
+  )) {
     const t = by.get(id)!
-    visiting.add(id)
-    const before = (preds.get(id) ?? []).filter((p) => !visiting.has(p)).map(place)
-    visiting.delete(id)
+    // 有環時被強制放行的任務，還沒排到的前置當作不存在（見 topoOrder）
+    const before = (preds.get(id) ?? []).flatMap((p) => placed.get(p) ?? [])
     const planned = t.baselineStart || t.start
     const s = before.length
       ? Math.max(...before.map((p) => wd.after(p.e)))
       : wd.onOrAfter(planned ? dayIndex(planned) : todayIdx)
-    const r = { s, e: wd.addWorkdays(s, clampDuration(t.duration)) }
-    placed.set(id, r)
-    return r
+    placed.set(id, { s, e: wd.addWorkdays(s, clampDuration(t.duration)) })
   }
 
   const out = new Map<string, { start: ISODate; end: ISODate }>()
   for (const t of tasks) {
-    const { s, e } = place(t.id)
+    const { s, e } = placed.get(t.id)!
     out.set(t.id, { start: isoFromIndex(s), end: isoFromIndex(e) })
   }
   return out
