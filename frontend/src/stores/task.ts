@@ -1071,7 +1071,6 @@ export const useTaskStore = defineStore('task', () => {
     inputs,
     tasks,
     deps,
-    hasPred,
     taskById,
     groupById,
     load,

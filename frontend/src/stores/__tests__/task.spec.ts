@@ -798,7 +798,7 @@ describe('taskStore', () => {
       expect(s.taskById('t5')!.name).toBe('改名')
     })
 
-    it('根任務拖到今天以前被夾住：放開後寫回今天、不留 dirty', async () => {
+    it('根任務拖到今天以前：推算開始日順延到今天，放開後寫回推算值、不留 dirty', async () => {
       const s = useTaskStore()
       s.applyLocalPatch('t24', { start: '2026-09-10' })
       expect(s.taskById('t24')!.start).toBe('2026-09-18')

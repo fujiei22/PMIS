@@ -79,8 +79,6 @@ export const DURATION_MAX = 3650
  */
 export const SCHEDULE_FIELDS = ['start', 'duration', 'status', 'done'] as const
 
-/** 不能編輯的原因（null＝可以）。第 3 個 branch（三層任務）會加 'rollup'（由下層彙總、唯讀）。 */
-export type EditBlock = 'predecessor' | 'done' | null
 /** 開始日由哪條規則決定：實際開工日／設定的開始日／前置結束後／順延到今天。 */
 export type StartReason = 'actual' | 'root' | 'pred' | 'today'
 /** 結束日由哪條規則決定：完成日／依工期推算／逾期暫定今天。 */
@@ -351,50 +349,6 @@ export function scheduleWithPlan(
   todayIdx: number,
 ): Task[] {
   return scheduleProject(tasks, deps, wd, todayIdx).tasks
-}
-
-/** 開始日能不能改（日期選擇器）：有前置、未開始的不能。 */
-export function startBlock(t: Task, hasPred: Set<string>): EditBlock {
-  return t.status === 'todo' && hasPred.has(t.id) ? 'predecessor' : null
-}
-
-/** 能不能整條拖、拉左把手：完成的不能；其他同開始日。 */
-export function moveBlock(t: Task, hasPred: Set<string>): EditBlock {
-  return t.status === 'done' ? 'done' : startBlock(t, hasPred)
-}
-
-/** 能不能改工期（右把手、±1、工期欄、選結束日）：完成的不能（結束日就是完成日）。 */
-export function durationBlock(t: Task): EditBlock {
-  return t.status === 'done' ? 'done' : null
-}
-
-/** 日期選擇器與列選單的說明行原因（為什麼有東西停用）；文字在 constants 的 `EDIT_NOTE_TEXT`。 */
-export type EditNote = 'predecessor' | 'done' | 'startAfterToday' | 'overdueShrink'
-
-/**
- * 起訖日期選擇器的說明行：對準開始日或結束日時，哪條規則讓某些格子停用（null＝沒有）。
- * 畫面（DatePicker）與開浮層時的估高（useMenus）用同一個判斷。
- */
-export function taskPickerNote(
-  t: Task,
-  target: 'start' | 'end',
-  hasPred: Set<string>,
-  wd: Workdays,
-  todayIdx: number,
-): EditNote | null {
-  const block = startBlock(t, hasPred) ?? durationBlock(t)
-  if (block) return block
-  if (target === 'start' && (t.status === 'doing' || t.status === 'paused'))
-    return 'startAfterToday'
-  if (target === 'end' && isOverdue(t, wd, todayIdx)) return 'overdueShrink'
-  return null
-}
-
-/** 工期 ±1（列選單）的說明行：完成的兩顆都停、逾期只停 −1（null＝沒有）。 */
-export function durationNote(t: Task, wd: Workdays, todayIdx: number): EditNote | null {
-  const block = durationBlock(t)
-  if (block) return block
-  return isOverdue(t, wd, todayIdx) ? 'overdueShrink' : null
 }
 
 /** 照工期該結束的那天（日索引）：從開始日起算第「工期」個工作天；逾期的「原定結束日」就是它。 */

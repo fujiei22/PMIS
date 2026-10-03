@@ -2,21 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { dayIndex } from '@/lib/date'
 import { applyTaskEdit, type EditCtx } from '@/lib/editPolicy'
 import {
-  durationBlock,
-  durationNote,
   durationOf,
   isLate,
   isOverdue,
   isPlannedDone,
   lateDays,
-  moveBlock,
   planTasks,
   predecessorIds,
   scheduleProject,
   scheduleTasks,
   scheduleWithPlan,
-  startBlock,
-  taskPickerNote,
   topoOrder,
 } from '@/lib/schedule'
 import { createWorkdays } from '@/lib/workdays'
@@ -462,33 +457,11 @@ describe('scheduleProject 的說明（meta）與被略過的相依', () => {
   })
 })
 
-describe('編輯限制、逾期與有效工期', () => {
+describe('前置、逾期與有效工期（編輯限制見 editPolicy.spec）', () => {
   const hasPred = predecessorIds([dep('a', 'b')])
 
   it('predecessorIds：有前置的任務 id', () => {
     expect([...hasPred]).toEqual(['b'])
-  })
-
-  it('有前置的未開始任務：開始日不能改、不能整條拖；工期可以改', () => {
-    expect(startBlock(task('b'), hasPred)).toBe('predecessor')
-    expect(moveBlock(task('b'), hasPred)).toBe('predecessor')
-    expect(durationBlock(task('b'))).toBeNull()
-  })
-
-  it('根任務與進行中的任務都可以；已完成不能拖、不能改工期，開始日仍可更正', () => {
-    expect([startBlock(task('a'), hasPred), moveBlock(task('a'), hasPred)]).toEqual([null, null])
-    const doing = task('b', { status: 'doing', start: '2026-10-01' })
-    expect([startBlock(doing, hasPred), moveBlock(doing, hasPred), durationBlock(doing)]).toEqual([
-      null,
-      null,
-      null,
-    ])
-    const done = task('b', { status: 'done', start: '2026-10-01', done: '2026-10-02' })
-    expect([startBlock(done, hasPred), moveBlock(done, hasPred), durationBlock(done)]).toEqual([
-      null,
-      'done',
-      'done',
-    ])
   })
 
   it('逾期與有效工期：進行中、09-28 開工、工期 2，在 10-08 時橫跨 9 個工作天', () => {
@@ -530,25 +503,3 @@ describe('延遲與計畫進度（依基準）', () => {
 })
 
 // 日期選擇器與列選單的說明行原因（文字在 constants 的 EDIT_NOTE_TEXT）；開浮層估高與畫面用同一個判斷
-describe('說明行原因', () => {
-  const hasPred = new Set(['b'])
-
-  it('taskPickerNote：有前置未開始 → predecessor；完成 → done；進行中對準開始日 → startAfterToday；逾期對準結束日 → overdueShrink', () => {
-    expect(taskPickerNote(task('b'), 'end', hasPred, wd, NOW)).toBe('predecessor')
-    const done = task('a', { status: 'done', done: '2026-10-08' })
-    expect(taskPickerNote(done, 'start', hasPred, wd, NOW)).toBe('done')
-    const doing = task('a', { status: 'doing', start: '2026-10-05', duration: 9 })
-    expect(taskPickerNote(doing, 'start', hasPred, wd, NOW)).toBe('startAfterToday')
-    const overdue = task('a', { status: 'doing', start: '2026-09-01', duration: 2 })
-    expect(taskPickerNote(overdue, 'end', hasPred, wd, NOW)).toBe('overdueShrink')
-    expect(taskPickerNote(task('a'), 'start', hasPred, wd, NOW)).toBeNull()
-  })
-
-  it('durationNote：完成 → done；逾期 → overdueShrink；其他沒有', () => {
-    expect(durationNote(task('a', { status: 'done', done: '2026-10-08' }), wd, NOW)).toBe('done')
-    expect(
-      durationNote(task('a', { status: 'doing', start: '2026-09-01', duration: 2 }), wd, NOW),
-    ).toBe('overdueShrink')
-    expect(durationNote(task('a'), wd, NOW)).toBeNull()
-  })
-})
