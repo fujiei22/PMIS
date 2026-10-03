@@ -21,7 +21,7 @@ import {
 } from '@/constants/dashboard'
 import { dayIndex, isoFromIndex, lengthOf } from '@/lib/date'
 import { fmtDate, fmtWorkdays } from '@/lib/format'
-import { durationBlock, durationOf, isLate, moveBlock, plannedEndIdx } from '@/lib/schedule'
+import { durationOf, isLate } from '@/lib/schedule'
 import { useIssueStore } from '@/stores/issue'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
@@ -75,13 +75,16 @@ const status = computed(() =>
 /** 選取中的那一條。legacy `on` :2908 */
 const selected = computed(() => props.kind === 'task' && selection.taskId === props.task.id)
 
-/** 不能整條拖、拉左把手的原因（開始日由前置決定／已完成）；null＝可以。摘要條沒有。 */
-const blockMove = computed(() =>
-  props.kind === 'task' ? moveBlock(props.task, taskStore.hasPred) : null,
+/** 這條任務此刻的編輯限制（`lib/editPolicy.ts`）；摘要條沒有。 */
+const policy = computed(() =>
+  props.kind === 'task' ? taskStore.policyOf(props.task.id) : undefined,
 )
 
+/** 不能整條拖、拉左把手的原因（開始日由前置決定／已完成）；null＝可以。 */
+const blockMove = computed(() => policy.value?.moveBlock ?? null)
+
 /** 不能拉右把手（改工期）的原因；null＝可以。 */
-const blockDuration = computed(() => (props.kind === 'task' ? durationBlock(props.task) : null))
+const blockDuration = computed(() => policy.value?.durationBlock ?? null)
 
 /** 選取了但不能拖：游標不顯示抓取、觸控照常捲動（CSS `.pinned`）。 */
 const pinned = computed(() => selected.value && !!blockMove.value)
@@ -180,10 +183,10 @@ function reasonLine(t: Task): string {
     r.startBy === 'pred'
       ? START_REASON_TEXT.pred(taskStore.taskById(r.predId!)?.name ?? '')
       : START_REASON_TEXT[r.startBy]
-  // 逾期：原定結束日＝照工期推算的那天
+  // 逾期：原定結束日＝照工期推算的那天（排程時一起記下，不再每條重算）
   const end =
     r.endBy === 'overdue'
-      ? END_REASON_TEXT.overdue(fmtDate(isoFromIndex(plannedEndIdx(t, calendar.workdays))))
+      ? END_REASON_TEXT.overdue(fmtDate(isoFromIndex(r.originalEnd!)))
       : END_REASON_TEXT[r.endBy]
   return `開始：${start}｜結束：${end}`
 }
