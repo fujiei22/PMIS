@@ -13,6 +13,7 @@ import {
   moveBlock,
   planTasks,
   predecessorIds,
+  scheduleProject,
   scheduleTasks,
   scheduleWithPlan,
   startBlock,
@@ -397,6 +398,69 @@ describe('scheduleWithPlan', () => {
   it('起訖與計畫都沒變的回原物件', () => {
     const a = task('a', { baselineStart: '2026-10-08', baselineEnd: '2026-10-08' })
     expect(scheduleWithPlan([a], [], wd, NOW)[0]).toBe(a)
+  })
+})
+
+describe('scheduleProject 的說明（meta）與被略過的相依', () => {
+  const meta = (inputs: Task[], deps: Dependency[], id: string, today = NOW) =>
+    scheduleProject(inputs, deps, wd, today).meta.get(id)
+
+  it('已開始 → actual；根任務 → root；被推到今天 → today', () => {
+    const doing = task('a', { status: 'doing', start: '2026-10-05', duration: 5 })
+    expect(meta([doing], [], 'a')!.startBy).toBe('actual')
+    expect(meta([task('a', { start: '2026-10-12' })], [], 'a')!.startBy).toBe('root')
+    expect(meta([task('a', { start: '2026-10-01' })], [], 'a')!.startBy).toBe('today')
+  })
+
+  it('有前置、前置早完成而被推到今天 → today，不帶 predId', () => {
+    const a = task('a', { status: 'done', start: '2026-10-01', done: '2026-10-02' })
+    expect(meta([a, task('b')], [dep('a', 'b')], 'b')).toEqual({
+      startBy: 'today',
+      endBy: 'duration',
+    })
+  })
+
+  it('由前置決定 → pred，帶結束得最晚的那個前置', () => {
+    const r = meta(
+      [task('a'), task('b', { duration: 3 }), task('c')],
+      [dep('a', 'c'), dep('b', 'c')],
+      'c',
+    )!
+    expect([r.startBy, r.predId]).toEqual(['pred', 'b'])
+  })
+
+  it('兩個前置同一天結束：取相依先建立的', () => {
+    const r = meta([task('a'), task('b'), task('c')], [dep('b', 'c'), dep('a', 'c')], 'c')!
+    expect(r.predId).toBe('b')
+  })
+
+  it('結束日：done／duration／overdue；逾期帶原定結束日（照工期推算的那天）', () => {
+    const done = task('a', { status: 'done', start: '2026-10-01', done: '2026-10-02' })
+    expect(meta([done], [], 'a')).toEqual({ startBy: 'actual', endBy: 'done' })
+    expect(meta([task('a', { duration: 3 })], [], 'a')).toEqual({
+      startBy: 'root',
+      endBy: 'duration',
+    })
+    const overdue = task('a', { status: 'doing', start: '2026-09-28', duration: 2 })
+    expect(meta([overdue], [], 'a')).toEqual({
+      startBy: 'actual',
+      endBy: 'overdue',
+      originalEnd: dayIndex('2026-09-29'),
+    })
+  })
+
+  it('有環：被強制放行的任務當根任務、略過的相依列在 skipped；沒有環時 skipped 是空的', () => {
+    const r = scheduleProject([task('a'), task('b')], [dep('a', 'b'), dep('b', 'a')], wd, NOW)
+    expect(r.skipped).toEqual([{ from: 'b', to: 'a' }])
+    expect(r.meta.get('a')).toEqual({ startBy: 'root', endBy: 'duration' })
+    expect(r.meta.get('b')!.predId).toBe('a')
+    expect(scheduleProject([task('a'), task('b')], [dep('a', 'b')], wd, NOW).skipped).toEqual([])
+  })
+
+  it('tasks 跟 scheduleWithPlan 一樣', () => {
+    const ts = [task('a', { duration: 3 }), task('b')]
+    const deps = [dep('a', 'b')]
+    expect(scheduleProject(ts, deps, wd, NOW).tasks).toEqual(scheduleWithPlan(ts, deps, wd, NOW))
   })
 })
 

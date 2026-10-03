@@ -86,6 +86,26 @@ export type StartReason = 'actual' | 'root' | 'pred' | 'today'
 /** 結束日由哪條規則決定：完成日／依工期推算／逾期暫定今天。 */
 export type EndReason = 'done' | 'duration' | 'overdue'
 
+/** 排程說明：開始日、結束日各由哪條規則決定（甘特提示、屬性面板用；規則見 docs/reference/scheduling.md〈開始日〉〈結束日〉）。 */
+export interface ScheduleMeta {
+  startBy: StartReason
+  /** startBy 是 'pred'：決定開始日的前置（結束得最晚的那個；同一天取相依先建立的）。 */
+  predId?: string
+  endBy: EndReason
+  /** endBy 是 'overdue'：原定結束日（日索引，從開始日照工期推算的那天；跟「計畫」＝基準不是同一件事）。 */
+  originalEnd?: number
+}
+
+/**
+ * 排程結果：推算後的任務（順序同輸入）、每個任務的說明，以及有環時被略過的相依
+ * （資料錯誤；沒有環時是空陣列。lib 不印 log，由 task store 警告）。
+ */
+export interface Scheduled {
+  tasks: Task[]
+  meta: Map<string, ScheduleMeta>
+  skipped: { from: string; to: string }[]
+}
+
 /** 工期夾在 1–DURATION_MAX；0、負數、NaN 當 1。 */
 function clampDuration(n: number): number {
   return Number.isFinite(n) ? Math.min(DURATION_MAX, Math.max(1, Math.round(n))) : 1
@@ -114,45 +134,82 @@ export function scheduleTasks(
   wd: Workdays,
   todayIdx: number,
 ): Task[] {
+  return runSchedule(tasks, deps, wd, todayIdx).tasks
+}
+
+/** `scheduleTasks` 的本體：同一趟排出起訖、說明與被略過的相依（`scheduleProject` 也用）。 */
+function runSchedule(tasks: Task[], deps: Dependency[], wd: Workdays, todayIdx: number): Scheduled {
   const by = new Map(tasks.map((t) => [t.id, t]))
   const preds = predecessorMap(by, deps)
   const today = wd.onOrAfter(todayIdx)
   const placed = new Map<string, { s: number; e: number }>()
+  const meta = new Map<string, ScheduleMeta>()
+  const skipped: Scheduled['skipped'] = []
 
   for (const id of topoOrder(
     tasks.map((t) => t.id),
     preds,
   )) {
     const t = by.get(id)!
-    // 有環時被強制放行的任務，還沒排到的前置當作不存在（見 topoOrder）
-    const before = (preds.get(id) ?? []).flatMap((p) => placed.get(p) ?? [])
+    const before = preds.get(id) ?? []
+    // 有環時被強制放行的任務，還沒排到的前置當作不存在（見 topoOrder），記下來給 store 警告
+    for (const p of before) if (!placed.has(p)) skipped.push({ from: p, to: id })
+    const m: ScheduleMeta = { startBy: 'actual', endBy: 'duration' }
 
     let s: number
     if (isStarted(t) && t.start) s = dayIndex(t.start)
     else {
-      // 根任務照設定的開始日（遇非工作天順延）；有前置的從最晚的前置結束後的下一個工作天開始
-      s = before.length
-        ? Math.max(...before.map((p) => wd.after(p.e)))
-        : wd.onOrAfter(t.start ? dayIndex(t.start) : todayIdx)
-      // 還沒開始的不早於今天
-      s = Math.max(s, today)
+      // 根任務照設定的開始日（遇非工作天順延）；有前置的從最晚的前置結束後的下一個工作天開始。
+      // 前置照相依的順序看、更晚才換（同一天取相依先建立的）
+      let predId: string | undefined
+      s = -Infinity
+      for (const p of before) {
+        const r = placed.get(p)
+        if (!r) continue
+        const next = wd.after(r.e)
+        if (next > s) {
+          s = next
+          predId = p
+        }
+      }
+      if (predId === undefined) s = wd.onOrAfter(t.start ? dayIndex(t.start) : todayIdx)
+      // 還沒開始的不早於今天；被推到今天時不帶 predId
+      if (s < today) {
+        s = today
+        m.startBy = 'today'
+      } else if (predId === undefined) m.startBy = 'root'
+      else {
+        m.startBy = 'pred'
+        m.predId = predId
+      }
     }
     let e: number
-    if (t.status === 'done' && t.done) e = Math.max(dayIndex(t.done), s)
-    else {
+    if (t.status === 'done' && t.done) {
+      e = Math.max(dayIndex(t.done), s)
+      m.endBy = 'done'
+    } else {
       e = wd.addWorkdays(s, clampDuration(t.duration))
       // 進行中或暫停、照工期該結束卻還沒完成：結束日推到今天（每天往後推，後續任務跟著推）
-      if ((t.status === 'doing' || t.status === 'paused') && e < todayIdx) e = today
+      if ((t.status === 'doing' || t.status === 'paused') && e < todayIdx) {
+        m.endBy = 'overdue'
+        m.originalEnd = e
+        e = today
+      }
     }
     placed.set(id, { s, e })
+    meta.set(id, m)
   }
 
-  return tasks.map((t) => {
-    const { s, e } = placed.get(t.id)!
-    const start = isoFromIndex(s)
-    const end = isoFromIndex(e)
-    return start === t.start && end === t.end ? t : { ...t, start, end }
-  })
+  return {
+    tasks: tasks.map((t) => {
+      const { s, e } = placed.get(t.id)!
+      const start = isoFromIndex(s)
+      const end = isoFromIndex(e)
+      return start === t.start && end === t.end ? t : { ...t, start, end }
+    }),
+    meta,
+    skipped,
+  }
 }
 
 /** 每個任務的前置 id；只認兩端都存在的相依。`scheduleTasks` 與 `planTasks` 共用。 */
@@ -258,9 +315,34 @@ export function planTasks(
 }
 
 /**
- * 推算起訖加上計畫：`scheduleTasks` 排出畫面上的起訖，再把 `planTasks` 的計畫起訖填進基準欄位
- * （`baselineStart`／`baselineEnd`）。延遲＝推算結束日晚於計畫結束日（`isLate`）。
- * 回傳新陣列、順序同 tasks；起訖與計畫都沒變的回原物件。task store 與總覽摘要都走這裡。
+ * 推算起訖、計畫、說明一次排完（task store 用）：`tasks` 是 `scheduleTasks` 排出畫面上的起訖、
+ * 再把 `planTasks` 的計畫起訖填進基準欄位（`baselineStart`／`baselineEnd`）；延遲＝推算結束日晚於計畫結束日（`isLate`）。
+ * `meta` 是每個任務的 `ScheduleMeta`（甘特提示、屬性面板讀它，不再照規則另推一次）；`skipped` 見 `Scheduled`。
+ * tasks 回新陣列、順序同輸入；起訖與計畫都沒變的回原物件。
+ */
+export function scheduleProject(
+  tasks: Task[],
+  deps: Dependency[],
+  wd: Workdays,
+  todayIdx: number,
+): Scheduled {
+  const plan = planTasks(tasks, deps, wd, todayIdx)
+  const { tasks: out, meta, skipped } = runSchedule(tasks, deps, wd, todayIdx)
+  return {
+    tasks: out.map((t) => {
+      const p = plan.get(t.id)!
+      return p.start === t.baselineStart && p.end === t.baselineEnd
+        ? t
+        : { ...t, baselineStart: p.start, baselineEnd: p.end }
+    }),
+    meta,
+    skipped,
+  }
+}
+
+/**
+ * 推算起訖加上計畫（同 `scheduleProject` 的 tasks）；只要任務、不要說明時用（總覽摘要、新增任務的草稿）。
+ * 回傳新陣列、順序同 tasks；起訖與計畫都沒變的回原物件。
  */
 export function scheduleWithPlan(
   tasks: Task[],
@@ -268,13 +350,7 @@ export function scheduleWithPlan(
   wd: Workdays,
   todayIdx: number,
 ): Task[] {
-  const plan = planTasks(tasks, deps, wd, todayIdx)
-  return scheduleTasks(tasks, deps, wd, todayIdx).map((t) => {
-    const p = plan.get(t.id)!
-    return p.start === t.baselineStart && p.end === t.baselineEnd
-      ? t
-      : { ...t, baselineStart: p.start, baselineEnd: p.end }
-  })
+  return scheduleProject(tasks, deps, wd, todayIdx).tasks
 }
 
 /**
