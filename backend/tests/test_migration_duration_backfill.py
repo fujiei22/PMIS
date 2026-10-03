@@ -30,7 +30,8 @@ def backfill_sql() -> str:
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.BACKFILL_DURATION_SQL
+    sql: str = module.BACKFILL_DURATION_SQL
+    return sql
 
 
 def run_backfill(db: Session) -> None:
@@ -40,9 +41,10 @@ def run_backfill(db: Session) -> None:
 
 def duration_of(db: Session, task: Task) -> int:
     """直接讀資料表：ORM 的查詢會套軟刪除過濾，回收桶裡的列讀不到。"""
-    return db.execute(
+    days: int = db.execute(
         text("SELECT duration_days FROM tasks WHERE id = :id"), {"id": task.id}
     ).scalar_one()
+    return days
 
 
 def test_counts_workdays_with_official_holidays(db: Session) -> None:
