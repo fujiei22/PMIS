@@ -26,7 +26,7 @@ export type EditBlock = 'predecessor' | 'done' | 'missing' | null
 
 /** 判斷編輯限制需要的情境；task store 組好（不公開），各入口經 `policyOf` 間接用。 */
 export interface EditCtx {
-  /** 有前置的任務 id：只認兩端都存在的相依（跟排程器的 predecessorMap 同一個定義）。 */
+  /** 有前置的任務 id：排程真的用到的前置（兩端都存在、沒被環略過；`Scheduled.hasPred`）。 */
   hasPred: ReadonlySet<string>
   wd: Workdays
   todayIdx: number
@@ -79,9 +79,10 @@ export const LOCKED_POLICY: EditPolicy = Object.freeze<EditPolicy>({
 })
 
 /**
- * 任務 t 此刻的編輯限制。只讀 id、status、done、start、duration：
+ * 任務 t 此刻的編輯限制。只讀 id、status、done、start、duration、baselineStart：
  * 畫面入口傳推算後的任務；store 的 applyTaskEdit 傳套用編輯後的存的值。已開始的任務兩者這幾欄相同；
- * 未開始的只用到 status 與 id（endMinIdx 用的 start 只對畫面有意義，applyTaskEdit 不讀它）。
+ * 未開始的，applyTaskEdit 只用到 status 與 id 決定的欄位（startBlock、durationBlock、startMaxIdx）——
+ * endMinIdx、endBaseIdx 讀的 start、baselineStart 只對畫面（推算後的值）有意義。
  * 要多讀別的欄位前，先確認兩種來源都對。
  */
 export function editPolicy(t: Task, ctx: EditCtx): EditPolicy {

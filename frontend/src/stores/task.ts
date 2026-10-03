@@ -141,9 +141,10 @@ export const useTaskStore = defineStore('task', () => {
   // 只略過最少的相依、不中斷畫面，這裡在被略過的相依改變時警告一次（拖曳的每個 tick 不重複洗版）。
   // 所有環境都印，比照總覽對孤兒專案的處理（stores/overview.ts）
   watch(
-    () => scheduled.value.skipped.map((d) => `${d.from}>${d.to}`).join(','),
+    // 用 JSON 當簽名：id 裡有什麼字元都不會讓兩份清單看起來一樣
+    () => JSON.stringify(scheduled.value.skipped),
     (sig) => {
-      if (!sig) return
+      if (sig === '[]') return
       // 只印 id：任務名稱是使用者輸入的自由文字，可能含控制字元或個資，不落 log
       const skipped = scheduled.value.skipped
       const list = skipped.map((d) => `${d.from} → ${d.to}`).join('、')
