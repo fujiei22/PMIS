@@ -1,6 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadSample } from '@/__tests__/loadSample'
 import { ApiError } from '@/api/types'
 import { dayIndex } from '@/lib/date'
 import { sampleProject } from '@/mocks/sampleProject'
@@ -452,56 +451,5 @@ describe('uiStore 的唯讀（F2）', () => {
     expect(ui.issueDatePicker).toBeNull()
     expect(ui.detail?.id).toBe('t1')
     expect(ui.openDropdown).toBe('ksort')
-  })
-})
-
-// 基準鎖的確認框（規則見 docs/reference/scheduling.md〈基準與基準鎖〉）：沒有實體 id，懸空清理不該關掉它
-describe('askBaselineLock', () => {
-  beforeEach(async () => {
-    await loadSample()
-  })
-
-  it('上鎖中：開解鎖確認；資料變動時不會被懸空清理關掉', () => {
-    const ui = useUiStore()
-    ui.askBaselineLock()
-    expect(ui.confirm).toEqual({ kind: 'baselineUnlock', step: 1 })
-    useTaskStore().applyLocalPatch('t3', { name: '改名' })
-    expect(ui.confirm).toEqual({ kind: 'baselineUnlock', step: 1 })
-  })
-
-  it('解鎖中、排程跟原基準有差異：開上鎖確認', () => {
-    const ui = useUiStore()
-    const project = useProjectStore()
-    project.setMeta({ ...project.meta, baselineLockedOn: '' })
-    ui.askBaselineLock()
-    expect(ui.confirm).toEqual({ kind: 'baselineLock', step: 1 })
-  })
-
-  it('唯讀時不開', () => {
-    const ui = useUiStore()
-    const project = useProjectStore()
-    project.setAll(project.meta, false)
-    ui.askBaselineLock()
-    expect(ui.confirm).toBeNull()
-  })
-})
-
-describe('askBaselineLock：上鎖前先比對原基準', () => {
-  beforeEach(async () => {
-    await loadSample()
-  })
-
-  it('目前的排程跟原基準沒有差異：直接鎖上，不開確認框', async () => {
-    const ui = useUiStore()
-    const tasks = useTaskStore()
-    // 先用目前的排程更新基準再解鎖：這時排程跟原基準完全一樣
-    await tasks.unlockBaseline()
-    await tasks.lockBaseline('update')
-    await tasks.unlockBaseline()
-    expect(tasks.baselineDiffCount).toBe(0)
-    const lock = vi.spyOn(tasks, 'lockBaseline').mockResolvedValue()
-    ui.askBaselineLock()
-    expect(ui.confirm).toBeNull()
-    expect(lock).toHaveBeenCalledWith('keep')
   })
 })

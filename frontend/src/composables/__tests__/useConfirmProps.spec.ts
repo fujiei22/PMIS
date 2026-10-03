@@ -1,6 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadSample } from '@/__tests__/loadSample'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { useConfirmProps } from '@/composables/useConfirmProps'
 import { sampleProject } from '@/mocks/sampleProject'
 import { useIssueStore } from '@/stores/issue'
@@ -170,65 +169,6 @@ describe('useConfirmProps 行為', () => {
     ui.confirm = { kind: 'issue', id: 'i1', step: 2 }
     view.value!.onConfirm()
     expect(issueStore.byId('i1')).toBeUndefined()
-    expect(ui.confirm).toBeNull()
-  })
-})
-
-// 基準鎖（規則見 docs/reference/scheduling.md〈基準與基準鎖〉）：
-// 解鎖不動基準，一步就好；上鎖時排程跟原基準有差異才問，選「更新基準」（覆蓋、無法復原）或「沿用原本的基準」
-describe('useConfirmProps 基準鎖', () => {
-  beforeEach(async () => {
-    await loadSample()
-  })
-
-  it('上鎖：寫出幾個任務跟原基準不同；主鈕「更新基準」、次要鈕「沿用原本的基準」', () => {
-    const { ui, taskStore } = stores()
-    const lock = vi.spyOn(taskStore, 'lockBaseline').mockResolvedValue()
-    const view = useConfirmProps()
-    // 範例在 09-18：t3、t13 的推算結束日晚於原基準
-    ui.confirm = { kind: 'baselineLock', step: 1 }
-    expect(view.value).toMatchObject({
-      open: true,
-      step: 1,
-      title: '要更新計畫基準嗎？',
-      body: '目前的排程跟原基準有 2 個任務不同。更新後，原本的基準會被覆蓋，無法復原。',
-      confirmLabel: '更新基準',
-      altLabel: '沿用原本的基準',
-    })
-    view.value!.onAlt!()
-    expect(lock).toHaveBeenLastCalledWith('keep')
-    expect(ui.confirm).toBeNull()
-
-    ui.confirm = { kind: 'baselineLock', step: 1 }
-    view.value!.onNext()
-    expect(lock).toHaveBeenLastCalledWith('update')
-    expect(ui.confirm).toBeNull()
-  })
-
-  it('上鎖：範例每個任務都有基準時不寫補充行；解鎖期間新增的任務另寫一行', async () => {
-    const { ui, taskStore } = stores()
-    const view = useConfirmProps()
-    ui.confirm = { kind: 'baselineLock', step: 1 }
-    expect(view.value!.extra).toBeUndefined()
-    await taskStore.unlockBaseline()
-    taskStore.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-10-01', duration: 3 })
-    expect(view.value!.extra).toBe('另有 1 個任務還沒有基準，兩種做法都會用目前的排程。')
-  })
-
-  it('解鎖一步：說明原本的基準會保留', () => {
-    const { ui, taskStore } = stores()
-    const unlock = vi.spyOn(taskStore, 'unlockBaseline').mockResolvedValue()
-    const view = useConfirmProps()
-    ui.confirm = { kind: 'baselineUnlock', step: 1 }
-    expect(view.value).toMatchObject({
-      step: 1,
-      title: '解除基準鎖？',
-      body: '進入規劃中：暫時不標示延遲，原本的基準會保留。',
-      confirmLabel: '解鎖',
-    })
-    expect(view.value!.altLabel).toBeUndefined()
-    view.value!.onNext()
-    expect(unlock).toHaveBeenCalledTimes(1)
     expect(ui.confirm).toBeNull()
   })
 })

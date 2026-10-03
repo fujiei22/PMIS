@@ -70,14 +70,11 @@ def make_project(
     *,
     pm: Member | None = None,
     name: str | None = None,
-    baseline_locked_on: date | None = None,
 ) -> Project:
     pm = pm or make_member(db, can_login=True)
     if name is None:
         name = f"專案 {next(_serial)}"
-    project = Project(
-        name=name, pm_id=pm.id, created_by=pm.id, baseline_locked_on=baseline_locked_on
-    )
+    project = Project(name=name, pm_id=pm.id, created_by=pm.id)
     db.add(project)
     db.flush()
     return project

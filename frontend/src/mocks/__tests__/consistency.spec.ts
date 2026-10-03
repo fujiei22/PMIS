@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { dayIndex } from '@/lib/date'
-import { isLate, isPlannedDone, scheduleTasks } from '@/lib/schedule'
+import { isLate, isPlannedDone, planTasks, scheduleTasks, scheduleWithPlan } from '@/lib/schedule'
 import { createWorkdays } from '@/lib/workdays'
 import { sampleCalendar } from '@/mocks/sampleCalendar'
 import { sampleProject } from '@/mocks/sampleProject'
@@ -37,8 +37,7 @@ describe('sampleProject 一致性', () => {
     expect(bad).toEqual([])
   })
 
-  it('每筆都有工期與基準；專案已上鎖；完成的結束日就是完成日', () => {
-    expect(sampleProject.project.baselineLockedOn).toBe('2026-08-24')
+  it('每筆都有工期與計畫；完成的結束日就是完成日', () => {
     const bad = sampleProject.tasks
       .filter(
         (t) =>
@@ -51,14 +50,26 @@ describe('sampleProject 一致性', () => {
     expect(bad).toEqual([])
   })
 
-  // 三個檢查點：延遲與計畫進度（依基準）跟著今天變。總覽與 SummaryCards 的數字由這裡出發
+  // 存的計畫等於照計畫開始日、工期、相依排出來的結果：載入後第一次編輯不會順便改寫一堆任務的計畫
+  it('存的計畫（基準欄位）＝ planTasks 的結果', () => {
+    const plan = planTasks(sampleProject.tasks, sampleProject.deps, WD, dayIndex('2026-09-18'))
+    const bad = sampleProject.tasks
+      .filter((t) => {
+        const p = plan.get(t.id)!
+        return p.start !== t.baselineStart || p.end !== t.baselineEnd
+      })
+      .map((t) => t.id)
+    expect(bad).toEqual([])
+  })
+
+  // 三個檢查點：延遲與計畫進度（依計畫）跟著今天變。總覽與 SummaryCards 的數字由這裡出發
   it.each([
-    ['2026-09-18', ['t3', 't13'], 6],
-    ['2026-09-19', ['t3', 't8', 't13'], 7],
-    ['2026-09-22', ['t3', 't8', 't13'], 7],
+    ['2026-09-18', ['t13'], 5],
+    ['2026-09-19', ['t8', 't13'], 6],
+    ['2026-09-22', ['t8', 't13'], 6],
   ] as const)('%s：延遲 %j、計畫應完成 %i 筆', (today, late, planned) => {
     const idx = dayIndex(today)
-    const tasks = scheduleTasks(sampleProject.tasks, sampleProject.deps, WD, idx)
+    const tasks = scheduleWithPlan(sampleProject.tasks, sampleProject.deps, WD, idx)
     expect(tasks.filter((t) => isLate(t)).map((t) => t.id)).toEqual(late)
     expect(tasks.filter((t) => isPlannedDone(t, idx))).toHaveLength(planned)
   })

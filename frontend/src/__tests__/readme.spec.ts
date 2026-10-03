@@ -2,14 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { dayIndex } from '@/lib/date'
-import {
-  DURATION_MAX,
-  isLate,
-  isPlannedDone,
-  lateDays,
-  scheduleTasks,
-  withBaselineMode,
-} from '@/lib/schedule'
+import { DURATION_MAX, isLate, isPlannedDone, lateDays, scheduleWithPlan } from '@/lib/schedule'
 import { createWorkdays } from '@/lib/workdays'
 import { sampleCalendar } from '@/mocks/sampleCalendar'
 import { sampleProject } from '@/mocks/sampleProject'
@@ -208,10 +201,7 @@ describe('docs/reference/scheduling.md 的檢查點', () => {
     for (const [dateCell, lateCell, lateByCell, plannedCell, endCell] of rows) {
       const today = dateCell!.slice(0, 10)
       const idx = dayIndex(today)
-      const tasks = withBaselineMode(
-        scheduleTasks(sampleProject.tasks, sampleProject.deps, WD, idx),
-        !!sampleProject.project.baselineLockedOn,
-      )
+      const tasks = scheduleWithPlan(sampleProject.tasks, sampleProject.deps, WD, idx)
       const late = tasks.filter((t) => isLate(t))
       const ends = tasks.map((t) => t.end).sort()
       expect(lateCell!.match(/t\d+/g) ?? [], `${today} 的延遲任務`).toEqual(late.map((t) => t.id))

@@ -10,8 +10,9 @@ import type { Comment, Dependency, Group, Issue, Member, ProjectData, Task } fro
  * - 存的起訖是 2026-09-18（dev 與測試固定的今天）照前推排程算出來的結果，所以那天載入不會有任何變動
  *   （consistency.spec 守這個不動點）。工期是 legacy 起訖之間的工作天數。
  * - 為了讓狀態與相依不矛盾，t23 改成未開始（前置 t22 還沒開始）、t14 改成暫停（前置 t13 還沒完成）。
- * - 專案在 2026-08-24 上鎖；基準＝用實際開工日、但不套「不早於今天」與「逾期推到今天」排出來的計畫，
- *   只有 t3、t13 的基準跟現在不同（兩者都進行中、照工期早該結束）→ 09-18 時延遲的是這兩筆。
+ * - 基準欄位存的是計畫（規則見〈計畫與延遲〉）：根任務的 baselineStart 是計畫開始日，其餘是照計畫開始日、工期、
+ *   相依排出來的快照，跟 `planTasks` 的結果一樣（consistency.spec 守）。有幾筆在前置完成前就開工（例 t1 早於 t28 完成），
+ *   照計畫算是超前，所以它們的下游計畫比推算晚；09-18 時延遲的只有 t13（晚 4 個工作天），09-19 起 t8 也延遲。
  */
 
 const groups: Group[] = [
@@ -46,8 +47,8 @@ const tasks: Task[] = [
     priority: 'high',
     assigneeIds: ['m3', 'm5'],
     duration: 7,
-    baselineStart: '2026-08-24',
-    baselineEnd: '2026-09-01',
+    baselineStart: '2026-09-01',
+    baselineEnd: '2026-09-09',
   },
   {
     id: 't2',
@@ -61,8 +62,8 @@ const tasks: Task[] = [
     priority: 'mid',
     assigneeIds: ['m3'],
     duration: 5,
-    baselineStart: '2026-09-02',
-    baselineEnd: '2026-09-08',
+    baselineStart: '2026-09-10',
+    baselineEnd: '2026-09-16',
   },
   {
     id: 't3',
@@ -76,8 +77,8 @@ const tasks: Task[] = [
     priority: 'high',
     assigneeIds: ['m1'],
     duration: 7,
-    baselineStart: '2026-09-08',
-    baselineEnd: '2026-09-16',
+    baselineStart: '2026-09-17',
+    baselineEnd: '2026-09-29',
   },
   {
     id: 't4',
@@ -91,8 +92,8 @@ const tasks: Task[] = [
     priority: 'mid',
     assigneeIds: ['m1', 'm3'],
     duration: 9,
-    baselineStart: '2026-09-14',
-    baselineEnd: '2026-09-24',
+    baselineStart: '2026-09-30',
+    baselineEnd: '2026-10-13',
   },
   {
     id: 't5',
@@ -106,8 +107,8 @@ const tasks: Task[] = [
     priority: 'high',
     assigneeIds: ['m1'],
     duration: 7,
-    baselineStart: '2026-09-29',
-    baselineEnd: '2026-10-07',
+    baselineStart: '2026-10-14',
+    baselineEnd: '2026-10-22',
   },
   {
     id: 't6',
@@ -121,8 +122,8 @@ const tasks: Task[] = [
     priority: 'low',
     assigneeIds: ['m1', 'm7'],
     duration: 6,
-    baselineStart: '2026-10-08',
-    baselineEnd: '2026-10-16',
+    baselineStart: '2026-10-23',
+    baselineEnd: '2026-11-02',
   },
   {
     id: 't7',
@@ -166,8 +167,8 @@ const tasks: Task[] = [
     priority: 'high',
     assigneeIds: ['m2', 'm6'],
     duration: 11,
-    baselineStart: '2026-09-10',
-    baselineEnd: '2026-09-24',
+    baselineStart: '2026-09-21',
+    baselineEnd: '2026-10-07',
   },
   {
     id: 't10',
@@ -181,8 +182,8 @@ const tasks: Task[] = [
     priority: 'mid',
     assigneeIds: ['m2'],
     duration: 8,
-    baselineStart: '2026-09-29',
-    baselineEnd: '2026-10-08',
+    baselineStart: '2026-10-08',
+    baselineEnd: '2026-10-20',
   },
   {
     id: 't11',
@@ -196,8 +197,8 @@ const tasks: Task[] = [
     priority: 'low',
     assigneeIds: ['m2', 'm5'],
     duration: 4,
-    baselineStart: '2026-10-12',
-    baselineEnd: '2026-10-15',
+    baselineStart: '2026-10-21',
+    baselineEnd: '2026-10-27',
   },
   {
     id: 't12',
@@ -211,8 +212,8 @@ const tasks: Task[] = [
     priority: 'mid',
     assigneeIds: ['m2'],
     duration: 5,
-    baselineStart: '2026-10-16',
-    baselineEnd: '2026-10-22',
+    baselineStart: '2026-10-28',
+    baselineEnd: '2026-11-03',
   },
   {
     id: 't13',
@@ -226,8 +227,8 @@ const tasks: Task[] = [
     priority: 'high',
     assigneeIds: ['m6'],
     duration: 5,
-    baselineStart: '2026-09-05',
-    baselineEnd: '2026-09-11',
+    baselineStart: '2026-09-08',
+    baselineEnd: '2026-09-14',
   },
   {
     id: 't14',
@@ -241,8 +242,8 @@ const tasks: Task[] = [
     priority: 'mid',
     assigneeIds: ['m6'],
     duration: 7,
-    baselineStart: '2026-09-14',
-    baselineEnd: '2026-09-22',
+    baselineStart: '2026-09-15',
+    baselineEnd: '2026-09-23',
   },
   {
     id: 't15',
@@ -256,8 +257,8 @@ const tasks: Task[] = [
     priority: 'high',
     assigneeIds: ['m2', 'm6'],
     duration: 8,
-    baselineStart: '2026-09-23',
-    baselineEnd: '2026-10-06',
+    baselineStart: '2026-09-24',
+    baselineEnd: '2026-10-07',
   },
   {
     id: 't16',
@@ -271,8 +272,8 @@ const tasks: Task[] = [
     priority: 'low',
     assigneeIds: ['m6'],
     duration: 9,
-    baselineStart: '2026-10-07',
-    baselineEnd: '2026-10-20',
+    baselineStart: '2026-10-08',
+    baselineEnd: '2026-10-21',
   },
   {
     id: 't17',
@@ -286,8 +287,8 @@ const tasks: Task[] = [
     priority: 'mid',
     assigneeIds: ['m6', 'm7'],
     duration: 7,
-    baselineStart: '2026-10-21',
-    baselineEnd: '2026-10-30',
+    baselineStart: '2026-10-22',
+    baselineEnd: '2026-11-02',
   },
   {
     id: 't18',
@@ -331,8 +332,8 @@ const tasks: Task[] = [
     priority: 'high',
     assigneeIds: ['m4'],
     duration: 8,
-    baselineStart: '2026-10-08',
-    baselineEnd: '2026-10-20',
+    baselineStart: '2026-10-23',
+    baselineEnd: '2026-11-04',
   },
   {
     id: 't21',
@@ -346,8 +347,8 @@ const tasks: Task[] = [
     priority: 'mid',
     assigneeIds: ['m4', 'm7'],
     duration: 7,
-    baselineStart: '2026-10-21',
-    baselineEnd: '2026-10-30',
+    baselineStart: '2026-11-05',
+    baselineEnd: '2026-11-13',
   },
   {
     id: 't22',
@@ -361,8 +362,8 @@ const tasks: Task[] = [
     priority: 'high',
     assigneeIds: ['m7'],
     duration: 5,
-    baselineStart: '2026-11-02',
-    baselineEnd: '2026-11-06',
+    baselineStart: '2026-11-16',
+    baselineEnd: '2026-11-20',
   },
   {
     id: 't23',
@@ -376,8 +377,8 @@ const tasks: Task[] = [
     priority: 'low',
     assigneeIds: ['m4', 'm5'],
     duration: 5,
-    baselineStart: '2026-11-09',
-    baselineEnd: '2026-11-13',
+    baselineStart: '2026-11-23',
+    baselineEnd: '2026-11-27',
   },
   {
     id: 't24',
@@ -436,8 +437,8 @@ const tasks: Task[] = [
     priority: 'high',
     assigneeIds: ['m7', 'm5'],
     duration: 3,
-    baselineStart: '2026-11-16',
-    baselineEnd: '2026-11-18',
+    baselineStart: '2026-11-30',
+    baselineEnd: '2026-12-02',
   },
   {
     id: 't28',
@@ -819,7 +820,7 @@ export const sampleProject: ProjectData = {
    * 名稱刻意維持 `My Project`：頂欄改讀這個欄位之前寫死的就是它，
    * 頂欄文字與寬度不變，compare.spec（整頁文字對 legacy）與 topbar-layout.spec 的寬度門檻都不受影響。
    */
-  project: { id: 'pmis', name: 'My Project', pmId: 'm5', baselineLockedOn: '2026-08-24' },
+  project: { id: 'pmis', name: 'My Project', pmId: 'm5' },
   /** mock 不判斷權限：一律可以改 */
   canEdit: true,
   groups,

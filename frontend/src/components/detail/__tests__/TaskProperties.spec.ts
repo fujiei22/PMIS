@@ -5,15 +5,15 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { loadSample } from '@/__tests__/loadSample'
 import TaskProperties from '@/components/detail/TaskProperties.vue'
 import { BASELINE_ROW_TEXT } from '@/constants/dashboard'
-import { sampleProject } from '@/mocks/sampleProject'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
 
 /**
- * 屬性面板的「工期」「計畫基準」兩列（規則見 docs/reference/scheduling.md〈有效工期〉〈基準與基準鎖〉）。
+ * 屬性面板的「工期」「計畫」兩列（規則見 docs/reference/scheduling.md〈有效工期〉〈計畫與延遲〉）。
  *
  * 範例 t3：進行中、09-08 開工、輸入工期 7；09-18 時已逾期，推算結束日推到 09-18，
- * 所以有效工期是 09-08～09-18 的 9 個工作天；基準 09-08 → 09-16，晚 2 個工作天（09-17、09-18）。
+ * 所以有效工期是 09-08～09-18 的 9 個工作天。它比計畫（09-17 → 09-29）早開工，所以不算延遲。
+ * 範例 t13：計畫 09-08 → 09-14、工期 5；09-18 時推算結束日推到 09-18，晚 4 個工作天（09-15～09-18）。
  */
 
 /** 掛 t3（或指定任務）的屬性面板；props 取 store 推算後的任務，跟 DetailModal 一樣。 */
@@ -50,11 +50,11 @@ describe('TaskProperties 工期與計畫基準', () => {
     expect(text).not.toMatch(/·\s*\d+d/)
   })
 
-  it('計畫基準列：基準起訖、鎖頭圖示、晚 2 工作天', () => {
-    const row = rowOf(mountProps(), BASELINE_ROW_TEXT.label)
-    expect(row.text()).toContain('2026/09/08 → 2026/09/16')
-    expect(row.find('.lock-icon').exists()).toBe(true)
-    expect(row.find('.late-days').text()).toBe('晚 2 工作天')
+  it('計畫列：計畫起訖、title 說明計畫怎麼來、晚 4 工作天', () => {
+    const row = rowOf(mountProps('t13'), BASELINE_ROW_TEXT.label)
+    expect(row.text()).toContain('2026/09/08 → 2026/09/14')
+    expect(row.find('.pill-static').attributes('title')).toContain(BASELINE_ROW_TEXT.rule)
+    expect(row.find('.late-days').text()).toBe('晚 4 工作天')
   })
 
   it('「晚 N 工作天」用 --danger-text', () => {
@@ -66,43 +66,17 @@ describe('TaskProperties 工期與計畫基準', () => {
     expect(src).toMatch(/\.late-days\s*\{[^}]*color:\s*var\(--danger-text\)/)
   })
 
-  it('沒有延遲的任務不顯示「晚 N 工作天」', () => {
-    // t4：進行中、推算結束 09-24 等於基準結束
-    const row = rowOf(mountProps('t4'), BASELINE_ROW_TEXT.label)
-    expect(row.text()).toContain('2026/09/14 → 2026/09/24')
+  it('推算結束沒晚於計畫結束就不顯示「晚 N 工作天」（t3 逾期，但比計畫早開工）', () => {
+    const row = rowOf(mountProps('t3'), BASELINE_ROW_TEXT.label)
+    expect(row.text()).toContain('2026/09/17 → 2026/09/29')
     expect(row.find('.late-days').exists()).toBe(false)
   })
 
-  // 解鎖不動存的基準：規劃中照樣列出原基準，上鎖時才決定更新或沿用
-  it('解鎖後（規劃中）基準列照樣顯示原基準、標「規劃中」，沒有鎖頭與延遲', async () => {
-    await useTaskStore().unlockBaseline()
-    const row = rowOf(mountProps(), BASELINE_ROW_TEXT.label)
-    expect(row.text()).toContain('2026/09/08 → 2026/09/16（規劃中）')
-    expect(row.find('.pill-static').attributes('title')).toContain(BASELINE_ROW_TEXT.planningTitle)
-    expect(row.find('.lock-icon').exists()).toBe(false)
-    expect(row.find('.late-days').exists()).toBe(false)
-  })
-
-  it('解鎖中、還沒有基準的任務：寫「上鎖時用目前的排程」', async () => {
-    const data = structuredClone(sampleProject)
-    const t3 = data.tasks.find((t) => t.id === 't3')!
-    t3.baselineStart = ''
-    t3.baselineEnd = ''
-    await loadSample({ data })
-    await useTaskStore().unlockBaseline()
-    const row = rowOf(mountProps(), BASELINE_ROW_TEXT.label)
-    expect(row.text()).toContain(BASELINE_ROW_TEXT.unlocked)
-    expect(row.text()).not.toContain('2026/09/08')
-  })
-
-  it('沒有基準的任務（舊資料）顯示「未設定」', async () => {
-    const data = structuredClone(sampleProject)
-    const t3 = data.tasks.find((t) => t.id === 't3')!
-    t3.baselineStart = ''
-    t3.baselineEnd = ''
-    await loadSample({ data })
-    const row = rowOf(mountProps(), BASELINE_ROW_TEXT.label)
-    expect(row.text()).toContain(BASELINE_ROW_TEXT.none)
+  // PM 改了就是新計畫：把延遲的 t13 工期拉長到 9 天，計畫結束日跟著到 09-18，延遲消失
+  it('PM 改工期：計畫跟著改，延遲消失', async () => {
+    await useTaskStore().updateTask('t13', { duration: 9 })
+    const row = rowOf(mountProps('t13'), BASELINE_ROW_TEXT.label)
+    expect(row.text()).toContain('2026/09/08 → 2026/09/18')
     expect(row.find('.late-days').exists()).toBe(false)
   })
 })

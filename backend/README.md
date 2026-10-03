@@ -214,12 +214,11 @@ model 的寫法：
 |---|---|---|
 | `tasks.duration_days` | INTEGER NOT NULL，CHECK 1–3650 | 工期（工作天）。輸入值，結束日由它推算。上限跟前端的 `DURATION_MAX` 一致 |
 | `tasks.start_on` / `end_on` | DATE NULL | 前端推算後寫回的值：已開始的 `start_on` 是實際開始日，未開始根任務的 `start_on` 是設定的開始日，其他是快照 |
-| `tasks.baseline_start_on` / `baseline_end_on` | DATE NULL，CHECK 兩欄同時有值或同時 NULL | 計畫基準起訖；專案上鎖時寫入 |
-| `projects.baseline_locked_on` | DATE NULL | 計畫基準的鎖定日；NULL＝解鎖（規劃中，不標延遲、存的基準保留） |
+| `tasks.baseline_start_on` / `baseline_end_on` | DATE NULL，CHECK 兩欄同時有值或同時 NULL | 計畫起訖。根任務的 `baseline_start_on` 是 PM 設的計畫開始日（輸入值，開工後不變）；其餘是前端推算的計畫快照，跟起訖一起寫回 |
 
 - `duration_days` 不設預設值，跟 `status`、`priority`、`position` 一樣由 service 寫入。
 - 升級（`98000fb413d0`）時既有任務的工期依起訖換算：起訖之間（含頭尾）的工作天數，判斷順序同 `services/calendar.py`（例外日 → 官方資料 → 週六日）；起訖缺一或結束早於開始的填 1。**日曆要先匯入**（`holidays import`），否則只扣週末。換算只能在升級當下跑一次。
-- 降版（`98000fb413d0` → 前一版）會永久刪掉工期、計畫基準與基準鎖定日，這些是使用者的輸入值、不能重算；有資料時先 `pg_dump -t tasks -t projects`。
+- 降版（`98000fb413d0` → 前一版）會永久刪掉工期與計畫起訖，工期與根任務的計畫開始日是使用者的輸入值、不能重算；有資料時先 `pg_dump -t tasks`。
 - **後端目前不跑排程**：起訖、基準都是前端算好送來的，後端只存。之後做任務 API、或要在後端算專案摘要（延遲數、計畫應完成數、專案起訖）時，要移植同一套排程，並跑 `scheduling.md`〈檢查點（測試向量）〉的三組數字。
 
 ### 工作日曆（假日表）
@@ -234,7 +233,7 @@ model 的寫法：
   - `coveredYears`：官方日曆**完整**匯入的年份（遞增）。不在裡面的年份只套週末規則，畫面要提示「假日資料未公布」。
   - `days`：依日期遞增、同一天只有一筆，有例外日時只回例外日（`source: "override"`）。`name` 只供顯示，前端不得拿它判斷邏輯。
 - `from` 晚於 `to`、日期格式錯、多餘的參數回 422。
-- 前端的 wire 約定在 `frontend/src/api/types.ts` 的 `getCalendar()`：不帶 `from`、`to`，進 Dashboard 時一次載全部。載入失敗時前端只扣週末、畫面提示，不擋畫面；也不能鎖定計畫基準。
+- 前端的 wire 約定在 `frontend/src/api/types.ts` 的 `getCalendar()`：不帶 `from`、`to`，進 Dashboard 時一次載全部。載入失敗時前端只扣週末、畫面提示，不擋畫面。
 
 **三張表**（都不軟刪）：
 

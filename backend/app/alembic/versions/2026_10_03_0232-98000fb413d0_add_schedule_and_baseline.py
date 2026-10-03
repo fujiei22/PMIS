@@ -1,7 +1,7 @@
-"""tasks 加工期與計畫基準，projects 加基準鎖定日
+"""tasks 加工期與計畫
 
-tasks.duration_days（工期，工作天 1–3650）、tasks.baseline_start_on／baseline_end_on（計畫基準，成對）、
-projects.baseline_locked_on（基準鎖定日，NULL＝規劃中）。規則見 docs/reference/scheduling.md。
+tasks.duration_days（工期，工作天 1–3650）、tasks.baseline_start_on／baseline_end_on（計畫起訖，成對）。
+規則見 docs/reference/scheduling.md〈計畫與延遲〉。
 
 autogenerate 產生後手改四處：
 - duration_days 先帶 server_default 1 加欄，再依起訖換算既有任務的工期（`BACKFILL_DURATION_SQL`），
@@ -54,7 +54,6 @@ WHERE t.start_on IS NOT NULL
 
 
 def upgrade() -> None:
-    op.add_column("projects", sa.Column("baseline_locked_on", sa.Date(), nullable=True))
     op.add_column(
         "tasks",
         sa.Column("duration_days", sa.Integer(), server_default=sa.text("1"), nullable=False),
@@ -74,11 +73,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # 會永久刪掉工期、計畫基準與基準鎖定日（都是使用者的輸入值，不能從其他欄位重算）；
-    # 有資料時降版前先備份：pg_dump -t tasks -t projects
+    # 會永久刪掉工期與計畫開始日（根任務的計畫開始日、工期都是使用者的輸入值，不能從其他欄位重算）；
+    # 有資料時降版前先備份：pg_dump -t tasks
     op.drop_constraint(op.f("ck_tasks_baseline_pair"), "tasks", type_="check")
     op.drop_constraint(op.f("ck_tasks_duration_days_range"), "tasks", type_="check")
     op.drop_column("tasks", "baseline_end_on")
     op.drop_column("tasks", "baseline_start_on")
     op.drop_column("tasks", "duration_days")
-    op.drop_column("projects", "baseline_locked_on")

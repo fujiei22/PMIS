@@ -200,27 +200,29 @@ test('清除排序：多出來的 chip 同時各自原地收起', async ({ page 
  * 這一幀還在動）時改成「p」（剩 m5 pmis、m8 app），payment 在 FLIP 途中離場。不用固定毫秒數：機器忙時 100ms 可能還沒開始
  * FLIP、也可能已經跑完。回傳錄影與改成「p」的時間（trace 時間軸）。
  */
-async function filterOutMidFlip(page: Page, pay: string, body: string): Promise<{ tr: Trace; t2: number }> {
+async function filterOutMidFlip(page: Page, card: string, body: string): Promise<{ tr: Trace; t2: number }> {
   let t2 = 0
-  const tr = await trace(page, { pay, body }, async () => {
+  const tr = await trace(page, { card, body }, async () => {
     t2 = await page.evaluate(
-      ({ pay, body }) =>
+      ({ card, body }) =>
         new Promise<number>((resolve, reject) => {
           const input = document.querySelector('[data-testid="overview-search"]') as HTMLInputElement
           const rel = (): number =>
-            document.querySelector(pay)!.getBoundingClientRect().left - document.querySelector(body)!.getBoundingClientRect().left
+            document.querySelector(card)!.getBoundingClientRect().left - document.querySelector(body)!.getBoundingClientRect().left
           const x0 = rel()
           let prev = x0
-          input.value = '金流'
+          // 篩掉同泳道前面的 payment：pmis 從第二格往第一格位移
+          input.value = 'pmis'
           input.dispatchEvent(new Event('input', { bubbles: true }))
           const start = performance.now()
           const tick = (): void => {
             const x = rel()
             if (Math.abs(x - x0) > 2 && Math.abs(x - prev) > 0.5) {
-              input.value = 'p'
+              // 位移途中把 pmis 也篩掉
+              input.value = '金流'
               input.dispatchEvent(new Event('input', { bubbles: true }))
               resolve(performance.now() - (window as unknown as TraceWindow).__ovTrace.t0)
-            } else if (performance.now() - start > 2000) reject(new Error('payment 2 秒內沒有開始位移'))
+            } else if (performance.now() - start > 2000) reject(new Error('pmis 2 秒內沒有開始位移'))
             else {
               prev = x
               requestAnimationFrame(tick)
@@ -228,7 +230,7 @@ async function filterOutMidFlip(page: Page, pay: string, body: string): Promise<
           }
           requestAnimationFrame(tick)
         }),
-      { pay, body },
+      { card, body },
     )
   })
   return { tr, t2 }
@@ -236,17 +238,18 @@ async function filterOutMidFlip(page: Page, pay: string, body: string): Promise<
 
 test('排序位移途中被篩掉的卡：照常淡出、相對泳道原地不瞬移（C2 e）', async ({ page }) => {
   const body = '[data-view-panel="cards"] [data-pm-col="m5"] .lane-body'
-  // 前提：篩掉時 payment 正在位移（篩掉前最後兩幀相對泳道的位置差 > 1px）；機器忙、這一幀剛好卡住就重開頁面重來
+  // 成員5 的泳道在 09-18 是 payment、pmis（同落後，依到期日），篩掉 payment 讓 pmis 往前位移、途中再篩掉 pmis。
+  // 前提：篩掉時 pmis 正在位移（篩掉前最後兩幀相對泳道的位置差 > 1px）；機器忙、這一幀剛好卡住就重開頁面重來
   const { tr, t2 } = await withPremise(async () => {
     await gotoOverview(page)
-    const [pay] = await probe(page, '[data-view-panel="cards"] [data-project="payment"]', 'pay')
-    const r = await filterOutMidFlip(page, pay!, body)
-    const before = relSeries(r.tr, 'pay', 'body').filter((p) => p.t < r.t2)
+    const [card] = await probe(page, '[data-view-panel="cards"] [data-project="pmis"]', 'card')
+    const r = await filterOutMidFlip(page, card!, body)
+    const before = relSeries(r.tr, 'card', 'body').filter((p) => p.t < r.t2)
     const moving = before.length > 2 && Math.abs(before.at(-1)!.x - before.at(-2)!.x) > 1
-    return { value: r, valid: moving, why: '篩掉時 payment 沒在位移' }
+    return { value: r, valid: moving, why: '篩掉時 pmis 沒在位移' }
   })
-  expect(tr.frames.at(-1)!.boxes.pay, 'payment 最後離場').toBeNull()
-  const rel = relSeries(tr, 'pay', 'body')
+  expect(tr.frames.at(-1)!.boxes.card, 'pmis 最後離場').toBeNull()
+  const rel = relSeries(tr, 'card', 'body')
   expect(opacityJumps(rel), '透明度單幀跳').toBe(false)
   /*
    * 不瞬移、原地：從篩掉前的最後一幀起，相對泳道的位移 ≤ 4px（釘在含 FLIP 位移的看得到的位置；修正前釘在版面位置，

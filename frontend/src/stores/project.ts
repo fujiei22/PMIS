@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import type { ProjectMeta } from '@/types/models'
 
 /** 還沒載入（或換專案剛清空）時的專案資料：全部空字串，畫面上就是沒有名稱。 */
-const EMPTY_META: ProjectMeta = { id: '', name: '', pmId: '', baselineLockedOn: '' }
+const EMPTY_META: ProjectMeta = { id: '', name: '', pmId: '' }
 
 /**
  * 目前這個 Dashboard 的專案本身：id、名稱、擁有者，以及登入者能不能改（`canEdit`）。
@@ -26,15 +26,10 @@ export const useProjectStore = defineStore('project', () => {
     canEdit.value = editable
   }
 
-  /** 專案本身變了（`project.updated` 事件、基準鎖定或解鎖的樂觀更新）；canEdit 不動。 */
-  function setMeta(next: ProjectMeta): void {
-    meta.value = { ...next }
-  }
-
   /** 換專案時清空，回到還沒載入的樣子。 */
   function reset(): void {
     setAll(EMPTY_META, false)
   }
 
-  return { meta, canEdit, setAll, setMeta, reset }
+  return { meta, canEdit, setAll, reset }
 })

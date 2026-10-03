@@ -115,13 +115,7 @@ export function scheduleTasks(
   todayIdx: number,
 ): Task[] {
   const by = new Map(tasks.map((t) => [t.id, t]))
-  const preds = new Map<string, string[]>()
-  for (const dep of deps) {
-    if (!by.has(dep.from) || !by.has(dep.to)) continue
-    const list = preds.get(dep.to) ?? []
-    list.push(dep.from)
-    preds.set(dep.to, list)
-  }
+  const preds = predecessorMap(by, deps)
   const today = wd.onOrAfter(todayIdx)
   const placed = new Map<string, { s: number; e: number }>()
   const visiting = new Set<string>()
@@ -164,17 +158,80 @@ export function scheduleTasks(
   })
 }
 
+/** 每個任務的前置 id；只認兩端都存在的相依。`scheduleTasks` 與 `planTasks` 共用。 */
+function predecessorMap(by: Map<string, Task>, deps: Dependency[]): Map<string, string[]> {
+  const preds = new Map<string, string[]>()
+  for (const dep of deps) {
+    if (!by.has(dep.from) || !by.has(dep.to)) continue
+    const list = preds.get(dep.to) ?? []
+    list.push(dep.from)
+    preds.set(dep.to, list)
+  }
+  return preds
+}
+
 /**
- * 套用基準模式（規則見 docs/reference/scheduling.md〈基準與基準鎖〉）。
- * 解鎖（規劃中）時每個任務的基準＝它的推算起訖，所以不會有延遲；上鎖時原樣。基準沒變的回原物件。
+ * 排出每個任務的計畫起訖（規則見 docs/reference/scheduling.md〈計畫與延遲〉）。
+ *
+ * 只看 PM 輸入的東西：根任務的計畫開始日（`baselineStart`；舊資料沒有時用 `start`，遇非工作天順延）、
+ * 工期、相依（完成到開始）。今天、實際開始日、完成日、逾期都不影響——PM 一改輸入計畫就跟著變，
+ * 現實造成的落後（`scheduleTasks` 的推算晚於計畫）才是延遲。環的處理同 `scheduleTasks`。
+ *
+ * @param todayIdx 只給「根任務兩個開始日都是空的」壞資料當起點，其他情況用不到
  */
-export function withBaselineMode(tasks: Task[], locked: boolean): Task[] {
-  if (locked) return tasks
-  return tasks.map((t) =>
-    t.baselineStart === t.start && t.baselineEnd === t.end
+export function planTasks(
+  tasks: Task[],
+  deps: Dependency[],
+  wd: Workdays,
+  todayIdx: number,
+): Map<string, { start: ISODate; end: ISODate }> {
+  const by = new Map(tasks.map((t) => [t.id, t]))
+  const preds = predecessorMap(by, deps)
+  const placed = new Map<string, { s: number; e: number }>()
+  const visiting = new Set<string>()
+
+  function place(id: string): { s: number; e: number } {
+    const hit = placed.get(id)
+    if (hit) return hit
+    const t = by.get(id)!
+    visiting.add(id)
+    const before = (preds.get(id) ?? []).filter((p) => !visiting.has(p)).map(place)
+    visiting.delete(id)
+    const planned = t.baselineStart || t.start
+    const s = before.length
+      ? Math.max(...before.map((p) => wd.after(p.e)))
+      : wd.onOrAfter(planned ? dayIndex(planned) : todayIdx)
+    const r = { s, e: wd.addWorkdays(s, clampDuration(t.duration)) }
+    placed.set(id, r)
+    return r
+  }
+
+  const out = new Map<string, { start: ISODate; end: ISODate }>()
+  for (const t of tasks) {
+    const { s, e } = place(t.id)
+    out.set(t.id, { start: isoFromIndex(s), end: isoFromIndex(e) })
+  }
+  return out
+}
+
+/**
+ * 推算起訖加上計畫：`scheduleTasks` 排出畫面上的起訖，再把 `planTasks` 的計畫起訖填進基準欄位
+ * （`baselineStart`／`baselineEnd`）。延遲＝推算結束日晚於計畫結束日（`isLate`）。
+ * 回傳新陣列、順序同 tasks；起訖與計畫都沒變的回原物件。task store 與總覽摘要都走這裡。
+ */
+export function scheduleWithPlan(
+  tasks: Task[],
+  deps: Dependency[],
+  wd: Workdays,
+  todayIdx: number,
+): Task[] {
+  const plan = planTasks(tasks, deps, wd, todayIdx)
+  return scheduleTasks(tasks, deps, wd, todayIdx).map((t) => {
+    const p = plan.get(t.id)!
+    return p.start === t.baselineStart && p.end === t.baselineEnd
       ? t
-      : { ...t, baselineStart: t.start, baselineEnd: t.end },
-  )
+      : { ...t, baselineStart: p.start, baselineEnd: p.end }
+  })
 }
 
 /**
@@ -231,6 +288,7 @@ export function explainSchedule(
  * - 狀態改變：未開始 → 已開始時開始日記成今天（patch 同時帶 start 就用 patch 的）；
  *   進完成補完成日（已有值不覆蓋）；離開完成清完成日。
  * - 有前置、未開始的任務：start 不生效，丟掉。
+ * - 沒有前置、未開始的任務：start 同時寫進 `baselineStart`（計畫開始日，見〈計畫與延遲〉）。
  * - 夾值：工期 1–3650（NaN 丟掉）；進行中／暫停的開始日不晚於今天；完成的開始日不晚於完成日；
  *   完成日不早於開始日。
  * - 已完成：工期不生效（結束日就是完成日）、完成日不能清掉。
@@ -259,6 +317,8 @@ export function applyTaskEdit(
   }
   // 有前置、未開始：開始日由前置決定，存了也不會生效
   if ('start' in clean && next.status === 'todo' && hasPred.has(id)) next.start = target.start
+  // 未開始根任務的開始日就是計畫開始日：PM 改了就是新計畫（已開始的開始日是實際值，改它不動計畫）
+  else if ('start' in clean && next.status === 'todo') next.baselineStart = next.start
   // 已開始的開始日上限：進行中／暫停不晚於今天；完成不晚於完成日
   if ((next.status === 'doing' || next.status === 'paused') && next.start > todayIso)
     next.start = todayIso
@@ -345,9 +405,8 @@ export function durationOf(t: Task, wd: Workdays): number {
 }
 
 /**
- * 已延遲：未完成，而且推算結束日晚於基準結束日；沒有基準不算。legacy `isLate` :2277（legacy 看的是 end < 今天）。
- * t 必須是推算後的任務（store 的 tasks）：存的 end 是上次寫回的快照，可能已經過時。
- * 規劃中（基準未上鎖）的專案基準＝推算起訖，所以一律不延遲。
+ * 已延遲：未完成，而且推算結束日晚於計畫結束日（基準欄位）；沒有計畫不算。legacy `isLate` :2277（legacy 看的是 end < 今天）。
+ * t 必須是推算後的任務（store 的 tasks，`scheduleWithPlan` 排過）：存的 end 是上次寫回的快照，可能已經過時。
  */
 export function isLate(t: Task): boolean {
   return (

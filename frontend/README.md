@@ -15,7 +15,7 @@
 ### 現況
 
 - 由 `legacy/Dashboard.html` 的 React 原型改寫而成，行為已用 `e2e/compare.spec.ts` 逐項和原型對照過；新舊有差異時改 `src/`，不改 `legacy/`。排程規則刻意跟原型不同（見〈刻意保留的差異〉）：對照時 legacy 頁先灌入新的範例資料再比，排程操作類的情境不在對照裡。
-- 任務日期由排程推算：使用者只設相依、工期（工作天）與根任務的開始日，其他日期自動排；「已延遲」看計畫基準（甘特面板標題列的基準鎖）。規則見 [`docs/reference/scheduling.md`](../docs/reference/scheduling.md)。
+- 任務日期由排程推算：使用者只設相依、工期（工作天）與根任務的開始日，其他日期自動排；「已延遲」＝實際進度晚於計畫（PM 改開始日、工期、相依，計畫就跟著改）。規則見 [`docs/reference/scheduling.md`](../docs/reference/scheduling.md)。
 - 資料全在記憶體 mock（`src/api/mock/`），重新整理就回到範例資料。後端待建，前端已整成「換掉 `src/api/` 的實作就能接」。
 - mock 的 dev server 把「今天」固定在 2026-09-18（範例資料就是照這天推算的，`lib/devClock.ts`），網址加 `?today=YYYY-MM-DD` 可以換別天看。production、單元測試、接真後端時是真實日期。
 - 有登入頁（`/login`）：沒登入時任何頁面都會導到登入頁，登入後回原頁。mock 預設已登入（登入者是總覽的 m11「成員11」）；登出後任何格式正確的帳號（英數與 `.` `_` `-`）、不空的密碼都登得進去，`wrong_password` / `outsider` / `locked_out` / `ad_down` 四個帳號固定登入失敗，用來看各種失敗文案。總覽頂欄右端的登入者點了有選單（目前只有「登出」）。Dashboard 的 `currentUserId` 仍是範例資料裡固定的成員（m1），只決定留言掛誰。
@@ -155,7 +155,7 @@ Dashboard 與總覽的平板規則集中在這幾種條件，元件各自在 `<s
 | 改元件或 e2e | 加〈DOM 鉤子〉 |
 | 動到與原型有關的行為 | 加〈`legacy/` 是唯讀基準〉〈與 legacy 對照〉 |
 | 改總覽頁 | 〈畫面對元件〉的總覽表、〈DOM 鉤子〉的兩張總覽表 |
-| 動到任務日期、工期、相依、延遲、基準鎖 | [`docs/reference/scheduling.md`](../docs/reference/scheduling.md)（規則的唯一出處）、本檔〈樂觀更新怎麼運作〉的排程寫回 |
+| 動到任務日期、工期、相依、計畫、延遲 | [`docs/reference/scheduling.md`](../docs/reference/scheduling.md)（規則的唯一出處）、本檔〈樂觀更新怎麼運作〉的排程寫回 |
 | 接後端、改 api 契約 | 〈怎麼接後端〉整節；前端日常開發不必讀 |
 
 ## 安裝與指令
@@ -216,7 +216,7 @@ frontend/
 │   ├── router/            路由（index.ts：登入守衛、切頁時先載目標頁資料；pageSwap.ts：切頁過渡結束後才還原捲動位置）
 │   ├── stores/            Pinia store（三層，見下）
 │   │   ├── clock.ts                           時鐘層（「現在」取 lib/devClock.ts 的 systemNow()）
-│   │   ├── task / issue / comment / member / budget / project.ts   資料層（單一專案；task 分存的值 inputs 與推算結果 tasks；project 是專案本身（含基準鎖定日）與 canEdit）
+│   │   ├── task / issue / comment / member / budget / project.ts   資料層（單一專案；task 分存的值 inputs 與推算結果 tasks；project 是專案本身與 canEdit）
 │   │   ├── portfolio.ts                       資料層（總覽的專案摘要與成員名錄）
 │   │   ├── session.ts                         資料層（登入者；給登入守衛與畫面顯示用，不做授權）
 │   │   ├── workCalendar.ts                    資料層（工作日曆：週末與假日，排程用；全系統共用，登出不重置）
@@ -276,7 +276,7 @@ COMPARE_DUMP=node_modules/.tmp/cmp npm run test:e2e -- e2e/compare.spec.ts
 - **檔案多選跨任務殘留**：legacy 的 `fileSel` 不會在換任務時清掉（`:3901`），計數會沿用上一個任務。新頁在 `openDetail` 時清空。
 - **附件同日的相對順序**：`filesForTarget` 對同一天的附件沒有定義先後，兩邊可能不同，對照不比這個。
 - **重排節流的時間來源**：legacy 用 `Date.now()`，被 e2e 的 `page.clock.setFixedTime` 凍住之後，一次拖曳裡除了第一次以外的 `dragTick` 全部被節流擋掉；新頁用 `performance.now()`，不受固定時鐘影響。這是測試環境造成的差異，不是行為差異——對照測試的重排只送一次 `mousemove`，比第一次落點。
-- **理論進度的判準**：legacy 把「今天到期」的任務算進理論進度（`end <= 今天`，`Dashboard.html:3604-3620`）。新頁要到期日**隔天**才算，而且看的是基準結束日（`baselineEnd < 今天`，見下面〈排程規則〉），和總覽的 `taskPlanned` 同一個定義（都呼叫 `lib/schedule.ts` 的 `isPlannedDone`，改規則只改那裡），兩頁同一個專案的理論 % 才會一致（user 決定）。對照測試只遮掉摘要卡的差距標籤、理論的 N / 總數與理論 %（`e2e/helpers/compare.ts` 的 `maskPlan`），其餘照比。
+- **理論進度的判準**：legacy 把「今天到期」的任務算進理論進度（`end <= 今天`，`Dashboard.html:3604-3620`）。新頁要到期日**隔天**才算，而且看的是計畫結束日（`baselineEnd < 今天`，見下面〈排程規則〉），和總覽的 `taskPlanned` 同一個定義（都呼叫 `lib/schedule.ts` 的 `isPlannedDone`，改規則只改那裡），兩頁同一個專案的理論 % 才會一致（user 決定）。對照測試只遮掉摘要卡的差距標籤、理論的 N / 總數與理論 %（`e2e/helpers/compare.ts` 的 `maskPlan`），其餘照比。
 - **甘特列的快捷鈕**：legacy 滑鼠移到任務列上會撐開「▲ ▼ ⇄ ✕」並省掉日期的年份；新頁改成列尾一直顯示的「⋮」，動作收在它開的選單（user 決定：只想標記任務時快捷鈕很干擾，▲ ▼ 也看不出是工期 ±1 天）。對照測試比文字時兩邊都拿掉列尾動作字與年份（`e2e/helpers/compare.ts` 的 `maskActs`），情境 8 的相依 / 刪除各走各的路（`compare.spec.ts` 的 `rowAction`）；點任務列的位置改在名稱區 x=70（`ROW_NAME_POS`）。
 - **頂欄放不下時改兩列**：篩選器在標題與右端之間一行放不下時（預設篩選約 1470px 以下；啟用日期範圍、專案名稱較長時門檻更高），新頁把篩選器整排移到滿寬的第二列、靠左排，標籤和它的下拉一定在同一行（`TopBar` 的 `measureFit` 量實際寬度切 `.stacked`）。legacy 是篩選器擠在中間自己換成兩行，標籤和下拉會被拆開（user 回報 15.6 吋筆電常見的 1200～1470px 排版怪異）。兩邊頂欄高度因此不同（1440 時差 2px），對照測試的看板欄 y 與整頁高改從摘要列底部量起（`e2e/helpers/compare.ts` 的 `geoSnapshot`；摘要列的高度也不同，見下方〈摘要卡的版面〉），摘要列以下的幾何照樣 ±1px。兩列時日期日曆也不同：legacy 一律對齊篩選器右緣，篩選器滿寬時會離日期膠囊很遠；新頁改以日期那一組為基準、左緣對齊「日期」（user 決定），日曆在 DOM 裡也移進日期那一組（legacy 在「清除篩選」之後）。對照測試都在日曆關上之後才擷取，不受影響。
 - **頂欄與面板的浮層**：legacy 的篩選下拉、成員面板、日期日曆、排序選單關閉時瞬間消失，新頁有離場淡出（批次 D 的 `pop`）；legacy 的日曆遮罩被 `.top-bar` 的 transform 限制成只蓋頂欄，會吃掉頂欄其他控制項的第一下點擊，新頁拿掉遮罩、點外面照常關（點擊照常送達），點另一顆日期膠囊只切換要填的端點、日曆不關；頂欄一行時下拉與成員面板右緣對齊往左展開（legacy 一律 `left: 0`，勾選讓觸發鈕變寬時選單跟著移）；排序選單開著時固定在打開時的位置（legacy 跟著觸發鈕跑）；一行時篩選項變寬整排平滑滑動、排序 chip 原地展開收起（legacy 一幀跳）。對照測試在 settle 之後才擷取，`[data-dd]` 序列不變。
@@ -290,11 +290,10 @@ COMPARE_DUMP=node_modules/.tmp/cmp npm run test:e2e -- e2e/compare.spec.ts
   - 所以甘特條的起訖、工期數字、拖曳後下游怎麼動都跟 legacy 不同。對照測試的做法（`e2e/helpers/compare.ts`）：
     - legacy 頁載入後先灌入新範例的起訖與狀態（`injectSample`：從 Vite 直接 import `src/mocks/sampleProject.ts`，經 React fiber 找到 legacy 的元件實例換掉任務）。新範例也滿足 legacy 的連動規則，legacy 之後的操作不會再推動它。
     - 拖條移動、把手縮放、卡片 ▲▼ 這類排程操作從對照移除，改由 `dragdrop.spec`、`schedule.spec`、`tablet.spec` 與單元測試守。情境 6 改狀態挑 t13（推算結束日剛好是今天，改成完成後兩頁一致）。
-    - 文字遮掉（`maskSchedule`）：工期數字（legacy 日曆天、新頁工作天）、已延遲的數字與 chip、新頁才有的基準鎖與屬性面板的工期／計畫基準兩列、相依編輯器副標的規則說明、新任務的結束日；新任務的條寬也不比（`maskNewBarWidth`）。
-- **延遲的判準**：legacy 是「未完成而且結束日已過」。新頁看計畫基準：未完成、而且推算結束日晚於基準結束日。逾期未完成的任務結束日會被推到今天，照舊判準永遠算出 0。
+    - 文字遮掉（`maskSchedule`）：工期數字（legacy 日曆天、新頁工作天）、已延遲的數字與 chip、新頁才有的屬性面板工期／計畫兩列、相依編輯器副標的規則說明、新任務的結束日；新任務的條寬也不比（`maskNewBarWidth`）。
+- **延遲的判準**：legacy 是「未完成而且結束日已過」。新頁看計畫：未完成、而且推算結束日晚於計畫結束日（計畫只由開始日、工期、相依推出，PM 改了就是新計畫）。逾期未完成的任務結束日會被推到今天，照舊判準永遠算出 0。
 - **新任務的工期**：legacy 是今天起 5 個日曆天；新頁是今天起 5 個工作天（今天不是工作天就從下一個工作天起算）。
 - **改完成日會推動下游**：完成日就是實際結束日，改了會推動還沒開始的後續任務。legacy 的完成日只是一筆紀錄。
-- **基準鎖**：legacy 沒有計畫基準。新頁在甘特面板標題列、縮放滑桿左邊多一顆基準鎖（`data-testid="baseline-lock"`）：上鎖一步確認、解鎖兩步確認，唯讀時只顯示狀態。
 
 ## lib 與 store 的分工
 
@@ -318,7 +317,7 @@ store 分三層，依賴**只能由上往下**：
 
 成員名錄有兩份：`portfolio.members`（總覽，含各專案的 PM）與 `member.members`（Dashboard，單一專案的成員）。總覽元件查成員一律用 `portfolio.byId`。指派類的下拉（＋指派、Issue 提出人與負責人）只列沒停用的人，用 `member.assignable(原本選的 id)`；頂欄成員篩選只列這個專案有被指派任務的人（`lib/filter.ts` 的 `filterableMembers`）。
 
-`project.ts` 存專案本身（`meta`：id / 名稱 / 擁有者 / 基準鎖定日 `baselineLockedOn`）與 `canEdit`（後端算的「登入者能不能改」，前端不自己比對 `pmId`）。`meta` 會被 `project.updated` 事件與基準鎖的樂觀更新整份換掉（`setMeta`）；上鎖、解鎖的 action 在 `task.ts`（要動到每個任務的基準）。`taskStore.load(id)` 一次灌進所有資料 store，`taskStore.reset()` 一次清掉（換專案時由 `useProjectBoot` 呼叫，再清選取、篩選與暫態）。
+`project.ts` 存專案本身（`meta`：id / 名稱 / 擁有者）與 `canEdit`（後端算的「登入者能不能改」，前端不自己比對 `pmId`）。`taskStore.load(id)` 一次灌進所有資料 store，`taskStore.reset()` 一次清掉（換專案時由 `useProjectBoot` 呼叫，再清選取、篩選與暫態）。
 
 `session.ts` 存登入者（`info`：成員 id / 姓名 / 角色）與「問過後端了沒」（`checked`），只給登入守衛導頁與畫面顯示用；權限一律由後端判斷。
 
@@ -384,7 +383,7 @@ store 分三層，依賴**只能由上往下**：
 | `data-rel` | 任務卡 | `up` / `down` / `group` / 空 | ✗ |
 | `data-status` | 甘特條 / 任務卡 / Issue 卡 | 狀態 key，或 `delayed` | ✗ |
 | `data-panel` | 面板外殼 | `gantt` / `kanban` / `issues` | ✗ |
-| `data-testid` | 摘要卡 `summary-progress`（含專案總時長） / `summary-tasks` / `summary-issues` / `summary-budget`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count`；甘特左欄的展開鈕 `gantt-left-toggle`（只在 < 900px 出現）；甘特面板標題列的日曆提示 `cal-notice`（沒有提示時是空的）與基準鎖按鈕 `baseline-lock`（帶 `aria-pressed`，上鎖時是 `true`）；頂欄專案名旁的唯讀 tag `readonly-tag`（只在唯讀時出現） | 固定字串 | ✗ |
+| `data-testid` | 摘要卡 `summary-progress`（含專案總時長） / `summary-tasks` / `summary-issues` / `summary-budget`；頂部 `filter-clear` / `only-filtered`；面板標題 `task-count` / `issue-count`；甘特左欄的展開鈕 `gantt-left-toggle`（只在 < 900px 出現）；甘特面板標題列的日曆提示 `cal-notice`（沒有提示時是空的）；頂欄專案名旁的唯讀 tag `readonly-tag`（只在唯讀時出現） | 固定字串 | ✗ |
 
 總覽頁的屬性。legacy 沒有這一頁，所以下表全部都不能用在新舊對照測試：
 
@@ -478,8 +477,6 @@ store 分三層，依賴**只能由上往下**：
 | `updateTasks()` | PATCH | `/api/tasks` | `Task[]`（**語意是整批 PUT**：body 是整筆 `Task[]`，不是 patch；已含前端排好的下游） | `Task[]`（server 最終狀態，client 直接套回） |
 | `deleteTask()` | DELETE | `/api/tasks/:id` | — | — |
 | `reorderTasks(projectId, order)` | PUT | `/api/projects/:pid/tasks/order` | `{ id, groupId }[]`（這個專案整份的順序） | — |
-| `lockBaseline(projectId, lockedOn, tasks)` | PUT | `/api/projects/:pid/baseline` | `{ lockedOn, tasks: Task[] }`（基準＝當下推算起訖） | 204；同一個交易存任務與鎖定日，事件：每個任務 `task.updated`、最後 `project.updated` |
-| `unlockBaseline(projectId)` | DELETE | `/api/projects/:pid/baseline` | — | 204；只清鎖定日，事件 `project.updated` |
 | `createGroup(projectId, g)` | POST | `/api/projects/:pid/groups` | `Group` | `Group` |
 | `updateGroup()` | PATCH | `/api/groups/:id` | `Partial<Group>` | `Group` |
 | `deleteGroup()` | DELETE | `/api/groups/:id` | — | — |
@@ -497,7 +494,7 @@ store 分三層，依賴**只能由上往下**：
 後端要注意的四件事：
 
 - **id 由 client 產**（UUID v4，`src/lib/id.ts` 的 `newId()`：`crypto.randomUUID?.()`，非 https / 非 localhost 沒有這支時退回 `crypto.getRandomValues` 自己組）。主鍵接受 client 給的 id，重複回 **409**。
-- **後端不重算排程**。前推排程（工期、相依、實際進度推下游、`status=done` 填 `done` 日、解鎖時的基準）前端已經算完，`updateTasks` / `lockBaseline` 送的是整段結果。後端只存，response 回最終狀態（要糾正就在 response 糾正，client 會套回）。但專案摘要（`listProjects`）要用推算結果：存的起訖是上次寫回的快照，跨日後會落後。後端做任務 API 時要移植同一套排程，照 [`docs/reference/scheduling.md`](../docs/reference/scheduling.md) 實作並跑它的〈檢查點（測試向量）〉；mock 的參考實作是 `api/mock/portfolio.ts` 的 `summarizeProject()`（直接呼叫 `lib/schedule.ts`）。
+- **後端不重算排程**。前推排程（工期、相依、實際進度推下游、`status=done` 填 `done` 日、計畫起訖）前端已經算完，`updateTasks` 送的是整段結果。後端只存，response 回最終狀態（要糾正就在 response 糾正，client 會套回）。但專案摘要（`listProjects`）要用推算結果：存的起訖是上次寫回的快照，跨日後會落後。後端做任務 API 時要移植同一套排程，照 [`docs/reference/scheduling.md`](../docs/reference/scheduling.md) 實作並跑它的〈檢查點（測試向量）〉；mock 的參考實作是 `api/mock/portfolio.ts` 的 `summarizeProject()`（直接呼叫 `lib/schedule.ts`）。
 - **連動刪除由後端做**：`deleteTask` 連帶刪它的 issue / dep / comment，`deleteGroup` 連帶刪底下的任務（以及那些任務的 issue / dep / comment），`deleteIssue` 連帶刪它的留言。事件順序見下。
 - **事件與 response 的到達順序後端不必保證**。client 兩種順序都正確（機制見〈樂觀更新怎麼運作〉的 in-flight 規則）：事件先到就只更新「最後已知的 server 狀態」，等該 id 的請求全部結束才對齊本地。不要為了排順序而延後廣播或延後回應。
 
@@ -524,11 +521,10 @@ store 分三層，依賴**只能由上往下**：
 | `priority` | `priority` | `priority` | `high` / `mid` / `low`（CHECK） |
 | `assigneeIds` | `assigneeIds` | `task_assignees`（`member_id`，依 `position`） | 有順序，第一位是摘要 `upcoming` 的負責人；整份替換 |
 | `duration` | `duration`（整數） | `duration_days` | 工期，工作天，1–3650（CHECK）。輸入值，結束日由它推算 |
-| `baselineStart` | `baselineStart`（`null ↔ ''`） | `baseline_start_on` | 計畫基準的開始日 |
-| `baselineEnd` | `baselineEnd`（`null ↔ ''`） | `baseline_end_on` | 計畫基準的結束日；跟 `baseline_start_on` 一起有值或一起是 NULL（CHECK） |
+| `baselineStart` | `baselineStart`（`null ↔ ''`） | `baseline_start_on` | 計畫開始日。沒有前置的任務是 PM 設的計畫開始日（輸入值，開工後不變）；其餘是前端推算的計畫快照 |
+| `baselineEnd` | `baselineEnd`（`null ↔ ''`） | `baseline_end_on` | 計畫結束日（前端推算的計畫快照）；跟 `baseline_start_on` 一起有值或一起是 NULL（CHECK） |
 
 - 只在 DB 的欄：`project_id`（由分類反查）、`position`（陣列順序，`reorderTasks` 寫）、`created_at` / `updated_at`、軟刪除的 `deleted_at` / `deletion_id`。
-- 專案的基準鎖：`ProjectMeta.baselineLockedOn`（wire 同名，`null ↔ ''`）↔ `projects.baseline_locked_on`；空的表示解鎖（規劃中）。
 - `readme.spec.ts` 比對這張表的第一欄與 `interface Task` 的欄位，加減欄位沒跟上就紅。
 
 ### 錯誤碼對照表
@@ -573,7 +569,6 @@ api 層只往外拋 `ApiError`（`code` / `message` / `status` / `method`）。`
 - **順序不保證**，但連動刪除例外：被連帶刪掉的實體要**先**各發一則 `deleted`，主體自己的 `deleted` **最後**發（前端依這個順序清懸空 id）。
 - **事件的 payload 也要走 adapter 轉換**：`ProjectEvent.payload` 就是 `Task` / `Issue` / `Comment` / `ProjectData` 本身，所以上表那份對照（`null ↔ ''`、日期格式、`Attachment.id`）在事件這條路徑上要**再做一次**。只轉 response 不轉事件，本地會被推來的 `null` 汙染成非法值。
 - **`project.reloaded` 由 adapter 自己造，後端不用做**：重連偵測在前端這一層（`EventSource` 的 `onopen` 從**第二次**起、或 WebSocket 的 reconnect callback），adapter 自己 `await loadProject(id)` 之後 `emit({ type: 'project.reloaded', payload })`。後端只要能重新建立連線就好，不必記得補推什麼。
-- **`project.updated`**：專案本身（`ProjectMeta`）變了，目前只有基準鎖定與解鎖會發。payload 不含 `canEdit`（那是後端依登入者算的）。前端收到就整份換掉 `project` store 的 `meta`。
 - **`reorderTasks` / `reorderGroups` 沒有對應事件**。純順序變更要讓別的 client 看到，靠的是重連時 adapter 補的 `project.reloaded`；只有搬動造成 `groupId` 改變時才會有一則 `task.updated`。
 
 ### 樂觀更新怎麼運作

@@ -2,7 +2,6 @@ import { api } from '@/api'
 import type { ProjectEvent } from '@/api/types'
 import { useCommentStore } from '@/stores/comment'
 import { useIssueStore } from '@/stores/issue'
-import { useProjectStore } from '@/stores/project'
 import { useTaskStore } from '@/stores/task'
 
 /**
@@ -23,12 +22,6 @@ export function useProjectSync(): { start: (projectId: string) => void; stop: ()
     if (e.type === 'project.reloaded') {
       // 重連後後端會補一次整包（契約 A）；順序也可能變了，直接重載
       void taskStore.load(e.payload)
-      return
-    }
-    if (e.type === 'project.updated') {
-      // 只收目前這個專案的：換專案後才到的上一個專案的事件（延遲、重送、錯投）不能把 meta 換成別的專案
-      const project = useProjectStore()
-      if (e.payload.id === project.meta.id) project.setMeta(e.payload)
       return
     }
     if (e.type.startsWith('issue.')) issueStore.applyEvent(e)

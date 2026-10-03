@@ -43,8 +43,8 @@ describe('summarizeProject', () => {
       pmId: 'm5',
       taskTotal: 30,
       taskDone: 4,
-      taskPlanned: 7,
-      delayedTasks: 3,
+      taskPlanned: 6,
+      delayedTasks: 2,
       startDate: '2026-08-24',
       dueDate: '2026-11-18',
       status: 'doing',
@@ -53,14 +53,17 @@ describe('summarizeProject', () => {
     expect(p.openIssues).toEqual({ A: 2, B: 3, C: 4, D: 1 })
     expect(p.upcoming).toHaveLength(3)
   })
-  it('看的是今天推算的結果：存的起訖過時也照今天排；基準未上鎖時不延遲', () => {
+  it('看的是今天推算的結果：存的起訖過時也照今天排，延遲依計畫算', () => {
     // 存的值是 09-18 的推算；到 10/01 時進行中的 t4 已逾期 → 結束日推到 10/01，下游跟著延後
     const later = summarizeProject(sampleProject, PMIS_META, '2026-10-01', WD)
     const now = summarizeProject(sampleProject, PMIS_META, '2026-09-18', WD)
     expect(later.delayedTasks).toBeGreaterThan(now.delayedTasks)
-    const planning: ProjectData = structuredClone(sampleProject)
-    planning.project.baselineLockedOn = ''
-    expect(summarizeProject(planning, PMIS_META, '2026-10-01', WD).delayedTasks).toBe(0)
+    // PM 把延遲的 t13 工期拉長到跟推算一樣：計畫跟著改，延遲少一筆
+    const replanned: ProjectData = structuredClone(sampleProject)
+    replanned.tasks.find((t) => t.id === 't13')!.duration = 10
+    expect(summarizeProject(replanned, PMIS_META, '2026-09-18', WD).delayedTasks).toBe(
+      now.delayedTasks - 1,
+    )
   })
   it('upcoming 含逾期、依到期日升冪、不含已完成', () => {
     const p = summarizeProject(sampleProject, PMIS_META, '2026-09-22', WD)

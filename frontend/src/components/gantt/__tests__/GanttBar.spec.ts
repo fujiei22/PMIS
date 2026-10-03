@@ -130,10 +130,10 @@ describe('GanttBar 的視覺狀態（契約 G、legacy :496-513）', () => {
     expect(cls).not.toContain('selected')
   })
 
-  it('逾期：data-status 蓋成 delayed', () => {
-    // t3 的 end 是 2026-09-16，status 還是 doing
+  it('延遲：data-status 蓋成 delayed', () => {
+    // t13 的計畫在 2026-09-14 結束，status 還是 doing：推算結束日推到今天，晚於計畫
     useClockStore().now = Date.parse('2026-09-20T03:00:00Z')
-    const w = mountTask('t3')
+    const w = mountTask('t13')
     expect(w.find('.bar').attributes('data-status')).toBe('delayed')
   })
 

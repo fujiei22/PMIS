@@ -60,12 +60,7 @@ describe('mock api', () => {
   it('loadProject(id)：mock 只有一份專案，任何 id 都回它（含 project 與 canEdit）', async () => {
     for (const id of ['pmis', 'portal', 'whatever']) {
       const data = await api.loadProject(id)
-      expect(data.project).toEqual({
-        id: 'pmis',
-        name: 'My Project',
-        pmId: 'm5',
-        baselineLockedOn: '2026-08-24',
-      })
+      expect(data.project).toEqual({ id: 'pmis', name: 'My Project', pmId: 'm5' })
       expect(data.canEdit).toBe(true)
       expect(data.tasks).toHaveLength(30)
     }
@@ -386,7 +381,7 @@ describe('mock api', () => {
 
   it('reset(data) 換成指定的資料', async () => {
     api.reset({
-      project: { id: 'pmis', name: '空專案', pmId: 'm1', baselineLockedOn: '' },
+      project: { id: 'pmis', name: '空專案', pmId: 'm1' },
       canEdit: true,
       groups: [],
       members: [],
@@ -443,67 +438,6 @@ describe('api 進入點', () => {
     vi.stubEnv('VITE_API', 'http')
     vi.resetModules()
     await expect(import('@/api')).rejects.toThrow(/VITE_API/)
-  })
-})
-
-describe('基準鎖', () => {
-  /**
-   * lockBaseline：任務的基準與專案的鎖定日一次存（後端是同一個交易）；事件是每個任務一則 task.updated、
-   * 最後一則 project.updated。unlockBaseline 只清鎖定日。失敗時資料不動、不發事件。
-   */
-  let api: MockApi
-  let events: ProjectEvent[]
-
-  beforeEach(() => {
-    api = createMockApi(sampleProject)
-    events = []
-    api.subscribe('pmis', (e) => events.push(e))
-  })
-
-  it('lockBaseline：存基準與鎖定日，事件順序是任務在前、專案最後', async () => {
-    const data = await api.loadProject('pmis')
-    const locked = data.tasks.slice(0, 2).map((t) => ({
-      ...t,
-      baselineStart: t.start,
-      baselineEnd: t.end,
-    }))
-    await api.lockBaseline('pmis', '2026-09-18', locked)
-
-    const after = await api.loadProject('pmis')
-    expect(after.project.baselineLockedOn).toBe('2026-09-18')
-    expect(after.tasks[0]!.baselineEnd).toBe(locked[0]!.end)
-    expect(events.map((e) => e.type)).toEqual(['task.updated', 'task.updated', 'project.updated'])
-  })
-
-  // security：mock 是後端的參考實作；上鎖只寫起訖與基準，不能順便改名稱、狀態這些欄位（mass-assignment）
-  it('lockBaseline：只寫起訖與基準，其他欄位照舊', async () => {
-    const data = await api.loadProject('pmis')
-    const t = data.tasks[0]!
-    await api.lockBaseline('pmis', '2026-09-18', [
-      { ...t, name: '偷改的名稱', status: 'todo', baselineStart: t.start, baselineEnd: t.end },
-    ])
-    const after = (await api.loadProject('pmis')).tasks[0]!
-    expect(after.name).toBe(t.name)
-    expect(after.status).toBe(t.status)
-    expect(after.baselineEnd).toBe(t.end)
-  })
-
-  it('unlockBaseline：清鎖定日，發一則 project.updated', async () => {
-    await api.lockBaseline('pmis', '2026-09-18', [])
-    events = []
-    await api.unlockBaseline('pmis')
-    expect((await api.loadProject('pmis')).project.baselineLockedOn).toBe('')
-    expect(events.map((e) => e.type)).toEqual(['project.updated'])
-  })
-
-  it('失敗時資料不動、不發事件；專案 id 不對回 404', async () => {
-    api.failNext('lockBaseline')
-    await expect(api.lockBaseline('pmis', '2026-09-18', [])).rejects.toThrow()
-    expect((await api.loadProject('pmis')).project.baselineLockedOn).toBe('2026-08-24')
-    expect(events).toEqual([])
-    await expect(api.lockBaseline('nope', '2026-09-18', [])).rejects.toMatchObject({
-      code: 'not_found',
-    })
   })
 })
 

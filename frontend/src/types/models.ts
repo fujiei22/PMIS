@@ -34,7 +34,8 @@ export interface Member {
 /**
  * 任務。起訖由排程推算（規則見 docs/reference/scheduling.md），store 對外的 `tasks` 是推算後的結果。
  *
- * 存的 `start` 的語意：已開始（進行中／暫停／完成）＝實際開始日；未開始的根任務＝設定的開始日；
+ * 存的 `start` 的語意：已開始（進行中／暫停／完成）＝實際開始日；未開始的根任務＝設定的開始日
+ * （過了還沒開工會被順延到今天寫回，原本的計畫開始日在 `baselineStart`）；
  * 未開始、有前置的任務＝上次推算並寫回的快照。`end` 一律是上次推算並寫回的快照。
  */
 export interface Task {
@@ -51,9 +52,12 @@ export interface Task {
   assigneeIds: string[]
   /** 工期（工作天，1–3650）。這是輸入值；結束日由排程推算。 */
   duration: number
-  /** 計畫基準的開始日；'' 表示沒有基準（不算延遲、不算計畫完成）。 */
+  /**
+   * 計畫開始日（規則見 docs/reference/scheduling.md〈計畫與延遲〉）。沒有前置的任務這是 PM 設的計畫開始日（輸入值，
+   * 開工後 `start` 改記實際開工日，這裡不變）；有前置的是上次推算並寫回的計畫快照。'' 表示沒有計畫（舊資料）。
+   */
   baselineStart: ISODate | ''
-  /** 計畫基準的結束日；'' 表示沒有基準。 */
+  /** 計畫結束日：上次推算並寫回的計畫快照（由計畫開始日、工期、相依推出）；'' 表示沒有計畫。 */
   baselineEnd: ISODate | ''
 }
 
@@ -144,11 +148,6 @@ export interface ProjectMeta {
   name: string
   /** 專案經理（擁有者）的成員 id */
   pmId: string
-  /**
-   * 計畫基準的鎖定日；'' 表示解鎖（規劃中：不顯示延遲，存的基準保留，上鎖時決定更新或沿用）。
-   * 規則見 docs/reference/scheduling.md〈基準與基準鎖〉。
-   */
-  baselineLockedOn: ISODate | ''
 }
 
 export interface ProjectData {

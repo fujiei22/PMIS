@@ -211,18 +211,6 @@ export function createMockApi(initial: ProjectData = structuredClone(sampleProje
         return out
       }),
 
-    lockBaseline: (projectId: string, lockedOn: string, tasks: Task[]) =>
-      call('lockBaseline', () => {
-        const out = store.lockBaseline(projectId, lockedOn, tasks)
-        for (const t of out.tasks) emit({ type: 'task.updated', payload: t })
-        emit({ type: 'project.updated', payload: out.project })
-      }),
-
-    unlockBaseline: (projectId: string) =>
-      call('unlockBaseline', () => {
-        emit({ type: 'project.updated', payload: store.unlockBaseline(projectId) })
-      }),
-
     deleteTask: (id: string) =>
       call('deleteTask', () => {
         const gone = store.deleteTask(id)

@@ -1,5 +1,5 @@
 import { dayIndex } from '@/lib/date'
-import { isLate, isPlannedDone, scheduleTasks, withBaselineMode } from '@/lib/schedule'
+import { isLate, isPlannedDone, scheduleWithPlan } from '@/lib/schedule'
 import { createWorkdays, type Workdays } from '@/lib/workdays'
 import { sampleCalendar } from '@/mocks/sampleCalendar'
 import {
@@ -39,13 +39,13 @@ export function projectStatusOf(counts: Record<TaskStatus, number>): ProjectStat
  * 把一份完整專案資料彙整成總覽用的摘要。mock 在這裡扮演後端的彙整邏輯，
  * 規則同 `api/types.ts` 檔頭的 wire 約定：
  *
- * - 先用今天把任務排一次（`scheduleTasks` → `withBaselineMode`，規則見 docs/reference/scheduling.md），
+ * - 先用今天把任務排一次、填上計畫（`scheduleWithPlan`，規則見 docs/reference/scheduling.md），
  *   下面的日期與延遲都看推算結果，跟 Dashboard 畫面上看到的一致；存的起訖可能是幾天前寫回的快照。
  * - status：`projectStatusOf(taskCounts)`。
  * - 起訖日：任務 start 的最小值 / end 的最大值；沒有任務時兩者都是今天。
- * - taskPlanned：`isPlannedDone` 為真的任務數（基準結束日在今天之前），與 Dashboard 理論進度同一個定義。
- * - delayedTasks：`isLate` 為真的任務數（推算結束日晚於基準），與 Dashboard「已延遲」同一個定義；
- *   和 taskCounts 重疊計數。基準未上鎖（規劃中）的專案一律是 0。
+ * - taskPlanned：`isPlannedDone` 為真的任務數（計畫結束日在今天之前），與 Dashboard 理論進度同一個定義。
+ * - delayedTasks：`isLate` 為真的任務數（推算結束日晚於計畫），與 Dashboard「已延遲」同一個定義；
+ *   和 taskCounts 重疊計數。
  * - openIssues：未結 Issue 依等級計數；memberIds：至少被指派一個任務的成員，順序照 data.members。
  * - upcoming：未完成任務依 end 升冪取前 3，**含已逾期**（逾期的最該被看到）。
  * - 不變式：taskDone === taskCounts.done、taskTotal === 各狀態加總。
@@ -57,10 +57,7 @@ export function summarizeProject(
   workdays: Workdays,
 ): ProjectSummary {
   const todayIdx = dayIndex(todayIso)
-  const tasks = withBaselineMode(
-    scheduleTasks(data.tasks, data.deps, workdays, todayIdx),
-    !!data.project.baselineLockedOn,
-  )
+  const tasks = scheduleWithPlan(data.tasks, data.deps, workdays, todayIdx)
 
   const taskCounts: Record<TaskStatus, number> = { done: 0, doing: 0, paused: 0, todo: 0 }
   for (const t of tasks) taskCounts[t.status]++

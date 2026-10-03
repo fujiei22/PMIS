@@ -11,8 +11,6 @@ defineProps<{
   /** 內文之外的補充行，沒給就不畫。 */
   extra?: string
   confirmLabel: string
-  /** 第一步的次要動作鈕（例：上鎖時「沿用原本的基準」），沒給就不畫。 */
-  altLabel?: string
 }>()
 
 defineEmits<{
@@ -20,8 +18,6 @@ defineEmits<{
   next: []
   /** 第二步的動作鈕：真的執行。 */
   confirm: []
-  /** 次要動作鈕：另一種做法，直接執行。 */
-  alt: []
   cancel: []
 }>()
 </script>
@@ -34,9 +30,6 @@ defineEmits<{
       <div v-if="extra" class="confirm-extra">{{ extra }}</div>
       <div class="confirm-actions">
         <button class="btn-cancel" @click="$emit('cancel')">取消</button>
-        <button v-if="step === 1 && altLabel" class="btn-alt" @click="$emit('alt')">
-          {{ altLabel }}
-        </button>
         <button v-if="step === 1" class="btn-next" @click="$emit('next')">
           {{ confirmLabel }}
         </button>
@@ -93,15 +86,12 @@ defineEmits<{
 
 .confirm-actions {
   display: flex;
-  /* 三顆鈕（上鎖時多了「沿用原本的基準」）在窄螢幕放不下一列：整顆換列，不在字中間斷 */
-  flex-wrap: wrap;
   gap: var(--sp-4);
   margin-top: var(--sp-9);
   justify-content: flex-end;
 }
 
 .confirm-actions button {
-  white-space: nowrap;
   padding: var(--sp-4) var(--sp-7);
   font-size: var(--fs-month);
   border-radius: var(--r-input);
@@ -112,13 +102,6 @@ defineEmits<{
   border: 1px solid var(--border-control);
   background: var(--surface-1);
   color: var(--text-2);
-}
-
-.btn-alt {
-  border: 1px solid var(--border-control);
-  background: var(--surface-1);
-  color: var(--text-1);
-  font-weight: var(--fw-medium);
 }
 
 .btn-next {

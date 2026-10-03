@@ -9,7 +9,6 @@ import { useIssueStore } from '@/stores/issue'
 import { useProjectStore } from '@/stores/project'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
-import { useWorkCalendarStore } from '@/stores/workCalendar'
 import type { DropTarget } from '@/types/models'
 
 /**
@@ -78,18 +77,6 @@ const GONE_ROW_MENU = 32
 
 /** api 載入的四個狀態；定義搬到 types/ui.ts，這裡轉出去給既有的 import 用。 */
 export type { LoadState } from '@/types/ui'
-
-/** 指向某個實體的確認（刪除類）：實體被刪掉時確認框要跟著關（懸空清理）。 */
-export type EntityConfirmKind = 'task' | 'group' | 'issue' | 'dep'
-/**
- * 確認框的種類：四種刪除，加上基準鎖的上鎖／解鎖（整個專案一把鎖，沒有實體 id）。
- * 文案與步數在 `composables/useConfirmProps.ts`。
- */
-export type ConfirmKind = EntityConfirmKind | 'baselineLock' | 'baselineUnlock'
-/** `ui.confirm` 的內容：刪除類帶 id（相依另帶顯示用的 label），基準鎖沒有 id。 */
-export type ConfirmState =
-  | { kind: EntityConfirmKind; id: string; step: 1 | 2; label?: string }
-  | { kind: 'baselineLock' | 'baselineUnlock'; step: 1 | 2 }
 
 /** 錯誤條上的一筆；`message` 是 server 原文，只進 console，不上畫面（review M2）。 */
 export interface UiError {
@@ -207,11 +194,13 @@ export const useUiStore = defineStore('ui', () => {
   /** 任務 ↔ Issue 切換的方向動畫。legacy `_nav` :2270 */
   const navAnim = ref<'in' | 'back' | null>(null)
 
-  /**
-   * 確認框：兩步刪除（legacy confirmDel / confirmGrp / confirmDep / confirmIssue :4082-4100），
-   * 以及基準鎖的上鎖（一步）／解鎖（兩步）。步數與文案見 `useConfirmProps`。
-   */
-  const confirm = ref<ConfirmState | null>(null)
+  /** 兩步刪除確認。legacy confirmDel / confirmGrp / confirmDep / confirmIssue :4082-4100 */
+  const confirm = ref<{
+    kind: 'task' | 'group' | 'dep' | 'issue'
+    id: string
+    step: 1 | 2
+    label?: string
+  } | null>(null)
   /** 相依編輯器針對的 taskId。legacy `depEditFor` :1576 */
   const depEditFor = ref<string | null>(null)
 
@@ -257,30 +246,9 @@ export const useUiStore = defineStore('ui', () => {
   const canEdit = computed(() => useProjectStore().canEdit)
 
   /** 兩步刪除確認的第一步；唯讀時不開。 */
-  function askDelete(kind: EntityConfirmKind, id: string, label?: string): void {
+  function askDelete(kind: 'task' | 'group' | 'dep' | 'issue', id: string, label?: string): void {
     if (!canEdit.value) return
     confirm.value = label === undefined ? { kind, id, step: 1 } : { kind, id, step: 1, label }
-  }
-
-  /**
-   * 基準鎖：上鎖中開「解鎖」確認（一步，原基準保留）。規劃中要上鎖時先比對排程跟原基準：
-   * 沒有差異直接鎖（沿用跟更新結果一樣）；有差異才開確認框，讓 PM 選更新或沿用。
-   * 唯讀時不開；日曆不是 ready 時上鎖也不開（鎖下去的基準會是只排除週末的錯誤排程，store 也會擋）。
-   */
-  function askBaselineLock(): void {
-    if (!canEdit.value) return
-    if (useProjectStore().meta.baselineLockedOn) {
-      confirm.value = { kind: 'baselineUnlock', step: 1 }
-      return
-    }
-    if (useWorkCalendarStore().status !== 'ready') return
-    // 排程跟原基準沒有差異：沿用跟更新結果一樣，直接鎖、不問
-    const tasks = useTaskStore()
-    if (tasks.baselineDiffCount === 0) {
-      void tasks.lockBaseline('keep')
-      return
-    }
-    confirm.value = { kind: 'baselineLock', step: 1 }
   }
 
   /** 開相依編輯器；唯讀時不開。 */
@@ -441,13 +409,8 @@ export const useUiStore = defineStore('ui', () => {
 
   // ── 懸空 id 清理（契約 E）──────────────────────────────────────────────────
 
-  /**
-   * 這個 kind / id 的實體還在嗎。基準鎖的確認沒有實體（整個專案一把鎖），一律算在，
-   * 懸空清理不會關掉它。
-   */
-  function exists(kind: ConfirmKind, id?: string): boolean {
-    if (kind === 'baselineLock' || kind === 'baselineUnlock') return true
-    if (id === undefined) return false
+  /** 這個 kind / id 的實體還在嗎。 */
+  function exists(kind: 'task' | 'issue' | 'group' | 'dep', id: string): boolean {
     const tasks = useTaskStore()
     if (kind === 'task') return !!tasks.taskById(id)
     if (kind === 'group') return !!tasks.groupById(id)
@@ -473,7 +436,7 @@ export const useUiStore = defineStore('ui', () => {
       return (
         (d && !exists(d.kind, d.id) ? GONE_DETAIL : 0) |
         (d?.from && !exists('task', d.from) ? GONE_FROM : 0) |
-        (c && !exists(c.kind, 'id' in c ? c.id : undefined) ? GONE_CONFIRM : 0) |
+        (c && !exists(c.kind, c.id) ? GONE_CONFIRM : 0) |
         (depEditFor.value && !exists('task', depEditFor.value) ? GONE_DEP_EDIT : 0) |
         (pickerFor.value && !exists('task', pickerFor.value) ? GONE_PICKER : 0) |
         (rowMenu.value && !exists('task', rowMenu.value.id) ? GONE_ROW_MENU : 0)
@@ -560,7 +523,6 @@ export const useUiStore = defineStore('ui', () => {
     depEditFor,
     canEdit,
     askDelete,
-    askBaselineLock,
     openDepEditor,
     toggleAssigneePicker,
     startEdit,

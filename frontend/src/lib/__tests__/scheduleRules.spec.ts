@@ -11,11 +11,12 @@ import {
   isPlannedDone,
   lateDays,
   moveBlock,
+  planTasks,
   predecessorIds,
   scheduleTasks,
+  scheduleWithPlan,
   startBlock,
   taskPickerNote,
-  withBaselineMode,
 } from '@/lib/schedule'
 import { createWorkdays } from '@/lib/workdays'
 import type { Dependency, Task, WorkCalendar } from '@/types/models'
@@ -246,20 +247,111 @@ describe('applyTaskEdit', () => {
     const legacy = task('a', { status: 'done', start: '2026-10-01', done: '' })
     expect(edit(legacy, { name: '改名' }).done).toBe(today)
   })
-})
 
-describe('withBaselineMode', () => {
-  it('解鎖：基準＝推算起訖；本來就相同的回原物件', () => {
-    const a = task('a', { start: '2026-10-08', end: '2026-10-12' })
-    const same = task('b', { baselineStart: '2026-10-08', baselineEnd: '2026-10-08' })
-    const [x, y] = withBaselineMode([a, same], false)
-    expect([x!.baselineStart, x!.baselineEnd]).toEqual(['2026-10-08', '2026-10-12'])
-    expect(y).toBe(same)
+  // PM 改了就是新計畫：未開始根任務的開始日同時是計畫開始日；已開始的開始日是實際值，改它不動計畫
+  it('未開始根任務改開始日：計畫開始日跟著改；已開始的、有前置的不動計畫', () => {
+    const root = task('a', { baselineStart: '2026-10-01' })
+    expect(edit(root, { start: '2026-10-20' }).baselineStart).toBe('2026-10-20')
+    const doing = task('a', { status: 'doing', start: '2026-10-05', baselineStart: '2026-10-01' })
+    expect(edit(doing, { start: '2026-10-06' }).baselineStart).toBe('2026-10-01')
+    const list = [task('b', { baselineStart: '2026-10-01' })]
+    expect(applyTaskEdit(list, hasPred, 'b', { start: '2026-12-01' }, today)).toBe(list)
   })
 
-  it('上鎖：原樣', () => {
-    const a = task('a', { start: '2026-10-08', end: '2026-10-12' })
-    expect(withBaselineMode([a], true)[0]).toBe(a)
+  it('未開始 → 進行中：開始日記成實際開工日，計畫開始日留著', () => {
+    const t = edit(task('a', { start: '2026-10-01', baselineStart: '2026-10-01' }), {
+      status: 'doing',
+    })
+    expect([t.start, t.baselineStart]).toEqual([today, '2026-10-01'])
+  })
+})
+
+/**
+ * 計畫（規則見 docs/reference/scheduling.md〈計畫與延遲〉）：只看 PM 輸入的東西——根任務的計畫開始日、工期、相依。
+ * 今天、實際開工與完工都不影響計畫；現實造成的落後才是延遲。
+ */
+describe('planTasks', () => {
+  /** 計畫起訖，回 { id: [start, end] }。 */
+  const plan = (ts: Task[], deps: Dependency[] = []) =>
+    Object.fromEntries([...planTasks(ts, deps, wd, NOW)].map(([id, p]) => [id, [p.start, p.end]]))
+
+  it('根任務從計畫開始日起算工期；後續任務接在前置的計畫結束之後', () => {
+    // a：計畫 10/01 起 3 個工作天（跳過週末）→ 10/05；b 接在後面 2 天 → 10/06–10/07
+    const a = task('a', { baselineStart: '2026-10-01', duration: 3 })
+    const b = task('b', { duration: 2 })
+    expect(plan([a, b], [dep('a', 'b')])).toEqual({
+      a: ['2026-10-01', '2026-10-05'],
+      b: ['2026-10-06', '2026-10-07'],
+    })
+  })
+
+  it('不受今天與實際進度影響：晚開工、逾期、晚完成、還沒開始都照計畫', () => {
+    // a 實際 10/06 才開工、b 已逾期、c 晚完成、d 計畫開始日已過還沒開始
+    const a = task('a', {
+      status: 'doing',
+      start: '2026-10-06',
+      baselineStart: '2026-10-01',
+      duration: 3,
+    })
+    const c = task('c', {
+      status: 'done',
+      start: '2026-10-01',
+      done: '2026-10-07',
+      baselineStart: '2026-10-01',
+      duration: 2,
+    })
+    const d = task('d', { start: '2026-10-08', baselineStart: '2026-10-01' })
+    const e = task('e')
+    expect(plan([a, c, d, e], [dep('c', 'e')])).toEqual({
+      a: ['2026-10-01', '2026-10-05'],
+      c: ['2026-10-01', '2026-10-02'],
+      d: ['2026-10-01', '2026-10-01'],
+      e: ['2026-10-05', '2026-10-05'],
+    })
+  })
+
+  it('根任務沒有計畫開始日（舊資料）：用存的開始日；遇非工作天順延', () => {
+    expect(plan([task('a', { start: '2026-10-09' })])).toEqual({
+      a: ['2026-10-12', '2026-10-12'],
+    })
+  })
+})
+
+describe('scheduleWithPlan', () => {
+  it('推算起訖照舊，基準欄位填計畫起訖；晚於計畫的就是延遲', () => {
+    // a 實際 10/06 開工，推算到 10/08；計畫 10/01–10/05。b 被推到 10/12 起，計畫 10/06–10/07
+    const a = task('a', {
+      status: 'doing',
+      start: '2026-10-06',
+      baselineStart: '2026-10-01',
+      duration: 3,
+    })
+    const b = task('b', { duration: 2 })
+    const [x, y] = scheduleWithPlan([a, b], [dep('a', 'b')], wd, NOW)
+    expect([x!.start, x!.end, x!.baselineStart, x!.baselineEnd]).toEqual([
+      '2026-10-06',
+      '2026-10-08',
+      '2026-10-01',
+      '2026-10-05',
+    ])
+    expect([y!.start, y!.end, y!.baselineStart, y!.baselineEnd]).toEqual([
+      '2026-10-12',
+      '2026-10-13',
+      '2026-10-06',
+      '2026-10-07',
+    ])
+    expect([isLate(x!), isLate(y!)]).toEqual([true, true])
+  })
+
+  it('PM 把逾期任務的工期拉長：計畫跟著延長，延遲消失（PM 說了算）', () => {
+    const a = task('a', { status: 'doing', start: '2026-10-01', baselineStart: '2026-10-01' })
+    expect(isLate(scheduleWithPlan([{ ...a, duration: 2 }], [], wd, NOW)[0]!)).toBe(true)
+    expect(isLate(scheduleWithPlan([{ ...a, duration: 6 }], [], wd, NOW)[0]!)).toBe(false)
+  })
+
+  it('起訖與計畫都沒變的回原物件', () => {
+    const a = task('a', { baselineStart: '2026-10-08', baselineEnd: '2026-10-08' })
+    expect(scheduleWithPlan([a], [], wd, NOW)[0]).toBe(a)
   })
 })
 

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// 詳細視窗左欄（任務）：負責人、分類、時程、工期、計畫基準、建立、完成日、優先度、執行狀態、相依、Issue 清單。
+// 詳細視窗左欄（任務）：負責人、分類、時程、工期、計畫、建立、完成日、優先度、執行狀態、相依、Issue 清單。
 // 唯讀時（F2）沒有指派 / 移除負責人、編輯相依、開立 Issue、刪除，膠囊只是顯示（點了不開選單）。
 // legacy 對照：模板 :887-1007，欄位來源是看板卡片那份 view-model（columns[].tasks :2999-3113）。
-// 工期、計畫基準兩列 legacy 沒有（排程規則見 docs/reference/scheduling.md）。
+// 工期、計畫兩列 legacy 沒有（排程規則見 docs/reference/scheduling.md）。
 import { computed } from 'vue'
 import Avatar from '@/components/common/Avatar.vue'
 import { useDelayedUnmount } from '@/composables/useDelayedUnmount'
@@ -22,7 +22,6 @@ import { durationOf, isLate, isLateIssue, lateDays } from '@/lib/schedule'
 import { useClockStore } from '@/stores/clock'
 import { useIssueStore } from '@/stores/issue'
 import { useMemberStore } from '@/stores/member'
-import { useProjectStore } from '@/stores/project'
 import { useSelectionStore } from '@/stores/selection'
 import { useTaskStore } from '@/stores/task'
 import { useUiStore } from '@/stores/ui'
@@ -34,7 +33,6 @@ const props = defineProps<{ task: Task }>()
 const actions = useTaskActions()
 const clock = useClockStore()
 const calendar = useWorkCalendarStore()
-const project = useProjectStore()
 const ui = useUiStore()
 const taskStore = useTaskStore()
 const issueStore = useIssueStore()
@@ -64,42 +62,16 @@ const rangeLabel = computed(() => `${fmtDate(props.task.start)} → ${fmtDate(pr
  */
 const durationLabel = computed(() => fmtWorkdays(durationOf(props.task, calendar.workdays)))
 
-// ── 計畫基準 ──────────────────────────────────────────────────────────────────
-/** 基準鎖是整個專案一把：鎖定日有值＝上鎖。 */
-const locked = computed(() => !!project.meta.baselineLockedOn)
+// ── 計畫 ──────────────────────────────────────────────────────────────────────
 /**
- * 解鎖時存的基準（props 的 task 是畫面看的值，解鎖時基準已換成推算起訖，原本的要另外讀）。
- * 上鎖時不用：畫面上的基準就是存的。
+ * 計畫起訖：props 的 task 是推算後的值（`scheduleWithPlan`），基準欄位一律填好計畫。
+ * 延遲時另外標出晚幾個工作天。
  */
-const stored = computed(() => (locked.value ? null : taskStore.storedBaseline(props.task.id)))
-/**
- * 基準列要顯示什麼：
- * - planning：規劃中、有原基準。原基準保留，上鎖時才決定更新或沿用；不比延遲。
- * - unlocked：規劃中、還沒有基準（解鎖期間新增的），上鎖時用當下的排程。
- * - none：上鎖了但這筆沒有基準（舊資料），不算延遲，寫「未設定」。
- * - set：基準起訖；延遲時另外標出晚幾個工作天。
- */
-const baselineState = computed<'planning' | 'unlocked' | 'none' | 'set'>(() => {
-  if (!locked.value) return stored.value ? 'planning' : 'unlocked'
-  return props.task.baselineStart && props.task.baselineEnd ? 'set' : 'none'
-})
-const baselineText = computed(() => {
-  if (baselineState.value === 'planning')
-    return BASELINE_ROW_TEXT.planning(
-      `${fmtDate(stored.value!.start)} → ${fmtDate(stored.value!.end)}`,
-    )
-  if (baselineState.value === 'unlocked') return BASELINE_ROW_TEXT.unlocked
-  if (baselineState.value === 'none') return BASELINE_ROW_TEXT.none
-  return `${fmtDate(props.task.baselineStart)} → ${fmtDate(props.task.baselineEnd)}`
-})
-/** 膠囊的 title：上鎖時補上鎖定日、規劃中補上鎖時怎麼處理；文字被截斷時也看得到全文。 */
-const baselineTitle = computed(() =>
-  baselineState.value === 'set'
-    ? `${baselineText.value}｜${BASELINE_ROW_TEXT.lockedOn(fmtDate(project.meta.baselineLockedOn))}`
-    : baselineState.value === 'planning'
-      ? `${baselineText.value}｜${BASELINE_ROW_TEXT.planningTitle}`
-      : baselineText.value,
+const baselineText = computed(
+  () => `${fmtDate(props.task.baselineStart)} → ${fmtDate(props.task.baselineEnd)}`,
 )
+/** 膠囊的 title：起訖全文（欄寬不夠會截斷）＋計畫怎麼來。 */
+const baselineTitle = computed(() => `${baselineText.value}｜${BASELINE_ROW_TEXT.rule}`)
 /** 「晚 N 工作天」：看得見的說明（觸控看不到 title），延遲 chip 的 title 只是補充。 */
 const lateLabel = computed(() =>
   late.value ? BASELINE_ROW_TEXT.late(fmtWorkdays(lateDays(props.task, calendar.workdays))) : '',
@@ -229,22 +201,12 @@ function askDelete(): void {
       </div>
     </div>
 
-    <!-- 計畫基準：只顯示，改基準要整個專案解鎖再上鎖（甘特面板的基準鎖） -->
+    <!-- 計畫：只顯示，由開始日、工期、相依推出（PM 改那些，計畫就跟著改） -->
     <div class="row">
       <div class="label">
         <span class="glyph">▭</span><span>{{ BASELINE_ROW_TEXT.label }}</span>
       </div>
       <div class="pill-static mono baseline" :title="baselineTitle">
-        <svg
-          v-if="baselineState === 'set'"
-          class="lock-icon"
-          viewBox="0 0 12 12"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <rect x="2" y="5.5" width="8" height="5.5" rx="1.2" />
-          <path d="M4 5.5V4a2 2 0 0 1 4 0v1.5" />
-        </svg>
         <span class="pill-text">{{ baselineText }}</span>
       </div>
       <span v-if="lateLabel" class="late-days" :title="lateTitle">{{ lateLabel }}</span>
@@ -599,7 +561,7 @@ function askDelete(): void {
   white-space: nowrap;
 }
 
-/* 計畫基準：靜態膠囊裡放鎖頭與起訖；欄寬不夠時截斷文字（全文在 title），不把列撐破 */
+/* 計畫：靜態膠囊裡放起訖；欄寬不夠時截斷文字（全文在 title），不把列撐破 */
 .baseline {
   display: inline-flex;
   align-items: center;
@@ -607,17 +569,6 @@ function askDelete(): void {
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-}
-
-/* 鎖頭跟著文字色（--text-3），線條圖示、不填色 */
-.lock-icon {
-  width: 10px;
-  height: 10px;
-  flex: 0 0 10px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.4;
-  stroke-linecap: round;
 }
 
 /* 晚幾個工作天：延遲的看得見說明，文字色用 --danger-text（spec〈設計方向〉），跟執行狀態列的 late-chip 同字級 */

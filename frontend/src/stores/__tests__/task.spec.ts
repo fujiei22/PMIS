@@ -123,12 +123,7 @@ describe('taskStore', () => {
     const spy = vi.spyOn(api, 'loadProject')
     await s.load('pmis')
     expect(spy).toHaveBeenCalledWith('pmis')
-    expect(useProjectStore().meta).toEqual({
-      id: 'pmis',
-      name: 'My Project',
-      pmId: 'm5',
-      baselineLockedOn: '2026-08-24',
-    })
+    expect(useProjectStore().meta).toEqual({ id: 'pmis', name: 'My Project', pmId: 'm5' })
     expect(useProjectStore().canEdit).toBe(true)
   })
 
@@ -160,7 +155,7 @@ describe('taskStore', () => {
     expect(useMemberStore().members).toEqual([])
     expect(useMemberStore().currentUserId).toBe('')
     expect(useBudgetStore().budget).toEqual({ total: 0, actual: 0 })
-    expect(useProjectStore().meta).toEqual({ id: '', name: '', pmId: '', baselineLockedOn: '' })
+    expect(useProjectStore().meta).toEqual({ id: '', name: '', pmId: '' })
     expect(useProjectStore().canEdit).toBe(false)
   })
 
@@ -903,161 +898,91 @@ describe('taskStore', () => {
     })
   })
 
-  // ── 基準鎖（規則見 docs/reference/scheduling.md〈基準與基準鎖〉）──────────────
-  describe('基準鎖', () => {
-    it('解鎖後不延遲（畫面上的基準＝推算起訖）；上鎖後依新基準', async () => {
+  // ── 計畫（規則見 docs/reference/scheduling.md〈計畫與延遲〉）──────────────────
+  // 計畫只看 PM 輸入的東西（根任務的計畫開始日、工期、相依）：PM 改了就是新計畫，現實造成的落後才算延遲
+  describe('計畫', () => {
+    it('09-18 延遲的是 t13；t3 逾期但比計畫早開工，推算結束日沒晚於計畫，不算延遲', () => {
       const s = useTaskStore()
-      expect(s.tasks.filter((t) => isLate(t)).map((t) => t.id)).toEqual(['t3', 't13'])
-      await s.unlockBaseline()
-      expect(useProjectStore().meta.baselineLockedOn).toBe('')
-      expect(s.tasks.filter((t) => isLate(t))).toHaveLength(0)
-      expect(s.taskById('t3')!.baselineEnd).toBe('2026-09-18')
-      const lock = vi.spyOn(api, 'lockBaseline')
-      await s.lockBaseline('update')
-      expect(lock).toHaveBeenCalledTimes(1)
-      expect(useProjectStore().meta.baselineLockedOn).toBe('2026-09-18')
-      await s.updateTask('t5', { duration: 9 })
-      expect(s.tasks.filter((t) => isLate(t)).map((t) => t.id)).toEqual(
-        expect.arrayContaining(['t5']),
-      )
+      expect(s.tasks.filter((t) => isLate(t)).map((t) => t.id)).toEqual(['t13'])
+      const t3 = s.taskById('t3')!
+      expect([t3.end, t3.baselineEnd]).toEqual(['2026-09-18', '2026-09-29'])
     })
 
-    it('日曆不是 ready 時不能上鎖', async () => {
-      const s = useTaskStore()
-      await s.unlockBaseline()
-      useWorkCalendarStore().status = 'error'
-      const lock = vi.spyOn(api, 'lockBaseline')
-      await s.lockBaseline('update')
-      expect(lock).not.toHaveBeenCalled()
-      expect(useProjectStore().meta.baselineLockedOn).toBe('')
+    it('時間到了沒做完就延遲：09-19 起 t8 也延遲', () => {
+      useClockStore().now = Date.parse('2026-09-19T10:00:00+08:00')
+      const late = useTaskStore().tasks.filter((t) => isLate(t))
+      expect(late.map((t) => t.id)).toEqual(['t8', 't13'])
     })
 
-    it('已上鎖時再上鎖、已解鎖時再解鎖都不打 api', async () => {
+    it('PM 改工期：自己與被推動的下游計畫一起改、不算延遲；計畫跟著推算結果寫回', async () => {
       const s = useTaskStore()
-      const lock = vi.spyOn(api, 'lockBaseline')
-      const unlock = vi.spyOn(api, 'unlockBaseline')
-      await s.lockBaseline('update')
-      expect(lock).not.toHaveBeenCalled()
-      await s.unlockBaseline()
-      await s.unlockBaseline()
-      expect(unlock).toHaveBeenCalledTimes(1)
-    })
-
-    it('上鎖失敗：基準與鎖定日都還原，推一筆錯誤', async () => {
-      const s = useTaskStore()
-      await s.unlockBaseline()
-      const t3 = s.inputs.find((t) => t.id === 't3')!.baselineEnd
-      mockApi.failNext('lockBaseline')
-      await s.lockBaseline('update')
-      expect(useProjectStore().meta.baselineLockedOn).toBe('')
-      expect(s.inputs.find((t) => t.id === 't3')!.baselineEnd).toBe(t3)
-      expect(useUiStore().errors[0]!.label).toBe('鎖定基準')
-    })
-
-    it('解鎖失敗：鎖定日還原，延遲照舊', async () => {
-      const s = useTaskStore()
-      mockApi.failNext('unlockBaseline')
-      await s.unlockBaseline()
-      expect(useProjectStore().meta.baselineLockedOn).toBe('2026-08-24')
-      expect(s.tasks.filter((t) => isLate(t)).map((t) => t.id)).toEqual(['t3', 't13'])
-    })
-
-    it('解鎖中新增任務：基準留空、跟著排程走（不延遲）', async () => {
-      const s = useTaskStore()
-      await s.unlockBaseline()
-      const t = s.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-10-01', duration: 3 })!
-      expect(s.inputs.find((x) => x.id === t.id)!.baselineEnd).toBe('')
-      expect(s.taskById(t.id)!.baselineEnd).toBe('2026-10-05')
-    })
-
-    // review：上鎖只送 server 已有的任務；別處還沒送出的編輯不跟著送
-    it('上鎖：改名還沒送出的任務，送的是 server 的名稱（只帶推算起訖與基準）', async () => {
-      const s = useTaskStore()
-      await s.unlockBaseline()
-      s.applyLocalPatch('t5', { name: '打到一半' })
-      const lock = vi.spyOn(api, 'lockBaseline')
-      await s.lockBaseline('update')
-      const sent = lock.mock.calls[0]![2].find((t) => t.id === 't5')!
-      expect(sent.name).toBe(sampleProject.tasks.find((t) => t.id === 't5')!.name)
-      expect([sent.baselineStart, sent.baselineEnd]).toEqual([sent.start, sent.end])
-      // 本地的草稿還在
-      expect(s.taskById('t5')!.name).toBe('打到一半')
-    })
-
-    it('上鎖：建立中的任務不送（不讓整個上鎖失敗），建立完成後補送它的基準', async () => {
-      const s = useTaskStore()
-      await s.unlockBaseline()
-      // createTask 卡住，直到上鎖完成後才放行
-      const realCreate = api.createTask
-      let finishCreate!: () => void
-      vi.spyOn(api, 'createTask').mockImplementationOnce(
-        (task) => new Promise((r) => (finishCreate = () => r(realCreate(task)))),
-      )
-      const lock = vi.spyOn(api, 'lockBaseline')
-      const t = s.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-10-01', duration: 3 })!
-      await s.lockBaseline('update')
-      expect(useProjectStore().meta.baselineLockedOn).toBe('2026-09-18')
-      expect(lock.mock.calls[0]![2].some((x) => x.id === t.id)).toBe(false)
-      finishCreate()
-      await vi.waitFor(async () => expect((await serverTask(t.id))?.baselineEnd).toBe('2026-10-05'))
-    })
-
-    it('上鎖失敗：只還原鎖定日，在飛期間推來的專案改名照留', async () => {
-      const s = useTaskStore()
-      await s.unlockBaseline()
-      const project = useProjectStore()
-      mockApi.setLatency(5)
-      mockApi.failNext('lockBaseline')
-      const pending = s.lockBaseline('update')
-      project.setMeta({ ...project.meta, name: '別人改的專案名' })
-      await pending
-      mockApi.setLatency(0)
-      expect(project.meta.baselineLockedOn).toBe('')
-      expect(project.meta.name).toBe('別人改的專案名')
-    })
-
-    // 解鎖（規劃中）不動存的基準：畫面不顯示延遲，但寫回時送的是原基準，上鎖時才由 PM 決定更新或沿用
-    it('解鎖後編輯：寫回送的是原基準，不是推算起訖', async () => {
-      const s = useTaskStore()
-      await s.unlockBaseline()
+      const before = s.taskById('t5')!.baselineEnd
       const many = vi.spyOn(api, 'updateTasks')
-      await s.updateTask('t5', { duration: 8 })
+      await s.updateTask('t4', { duration: 12 })
+      const t5 = s.taskById('t5')!
+      expect(t5.baselineEnd > before).toBe(true)
+      expect(s.tasks.filter((t) => isLate(t)).map((t) => t.id)).toEqual(['t13'])
       const sent = many.mock.calls[0]![0].find((t) => t.id === 't5')!
-      expect(sent.end).toBe('2026-10-08')
-      expect([sent.baselineStart, sent.baselineEnd]).toEqual(['2026-09-29', '2026-10-07'])
-      // 其他任務的原基準也沒被改寫
-      expect((await serverTask('t3'))!.baselineEnd).toBe('2026-09-16')
-      // 畫面上照樣是規劃中（不顯示延遲）
+      expect([sent.baselineStart, sent.baselineEnd]).toEqual([t5.baselineStart, t5.baselineEnd])
+    })
+
+    it('PM 把延遲任務的工期拉長：計畫跟著延長，延遲消失（PM 說了算）', async () => {
+      const s = useTaskStore()
+      await s.updateTask('t13', { duration: 9 })
       expect(s.tasks.filter((t) => isLate(t))).toHaveLength(0)
+      expect((await serverTask('t13'))!.baselineEnd).toBe('2026-09-18')
     })
 
-    it('baselineDiffCount：有原基準、而且推算起訖跟它不同的任務數（09-18 是 t3、t13）', async () => {
+    it('未開始根任務改開始日：計畫開始日跟著改，不算延遲', async () => {
       const s = useTaskStore()
-      expect(s.baselineDiffCount).toBe(2)
-      await s.unlockBaseline()
-      expect(s.baselineDiffCount).toBe(2)
-      expect(s.storedBaseline('t3')).toEqual({ start: '2026-09-08', end: '2026-09-16' })
+      await s.updateTask('t24', { start: '2026-10-12' })
+      expect(s.inputs.find((t) => t.id === 't24')!.baselineStart).toBe('2026-10-12')
+      expect(s.taskById('t24')!.baselineStart).toBe('2026-10-12')
+      expect(isLate(s.taskById('t24')!)).toBe(false)
     })
 
-    it('沿用原本的基準：基準不動、延遲照原計畫；解鎖期間新增的任務用目前的排程當基準', async () => {
+    it('根任務晚開工算延遲：開工後開始日記成實際開工日，計畫開始日不變', async () => {
       const s = useTaskStore()
-      await s.unlockBaseline()
+      // t24 計畫 10/08 開工，10/14 還沒開始：推算開始日推到今天，晚於計畫
+      useClockStore().now = Date.parse('2026-10-14T10:00:00+08:00')
+      expect(isLate(s.taskById('t24')!)).toBe(true)
+      await s.updateTask('t24', { status: 'doing' })
+      const t24 = s.inputs.find((t) => t.id === 't24')!
+      expect([t24.start, t24.baselineStart]).toEqual(['2026-10-14', '2026-10-08'])
+      expect(isLate(s.taskById('t24')!)).toBe(true)
+    })
+
+    it('刪相依讓未開始的任務變成根任務：計畫開始日釘在刪除當下的計畫，計畫不跳', async () => {
+      const s = useTaskStore()
+      const before = s.taskById('t5')!
+      const dep = s.deps.find((d) => d.from === 't4' && d.to === 't5')!
+      await s.removeDep(dep.id)
+      const after = s.taskById('t5')!
+      expect([after.baselineStart, after.baselineEnd]).toEqual([
+        before.baselineStart,
+        before.baselineEnd,
+      ])
+      expect((await serverTask('t5'))!.baselineStart).toBe(before.baselineStart)
+    })
+
+    it('已開始的任務變成根任務：實際開工日不動，計畫開始日照樣釘住', async () => {
+      const s = useTaskStore()
+      const before = s.taskById('t4')!
+      const dep = s.deps.find((d) => d.from === 't3' && d.to === 't4')!
+      await s.removeDep(dep.id)
+      const after = s.taskById('t4')!
+      expect([after.start, after.baselineStart, after.baselineEnd]).toEqual([
+        before.start,
+        before.baselineStart,
+        before.baselineEnd,
+      ])
+    })
+
+    it('新增任務：計畫開始日＝設定的開始日，一建立就有計畫、不延遲', () => {
+      const s = useTaskStore()
       const t = s.addTask({ groupId: 'g1', assigneeIds: [], start: '2026-10-01', duration: 3 })!
-      await vi.waitFor(async () => expect(await serverTask(t.id)).toBeDefined())
-      const lock = vi.spyOn(api, 'lockBaseline')
-      await s.lockBaseline('keep')
-      const sent = lock.mock.calls[0]![2]
-      expect(sent.find((x) => x.id === 't3')!.baselineEnd).toBe('2026-09-16')
-      expect(sent.find((x) => x.id === t.id)!.baselineEnd).toBe('2026-10-05')
-      expect(s.tasks.filter((x) => isLate(x)).map((x) => x.id)).toEqual(['t3', 't13'])
-    })
-
-    it('更新基準：用目前的排程覆蓋，延遲歸零', async () => {
-      const s = useTaskStore()
-      await s.unlockBaseline()
-      await s.lockBaseline('update')
-      expect((await serverTask('t3'))!.baselineEnd).toBe('2026-09-18')
-      expect(s.tasks.filter((x) => isLate(x))).toHaveLength(0)
+      expect([t.baselineStart, t.baselineEnd]).toEqual(['2026-10-01', '2026-10-05'])
+      expect(isLate(s.taskById(t.id)!)).toBe(false)
     })
 
     it('explain：說明起訖是哪條規則決定的', () => {

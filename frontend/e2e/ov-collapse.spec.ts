@@ -435,9 +435,10 @@ test.describe('時間軸：群組與列原地收合（T2 / T3）', () => {
       const groups = expectStacked(f, G, '群組重疊')
       if (body) groups.forEach((b) => expect(b.y + b.h, '群組被本體裁掉').toBeLessThanOrEqual(body.y + body.h + 2))
       for (const pm of PMS) {
+        // 收到高度 0 的列不算：它跟下一列同一個 y（差 1px 內），照 y 排序時順序會反過來、算出一整列高的縫
         const rows = PROJECTS.filter((id) => PM_OF[id] === pm)
           .map((id) => f.boxes[`r:${id}`])
-          .filter((b): b is Box => !!b)
+          .filter((b): b is Box => !!b && b.h > 0.5)
           .sort((a, b) => a.y - b.y)
         rows.forEach((b, k) => {
           const a = rows[k - 1]

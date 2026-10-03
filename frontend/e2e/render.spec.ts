@@ -30,10 +30,10 @@ test('首頁渲染四張卡與三個面板', async ({ page }) => {
   await expect(page.locator('[data-card]')).toHaveCount(30)
   await expect(page.locator('[data-issuerow]')).toHaveCount(12)
 
-  // 固定時鐘 2026-09-18；t3 逾期未完成，推算結束日 09-18 晚於基準 09-16 → 延遲
-  await expect(app.row('t3')).toHaveAttribute('data-status', 'delayed')
-  await expect(app.bar('t3')).toHaveAttribute('data-status', 'delayed')
-  await expect(app.card('t3')).toHaveAttribute('data-status', 'delayed')
+  // 固定時鐘 2026-09-18；t13 逾期未完成，推算結束日 09-18 晚於計畫 09-14 → 延遲
+  await expect(app.row('t13')).toHaveAttribute('data-status', 'delayed')
+  await expect(app.bar('t13')).toHaveAttribute('data-status', 'delayed')
+  await expect(app.card('t13')).toHaveAttribute('data-status', 'delayed')
 
   // 未選取時三面板的 data-selected 都是 false
   await expect(app.card('t3')).toHaveAttribute('data-selected', 'false')

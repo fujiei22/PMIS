@@ -502,8 +502,8 @@ def test_override_note_length(db: Session) -> None:
     )
 
 
-# ---------- 任務的工期與計畫基準、專案的基準鎖 ----------
-# 規則見 docs/reference/scheduling.md：工期是工作天（1–3650）、基準起訖成對、專案的鎖定日 NULL＝規劃中。
+# ---------- 任務的工期與計畫 ----------
+# 規則見 docs/reference/scheduling.md：工期是工作天（1–3650）、計畫起訖（基準欄位）成對。
 
 
 @pytest.mark.parametrize("days", [1, TASK_DURATION_MAX])
@@ -519,7 +519,7 @@ def test_task_duration_must_be_in_range(db: Session, days: int) -> None:
 
 
 def test_task_baseline_is_both_or_neither(db: Session) -> None:
-    """基準起訖要一起有值或一起是 NULL：只有一端的基準算不出延遲。"""
+    """計畫起訖要一起有值或一起是 NULL：只有一端的計畫算不出延遲。"""
     assert_accepted(
         db,
         lambda: make_task(db, baseline_start_on=date(2026, 9, 1), baseline_end_on=date(2026, 9, 5)),
@@ -543,9 +543,3 @@ def test_task_duration_has_no_server_default(db: Session) -> None:
         )
     )
     assert default is None
-
-
-def test_project_baseline_lock_is_optional(db: Session) -> None:
-    """鎖定日可以是 NULL（規劃中）或日期（已鎖定）。"""
-    assert_accepted(db, lambda: make_project(db, baseline_locked_on=date(2026, 8, 24)))
-    assert_accepted(db, lambda: make_project(db))

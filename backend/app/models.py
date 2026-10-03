@@ -169,8 +169,6 @@ class Project(SoftDeleteMixin, TimestampMixin, Base):
     pm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("members.id"))
     # 匯入的人。
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("members.id"))
-    # 計畫基準的鎖定日；NULL＝解鎖（規劃中，不標延遲、存的基準保留）。規則見 docs/reference/scheduling.md
-    baseline_locked_on: Mapped[date | None]
 
     groups: Mapped[list["TaskGroup"]] = relationship(
         order_by=lambda: (TaskGroup.position, TaskGroup.id), passive_deletes=True

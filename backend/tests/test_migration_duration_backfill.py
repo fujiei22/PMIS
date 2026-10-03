@@ -20,7 +20,7 @@ from tests.factories import make_task, soft_delete
 
 MIGRATION = (
     Path(__file__).resolve().parents[1]
-    / "app/alembic/versions/2026_10_03_0232-98000fb413d0_add_schedule_and_baseline_lock.py"
+    / "app/alembic/versions/2026_10_03_0232-98000fb413d0_add_schedule_and_baseline.py"
 )
 
 

@@ -77,8 +77,6 @@ test.describe('唯讀模式（F2）', () => {
     await expect(page.locator('[data-rowtask] .grip, [data-rowgroup] .grip')).toHaveCount(0)
     await expect(page.locator('[data-rowmore]')).toHaveCount(0)
     await expect(page.locator('[data-rowgroup] .del')).toHaveCount(0)
-    // 基準鎖照樣顯示狀態，但停用（點了不開確認框）
-    await expect(page.getByTestId('baseline-lock')).toBeDisabled()
 
     // 雙擊任務名 / 分類名不進就地編輯
     await app.row('t2').locator('.name').dblclick()
@@ -240,6 +238,5 @@ test.describe('唯讀模式（F2）', () => {
     await expect(page.getByTestId('readonly-tag')).toHaveCount(0)
     await expect(app.rowMore('t2')).toBeVisible()
     await expect(app.card('t3')).toHaveAttribute('draggable', 'true')
-    await expect(page.getByTestId('baseline-lock')).toBeEnabled()
   })
 })

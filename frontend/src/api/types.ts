@@ -2,11 +2,9 @@ import type {
   Comment,
   Dependency,
   Group,
-  ISODate,
   Issue,
   PortfolioData,
   ProjectData,
-  ProjectMeta,
   SessionInfo,
   Task,
   WorkCalendar,
@@ -22,14 +20,14 @@ import type {
  *   第一個參數是 projectId。其他建立 / 修改 / 刪除由後端從實體反查專案（任務看 groupId、Issue 看 taskId、
  *   留言看 targetId），不另外帶。
  * - ProjectSummary 由後端彙整。日期與延遲一律看「推算起訖」：存的 start / end 是上次寫回的快照，跨日後會落後，
- *   所以要先照 docs/reference/scheduling.md 用伺服器當日把任務排一次（解鎖的專案再把基準換成推算起訖）。規則：
+ *   所以要先照 docs/reference/scheduling.md 用伺服器當日把任務排一次（連同計畫起訖）。規則：
  *   - status 不存欄位，依任務算：有任務且全部 done → 'done'；有任何 doing 或 done → 'doing'；
  *     其他（含沒有任務、只有暫停）→ 'todo'。參考實作：api/mock/portfolio.ts 的 projectStatusOf()。
  *   - startDate / dueDate = 推算 start 最小值 / 推算 end 最大值。
- *   - taskPlanned = 基準結束日（baselineEnd）早於伺服器當日的任務數；沒有基準的不算。
+ *   - taskPlanned = 計畫結束日（baselineEnd）早於伺服器當日的任務數；沒有計畫的不算。
  *     前端的已過 / 剩餘天數用前端 clock 算，跨日時可能差一天，可接受。
- *   - delayedTasks = 未完成、而且推算 end 晚於 baselineEnd 的任務數（與 Dashboard「已延遲」同定義，
- *     和 taskCounts 重疊計數）；專案解鎖（baselineLockedOn 是空的）時一律 0。
+ *   - delayedTasks = 未完成、而且推算 end 晚於計畫結束日的任務數（與 Dashboard「已延遲」同定義，
+ *     和 taskCounts 重疊計數）。
  *   - upcoming = 未完成任務依推算 end 升冪取前 3（含已逾期），memberId = 第一位負責人，沒有就 ''。
  *   - 不變式：taskDone === taskCounts.done、taskTotal === taskCounts 各項加總；adapter 負責驗。
  *   - 實際 / 理論 %、落後百分點、需注意（alert）**不由後端給**：門檻只存在前端 lib/portfolio.ts。
@@ -37,9 +35,8 @@ import type {
  * - Task 的排程欄位（欄位對照見 frontend/README.md〈Task 欄位對照表〉）：
  *   - duration = 工期，工作天整數，1–3650；是輸入值，end 由它推算。
  *   - start / end 是推算後寫回的值：已開始的 start 是實際開始日、未開始根任務的 start 是設定的開始日，其他是快照。
- *   - baselineStart / baselineEnd = 計畫基準起訖，'' ↔ null，兩個一起有值或一起是空。
- * - ProjectMeta.baselineLockedOn = 計畫基準的鎖定日，'' ↔ null（解鎖、規劃中）。改它只走 lockBaseline / unlockBaseline，
- *   事件是 project.updated（payload 是 ProjectMeta）。
+ *   - baselineStart / baselineEnd = 計畫起訖，'' ↔ null，兩個一起有值或一起是空。根任務的 baselineStart 是 PM 設的
+ *     計畫開始日（輸入值）；其餘是前端推算的計畫快照，跟推算起訖一起寫回（updateTasks）。
  * - 工作日曆 getCalendar() 全系統共用、不帶專案 id；失敗時前端只扣週末，不擋畫面。
  * - Member.color 必須是合法的 CSS 顏色值（例 '#2563eb'），adapter 建議驗證格式。前端目前只經 Vue 的
  *   `:style` 物件綁定寫進 CSS 變數，無法跳脫成其他規則；但日後若有地方改用字串拼接組 CSS，就沒有這層保護。
@@ -89,8 +86,6 @@ export type ProjectEvent =
   | { type: 'comment.created'; payload: Comment }
   | { type: 'comment.deleted'; payload: { id: string } }
   | { type: 'project.reloaded'; payload: ProjectData }
-  /** 專案本身變了（例：基準鎖定或解鎖）；canEdit 不在裡面（那是後端依登入者算的）。 */
-  | { type: 'project.updated'; payload: ProjectMeta }
 
 export type ApiErrorCode =
   'network' | 'validation' | 'unauthorized' | 'forbidden' | 'not_found' | 'conflict' | 'unknown'
@@ -158,24 +153,6 @@ export interface ProjectApi {
   deleteTask(id: string): Promise<void> //                                   DELETE /api/tasks/:id
   /** 這個專案整份的任務順序 + 每筆的 groupId；後端把它存成排序鍵。 */
   reorderTasks(projectId: string, order: { id: string; groupId: string }[]): Promise<void> // PUT    /api/projects/:pid/tasks/order
-  /**
-   * 鎖定計畫基準（規則見 docs/reference/scheduling.md〈基準與基準鎖〉）：`tasks` 是 server 已有的任務
-   * （基準＝當下的推算起訖），`lockedOn` 是鎖定日。後端在同一個交易裡存任務與專案的鎖定日；
-   * 事件依序是每個任務一則 `task.updated`、最後一則 `project.updated`。
-   *
-   * 後端必守（security-audit；mock 的 `lockBaseline` 是參考實作）：
-   * - 只有這個專案的 PM 能鎖：不是 PM 回 403、專案不存在回 404。
-   * - `lockedOn` 以後端的當日為準：client 送來的值只拿來比對，不照存（不能倒填）。
-   * - 每筆只寫 `start`／`end`／`baselineStart`／`baselineEnd`（白名單）；其他欄位一律忽略（mass-assignment）。
-   * - 每個 id 都要屬於路徑上的專案、而且沒被刪除，否則整批 404；整批有筆數上限。
-   * - 基準被覆蓋要留稽核紀錄（誰、何時、前後的值）：基準是延遲的標尺。
-   */
-  lockBaseline(projectId: string, lockedOn: ISODate, tasks: Task[]): Promise<void> // PUT    /api/projects/:pid/baseline
-  /**
-   * 解鎖：只清鎖定日（存的基準不動，前端寫回時也送原本的；上鎖時才由 PM 決定更新或沿用）；事件 `project.updated`。
-   * 後端必守：同 `lockBaseline` 的 403／404；解鎖要留稽核紀錄（重新上鎖可能覆蓋原本的基準）。
-   */
-  unlockBaseline(projectId: string): Promise<void> //                        DELETE /api/projects/:pid/baseline
 
   createGroup(projectId: string, g: Group): Promise<Group> //                POST   /api/projects/:pid/groups
   updateGroup(id: string, patch: Partial<Group>): Promise<Group> //          PATCH  /api/groups/:id
